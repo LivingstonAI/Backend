@@ -1,0 +1,26 @@
+from django.urls import path
+from .views import *
+from . import views
+ 
+urlpatterns = [
+    # ... other URL patterns
+    path('register/', UserRegistrationView.as_view(), name='user-registration'),
+    path('check_email/', views.check_email, name='check_email'),
+    path('tell_us_more/create/', views.TellUsMoreCreateView.as_view(), name='tell_us_more_create'),
+    path('login/', UserLoginView.as_view(), name='user-login'),
+    path('new_trade/', TradeView.as_view(), name='new_trade'),
+    path('all_trades/<str:email>/', views.all_trades, name='all_trades'),
+    path('full_trade/<int:trade_id>/', views.full_trade, name='full_trade'),
+    path('user_overview/<str:user_email>/', views.user_overview, name='overview'),
+    path('save_journal/<str:user_email>/', views.save_journal, name='save_journal'),
+    path('all_journals/<str:user_email>/', views.fetch_journals, name='all_journals'),
+    path('view_journal/<int:journal_id>/', views.view_journal, name='view_journal'),
+    path('upcoming_news/<str:user_email>/', views.upcoming_news, name='upcoming_news'),
+    path('get_user_data/<str:user_email>/', views.get_user_data, name='user_data'),
+    path('save_conversation/<str:user_email>/<str:identifier>/', views.save_conversation, name='save_conversation'),
+    path('fetch_conversations/<str:user_email>/', views.fetch_conversations, name='fetch_conversations'),
+    path('fetch_conversation/<str:conversation_id>/', views.fetch_conversation, name='fetch_conversation'),
+    path('update_conversation/<str:conversation_id>/', views.update_conversation, name='update_conversation'),
+    path('delete_conversation/<str:conversation_id>/', views.delete_conversation, name='delete_conversation')
+]
+
