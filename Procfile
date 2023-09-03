@@ -1,1 +1,1 @@
-web: gunicorn snowAIWeb.wsgi --log-file -
+web: gunicorn snowAIv2.wsgi --log-file -
