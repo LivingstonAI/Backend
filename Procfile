@@ -1,0 +1,1 @@
+web: gunicorn snowAIWeb.wsgi --log-file -

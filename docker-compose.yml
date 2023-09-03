@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+    db:
+      image: postgresql
+
+    
+    web:
+      build: .
+      volumes:
+        - .:/usr/usr/app
+      ports:
+          - "8000:8000"
