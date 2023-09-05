@@ -56,8 +56,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
-     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -140,8 +140,13 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CSRF_TRUSTED_ORIGINS = [
-    'https://frontend-2yg4.vercel.app/',
-    'http://localhost:5173/',
-    '*'
+# CSRF_TRUSTED_ORIGINS = [
+#     'https://frontend-2yg4.vercel.app/',
+#     'http://localhost:5173/',
+# ]
+CORS_ALLOWED_ORIGINS = [
+    'https://frontend-2yg4.vercel.app',
+    'http://localhost:5173',
+    # Add other trusted origins here
 ]
+
