@@ -61,7 +61,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'snowAI.middleware.open_access_middleware'
+    'Backend.middleware.open_access_middleware'
 ]
 
 ROOT_URLCONF = 'snowAIv2.urls'
