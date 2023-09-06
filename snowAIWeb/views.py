@@ -113,7 +113,7 @@ def all_trades(request, email):
     print(f'Request User is {request.user}')
     return JsonResponse({'trades': serialized_trades})
 
-
+@csrf_exempt
 class TellUsMoreCreateView(APIView):
     def post(self, request, *args, **kwargs):
         data = request.data
@@ -131,7 +131,7 @@ class TellUsMoreCreateView(APIView):
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
+@csrf_exempt
 class UserLoginView(APIView):
     def post(self, request, *args, **kwargs):
         email = request.data.get('email')
@@ -146,7 +146,7 @@ class UserLoginView(APIView):
         else:
             return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
-
+@csrf_exempt
 class TradeView(APIView):
     def post(self, request, *args, **kwargs):
         # email = request.data.get('email')
@@ -197,7 +197,7 @@ class TradeView(APIView):
         new_trade.save()
         return Response({''}, status=status.HTTP_200_OK)
 
-
+@csrf_exempt
 def full_trade(request, trade_id):
     try:
         trade = Trade.objects.get(pk=trade_id)
@@ -228,7 +228,7 @@ def full_trade(request, trade_id):
     except Trade.DoesNotExist:
         return JsonResponse({"error": "Trade not found"}, status=404)
 
-
+@csrf_exempt
 def user_overview(request, user_email):
     # Journal.objects.all().delete()
     initial_capital = TellUsMore.objects.get(user_email=user_email).initial_capital
@@ -346,7 +346,7 @@ def save_journal(request, user_email):
     else:
         return JsonResponse({'error': 'Invalid request method.'}, status=405)
 
-
+@csrf_exempt
 def fetch_journals(request, user_email):
     journals = Journals.objects.filter(user_email=user_email)
     journal_data = []
@@ -358,7 +358,7 @@ def fetch_journals(request, user_email):
         })
     return JsonResponse({'journals': journal_data})
 
-
+@csrf_exempt
 def view_journal(request, journal_id):
     journal = Journals.objects.get(pk=journal_id)
     journal_data = {
@@ -367,7 +367,7 @@ def view_journal(request, journal_id):
     }
     return JsonResponse({'journal': journal_data})
 
-
+@csrf_exempt
 def upcoming_news(request, user_email):
     try:
         user_assets = TellUsMore.objects.get(user_email=user_email).main_assets
@@ -390,7 +390,7 @@ def upcoming_news(request, user_email):
         print(f'Error: {e}')
         return JsonResponse({'message': str(e)}, status=500)
 
-
+@csrf_exempt
 def extract_date(date):
     timestamp_string = str(date)
     timestamp = datetime.datetime.strptime(timestamp_string, "%Y-%m-%d %H:%M:%S.%f%z")
@@ -399,7 +399,7 @@ def extract_date(date):
 
 
 # Sample news data
-
+@csrf_exempt
 def extract_time(news):
     time_pattern = r'(\d{1,2}:\d{2}(?:am|pm))'
     for item in news:
@@ -423,7 +423,7 @@ def clean_news_data(news_data):
             print(f'Error: {e}')
     return final_dict
 
-
+@csrf_exempt
 def get_user_data(request, user_email):
     try:
         user_data = TellUsMore.objects.get(user_email=user_email)
@@ -461,13 +461,13 @@ def save_conversation(request, user_email, identifier):
     else:
         return JsonResponse({'error': 'Invalid request method'})
 
-
+@csrf_exempt
 def fetch_conversations(request, user_email):
     all_conversations = Conversation.objects.filter(user_email=user_email)
     conversations_data = [{'id': conversation.conversation_id, 'conversation': conversation.conversation} for conversation in all_conversations]
     return JsonResponse({'conversations': conversations_data})
 
-
+@csrf_exempt
 def fetch_conversation(request, conversation_id):
     try:
         conversation = Conversation.objects.get(conversation_id=conversation_id)
