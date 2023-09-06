@@ -33,6 +33,20 @@ ALLOWED_HOSTS = [
     '*',
 ]
 
+
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ORIGIN_WHITELIST = (
+    'http://localhost:5173',
+    'https://frontend-2yg4.vercel.app',
+    
+)
+
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173',
+    'https://frontend-2yg4.vercel.app'
+]
+
 AUTH_USER_MODEL = 'snowAIWeb.User'
 
 # Application definition
@@ -147,7 +161,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 #     'http://localhost:5173/',
 # ]
 
-CORS_ALLOW_ALL_ORIGINS = True # If this is used then `CORS_ALLOWED_ORIGINS` will not have any effect
+# CORS_ALLOW_ALL_ORIGINS = True # If this is used then `CORS_ALLOWED_ORIGINS` will not have any effect
 # CORS_ALLOW_CREDENTIALS = True
 # CORS_ALLOWED_ORIGINS = [
 #     "https://frontend-2yg4.vercel.app",
