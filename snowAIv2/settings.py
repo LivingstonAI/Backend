@@ -70,7 +70,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 ]
 MIDDLEWARE = [
-    'snowAIv2.CustomCorsMiddleware',
+    'snowAIv2.middleware.CustomCorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
