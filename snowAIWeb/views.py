@@ -113,7 +113,6 @@ def all_trades(request, email):
     print(f'Request User is {request.user}')
     return JsonResponse({'trades': serialized_trades})
 
-@csrf_exempt
 class TellUsMoreCreateView(APIView):
     def post(self, request, *args, **kwargs):
         data = request.data
@@ -131,7 +130,6 @@ class TellUsMoreCreateView(APIView):
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@csrf_exempt
 class UserLoginView(APIView):
     def post(self, request, *args, **kwargs):
         email = request.data.get('email')
