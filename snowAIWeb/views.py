@@ -144,7 +144,6 @@ class UserLoginView(APIView):
         else:
             return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
-@csrf_exempt
 class TradeView(APIView):
     def post(self, request, *args, **kwargs):
         # email = request.data.get('email')
