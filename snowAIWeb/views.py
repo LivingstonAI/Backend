@@ -21,10 +21,13 @@ from selenium.webdriver.support.ui import WebDriverWait
 import datetime
 from datetime import date
 import time
+import os
 
 
 current_hour = datetime.datetime.now().time().hour
 
+def get_openai_key(request):
+    return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
 
 def get_news_data():
     # Get the current date
