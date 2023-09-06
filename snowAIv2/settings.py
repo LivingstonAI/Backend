@@ -47,18 +47,6 @@ CSRF_TRUSTED_ORIGINS = [
     'https://frontend-2yg4.vercel.app'
 ]
 
-CORS_ALLOW_HEADERS = [
-'accept',
-'accept-encoding',
-'authorization',
-'content-type',
-'dnt',
-'origin',
-'user-agent',
-'x-csrftoken',
-'x-requested-with',
-]
-
 AUTH_USER_MODEL = 'snowAIWeb.User'
 
 # Application definition
