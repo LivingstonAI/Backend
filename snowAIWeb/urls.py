@@ -22,6 +22,6 @@ urlpatterns = [
     path('fetch_conversation/<str:conversation_id>/', views.fetch_conversation, name='fetch_conversation'),
     path('update_conversation/<str:conversation_id>/', views.update_conversation, name='update_conversation'),
     path('delete_conversation/<str:conversation_id>/', views.delete_conversation, name='delete_conversation'),
-    path('get_openai_key' views.get_openai_key, name='get_openai_key')
+    path('get_openai_key', views.get_openai_key, name='get_openai_key')
 ]
 
