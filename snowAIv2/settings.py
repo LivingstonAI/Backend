@@ -58,16 +58,16 @@ AUTHENTICATION_BACKENDS = [
 
 
 INSTALLED_APPS = [
-    'snowAIWeb',
-    'rest_framework',
-    'corsheaders',
-    'rest_framework.authtoken',
+    # 'rest_framework.authtoken',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'corsheaders',
+    'snowAIWeb',
 ]
 MIDDLEWARE = [
     'snowAIv2.middleware.CustomCorsMiddleware',
