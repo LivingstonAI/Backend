@@ -144,9 +144,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 #     'https://frontend-2yg4.vercel.app/',
 #     'http://localhost:5173/',
 # ]
+
 CORS_ALLOWED_ORIGINS = [
-    'https://frontend-2yg4.vercel.app',
-    'http://localhost:5173',
+    "https://frontend-2yg4.vercel.app",
+    "http://localhost:5173",
     # Add other trusted origins here
 ]
 
