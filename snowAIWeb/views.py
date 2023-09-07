@@ -145,9 +145,9 @@ class UserLoginView(APIView):
         
         user = authenticate(request, email=email, password=password)
         test_user = User.objects.filter(email=email)
+        request.session['USER_EMAIL'] = email # Store email in session
         
         if user is not None:
-            request.session['USER_EMAIL'] = email # Store email in session
             login(request, user)
             return Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
         else:
