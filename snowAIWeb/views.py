@@ -25,9 +25,16 @@ import os
 
 
 current_hour = datetime.datetime.now().time().hour
+email_of_user = ''
+
 
 def get_openai_key(request):
     return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
+
+
+def fetch_user_email(request):
+    return JsonResponse({'user_email': email_of_user})
+
 
 def get_news_data():
     # Get the current date
