@@ -149,6 +149,7 @@ class UserLoginView(APIView):
         test_user = User.objects.filter(email=email)
         
         if user is not None:
+            email_of_user = email
             login(request, user)
             return Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
         else:
