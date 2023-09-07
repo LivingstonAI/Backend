@@ -128,10 +128,9 @@ class TellUsMoreCreateView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-email_of_user = ''
-
 class UserLoginView(APIView):
     def post(self, request, *args, **kwargs):
+        global email_of_user
         email = request.data.get('email')
         password = request.data.get('password')
         
@@ -139,7 +138,8 @@ class UserLoginView(APIView):
         test_user = User.objects.filter(email=email)
         
         if user is not None:
-            request.session['USER_EMAIL'] = email  # Store email in session
+            # request.session['USER_EMAIL'] = email  # Store email in session
+            email_of_user = email
             login(request,user)
             return Response({'message': 'Login successful', 'email': email}, status=status.HTTP_200_OK)
         else:
@@ -148,7 +148,7 @@ class UserLoginView(APIView):
 
 @csrf_exempt
 def fetch_user_email(request):
-    return JsonResponse({'USER_EMAIL': request.session.get('USER_EMAIL', '')})
+    return JsonResponse({'USER_EMAIL': email_of_user})
 
 
 class TradeView(APIView):
@@ -510,3 +510,5 @@ def delete_conversation(request, conversation_id):
         return JsonResponse({'message': 'Conversation Successfully deleted'})
     else:
         return JsonResponse({'error': 'Could not delete successfully'})
+
+
