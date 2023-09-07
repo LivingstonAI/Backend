@@ -135,8 +135,7 @@ class UserLoginView(APIView):
         email = request.data.get('email')
         password = request.data.get('password')
         test_user = User.objects.get(email=email)
-        print(f'Test user is {test_user}')
-        print(test_user.username)
+    
         user = authenticate(request, email=email, password=password)
         
         print(f'User is {user}')
