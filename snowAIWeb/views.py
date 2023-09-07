@@ -148,6 +148,7 @@ class UserLoginView(APIView):
         
         if user is not None:
             request.session['USER_EMAIL'] = email # Store email in session
+            print(request.session.get('USER_EMAIL', ''))
             login(request, user)
             return Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
         else:
@@ -156,7 +157,7 @@ class UserLoginView(APIView):
 
 def fetch_user_email(request):
     user_email = request.session  # Retrieve email from session
-    return JsonResponse({'USER_EMAIL': f'{user_email}')
+    return JsonResponse({'USER_EMAIL': f'{user_email}'})
 
 
 class TradeView(APIView):
