@@ -156,7 +156,7 @@ class UserLoginView(APIView):
 
 def fetch_user_email(request):
     user_email = request.session  # Retrieve email from session
-    return JsonResponse({'USER_EMAIL': user_email})
+    return JsonResponse({'USER_EMAIL': f'{user_email}')
 
 
 class TradeView(APIView):
