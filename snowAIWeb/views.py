@@ -145,9 +145,9 @@ class UserLoginView(APIView):
         
         user = authenticate(request, email=email, password=password)
         test_user = User.objects.filter(email=email)
-        request.session['USER_EMAIL'] = email # Store email in session
         
         if user is not None:
+            request.session['USER_EMAIL'] = email # Store email in session
             login(request, user)
             return Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
         else:
@@ -155,7 +155,7 @@ class UserLoginView(APIView):
 
 
 def fetch_user_email(request):
-    user_email = request.session.get('USER_EMAIL', '')  # Retrieve email from session
+    user_email = request.session  # Retrieve email from session
     return JsonResponse({'USER_EMAIL': user_email})
 
 
