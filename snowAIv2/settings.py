@@ -71,6 +71,7 @@ INSTALLED_APPS = [
 ]
 MIDDLEWARE = [
     'snowAIv2.middleware.CustomCorsMiddleware',
+    'snowAIv2.middleware.UserEmailMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
