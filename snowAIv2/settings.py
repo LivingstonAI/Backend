@@ -71,7 +71,6 @@ INSTALLED_APPS = [
 ]
 MIDDLEWARE = [
     'snowAIv2.middleware.CustomCorsMiddleware',
-    'snowAIv2.middleware.UserEmailMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -80,6 +79,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'snowAIv2.middleware.UserEmailMiddleware',
 ]
 
 ROOT_URLCONF = 'snowAIv2.urls'
