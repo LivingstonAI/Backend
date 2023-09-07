@@ -55,7 +55,7 @@ AUTHENTICATION_BACKENDS = [
     'snowAIWeb.backends.EmailBackend',
 ]
 
-
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
 INSTALLED_APPS = [
     # 'rest_framework.authtoken',
@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'snowAIWeb',
 ]
+
 MIDDLEWARE = [
     'snowAIv2.middleware.CustomCorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
