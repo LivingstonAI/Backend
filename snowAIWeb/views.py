@@ -160,7 +160,7 @@ def fetch_user_email(request):
     #     return JsonResponse({'email': request.user_email})
     # else:
     #     return JsonResponse({'message': 'User not authenticated'}, status=401)
-    return JsonResponse({'USER_EMAIL': request.user_email})
+    return JsonResponse({'USER_EMAIL': request.session.get('USER_EMAIL', '')})
 
 
 class TradeView(APIView):
