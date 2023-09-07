@@ -369,6 +369,7 @@ def fetch_journals(request, user_email):
 
     for journal in journals:
         journal_data.append({
+            'id': journal.id,
             'content': journal.content,
             'created_date': journal.created_date.strftime('%Y/%m/%d: %H:%M'),
         })
@@ -379,6 +380,7 @@ def fetch_journals(request, user_email):
 def view_journal(request, journal_id):
     journal = Journals.objects.get(pk=journal_id)
     journal_data = {
+        'id': journal.id,
         'content': journal.content,
         'created_date': journal.created_date.strftime('%Y/%m/%d %H:%M'),
     }
