@@ -33,7 +33,7 @@ def get_openai_key(request):
 
 
 def fetch_user_email(request):
-    return JsonResponse({'user_email': email_of_user})
+    return JsonResponse({'USER_EMAIL': email_of_user})
 
 
 def get_news_data():
