@@ -25,15 +25,10 @@ import os
 
 
 current_hour = datetime.datetime.now().time().hour
-email_of_user = ''
 
 
 def get_openai_key(request):
     return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
-
-
-def fetch_user_email(request):
-    return JsonResponse({'USER_EMAIL': email_of_user})
 
 
 def get_news_data():
@@ -140,6 +135,9 @@ class TellUsMoreCreateView(APIView):
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+email_of_user = ''
+
 class UserLoginView(APIView):
     def post(self, request, *args, **kwargs):
         email = request.data.get('email')
@@ -149,11 +147,17 @@ class UserLoginView(APIView):
         test_user = User.objects.filter(email=email)
         
         if user is not None:
-            email_of_user = email
             login(request, user)
+            request.session['USER_EMAIL'] = email # Store email in session
             return Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
         else:
             return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+def fetch_user_email(request):
+    user_email = request.session.get('USER_EMAIL', '')  # Retrieve email from session
+    return JsonResponse({'USER_EMAIL': user_email})
+
 
 class TradeView(APIView):
     def post(self, request, *args, **kwargs):
