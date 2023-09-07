@@ -148,15 +148,14 @@ class UserLoginView(APIView):
         
         if user is not None:
             request.session['USER_EMAIL'] = email # Store email in session
-            print(request.session.get('USER_EMAIL', ''))
             login(request, user)
-            return Response({'message': 'Login successful'}, status=status.HTTP_200_OK)
+            return Response({'message': 'Login successful', 'email': email}, status=status.HTTP_200_OK)
         else:
             return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 def fetch_user_email(request):
-    user_email = request.session  # Retrieve email from session
+    user_email = request.session.get('USER_EMAIL', '')  # Retrieve email from session
     return JsonResponse({'USER_EMAIL': f'{user_email}'})
 
 
