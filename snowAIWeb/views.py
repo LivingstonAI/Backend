@@ -137,7 +137,7 @@ class UserLoginView(APIView):
         test_user = User.objects.get(email=email)
         print(f'Test user is {test_user}')
         print(test_user.username)
-        user = authenticate(request, username=test_user.username, password=password)
+        user = authenticate(request, email=email, password=password)
         
         print(f'User is {user}')
         if user is not None:
