@@ -129,6 +129,7 @@ class TellUsMoreCreateView(APIView):
 
 
 class UserLoginView(APIView):
+    @csrf_exempt
     def post(self, request, *args, **kwargs):
         global email_of_user
         email = request.data.get('email')
