@@ -154,7 +154,7 @@ class UserLoginView(APIView):
             return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
-def get_user_email(request):
+def fetch_user_email(request):
     if request.user_email:
         return JsonResponse({'email': request.user_email})
     else:
