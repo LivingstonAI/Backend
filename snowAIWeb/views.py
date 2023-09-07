@@ -49,7 +49,6 @@ def get_news_data():
         if existing_news_data.exists():
             # Fetch and return the existing news data
             existing_data = existing_news_data.first().data
-            print("Using existing news data for the current date")
             return existing_data
 
         chrome_options = Options()
@@ -58,10 +57,7 @@ def get_news_data():
         service = Service(executable_path='snowAIWeb/chromedriver.exe')
         driver = webdriver.Chrome(service=service)
         driver.get("http://www.forexfactory.com")
-        # driver.minimize_window()
-        # driver.minimize_window()
-        # wait = WebDriverWait(driver, 10)
-        # time.sleep(30)
+
         table = driver.find_element(By.CLASS_NAME, "calendar__table")
         # Iterate over each table row
         for row in table.find_elements(By.TAG_NAME, "tr"):
@@ -89,9 +85,9 @@ def get_news_data():
     except Exception as e:
         print(f'Error: {e}')
 
-
 if current_hour == 3:
     get_news_data()
+
 
 class UserRegistrationView(APIView):
     def post(self, request, format=None):
@@ -113,20 +109,16 @@ def check_email(request):
 @csrf_exempt
 def all_trades(request, email):
     trades = Trade.objects.filter(email=email)
-    # print(f'Trades are {trades}')
     serialized_trades = serializers.serialize('json', trades)
-    print(f'Request User is {request.user}')
     return JsonResponse({'trades': serialized_trades})
+
 
 class TellUsMoreCreateView(APIView):
     def post(self, request, *args, **kwargs):
         data = request.data
-        print(f'Data is {data}')
         data['tell_us_more_user'] = request.user.id  # Add the logged-in user's primary key
-        print(f'\n New Data is {data}')
         # Create a serializer instance
         serializer = TellUsMoreSerializer(data=data)
-        print(f'\n Serializer is {serializer}')        
         # Check if serializer is valid and print any errors
         if serializer.is_valid():
             # Save the serializer instance
@@ -147,7 +139,7 @@ class UserLoginView(APIView):
         test_user = User.objects.filter(email=email)
         
         if user is not None:
-            request.session['USER_EMAIL'] = email # Store email in session
+            request.session['USER_EMAIL'] = email  # Store email in session
             login(request,user)
             return Response({'message': 'Login successful', 'email': email}, status=status.HTTP_200_OK)
         else:
@@ -156,10 +148,6 @@ class UserLoginView(APIView):
 
 @csrf_exempt
 def fetch_user_email(request):
-    # if request.user_email:
-    #     return JsonResponse({'email': request.user_email})
-    # else:
-    #     return JsonResponse({'message': 'User not authenticated'}, status=401)
     return JsonResponse({'USER_EMAIL': request.session.get('USER_EMAIL', '')})
 
 
@@ -167,9 +155,6 @@ class TradeView(APIView):
     def post(self, request, *args, **kwargs):
         # email = request.data.get('email')
         data = request.data
-        print(f'Data is {data}')
-        print(User.objects.all()[1].username)
-        print(request.user)
         email = data['email']
         initial_capital = TellUsMore.objects.get(user_email=email).initial_capital
         asset = data['asset']
@@ -209,9 +194,9 @@ class TradeView(APIView):
             emotional_bias=emotional_bias,
             reflection=reflection
         )
-        print(f'New Trade is {new_trade.asset}')
         new_trade.save()
         return Response({''}, status=status.HTTP_200_OK)
+
 
 @csrf_exempt
 def full_trade(request, trade_id):
@@ -243,6 +228,7 @@ def full_trade(request, trade_id):
         return JsonResponse({"trade": trade_data})
     except Trade.DoesNotExist:
         return JsonResponse({"error": "Trade not found"}, status=404)
+
 
 @csrf_exempt
 def user_overview(request, user_email):
@@ -362,6 +348,7 @@ def save_journal(request, user_email):
     else:
         return JsonResponse({'error': 'Invalid request method.'}, status=405)
 
+
 @csrf_exempt
 def fetch_journals(request, user_email):
     journals = Journals.objects.filter(user_email=user_email)
@@ -374,6 +361,7 @@ def fetch_journals(request, user_email):
         })
     return JsonResponse({'journals': journal_data})
 
+
 @csrf_exempt
 def view_journal(request, journal_id):
     journal = Journals.objects.get(pk=journal_id)
@@ -382,6 +370,7 @@ def view_journal(request, journal_id):
         'created_date': journal.created_date.strftime('%Y/%m/%d %H:%M'),
     }
     return JsonResponse({'journal': journal_data})
+
 
 @csrf_exempt
 def upcoming_news(request, user_email):
@@ -393,18 +382,17 @@ def upcoming_news(request, user_email):
         all_dates = [extract_date(news_obj.created_at) for news_obj in data]
         # Check if there is any NewsData with the given current_date
         if not NewsData.objects.filter(created_at__date=current_date).exists():
-            print('True')
             news_data = get_news_data()  # Fetch news data
         else:
             news_data = NewsData.objects.filter(created_at__date=current_date).first().data
         news_data = clean_news_data(news_data)
-        # print(f'News Data is {news_data}')
         return JsonResponse(news_data)
     except ObjectDoesNotExist:
         return JsonResponse({'message': 'User not found'}, status=404)
     except Exception as e:
         print(f'Error: {e}')
         return JsonResponse({'message': str(e)}, status=500)
+
 
 @csrf_exempt
 def extract_date(date):
@@ -438,6 +426,7 @@ def clean_news_data(news_data):
         except Exception as e:
             print(f'Error: {e}')
     return final_dict
+
 
 @csrf_exempt
 def get_user_data(request, user_email):
@@ -477,11 +466,13 @@ def save_conversation(request, user_email, identifier):
     else:
         return JsonResponse({'error': 'Invalid request method'})
 
+
 @csrf_exempt
 def fetch_conversations(request, user_email):
     all_conversations = Conversation.objects.filter(user_email=user_email)
     conversations_data = [{'id': conversation.conversation_id, 'conversation': conversation.conversation} for conversation in all_conversations]
     return JsonResponse({'conversations': conversations_data})
+
 
 @csrf_exempt
 def fetch_conversation(request, conversation_id):
