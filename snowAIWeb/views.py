@@ -301,7 +301,11 @@ def user_overview(request, user_email):
     try:
         day_of_most_losses = datetime.date(current_year, 1, most_common_day_of_losses[0][0] + 1).strftime("%A")
     except:
-        day_of_most_losses = ''
+        day_of_most_losses = 'None'
+    try:
+        day_of_most_wins = datetime.date(current_year, 1, most_common_day_of_losses[0][0] + 1).strftime("%A")
+    except:
+        day_of_most_wins = 'None'
 
     equity_dates = [trade.entry_date.date().strftime('%Y-%m-%d') for trade in trades]
     equity_dates.sort()
