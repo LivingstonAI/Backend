@@ -298,7 +298,10 @@ def user_overview(request, user_email):
     most_common_day_of_losses = Counter(days_of_losses).most_common(1)
 
     day_of_most_wins = datetime.date(current_year, 1, most_common_day_of_wins[0][0] + 1).strftime("%A")
-    day_of_most_losses = datetime.date(current_year, 1, most_common_day_of_losses[0][0] + 1).strftime("%A")
+    try:
+        day_of_most_losses = datetime.date(current_year, 1, most_common_day_of_losses[0][0] + 1).strftime("%A")
+    except:
+        day_of_most_losses = ''
 
     equity_dates = [trade.entry_date.date().strftime('%Y-%m-%d') for trade in trades]
     equity_dates.sort()
