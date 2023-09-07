@@ -154,11 +154,13 @@ class UserLoginView(APIView):
             return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
+@csrf_exempt
 def fetch_user_email(request):
-    if request.user_email:
-        return JsonResponse({'email': request.user_email})
-    else:
-        return JsonResponse({'message': 'User not authenticated'}, status=401)
+    # if request.user_email:
+    #     return JsonResponse({'email': request.user_email})
+    # else:
+    #     return JsonResponse({'message': 'User not authenticated'}, status=401)
+    return JsonResponse({'USER_EMAIL': request.user_email})
 
 
 class TradeView(APIView):
