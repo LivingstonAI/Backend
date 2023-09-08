@@ -51,7 +51,8 @@ REST_FRAMEWORK = {
 
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
-    'https://frontend-2yg4.vercel.app'
+    'https://frontend-2yg4.vercel.app',
+    'https://backend-production-c0ab.up.railway.app'
 ]
 
 AUTH_USER_MODEL = 'snowAIWeb.User'
