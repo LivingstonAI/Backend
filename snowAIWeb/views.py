@@ -327,7 +327,7 @@ def user_overview(request, user_email):
     return JsonResponse({
         'equity_amount': equity_amount,
         'profit': total_profit,
-        'roi': roi,
+        'roi': round(roi, 2),
         'maximum_drawdown': maximum_drawdown,
         'risk_of_ruin': risk_of_ruin,
         'win_rate': win_rate,
