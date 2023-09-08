@@ -135,22 +135,22 @@ class UserLoginView(APIView):
         email = request.data.get('email')
         password = request.data.get('password')
         test_user = User.objects.get(email=email)
+        print(test_user)
     
-        user = authenticate(request, username='Fake', password=password)
+        user = authenticate(request, email=email, password=password)
         
         print(f'User is {user}')
         if user is not None:
             # request.session['USER_EMAIL'] = email  # Store email in session
+            print('I run')
             email_of_user = email
             login(request,user)
+            print(request.user)
             return Response({'message': 'Login successful', 'email': email}, status=status.HTTP_200_OK)
         else:
             return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
-@csrf_exempt
-def fetch_user_email(request):
-    return JsonResponse({'USER_EMAIL': email_of_user})
 
 
 class TradeView(APIView):
@@ -237,6 +237,7 @@ def user_overview(request, user_email):
     # Journal.objects.all().delete()
     initial_capital = TellUsMore.objects.get(user_email=user_email).initial_capital
     trades = Trade.objects.filter(email=user_email)
+    print(f'User is {request.user}')
     
     total_profit = sum(trade.amount for trade in trades)
     equity_amount = initial_capital + total_profit
@@ -364,6 +365,7 @@ def save_journal(request, user_email):
 
 @csrf_exempt
 def fetch_journals(request, user_email):
+    print(request.user)
     journals = Journals.objects.filter(user_email=user_email)
     journal_data = []
 
@@ -378,6 +380,7 @@ def fetch_journals(request, user_email):
 
 @csrf_exempt
 def view_journal(request, journal_id):
+    print(request.user)
     journal = Journals.objects.get(pk=journal_id)
     journal_data = {
         'id': journal.id,
@@ -445,6 +448,7 @@ def clean_news_data(news_data):
 
 @csrf_exempt
 def get_user_data(request, user_email):
+    print(request.user)
     try:
         user_data = TellUsMore.objects.get(user_email=user_email)
         data = {
@@ -484,6 +488,7 @@ def save_conversation(request, user_email, identifier):
 
 @csrf_exempt
 def fetch_conversations(request, user_email):
+    print(request.user)
     all_conversations = Conversation.objects.filter(user_email=user_email)
     conversations_data = [{'id': conversation.conversation_id, 'conversation': conversation.conversation} for conversation in all_conversations]
     return JsonResponse({'conversations': conversations_data})
@@ -491,6 +496,7 @@ def fetch_conversations(request, user_email):
 
 @csrf_exempt
 def fetch_conversation(request, conversation_id):
+    print(request.user)
     try:
         conversation = Conversation.objects.get(conversation_id=conversation_id)
         conversation_data = {'id': conversation.conversation_id, 'conversation': conversation.conversation}

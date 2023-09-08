@@ -33,6 +33,13 @@ ALLOWED_HOSTS = [
     '*',
 ]
 
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.BasicAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ]
+}
+
 
 # CORS_ALLOW_CREDENTIALS = True
 
@@ -101,6 +108,10 @@ TEMPLATES = [
     },
 ]
 
+SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+# SESSION_COOKIE_NAME = "my_session_name"
+
+
 WSGI_APPLICATION = 'snowAIv2.wsgi.application'
 
 
@@ -112,9 +123,12 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'railway',
         'USER': 'postgres',
-        'PASSWORD': os.environ['PASSWORD'],
-        'HOST': os.environ['HOST'],
-        'PORT': os.environ['PORT'],
+        'PASSWORD': 'GBeLlohB2ve4O8tZ0vYS',
+        'HOST': 'containers-us-west-186.railway.app',
+        'PORT': '7171',
+        # 'PASSWORD': os.environ['PASSWORD'],
+        # 'HOST': os.environ['HOST'],
+        # 'PORT': os.environ['PORT'],
     }
 }
 
