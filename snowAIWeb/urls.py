@@ -23,6 +23,7 @@ urlpatterns = [
     path('update_conversation/<str:conversation_id>/', views.update_conversation, name='update_conversation'),
     path('delete_conversation/<str:conversation_id>/', views.delete_conversation, name='delete_conversation'),
     path('get_openai_key', views.get_openai_key, name='get_openai_key'),
+    path('update_user_data/<str:user_email>', views.update_tell_us_more, name='update_user_data')
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 

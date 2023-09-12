@@ -124,8 +124,33 @@ class TellUsMoreCreateView(APIView):
             # Save the serializer instance
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        else:
+        el
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+def update_tell_us_more(request, user_email):
+    try:
+        # Retrieve the existing user data
+        current_user_data = TellUsMore.objects.get(user_email=user_email)
+
+        # Extract the new data from the request
+        data = json.loads(request.body)
+
+        # Update the existing user data with the new data
+        current_user_data.trading_experience = data["trading_experience"]
+        current_user_data.main_assets = data["main_assets"]
+        current_user_data.initial_capital = data["initial_capital"]
+        current_user_data.trading_goals = data["trading_goals"]
+        current_user_data.benefits = data["benefits"]
+
+        # Save the updated data
+        current_user_data.save()
+
+        return JsonResponse({"message": "Data updated successfully."}, status=200)
+    except TellUsMore.DoesNotExist:
+        return JsonResponse({"error": "User data not found."}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+    
 
 
 class UserLoginView(APIView):
@@ -300,11 +325,6 @@ def user_overview(request, user_email):
     most_common_day_of_wins = Counter(days_of_wins).most_common(1)
     most_common_day_of_losses = Counter(days_of_losses).most_common(1)
 
-    # try:
-    #     day_of_most_wins = datetime.date(current_year, 1, most_common_day_of_wins[0][0] + 1).strftime("%A")
-    # except:
-    #     day_of_most_wins = ''
-
     try:
         day_of_most_losses = datetime.date(current_year, 1, most_common_day_of_losses[0][0] + 1).strftime("%A")
     except:
@@ -350,7 +370,6 @@ def save_journal(request, user_email):
         try:
             data = json.loads(request.body)
             content = data.get('content', '')
-            print(f'Content is {content}')
             if content:
                 journal = Journals(user_email=user_email, content=content, created_date=current_date)
                 journal.save()
@@ -365,7 +384,6 @@ def save_journal(request, user_email):
 
 @csrf_exempt
 def fetch_journals(request, user_email):
-    print(request.user)
     journals = Journals.objects.filter(user_email=user_email)
     journal_data = []
 
@@ -380,7 +398,6 @@ def fetch_journals(request, user_email):
 
 @csrf_exempt
 def view_journal(request, journal_id):
-    print(request.user)
     journal = Journals.objects.get(pk=journal_id)
     journal_data = {
         'id': journal.id,
