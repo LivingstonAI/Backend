@@ -528,7 +528,7 @@ def delete_conversation(request, conversation_id):
 def update_tell_us_more(request, user_email):
     try:
         # Retrieve the existing user data
-        current_user_data = TellUsMore.objects.get(user_email=user_email)
+        current_user_data = TellUsMore.objects.filter(user_email=user_email).first()
 
         # Extract the new data from the request
         data = json.loads(request.body)
