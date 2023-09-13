@@ -525,6 +525,7 @@ def delete_conversation(request, conversation_id):
         return JsonResponse({'error': 'Could not delete successfully'})
 
 
+@csrf_exempt
 def update_tell_us_more(request, user_email):
     try:
         # Retrieve the existing user data
