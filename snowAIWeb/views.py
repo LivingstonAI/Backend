@@ -345,8 +345,10 @@ def save_journal(request, user_email):
         try:
             data = json.loads(request.body)
             content = data.get('content', '')
+            tags = data.get('tags', '')  # Extract tags from JSON data
+
             if content:
-                journal = Journals(user_email=user_email, content=content, created_date=current_date)
+                journal = Journals(user_email=user_email, content=content, created_date=current_date, tags=tags)
                 journal.save()
                 return JsonResponse({'message': 'Journal entry saved successfully.'})
             else:
