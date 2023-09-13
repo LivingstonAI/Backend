@@ -58,6 +58,7 @@ class Journals(models.Model):
     user_email = models.EmailField()
     content = models.CharField(max_length=10000)
     created_date = models.DateTimeField()
+    tags = models.CharField(max_length=300, default="")
 
     
 class NewsData(models.Model):

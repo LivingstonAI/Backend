@@ -480,7 +480,6 @@ def save_conversation(request, user_email, identifier):
 
 @csrf_exempt
 def fetch_conversations(request, user_email):
-    print(request.user)
     all_conversations = Conversation.objects.filter(user_email=user_email)
     conversations_data = [{'id': conversation.conversation_id, 'conversation': conversation.conversation} for conversation in all_conversations]
     return JsonResponse({'conversations': conversations_data})
@@ -533,7 +532,6 @@ def update_tell_us_more(request, user_email):
 
         # Extract the new data from the request
         data = json.loads(request.body)
-        print(data)
 
         # Update the existing user data with the new data
         current_user_data.trading_experience = data["trading_experience"]
