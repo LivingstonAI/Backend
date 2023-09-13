@@ -369,6 +369,7 @@ def fetch_journals(request, user_email):
             'id': journal.id,
             'content': journal.content,
             'created_date': journal.created_date.strftime('%Y/%m/%d: %H:%M'),
+            'tags': journal.tags,
         })
     return JsonResponse({'journals': journal_data})
 
