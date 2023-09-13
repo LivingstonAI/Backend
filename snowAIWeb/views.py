@@ -532,6 +532,7 @@ def update_tell_us_more(request, user_email):
 
         # Extract the new data from the request
         data = json.loads(request.body)
+        print(data)
 
         # Update the existing user data with the new data
         current_user_data.trading_experience = data["trading_experience"]
