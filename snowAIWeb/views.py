@@ -127,6 +127,7 @@ class TellUsMoreCreateView(APIView):
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class UserLoginView(APIView):
     @csrf_exempt
     def post(self, request, *args, **kwargs):
@@ -524,3 +525,27 @@ def delete_conversation(request, conversation_id):
         return JsonResponse({'error': 'Could not delete successfully'})
 
 
+def update_tell_us_more(request, user_email):
+    try:
+        # Retrieve the existing user data
+        current_user_data = TellUsMore.objects.get(user_email=user_email)
+
+        # Extract the new data from the request
+        data = json.loads(request.body)
+
+        # Update the existing user data with the new data
+        current_user_data.trading_experience = data["trading_experience"]
+        current_user_data.main_assets = data["main_assets"]
+        current_user_data.initial_capital = data["initial_capital"]
+        current_user_data.trading_goals = data["trading_goals"]
+        current_user_data.benefits = data["benefits"]
+
+        # Save the updated data
+        current_user_data.save()
+
+        return JsonResponse({"message": "Data updated successfully."}, status=200)
+    except TellUsMore.DoesNotExist:
+        return JsonResponse({"error": "User data not found."}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+    
