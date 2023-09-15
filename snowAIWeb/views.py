@@ -564,11 +564,12 @@ def update_user_assets(request, user_email):
             # Parse the request data if it contains new assets
             request_data = json.loads(request.body)
             new_assets = request_data.get('new_assets', None)
+            print(new_assets)
 
             if new_assets is not None:
                 # Update the user's main_assets field with the new assets
                 user_assets.main_assets = new_assets
-                user_assets.save()
+                # user_assets.save()
 
                 return JsonResponse({'message': 'User assets updated successfully'})
             else:
