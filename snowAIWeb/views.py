@@ -569,7 +569,7 @@ def update_user_assets(request, user_email):
             if new_assets is not None:
                 # Update the user's main_assets field with the new assets
                 user_assets.main_assets = new_assets
-                # user_assets.save()
+                user_assets.save()
 
                 return JsonResponse({'message': 'User assets updated successfully'})
             else:
