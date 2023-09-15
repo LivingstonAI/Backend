@@ -553,3 +553,27 @@ def update_tell_us_more(request, user_email):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
     
+
+@csrf_exempt
+def update_user_assets(request, user_email):
+    if request.method == 'POST':
+        try:
+            # Retrieve the user's TellUsMore instance
+            user_assets = TellUsMore.objects.get(user_email=user_email)
+
+            # Parse the request data if it contains new assets
+            request_data = json.loads(request.body)
+            new_assets = request_data.get('new_assets', None)
+
+            if new_assets is not None:
+                # Update the user's main_assets field with the new assets
+                user_assets.main_assets = new_assets
+                user_assets.save()
+
+                return JsonResponse({'message': 'User assets updated successfully'})
+            else:
+                return JsonResponse({'error': 'No new assets provided'}, status=400)
+        except TellUsMore.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+    else:
+        return JsonResponse({'error': 'Invalid request method'}, status=405)  
