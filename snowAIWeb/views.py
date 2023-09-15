@@ -554,6 +554,7 @@ def update_tell_us_more(request, user_email):
         return JsonResponse({"error": str(e)}, status=500)
     
 
+@csrf_exempt
 def update_user_assets(request, user_email):
     if request.method == 'POST':
         try:
