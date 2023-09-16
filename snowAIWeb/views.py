@@ -90,6 +90,7 @@ if current_hour == 3:
 
 
 class UserRegistrationView(APIView):
+    @csrf_exempt
     def post(self, request, format=None):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
