@@ -649,16 +649,24 @@ def fetch_news_data(request):
     news_objects = News.objects.all()
     
     # Create a list of dictionaries representing the model instances
-    news_data = [
-        {
+    # news_data = [
+    #     {
+    #         "title": news.title,
+    #         "description": news.description,
+    #         "source": news.source,
+    #         # Add more fields as needed
+    #         # "highlights": news['entities'][0]['highlights']
+    #     }
+    #     for news in news_objects
+    # ]
+
+    news_data = []
+    for news in news_objects:
+        news_data.append({
             "title": news.title,
             "description": news.description,
-            "source": news.source,
-            # Add more fields as needed
-            # "highlights": news['entities'][0]['highlights']
-        }
-        for news in news_objects
-    ]
+            "source": news.source
+        })
     
     # Convert the list to JSON and return it
     return JsonResponse({"news_data": news_data}, safe=False)
