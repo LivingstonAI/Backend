@@ -645,5 +645,5 @@ def save_news_data(request):
 
 @csrf_exempt
 def fetch_news_data(request):
-    news_data = serializers.serialize("json", News.objects.filter(symbol='EURUSD'))
-    return JsonResponse({"news_data": news_data}, safe=False)
+    news_data = News.objects.filter(symbol='EURUSD').first()
+    return JsonResponse({"news_data": news_data.data}, safe=False)
