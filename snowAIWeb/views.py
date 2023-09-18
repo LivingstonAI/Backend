@@ -644,6 +644,25 @@ def save_news_data(request):
 
 
 @csrf_exempt
+from django.http import JsonResponse
+from myapp.models import News  # Replace 'myapp' with your app name
+
 def fetch_news_data(request):
-    news_data = serializers.serialize("json", News.objects.all())
-    return JsonResponse({"news_data": news_data})
+    # Fetch all news data without using serializers
+    news_objects = News.objects.all()
+    
+    # Create a list of dictionaries representing the model instances
+    news_data = [
+        {
+            "title": news['title'],
+            "description": news['description'],
+            "source": news['source'],
+            "published_at": news['published_at'],
+            # Add more fields as needed
+            "highlights": news['entities'][0]['highlights']
+        }
+        for news in news_objects
+    ]
+    
+    # Convert the list to JSON and return it
+    return JsonResponse({"news_data": news_data}, safe=False)
