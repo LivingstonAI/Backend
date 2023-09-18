@@ -644,9 +644,6 @@ def save_news_data(request):
 
 
 @csrf_exempt
-from django.http import JsonResponse
-from myapp.models import News  # Replace 'myapp' with your app name
-
 def fetch_news_data(request):
     # Fetch all news data without using serializers
     news_objects = News.objects.all()
