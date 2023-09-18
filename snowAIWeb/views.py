@@ -651,12 +651,11 @@ def fetch_news_data(request):
     # Create a list of dictionaries representing the model instances
     news_data = [
         {
-            "title": news['title'],
-            "description": news['description'],
-            "source": news['source'],
-            "published_at": news['published_at'],
+            "title": news.title,
+            "description": news.description,
+            "source": news.source,
             # Add more fields as needed
-            "highlights": news['entities'][0]['highlights']
+            # "highlights": news['entities'][0]['highlights']
         }
         for news in news_objects
     ]
