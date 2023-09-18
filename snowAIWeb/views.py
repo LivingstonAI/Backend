@@ -85,8 +85,6 @@ def get_news_data():
     except Exception as e:
         print(f'Error: {e}')
 
-if current_hour == 3:
-    get_news_data()
 
 
 class UserRegistrationView(APIView):
@@ -136,17 +134,13 @@ class UserLoginView(APIView):
         email = request.data.get('email')
         password = request.data.get('password')
         test_user = User.objects.get(email=email)
-        print(test_user)
     
         user = authenticate(request, email=email, password=password)
         
-        print(f'User is {user}')
         if user is not None:
             # request.session['USER_EMAIL'] = email  # Store email in session
-            print('I run')
             email_of_user = email
             login(request,user)
-            print(request.user)
             return Response({'message': 'Login successful', 'email': email}, status=status.HTTP_200_OK)
         else:
             return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)

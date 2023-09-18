@@ -76,3 +76,9 @@ class Conversation(models.Model):
     user_email = models.EmailField()
     conversation_id = models.CharField(max_length=100)
     conversation = models.TextField()  # Use TextField to store longer text data
+
+
+class News(models.Model):
+    symbol = models.CharField(max_length=50)
+    data = models.TextField()
+    day_created = models.DateTimeField()
