@@ -663,9 +663,9 @@ def fetch_news_data(request):
     news_data = []
     for news in news_objects:
         news_data.append({
-            "title": news.title,
-            "description": news.description,
-            "source": news.source
+            "symbol": news.symbol,
+            "description": news.data,
+            "created_on": news.day_created
         })
     
     # Convert the list to JSON and return it
