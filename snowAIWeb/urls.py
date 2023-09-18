@@ -24,7 +24,9 @@ urlpatterns = [
     path('delete_conversation/<str:conversation_id>/', views.delete_conversation, name='delete_conversation'),
     path('get_openai_key', views.get_openai_key, name='get_openai_key'),
     path('update_user_data/<str:user_email>/', views.update_tell_us_more, name='update_user_data'),
-    path('update_assets/<str:user_email>/', views.update_user_assets, name='update_assets')
+    path('update_assets/<str:user_email>/', views.update_user_assets, name='update_assets'),
+    path('fetch_news_data/', views.fetch_news_data, name='fetch_news_data'),
+    path('save_news_data', views.save_news_data, name='save_news_data')
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 
