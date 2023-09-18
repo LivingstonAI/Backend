@@ -645,4 +645,5 @@ def save_news_data(request):
 
 @csrf_exempt
 def fetch_news_data(request):
-    return
+    news_data = serializers.serialize("json", News.objects.all())
+    return JsonResponse({"news_data": news_data}, safe=False)
