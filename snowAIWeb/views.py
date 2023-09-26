@@ -490,7 +490,7 @@ def fetch_conversations(request, user_email):
 def fetch_conversation(request, conversation_id):
     print(request.user)
     try:
-        conversation = Conversation.objects.get(conversation_id=conversation_id)
+        conversation = Conversation.objects.filter(conversation_id=conversation_id).first()
         conversation_data = {'id': conversation.conversation_id, 'conversation': conversation.conversation}
         return JsonResponse({'conversations': conversation_data})
     except Exception as e:
