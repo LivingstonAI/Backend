@@ -494,7 +494,7 @@ def fetch_conversation(request, conversation_id):
         conversation_data = {'id': conversation.conversation_id, 'conversation': conversation.conversation}
         return JsonResponse({'conversations': conversation_data})
     except Exception as e:
-        return JsonResponse({'error': 'error occured in fetch converstion func'})
+        return JsonResponse({'error': f'error occured in fetch converstion func, it is {e}'})
 
 
 @csrf_exempt
