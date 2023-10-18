@@ -672,7 +672,7 @@ def fetch_news_data(request):
     return JsonResponse({"news_data": news_data}, safe=False)
 
 
-# @csrf_exempt
-# def bot(request, bot_type, parameters):
+@csrf_exempt
+def bot(request, bot_type, parameters):
     
-#     return JsonResponse({'Response': 'Api Call Works!'})
+    return JsonResponse({'Response': 'Api Call Works!'})
