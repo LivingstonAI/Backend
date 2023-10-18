@@ -679,7 +679,7 @@ def fetch_news_data(request):
 
 
 @csrf_exempt
-def bot(request):
+def moving_average_bot(request, type_1, type_2, ma1, ma2):
     df = pd.read_csv('/snowAIWeb/XAUUSD15 (1).csv').drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
@@ -688,7 +688,6 @@ def bot(request):
     print(output)
     print(output._strategy)
     return JsonResponse({'Response': 'Api Call Works!'})
-
 
 
 class SmaCross(Strategy):

@@ -27,7 +27,7 @@ urlpatterns = [
     path('update_assets/<str:user_email>/', views.update_user_assets, name='update_assets'),
     path('fetch_news_data/', views.fetch_news_data, name='fetch_news_data'),
     path('save_news_data', views.save_news_data, name='save_news_data'),
-    path('create-bot/', views.bot, name='create-bot'),
+    path('create-bot/<str:type_1>/<str:type_2>/<int:ma1>/<int:ma2>', views.moving_average_bot, name='create-bot'),
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 
