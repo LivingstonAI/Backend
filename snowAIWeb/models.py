@@ -82,3 +82,9 @@ class News(models.Model):
     symbol = models.CharField(max_length=50)
     data = models.TextField()
     day_created = models.DateTimeField()
+
+
+class CreateModel(models.Model):
+    bot_type = models.CharField(max_length=200)
+    params = models.CharField(max_length=200)
+    
