@@ -683,121 +683,121 @@ def moving_average_bot(request, type_1, type_2, ma1, ma2):
     df = pd.read_csv(df_path)
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
-    # bt = Backtest(df, SmaCross,exclusive_orders=False, cash=10000)
-    # output = bt.run()
+    bt = Backtest(df, SmaCross,exclusive_orders=False, cash=10000)
+    output = bt.run()
     # print(output)
     # print(output._strategy)
     # https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
-    return JsonResponse({'Response': 'API Call Works!'})
+    return JsonResponse({'Output': output})
 
 
-# class SmaCross(Strategy):
-#     n0 = 18 # Exponential Moving Average
-#     n1 = 50 # Exponential Moving Average
-#     n2 = 200 # Simple Moving Average
-#     equity = 100000
-#     risk_percentage = 5
-#     reward_percentage = 100
-#     # current_price = 0
-#     reward_ratio = 15
-#     position_size = 0.01
-#     current_position = ''
-#     range = 2
+class SmaCross(Strategy):
+    n0 = 18 # Exponential Moving Average
+    n1 = 50 # Exponential Moving Average
+    n2 = 200 # Simple Moving Average
+    equity = 100000
+    risk_percentage = 5
+    reward_percentage = 100
+    # current_price = 0
+    reward_ratio = 15
+    position_size = 0.01
+    current_position = ''
+    range = 2
 
 
-#     def init(self):
-#         price = self.data.Close
-#         self.ma1 = self.I(SMA, price, 50)
-#         self.ma2 = self.I(SMA, price, 200)
-#         close = self.data.Close
+    def init(self):
+        price = self.data.Close
+        self.ma1 = self.I(SMA, price, 50)
+        self.ma2 = self.I(SMA, price, 200)
+        close = self.data.Close
 
-#         self.daily_sma0 = self.I(SMA, close, self.n0)
-#         self.daily_sma1 = self.I(SMA, close, self.n1)
-#         self.daily_sma2 = self.I(SMA, close, self.n2)
+        self.daily_sma0 = self.I(SMA, close, self.n0)
+        self.daily_sma1 = self.I(SMA, close, self.n1)
+        self.daily_sma2 = self.I(SMA, close, self.n2)
 
-#         self.hourly_sma0 = resample_apply(
-#             '4H', SMA, self.data.Close, self.n0
-#         )
+        self.hourly_sma0 = resample_apply(
+            '4H', SMA, self.data.Close, self.n0
+        )
 
-#         self.hourly_sma1 = resample_apply(
-#             '4H', SMA, self.data.Close, self.n1
-#         )
-#         self.hourly_sma2 = resample_apply(
-#             '4H', SMA, self.data.Close, self.n2
+        self.hourly_sma1 = resample_apply(
+            '4H', SMA, self.data.Close, self.n1
+        )
+        self.hourly_sma2 = resample_apply(
+            '4H', SMA, self.data.Close, self.n2
 
-#         )
-
-
-#     def check_moving_averages_for_buy(self, df, range):
-#       past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
-#       past_10_rows['Converge'] = past_10_rows['EMA_50'] < past_10_rows['SMA_200']
-#       past = past_10_rows.tail(1)['Converge'].values[0]
-#       second_last_row = past_10_rows['Converge'].iloc[-2]
-#       if past == False and second_last_row == True:
-#         # print('True')
-#         return True
-#       else:
-#         # print('False')
-#         return False
+        )
 
 
-#     def check_moving_averages_for_sell(self, df, range):
-#       past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
-#       past_10_rows['Diverge'] = past_10_rows['EMA_50'] > past_10_rows['SMA_200']
-#       past = past_10_rows.tail(1)['Diverge'].values[0]
-#       second_last_row = past_10_rows['Diverge'].iloc[-2]
-#       # print(past)
-#       if past == False and second_last_row == True:
-#         # print('True')
-#         return True
-#       else:
-#         # print('False')
-#         return False
+    def check_moving_averages_for_buy(self, df, range):
+      past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
+      past_10_rows['Converge'] = past_10_rows['EMA_50'] < past_10_rows['SMA_200']
+      past = past_10_rows.tail(1)['Converge'].values[0]
+      second_last_row = past_10_rows['Converge'].iloc[-2]
+      if past == False and second_last_row == True:
+        # print('True')
+        return True
+      else:
+        # print('False')
+        return False
 
 
-#     def moving_average(self, df):
-#         if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
-#             # price = self.data.Close[-1]
-#             # gain_amount = self.reward_percentage * self.equity
-#             # risk_amount = self.risk_percentage * self.equity
-#             # tp_level = price + (gain_amount/self.equity)
-#             # sl_level = price - (risk_amount/self.equity)
-#             # if self.position:
-#             #   self.position.close()
-#             tp_level = self.data.Close[-1] + self.reward_percentage
-#             sl_level = self.data.Close[-1] - self.risk_percentage
-#             if self.check_moving_averages_for_buy(df=df, range=self.range):
-#               if self.position:
-#                 self.position.close()
-#               self.buy(sl=sl_level, tp=tp_level)
-#         elif df.tail(1)['EMA_50'].values[0] < df.tail(1)['SMA_200'].values[0]:
-#             # price = self.data.Close[-1]
-#             # gain_amount = self.reward_percentage * self.equity
-#             # risk_amount = self.risk_percentage * self.equity
-#             # tp_level = price - (gain_amount/self.equity)
-#             # sl_level = price + (risk_amount/self.equity)
-#             # if self.position:
-#             #   self.position.close()
-#             # if self.current_position != 'sell':
-#             tp_level = self.data.Close[-1] - self.reward_percentage
-#             sl_level = self.data.Close[-1] + self.risk_percentage
-#             if self.check_moving_averages_for_sell(df=df, range=self.range):
-#               if self.position:
-#                 self.position.close()
-#               self.sell(sl=sl_level, tp=tp_level)
+    def check_moving_averages_for_sell(self, df, range):
+      past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
+      past_10_rows['Diverge'] = past_10_rows['EMA_50'] > past_10_rows['SMA_200']
+      past = past_10_rows.tail(1)['Diverge'].values[0]
+      second_last_row = past_10_rows['Diverge'].iloc[-2]
+      # print(past)
+      if past == False and second_last_row == True:
+        # print('True')
+        return True
+      else:
+        # print('False')
+        return False
 
 
-#     def next(self):
-#         df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
-#         # df['SMA_200'] = df['Close'].rolling(window=200).mean()
-#         df["SMA_200"] = ta.sma(df["Close"], length=200)
-#         df["EMA_50"] = ta.ema(df["Close"], length=50)
-#         df["EMA_18"] = ta.ema(df["Close"], length=18)
-#         df["EMA_6"] = ta.ema(df["Close"], length=6)
-#         try:
-#           self.moving_average(df)
-#           # self.check_moving_averages_for_buy(df, self.range)
-#         except Exception as e:
-#           print(f'Error occured: {e}')
-#           pass
+    def moving_average(self, df):
+        if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
+            # price = self.data.Close[-1]
+            # gain_amount = self.reward_percentage * self.equity
+            # risk_amount = self.risk_percentage * self.equity
+            # tp_level = price + (gain_amount/self.equity)
+            # sl_level = price - (risk_amount/self.equity)
+            # if self.position:
+            #   self.position.close()
+            tp_level = self.data.Close[-1] + self.reward_percentage
+            sl_level = self.data.Close[-1] - self.risk_percentage
+            if self.check_moving_averages_for_buy(df=df, range=self.range):
+              if self.position:
+                self.position.close()
+              self.buy(sl=sl_level, tp=tp_level)
+        elif df.tail(1)['EMA_50'].values[0] < df.tail(1)['SMA_200'].values[0]:
+            # price = self.data.Close[-1]
+            # gain_amount = self.reward_percentage * self.equity
+            # risk_amount = self.risk_percentage * self.equity
+            # tp_level = price - (gain_amount/self.equity)
+            # sl_level = price + (risk_amount/self.equity)
+            # if self.position:
+            #   self.position.close()
+            # if self.current_position != 'sell':
+            tp_level = self.data.Close[-1] - self.reward_percentage
+            sl_level = self.data.Close[-1] + self.risk_percentage
+            if self.check_moving_averages_for_sell(df=df, range=self.range):
+              if self.position:
+                self.position.close()
+              self.sell(sl=sl_level, tp=tp_level)
+
+
+    def next(self):
+        df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
+        # df['SMA_200'] = df['Close'].rolling(window=200).mean()
+        df["SMA_200"] = ta.sma(df["Close"], length=200)
+        df["EMA_50"] = ta.ema(df["Close"], length=50)
+        df["EMA_18"] = ta.ema(df["Close"], length=18)
+        df["EMA_6"] = ta.ema(df["Close"], length=6)
+        try:
+          self.moving_average(df)
+          # self.check_moving_averages_for_buy(df, self.range)
+        except Exception as e:
+          print(f'Error occured: {e}')
+          pass
 
