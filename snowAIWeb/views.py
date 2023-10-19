@@ -684,7 +684,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
     bt = Backtest(df, SmaCross, exclusive_orders=False, cash=10000)
-    output = bt.run()
+    output = await bt.run()
     return output
 
 
@@ -692,10 +692,9 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
 def moving_average_bot(request, type_1, type_2, ma1, ma2):
     # Use asyncio.gather to run the asynchronous function concurrently
     # Use asyncio.gather to run the asynchronous function concurrently
-    results = await asyncio.gather(
+    results = asyncio.gather(
         handle_api_request(type_1, type_2, ma1, ma2)
     )
-    # results = await handle_api_request(type_1, type_2, ma1, ma2)
 
     # Process the results and return the response
     return JsonResponse({'Output': results})
