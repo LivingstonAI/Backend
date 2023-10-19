@@ -691,7 +691,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
 @csrf_exempt
 async def moving_average_bot(request, type_1, type_2, ma1, ma2):
     # Use asyncio.gather to run the asynchronous function concurrently
-    results = await asyncio.gather(handle_api_request(type_1, type_2, ma1, ma2))
+    results = await asyncio.gather( await handle_api_request(type_1, type_2, ma1, ma2) )
 
     # Process the results and return the response
     return JsonResponse({'Output': results})
