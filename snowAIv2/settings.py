@@ -187,4 +187,4 @@ CORS_ALLOWED_ORIGINS = [
 
 # settings.py
 # Adjust the worker timeout value as per your requirements, e.g., 60 seconds
-WORKER_TIMEOUT = 300
+WORKER_TIMEOUT = 600
