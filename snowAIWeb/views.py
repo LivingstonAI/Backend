@@ -681,7 +681,7 @@ def fetch_news_data(request):
 @csrf_exempt
 def moving_average_bot(request, type_1, type_2, ma1, ma2):
 
-    df = pd.read_csv('https://github.com/LivingstonAI/Backend/blob/main/snowAIWeb/XAUUSD.csv').drop_duplicates()
+    df = pd.read_csv('/Backend/snowAIWeb/XAUUSD.csv').drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
     # bt = Backtest(df, SmaCross,exclusive_orders=False, cash=10000)
