@@ -1,1 +1,1 @@
-web: gunicorn snowAIv2.wsgi --timeout 300 --log-file -
+web: gunicorn snowAIv2.wsgi --timeout 600 --log-file -
