@@ -689,7 +689,7 @@ def moving_average_bot(request, type_1, type_2, ma1, ma2):
     # print(output)
     # print(output._strategy)
     # https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
-    return JsonResponse({'Response': 'Api Call Works!'})
+    return JsonResponse({'Response': df})
 
 
 # class SmaCross(Strategy):
