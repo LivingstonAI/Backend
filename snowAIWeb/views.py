@@ -684,13 +684,13 @@ def moving_average_bot(request, type_1, type_2, ma1, ma2):
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
     df = pd.read_csv(df_path)
     df.index = pd.to_datetime(df['Time'].values)
-    # del df['Time']
+    del df['Time']
     # bt = Backtest(df, SmaCross,exclusive_orders=False, cash=10000)
     # output = bt.run()
     # print(output)
     # print(output._strategy)
     # https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
-    return JsonResponse({'Response': df})
+    return JsonResponse({'Response': 'API Call Works!'})
 
 
 # class SmaCross(Strategy):
