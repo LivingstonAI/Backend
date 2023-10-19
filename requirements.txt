@@ -1,5 +1,6 @@
 ﻿asgiref==3.7.2
 attrs==23.1.0
+backtesting==0.3.3
 certifi==2023.7.22
 cffi==1.15.1
 Django==4.2.4
