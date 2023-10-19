@@ -677,34 +677,28 @@ def fetch_news_data(request):
     return JsonResponse({"news_data": news_data}, safe=False)
 
 
-# @csrf_exempt
-# async def handle_api_request(type_1, type_2, ma1, ma2):
-#     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
-#     df = pd.read_csv(df_path)
-#     df.index = pd.to_datetime(df['Time'].values)
-#     del df['Time']
-#     bt = Backtest(df, SmaCross, exclusive_orders=False, cash=10000)
-#     output = 'Hello World!!!!!!'
-#     return output
-
-
 @csrf_exempt
-def moving_average_bot(request, type_1, type_2, ma1, ma2):
-    # Use asyncio.gather to run the asynchronous function concurrently
-
+async def handle_api_request(type_1, type_2, ma1, ma2):
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
     df = pd.read_csv(df_path)
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
     bt = Backtest(df, SmaCross, exclusive_orders=False, cash=10000)
-    
-    # output = 'Hello World!!!!!!'
     output = bt.run()
+    return output
 
+
+@csrf_exempt
+def moving_average_bot(request, type_1, type_2, ma1, ma2):
+    # Use asyncio.gather to run the asynchronous function concurrently
+    # Use asyncio.gather to run the asynchronous function concurrently
+    results = await asyncio.gather(
+        handle_api_request(type_1, type_2, ma1, ma2)
+    )
     # results = await handle_api_request(type_1, type_2, ma1, ma2)
 
     # Process the results and return the response
-    return JsonResponse({'Output': output})
+    return JsonResponse({'Output': results})
 
 
 # https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
