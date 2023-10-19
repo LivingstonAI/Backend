@@ -24,10 +24,10 @@ import time
 import os
 import http.client
 import urllib.parse
-# from backtesting import Backtest, Strategy
-# from backtesting.lib import crossover, resample_apply
+from backtesting import Backtest, Strategy
+from backtesting.lib import crossover, resample_apply
 
-# from backtesting.test import SMA, GOOG, EURUSD
+from backtesting.test import SMA, GOOG, EURUSD
 import pandas as pd
 # import pandas_ta as ta
 import os
