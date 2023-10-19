@@ -711,6 +711,13 @@ class SmaCross(Strategy):
     range = 2
 
 
+    def init(self):
+        price = self.data.Close
+        self.ma1 = self.I(SMA, price, 50)
+        self.ma2 = self.I(SMA, price, 200)
+        close = self.data.Close
+
+
     def check_moving_averages_for_buy(self, df, range):
       past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
       past_10_rows['Converge'] = past_10_rows['EMA_50'] < past_10_rows['SMA_200']
@@ -785,19 +792,4 @@ class SmaCross(Strategy):
           pass
 
 
-    def init(self):
-        price = self.data.Close
-        self.ma1 = self.I(SMA, price, 50)
-        self.ma2 = self.I(SMA, price, 200)
-        close = self.data.Close
-
-        self.daily_sma0 = self.I(SMA, close, self.n0)
-        self.daily_sma1 = self.I(SMA, close, self.n1)
-        self.daily_sma2 = self.I(SMA, close, self.n2)
-
-        self.hourly_sma0 = resample_apply(
-            '4H', SMA, self.data.Close, self.n0
-        )
-
-        self.hourly_sma1 = resample_apply(
 
