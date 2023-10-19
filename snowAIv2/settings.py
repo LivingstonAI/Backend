@@ -184,3 +184,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173"
 ] # If this is used, then not need to use `CORS_ALLOW_ALL_ORIGINS = True`
 
+
+# settings.py
+# Adjust the worker timeout value as per your requirements, e.g., 60 seconds
+WORKER_TIMEOUT = 300
