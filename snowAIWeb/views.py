@@ -678,22 +678,22 @@ def fetch_news_data(request):
 
 
 @csrf_exempt
-async def moving_average_bot(request, type_1, type_2, ma1, ma2):
-    # Define an asynchronous function for handling the API request
-    await async def handle_api_request(type_1, type_2, ma1, ma2):
-        df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
-        df = pd.read_csv(df_path).drop_duplicates()
-        df.index = pd.to_datetime(df['Time'].values)
-        del df['Time']
-        bt = Backtest(df, SmaCross, exclusive_orders=False, cash=10000)
-        output = await bt.run()
-        return output
+async def handle_api_request(type_1, type_2, ma1, ma2):
+    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
+    df = pd.read_csv(df_path).drop_duplicates()
+    df.index = pd.to_datetime(df['Time'].values)
+    del df['Time']
+    bt = Backtest(df, SmaCross, exclusive_orders=False, cash=10000)
+    output = await bt.run()
+    return output
 
+async def moving_average_bot(request, type_1, type_2, ma1, ma2):
     # Use asyncio.gather to run the asynchronous function concurrently
     results = await asyncio.gather(handle_api_request(type_1, type_2, ma1, ma2))
 
     # Process the results and return the response
     return JsonResponse({'Output': results})
+
 
 
 # https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
