@@ -685,7 +685,7 @@ def moving_average_bot(request, type_1, type_2, ma1, ma2):
     del df['Time']
     bt = Backtest(df, SmaCross,exclusive_orders=False, cash=10000)
     output = bt.run()
-    # print(output)
+    print(output)
     # print(output._strategy)
     # https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
     return JsonResponse({'Output': output})
