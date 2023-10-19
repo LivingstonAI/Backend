@@ -689,10 +689,10 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
 
 
 @csrf_exempt
-def moving_average_bot(request, type_1, type_2, ma1, ma2):
+async def moving_average_bot(request, type_1, type_2, ma1, ma2):
     # Use asyncio.gather to run the asynchronous function concurrently
     # Use asyncio.gather to run the asynchronous function concurrently
-    results = asyncio.gather(
+    results = await asyncio.gather(
         handle_api_request(type_1, type_2, ma1, ma2)
     )
 
