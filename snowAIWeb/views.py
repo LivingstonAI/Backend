@@ -683,7 +683,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
-    bt = Backtest(df, SmaCross, exclusive_orders=False, cash=10000)
+    bt = await Backtest(df, SmaCross, exclusive_orders=False, cash=10000)
     output = await bt.run()
     return output
 
