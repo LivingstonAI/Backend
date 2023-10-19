@@ -694,7 +694,7 @@ async def moving_average_bot(request, type_1, type_2, ma1, ma2):
     results = await asyncio.gather( await handle_api_request(type_1, type_2, ma1, ma2) )
 
     # Process the results and return the response
-    return JsonResponse({'Output': results})
+    return JsonResponse({'Output': await results})
 
 
 # https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
