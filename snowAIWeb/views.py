@@ -689,15 +689,14 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
 
 
 @csrf_exempt
-async def moving_average_bot(request, type_1, type_2, ma1, ma2):
-    # Use asyncio.gather to run the asynchronous function concurrently
-    # Use asyncio.gather to run the asynchronous function concurrently
-    results = await asyncio.gather(
-        handle_api_request(type_1, type_2, ma1, ma2)
-    )
+def moving_average_bot(request, type_1, type_2, ma1, ma2):
+    async def inner():
+        result = await handle_api_request(type_1, type_2, ma1, ma2)
+        return JsonResponse({'Output': result})
 
-    # Process the results and return the response
-    return JsonResponse({'Output': results})
+    # Run the asynchronous code using the event loop
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(inner())
 
 
 # https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
