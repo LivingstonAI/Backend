@@ -682,8 +682,8 @@ def fetch_news_data(request):
 def moving_average_bot(request, type_1, type_2, ma1, ma2):
 
     df = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
-    df.index = pd.to_datetime(df['Time'].values)
-    del df['Time']
+    # df.index = pd.to_datetime(df['Time'].values)
+    # del df['Time']
     # bt = Backtest(df, SmaCross,exclusive_orders=False, cash=10000)
     # output = bt.run()
     # print(output)
