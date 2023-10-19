@@ -26,7 +26,7 @@ import http.client
 import urllib.parse
 from backtesting import Backtest, Strategy
 from backtesting.lib import crossover, resample_apply
-
+import asyncio
 from backtesting.test import SMA, GOOG, EURUSD
 import pandas as pd
 import pandas_ta as ta
@@ -678,19 +678,25 @@ def fetch_news_data(request):
 
 
 @csrf_exempt
-def moving_average_bot(request, type_1, type_2, ma1, ma2):
-    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
-    df = pd.read_csv(df_path).drop_duplicates()
-    df.index = pd.to_datetime(df['Time'].values)
-    del df['Time']
-    bt = Backtest(df, SmaCross,exclusive_orders=False, cash=10000)
-    output = bt.run()
-    print(output)
-    # print(output._strategy)
-    # https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
-    return JsonResponse({'Output': output})
+async def moving_average_bot(request, type_1, type_2, ma1, ma2):
+    # Define an asynchronous function for handling the API request
+    async def handle_api_request(type_1, type_2, ma1, ma2):
+        df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
+        df = pd.read_csv(df_path).drop_duplicates()
+        df.index = pd.to_datetime(df['Time'].values)
+        del df['Time']
+        bt = Backtest(df, SmaCross, exclusive_orders=False, cash=10000)
+        output = bt.run()
+        return output
+
+    # Use asyncio.gather to run the asynchronous function concurrently
+    results = await asyncio.gather(handle_api_request(type_1, type_2, ma1, ma2))
+
+    # Process the results and return the response
+    return JsonResponse({'Output': results})
 
 
+# https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
 class SmaCross(Strategy):
     n0 = 18 # Exponential Moving Average
     n1 = 50 # Exponential Moving Average
@@ -703,29 +709,6 @@ class SmaCross(Strategy):
     position_size = 0.01
     current_position = ''
     range = 2
-
-
-    def init(self):
-        price = self.data.Close
-        self.ma1 = self.I(SMA, price, 50)
-        self.ma2 = self.I(SMA, price, 200)
-        close = self.data.Close
-
-        self.daily_sma0 = self.I(SMA, close, self.n0)
-        self.daily_sma1 = self.I(SMA, close, self.n1)
-        self.daily_sma2 = self.I(SMA, close, self.n2)
-
-        self.hourly_sma0 = resample_apply(
-            '4H', SMA, self.data.Close, self.n0
-        )
-
-        self.hourly_sma1 = resample_apply(
-            '4H', SMA, self.data.Close, self.n1
-        )
-        self.hourly_sma2 = resample_apply(
-            '4H', SMA, self.data.Close, self.n2
-
-        )
 
 
     def check_moving_averages_for_buy(self, df, range):
@@ -800,4 +783,21 @@ class SmaCross(Strategy):
         except Exception as e:
           print(f'Error occured: {e}')
           pass
+
+
+    def init(self):
+        price = self.data.Close
+        self.ma1 = self.I(SMA, price, 50)
+        self.ma2 = self.I(SMA, price, 200)
+        close = self.data.Close
+
+        self.daily_sma0 = self.I(SMA, close, self.n0)
+        self.daily_sma1 = self.I(SMA, close, self.n1)
+        self.daily_sma2 = self.I(SMA, close, self.n2)
+
+        self.hourly_sma0 = resample_apply(
+            '4H', SMA, self.data.Close, self.n0
+        )
+
+        self.hourly_sma1 = resample_apply(
 
