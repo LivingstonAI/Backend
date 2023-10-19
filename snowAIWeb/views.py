@@ -30,7 +30,6 @@ from backtesting.lib import crossover, resample_apply
 from backtesting.test import SMA, GOOG, EURUSD
 import pandas as pd
 # import pandas_ta as ta
-import os
 
 current_hour = datetime.datetime.now().time().hour
 
@@ -680,7 +679,6 @@ def fetch_news_data(request):
 
 @csrf_exempt
 def moving_average_bot(request, type_1, type_2, ma1, ma2):
-
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
     df = pd.read_csv(df_path)
     df.index = pd.to_datetime(df['Time'].values)
