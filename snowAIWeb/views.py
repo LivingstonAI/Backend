@@ -685,7 +685,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
     del df['Time']
     length = int(len(df) * 0.05)
     bt = Backtest(df[:length], SmaCross, exclusive_orders=False, cash=10000)
-    output = await bt.run()
+    output = bt.run()
     return output
 
 
