@@ -582,8 +582,8 @@ def update_user_assets(request, user_email):
         return JsonResponse({'error': 'Invalid request method'}, status=405)  
 
 
-@csrf_exempt
-def save_news_data(request):
+# @csrf_exempt
+def save_news_data():
     # List of assets to fetch news data for
     assets_to_fetch = [
         "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF", "NZDUSD", "USDCAD",
@@ -650,21 +650,21 @@ def save_news_data(request):
 
 @csrf_exempt
 def fetch_news_data(request):
+    # Check if news data for the current day already exists
+    today = date.today()
+    existing_news = News.objects.filter(day_created=today)
+    
+    if existing_news.exists():
+        # If data for the current day exists, return a message indicating it
+        return JsonResponse({'message': 'News data for today already exists.'})
+    else:
+        # If data for the current day doesn't exist, fetch and save news data
+        save_news_data()
+    
     # Fetch all news data without using serializers
     news_objects = News.objects.all()
     
     # Create a list of dictionaries representing the model instances
-    # news_data = [
-    #     {
-    #         "title": news.title,
-    #         "description": news.description,
-    #         "source": news.source,
-    #         # Add more fields as needed
-    #         # "highlights": news['entities'][0]['highlights']
-    #     }
-    #     for news in news_objects
-    # ]
-
     news_data = []
     for news in news_objects:
         news_data.append({
@@ -675,7 +675,7 @@ def fetch_news_data(request):
     
     # Convert the list to JSON and return it
     return JsonResponse({"news_data": news_data}, safe=False)
-
+    
 
 @csrf_exempt
 async def handle_api_request(type_1, type_2, ma1, ma2):
