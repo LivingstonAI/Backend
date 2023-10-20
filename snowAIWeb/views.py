@@ -738,7 +738,7 @@ class SmaCross(Strategy):
     n1 = 50 # Exponential Moving Average
     n2 = 200 # Simple Moving Average
     equity = 100000
-    risk_percentage = 20
+    risk_percentage = 30
     reward_percentage = 100
     # current_price = 0
     reward_ratio = 15
