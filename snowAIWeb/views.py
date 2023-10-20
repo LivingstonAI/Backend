@@ -691,6 +691,11 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
         position_size = 0.01
         current_position = ''
         range = 2
+        # 200 SMA
+        ma1_type = f'{type_1}_{ma1}'
+        # 50 EMA
+        ma2_type = f'{type_2}_{ma2}'
+
 
 
         def init(self):
@@ -698,10 +703,6 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
             self.ma1 = self.I(SMA, price, 50)
             self.ma2 = self.I(SMA, price, 200)
             close = self.data.Close
-            # 200 SMA
-            ma1_type = f'{type_1}_{ma1}'
-            # 50 EMA
-            ma2_type = f'{type_2}_{ma2}'
 
 
         def check_moving_averages_for_buy(self, df, range):
