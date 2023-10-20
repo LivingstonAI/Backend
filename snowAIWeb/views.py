@@ -769,9 +769,9 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
             try:
                 self.moving_average(df)
                 # self.check_moving_averages_for_buy(df, self.range)
-                except Exception as e:
+            except Exception as e:
                 print(f'Error occured: {e}')
-            pass
+                pass
 
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
     df = pd.read_csv(df_path)
