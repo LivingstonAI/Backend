@@ -686,8 +686,42 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
     length = int(len(df) * 0.05)
     bt = Backtest(df[:length], SmaCross, exclusive_orders=False, cash=10000)
     output = bt.run()
-    return str(output)
-
+    
+    # Convert the output to a dictionary
+    result_dict = {
+        "Start": str(output._trades.index[0]),
+        "End": str(output._trades.index[-1]),
+        "Duration": str(output._trades.index[-1] - output._trades.index[0]),
+        "Exposure Time [%]": output._exposure,
+        "Equity Final [$]": output._equity_final,
+        "Equity Peak [$]": output._equity_peak,
+        "Return [%]": output._total_return,
+        "Buy & Hold Return [%]": output._buy_and_hold_return,
+        "Return (Ann.) [%]": output._annual_return,
+        "Volatility (Ann.) [%]": output._annual_volatility,
+        "Sharpe Ratio": output._sharpe,
+        "Sortino Ratio": output._sortino,
+        "Calmar Ratio": output._calmar,
+        "Max. Drawdown [%]": output._drawdown_max,
+        "Avg. Drawdown [%]": output._drawdown_avg,
+        "Max. Drawdown Duration": str(output._drawdown_max_duration),
+        "Avg. Drawdown Duration": str(output._drawdown_avg_duration),
+        "# Trades": output._trades_count,
+        "Win Rate [%]": output._win_rate,
+        "Best Trade [%]": output._best_trade,
+        "Worst Trade [%]": output._worst_trade,
+        "Avg. Trade [%]": output._average_trade,
+        "Max. Trade Duration": str(output._max_trade_duration),
+        "Avg. Trade Duration": str(output._average_trade_duration),
+        "Profit Factor": output._profit_factor,
+        "Expectancy [%]": output._expectancy,
+        "SQN": output._sqn,
+        "_strategy": str(output._strategy),
+        "_equity_curve": str(output._equity_curve),
+        "_trades": str(output._trades)
+    }
+    
+    return result_dict
 
 @csrf_exempt
 def moving_average_bot(request, type_1, type_2, ma1, ma2):
@@ -695,7 +729,7 @@ def moving_average_bot(request, type_1, type_2, ma1, ma2):
         result = await handle_api_request(type_1, type_2, ma1, ma2)
         return JsonResponse({'Output': result})
 
-    # Run the asynchronous code using the event loop. Yes.
+    # Run the asynchronous code using the event loop
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(inner())
 
