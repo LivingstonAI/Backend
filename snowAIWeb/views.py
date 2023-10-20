@@ -692,6 +692,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
         "Start": str(output['Start']),
         "End": str(output['End']),
         "Duration": str(output['Duration']),
+        "Exposure Time [%]": output['Exposure Time [%]'],
         "Equity Final [$]": output['Equity Final [$]'],
         "Equity Peak [$]": output['Equity Peak [$]'],
         "Return [%]": output['Return [%]'],
