@@ -701,30 +701,30 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
 
 
         def check_moving_averages_for_buy(self, df, range):
-        past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
-        past_10_rows['Converge'] = past_10_rows['EMA_50'] < past_10_rows['SMA_200']
-        past = past_10_rows.tail(1)['Converge'].values[0]
-        second_last_row = past_10_rows['Converge'].iloc[-2]
-        if past == False and second_last_row == True:
-            # print('True')
-            return True
-        else:
-            # print('False')
-            return False
+            past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
+            past_10_rows['Converge'] = past_10_rows['EMA_50'] < past_10_rows['SMA_200']
+            past = past_10_rows.tail(1)['Converge'].values[0]
+            second_last_row = past_10_rows['Converge'].iloc[-2]
+            if past == False and second_last_row == True:
+                # print('True')
+                return True
+            else:
+                # print('False')
+                return False
 
 
         def check_moving_averages_for_sell(self, df, range):
-        past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
-        past_10_rows['Diverge'] = past_10_rows['EMA_50'] > past_10_rows['SMA_200']
-        past = past_10_rows.tail(1)['Diverge'].values[0]
-        second_last_row = past_10_rows['Diverge'].iloc[-2]
-        # print(past)
-        if past == False and second_last_row == True:
-            # print('True')
-            return True
-        else:
-            # print('False')
-            return False
+            past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
+            past_10_rows['Diverge'] = past_10_rows['EMA_50'] > past_10_rows['SMA_200']
+            past = past_10_rows.tail(1)['Diverge'].values[0]
+            second_last_row = past_10_rows['Diverge'].iloc[-2]
+            # print(past)
+            if past == False and second_last_row == True:
+                # print('True')
+                return True
+            else:
+                # print('False')
+                return False
 
 
         def moving_average(self, df):
@@ -767,13 +767,11 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
             df[ma1_type] = ta.sma(df["Close"], length=200)
             df[ma2_type] = ta.ema(df["Close"], length=50)
             try:
-            self.moving_average(df)
-            # self.check_moving_averages_for_buy(df, self.range)
-            except Exception as e:
-            print(f'Error occured: {e}')
+                self.moving_average(df)
+                # self.check_moving_averages_for_buy(df, self.range)
+                except Exception as e:
+                print(f'Error occured: {e}')
             pass
-
-
 
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
     df = pd.read_csv(df_path)
