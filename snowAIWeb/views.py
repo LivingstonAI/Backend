@@ -692,7 +692,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
         "Start": str(output._trades.index[0]),
         "End": str(output._trades.index[-1]),
         "Duration": str(output._trades.index[-1] - output._trades.index[0]),
-        # "Exposure Time [%]": output.exposure,
+        "Exposure Time [%]": output.exposure,
         "Equity Final [$]": output.equity_final,
         "Equity Peak [$]": output.equity_peak,
         "Return [%]": output.total_return,
