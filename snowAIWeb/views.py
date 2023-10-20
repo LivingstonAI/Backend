@@ -687,41 +687,38 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
     bt = Backtest(df[:length], SmaCross, exclusive_orders=False, cash=10000)
     output = bt.run()
     
-    # Convert the output to a dictionary
+    # Convert the relevant output fields to a dictionary
     result_dict = {
-        "Start": str(output._trades.index[0]),
-        "End": str(output._trades.index[-1]),
-        "Duration": str(output._trades.index[-1] - output._trades.index[0]),
-        "Exposure Time [%]": output.exposure,
-        "Equity Final [$]": output.equity_final,
-        "Equity Peak [$]": output.equity_peak,
-        "Return [%]": output.total_return,
-        "Buy & Hold Return [%]": output.buy_and_hold_return,
-        "Return (Ann.) [%]": output.annual_return,
-        "Volatility (Ann.) [%]": output.annual_volatility,
-        "Sharpe Ratio": output.sharpe,
-        "Sortino Ratio": output.sortino,
-        "Calmar Ratio": output.calmar,
-        "Max. Drawdown [%]": output.drawdown_max,
-        "Avg. Drawdown [%]": output.drawdown_avg,
-        "Max. Drawdown Duration": str(output.drawdown_max_duration),
-        "Avg. Drawdown Duration": str(output.drawdown_avg_duration),
-        "# Trades": output._trades_count,
-        "Win Rate [%]": output.win_rate,
-        "Best Trade [%]": output.best_trade,
-        "Worst Trade [%]": output.worst_trade,
-        "Avg. Trade [%]": output.average_trade,
-        "Max. Trade Duration": str(output.max_trade_duration),
-        "Avg. Trade Duration": str(output.average_trade_duration),
-        "Profit Factor": output.profit_factor,
-        "Expectancy [%]": output.expectancy,
-        "SQN": output.sqn,
-        "_strategy": str(output._strategy),
-        "_equity_curve": str(output._equity_curve),
-        "_trades": str(output._trades)
+        "Start": str(output._results['Start']),
+        "End": str(output._results['End']),
+        "Duration": str(output._results['Duration']),
+        "Equity Final [$]": output._results['Equity Final [$]'],
+        "Equity Peak [$]": output._results['Equity Peak [$]'],
+        "Return [%]": output._results['Return [%]'],
+        "Buy & Hold Return [%]": output._results['Buy & Hold Return [%]'],
+        "Return (Ann.) [%]": output._results['Return (Ann.) [%]'],
+        "Volatility (Ann.) [%]": output._results['Volatility (Ann.) [%]'],
+        "Sharpe Ratio": output._results['Sharpe Ratio'],
+        "Sortino Ratio": output._results['Sortino Ratio'],
+        "Calmar Ratio": output._results['Calmar Ratio'],
+        "Max. Drawdown [%]": output._results['Max. Drawdown [%]'],
+        "Avg. Drawdown [%]": output._results['Avg. Drawdown [%]'],
+        "Max. Drawdown Duration": str(output._results['Max. Drawdown Duration']),
+        "Avg. Drawdown Duration": str(output._results['Avg. Drawdown Duration']),
+        "# Trades": output._results['# Trades'],
+        "Win Rate [%]": output._results['Win Rate [%]'],
+        "Best Trade [%]": output._results['Best Trade [%]'],
+        "Worst Trade [%]": output._results['Worst Trade [%]'],
+        "Avg. Trade [%]": output._results['Avg. Trade [%]'],
+        "Max. Trade Duration": str(output._results['Max. Trade Duration']),
+        "Avg. Trade Duration": str(output._results['Avg. Trade Duration']),
+        "Profit Factor": output._results['Profit Factor'],
+        "Expectancy [%]": output._results['Expectancy [%]'],
+        "SQN": output._results['SQN'],
     }
     
     return result_dict
+
 
 @csrf_exempt
 def moving_average_bot(request, type_1, type_2, ma1, ma2):
