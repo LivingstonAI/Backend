@@ -698,11 +698,15 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
             self.ma1 = self.I(SMA, price, 50)
             self.ma2 = self.I(SMA, price, 200)
             close = self.data.Close
+            # 200 SMA
+            ma1_type = f'{type_1}_{ma1}'
+            # 50 EMA
+            ma2_type = f'{type_2}_{ma2}'
 
 
         def check_moving_averages_for_buy(self, df, range):
-            past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
-            past_10_rows['Converge'] = past_10_rows['EMA_50'] < past_10_rows['SMA_200']
+            past_10_rows = df[[self.ma2_type, self.ma1_type]].tail(range)
+            past_10_rows['Converge'] = past_10_rows[self.ma2_type] < past_10_rows[self.ma1_type]
             past = past_10_rows.tail(1)['Converge'].values[0]
             second_last_row = past_10_rows['Converge'].iloc[-2]
             if past == False and second_last_row == True:
@@ -714,8 +718,8 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
 
 
         def check_moving_averages_for_sell(self, df, range):
-            past_10_rows = df[['EMA_50', 'SMA_200']].tail(range)
-            past_10_rows['Diverge'] = past_10_rows['EMA_50'] > past_10_rows['SMA_200']
+            past_10_rows = df[[self.ma2_type, self.ma1_type]].tail(range)
+            past_10_rows['Diverge'] = past_10_rows[self.ma2_type] > past_10_rows[self.ma1_type]
             past = past_10_rows.tail(1)['Diverge'].values[0]
             second_last_row = past_10_rows['Diverge'].iloc[-2]
             # print(past)
@@ -728,7 +732,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
 
 
         def moving_average(self, df):
-            if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
+            if df.tail(1)[self.ma2_type].values[0] > df.tail(1)[self.ma1_type].values[0]:
                 # price = self.data.Close[-1]
                 # gain_amount = self.reward_percentage * self.equity
                 # risk_amount = self.risk_percentage * self.equity
@@ -742,7 +746,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
                     if self.position:
                         self.position.close()
                     self.buy(sl=sl_level, tp=tp_level)
-            elif df.tail(1)['EMA_50'].values[0] < df.tail(1)['SMA_200'].values[0]:
+            elif df.tail(1)[self.ma2_type].values[0] < df.tail(1)[self.ma1_type].values[0]:
                 # price = self.data.Close[-1]
                 # gain_amount = self.reward_percentage * self.equity
                 # risk_amount = self.risk_percentage * self.equity
