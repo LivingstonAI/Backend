@@ -769,8 +769,9 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
             # df['SMA_200'] = df['Close'].rolling(window=200).mean()
             ma1_type = f'{type_1}_{ma1}'
             ma2_type = f'{type_2}_{ma2}'
-            df[ma1_type] = ta.sma(df["Close"], length=200)
-            df[ma2_type] = ta.ema(df["Close"], length=50)
+            df[ma1_type] = ta.sma(df["Close"], length=int(ma1))
+            df[ma2_type] = ta.ema(df["Close"], length=int(ma2))
+            
             try:
                 self.moving_average(df)
                 # self.check_moving_averages_for_buy(df, self.range)
