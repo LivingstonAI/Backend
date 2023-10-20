@@ -694,7 +694,7 @@ def moving_average_bot(request, type_1, type_2, ma1, ma2):
         result = await handle_api_request(type_1, type_2, ma1, ma2)
         return JsonResponse({'Output': result})
 
-    # Run the asynchronous code using the event loop
+    # Run the asynchronous code using the event loop. Yes.
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(inner())
 
