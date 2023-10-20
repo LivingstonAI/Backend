@@ -583,7 +583,7 @@ def update_user_assets(request, user_email):
 
 
 # @csrf_exempt
-def save_news_data():
+def save_news_data(request):
     # List of assets to fetch news data for
     assets_to_fetch = [
         "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF", "NZDUSD", "USDCAD",
@@ -651,15 +651,15 @@ def save_news_data():
 @csrf_exempt
 def fetch_news_data(request):
     # Check if news data for the current day already exists
-    today = date.today()
-    existing_news = News.objects.filter(day_created=today)
+    # today = date.today()
+    # existing_news = News.objects.filter(day_created=today)
     
-    if existing_news.exists():
-        # If data for the current day exists, return a message indicating it
-        return JsonResponse({'message': 'News data for today already exists.'})
-    else:
-        # If data for the current day doesn't exist, fetch and save news data
-        save_news_data()
+    # if existing_news.exists():
+    #     # If data for the current day exists, return a message indicating it
+    #     return JsonResponse({'message': 'News data for today already exists.'})
+    # else:
+    #     # If data for the current day doesn't exist, fetch and save news data
+    #     save_news_data()
     
     # Fetch all news data without using serializers
     news_objects = News.objects.all()
