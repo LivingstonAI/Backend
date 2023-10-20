@@ -686,7 +686,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
     length = int(len(df) * 0.05)
     bt = Backtest(df[:length], SmaCross, exclusive_orders=False, cash=10000)
     output = bt.run()
-    return output
+    return str(output)
 
 
 @csrf_exempt
