@@ -683,7 +683,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
     df = pd.read_csv(df_path)
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
-    length = int(len(df) * 0.2)
+    length = int(len(df) * 0.3)
     bt = Backtest(df[:length], SmaCross, exclusive_orders=False, cash=10000)
     output = bt.run()
     
