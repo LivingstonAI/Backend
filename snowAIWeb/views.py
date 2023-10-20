@@ -622,30 +622,30 @@ def save_news_data(request):
         news_data = json.loads(data_str)
 
         # Iterate through the news articles and save specific fields to the database
-        for article in news_data['data']:
-            title = article['title']
-            description = article['description']
-            source = article['source']
-            url = article['url']
-            highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
+        # for article in news_data['data']:
+        #     title = article['title']
+        #     description = article['description']
+        #     source = article['source']
+        #     url = article['url']
+        #     highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
 
-            # Create a dictionary with the specific fields
-            news_entry_data = {
-                'title': title,
-                'description': description,
-                'source': source,
-                'url': url,
-                'highlights': highlights,
-            }
+        #     # Create a dictionary with the specific fields
+        #     news_entry_data = {
+        #         'title': title,
+        #         'description': description,
+        #         'source': source,
+        #         'url': url,
+        #         'highlights': highlights,
+        #     }
 
-            # Create a News instance and save it to the database
-            news_entry = News(
-                symbol=asset,  # Set the symbol to the current asset
-                data=json.dumps(news_entry_data),  # Store the specific fields as JSON data
-                day_created=datetime.datetime.now(),  # Use the current datetime as the day_created value
-            )
-            news_entry.save()
-    return JsonResponse({'message': 'News data saved successfully.'})
+        #     # Create a News instance and save it to the database
+        #     news_entry = News(
+        #         symbol=asset,  # Set the symbol to the current asset
+        #         data=json.dumps(news_entry_data),  # Store the specific fields as JSON data
+        #         day_created=datetime.datetime.now(),  # Use the current datetime as the day_created value
+        #     )
+        #     news_entry.save()
+    return JsonResponse({'message': news_data})
 
 
 @csrf_exempt
