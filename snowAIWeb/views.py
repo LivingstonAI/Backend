@@ -582,7 +582,7 @@ def update_user_assets(request, user_email):
         return JsonResponse({'error': 'Invalid request method'}, status=405)  
 
 
-@csrf_exempt
+# @csrf_exempt
 def save_news_data():
     today = timezone.localtime(timezone.now()).date()
     # List of assets to fetch news data for
@@ -665,17 +665,17 @@ def fetch_news_data(request):
     #     return JsonResponse({'message': f'News data for today does not exist {str(today)}'})
     
     # Fetch all news data without using serializers
-    news_objects = News.objects.all().delete()
+    news_objects = News.objects.all()
     
     # Create a list of dictionaries representing the model instances
     news_data = []
-    # for news in news_objects:
-    #     news_data.append({
-    #         "symbol": news.symbol,
-    #         "description": news.data,
-    #         "created_on": news.day_created,
-    #         'today': today,
-    #     })
+    for news in news_objects:
+        news_data.append({
+            "symbol": news.symbol,
+            "description": news.data,
+            "created_on": news.day_created,
+            'today': today,
+        })
     
     # # Convert the list to JSON and return it
     return JsonResponse({"news_data": news_data}, safe=False)
