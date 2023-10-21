@@ -582,7 +582,7 @@ def update_user_assets(request, user_email):
         return JsonResponse({'error': 'Invalid request method'}, status=405)  
 
 
-# @csrf_exempt
+@csrf_exempt
 def save_news_data(request):
     # List of assets to fetch news data for
     assets_to_fetch = [
