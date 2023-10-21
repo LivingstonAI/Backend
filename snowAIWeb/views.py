@@ -584,6 +584,7 @@ def update_user_assets(request, user_email):
 
 @csrf_exempt
 def save_news_data():
+    today = timezone.localtime(timezone.now()).date()
     # List of assets to fetch news data for
     assets_to_fetch = [
         "EURUSD",  # Add more assets as needed
@@ -641,7 +642,7 @@ def save_news_data():
             news_entry = News(
                 symbol=asset,  # Set the symbol to the current asset
                 data=news_entry_data,  # Store the specific fields as JSON data
-                day_created=datetime.datetime.now(),  # Use the current datetime as the day_created value
+                day_created=today,  # Use the current datetime as the day_created value
             )
             news_entry.save()
     return JsonResponse({'message': news_data})
@@ -664,17 +665,17 @@ def fetch_news_data(request):
     #     return JsonResponse({'message': f'News data for today does not exist {str(today)}'})
     
     # Fetch all news data without using serializers
-    news_objects = News.objects.all()
+    news_objects = News.objects.all().delete()
     
     # Create a list of dictionaries representing the model instances
     news_data = []
-    for news in news_objects:
-        news_data.append({
-            "symbol": news.symbol,
-            "description": news.data,
-            "created_on": news.day_created,
-            'today': today
-        })
+    # for news in news_objects:
+    #     news_data.append({
+    #         "symbol": news.symbol,
+    #         "description": news.data,
+    #         "created_on": news.day_created,
+    #         'today': today,
+    #     })
     
     # # Convert the list to JSON and return it
     return JsonResponse({"news_data": news_data}, safe=False)
