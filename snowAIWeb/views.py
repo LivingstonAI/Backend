@@ -773,8 +773,14 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
             # df['SMA_200'] = df['Close'].rolling(window=200).mean()
             ma1_type = f'{type_1}_{ma1}'
             ma2_type = f'{type_2}_{ma2}'
-            df[ma1_type] = ta.sma(df["Close"], length=int(ma1))
-            df[ma2_type] = ta.ema(df["Close"], length=int(ma2))
+            if ma1_type == 'SMA':
+                df[ma1_type] = ta.sma(df["Close"], length=int(ma1))
+            elif ma1_type == 'EMA':
+                df[ma1_type] = ta.ema(df["Close"], length=int(ma1))
+            if ma2_type == 'SMA':
+                df[ma2_type] = ta.sma(df["Close"], length=int(ma2))    
+            elif ma2_type == 'EMA':
+                df[ma2_type] = ta.ema(df["Close"], length=int(ma2))
             
             try:
                 self.moving_average(df)
