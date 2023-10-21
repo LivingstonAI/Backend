@@ -661,18 +661,18 @@ def fetch_news_data(request):
     #     save_news_data()
     
     # Fetch all news data without using serializers
-    news_objects = News.objects.all()
+    news_objects = News.objects.all().delete()
     
     # Create a list of dictionaries representing the model instances
     news_data = []
-    for news in news_objects:
-        news_data.append({
-            "symbol": news.symbol,
-            "description": news.data,
-            "created_on": news.day_created
-        })
+    # for news in news_objects:
+    #     news_data.append({
+    #         "symbol": news.symbol,
+    #         "description": news.data,
+    #         "created_on": news.day_created
+    #     })
     
-    # Convert the list to JSON and return it
+    # # Convert the list to JSON and return it
     return JsonResponse({"news_data": news_data}, safe=False)
     
 
