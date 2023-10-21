@@ -656,13 +656,13 @@ def fetch_news_data(request):
     # Check if news data for the current day already exists
     existing_news = News.objects.filter(day_created=today)
     
-    # if existing_news.exists():
-    #     # If data for the current day exists, return a message indicating it
-    #     return JsonResponse({'message': 'News data for today already exists.'})
-    # else:
-    #     # If data for the current day doesn't exist, fetch and save news data
-    #     # save_news_data()
-    #     return JsonResponse({'message': f'News data for today does not exist {str(today)}'})
+    if existing_news.exists():
+        # If data for the current day exists, return a message indicating it
+        return JsonResponse({'message': 'News data for today already exists.'})
+    else:
+        # If data for the current day doesn't exist, fetch and save news data
+        # save_news_data()
+        return JsonResponse({'message': f'News data for today does not exist {str(today)}'})
     
     # Fetch all news data without using serializers
     news_objects = News.objects.all()
