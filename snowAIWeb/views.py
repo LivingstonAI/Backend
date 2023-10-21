@@ -773,13 +773,13 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
             # df['SMA_200'] = df['Close'].rolling(window=200).mean()
             ma1_type = f'{type_1}_{ma1}'
             ma2_type = f'{type_2}_{ma2}'
-            if ma1_type == 'SMA':
+            if type_1 == 'SMA':
                 df[ma1_type] = ta.sma(df["Close"], length=int(ma1))
-            elif ma1_type == 'EMA':
+            elif type_1 == 'EMA':
                 df[ma1_type] = ta.ema(df["Close"], length=int(ma1))
-            if ma2_type == 'SMA':
+            if type_2 == 'SMA':
                 df[ma2_type] = ta.sma(df["Close"], length=int(ma2))    
-            elif ma2_type == 'EMA':
+            elif type_2 == 'EMA':
                 df[ma2_type] = ta.ema(df["Close"], length=int(ma2))
             
             try:
