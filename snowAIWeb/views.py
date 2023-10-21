@@ -640,7 +640,7 @@ def save_news_data(request):
             # Create a News instance and save it to the database
             news_entry = News(
                 symbol=asset,  # Set the symbol to the current asset
-                data=json.dumps(news_entry_data),  # Store the specific fields as JSON data
+                data=news_entry_data,  # Store the specific fields as JSON data
                 day_created=datetime.datetime.now(),  # Use the current datetime as the day_created value
             )
             news_entry.save()
@@ -661,16 +661,16 @@ def fetch_news_data(request):
     #     save_news_data()
     
     # Fetch all news data without using serializers
-    news_objects = News.objects.all().delete()
+    news_objects = News.objects.all()
     
     # Create a list of dictionaries representing the model instances
     news_data = []
-    # for news in news_objects:
-    #     news_data.append({
-    #         "symbol": news.symbol,
-    #         "description": news.data,
-    #         "created_on": news.day_created
-    #     })
+    for news in news_objects:
+        news_data.append({
+            "symbol": news.symbol,
+            "description": news.data,
+            "created_on": news.day_created
+        })
     
     # # Convert the list to JSON and return it
     return JsonResponse({"news_data": news_data}, safe=False)
