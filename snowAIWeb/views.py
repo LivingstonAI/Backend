@@ -750,7 +750,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
                 if self.check_moving_averages_for_buy(df=df, range=self.range):
                     if self.position:
                         self.position.close()
-                    self.buy(sl=sl_level, tp=tp_level)
+                    self.buy()
             elif df.tail(1)[self.ma2_type].values[0] < df.tail(1)[self.ma1_type].values[0]:
                 # price = self.data.Close[-1]
                 # gain_amount = self.reward_percentage * self.equity
@@ -765,7 +765,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
                 if self.check_moving_averages_for_sell(df=df, range=self.range):
                     if self.position:
                         self.position.close()
-                self.sell(sl=sl_level, tp=tp_level)
+                self.sell()
 
 
         def next(self):
