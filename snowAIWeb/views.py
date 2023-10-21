@@ -586,8 +586,7 @@ def update_user_assets(request, user_email):
 def save_news_data(request):
     # List of assets to fetch news data for
     assets_to_fetch = [
-        "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF", "NZDUSD", "USDCAD",
-        "EURGBP", "AUDCAD", "EURZAR", "Gold",  # Add more assets as needed
+        "EURUSD",  # Add more assets as needed
     ]
 
     # Establish a connection to the API
