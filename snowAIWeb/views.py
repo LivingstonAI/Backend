@@ -883,7 +883,7 @@ async def handle_api_request_bbands(length, std):
                 tp_level = price + (gain_amount/self.equity)
                 sl_level = price - (risk_amount/self.equity)
                 self.buy(tp=tp_level, sl=sl_level)
-            elif df.tail(1)['Close']values[0] <= df.tail(1)[self.bottom_band].values[0]:
+            elif df.tail(1)['Close'],values[0] <= df.tail(1)[self.bottom_band].values[0]:
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage * self.equity
                 risk_amount = self.risk_percentage * self.equity
