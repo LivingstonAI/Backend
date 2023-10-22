@@ -876,14 +876,14 @@ async def handle_api_request_bbands(length, std):
 
 
         def bbands(self, df):
-            if df['Close'].iloc[-1] >= df[self.upper_band].iloc[-1]:
+            if df.tail(1)['Close'].values[0] >= df.tail(1)[self.upper_band].values[0]:
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage * self.equity
                 risk_amount = self.risk_percentage * self.equity
                 tp_level = price + (gain_amount/self.equity)
                 sl_level = price - (risk_amount/self.equity)
-                self.buy(tp=tp_level,sl=sl_level)
-            elif df['Close'].iloc[-1] <= df[self.bottom_band].iloc[-1]:
+                self.buy(tp=tp_level, sl=sl_level)
+            elif df.tail(1)['Close']values[0] <= df.tail(1)[self.bottom_band].values[0]:
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage * self.equity
                 risk_amount = self.risk_percentage * self.equity
@@ -901,6 +901,8 @@ async def handle_api_request_bbands(length, std):
                 df[self.middle_band] = current_close[self.middle_band]
                 df[self.bottom_band] = current_close[self.bottom_band]
                 self.bbands(df)
+                print(f'df is {df}')
+                print(f'Current Close is {current_close}')
             except Exception as e:
                 # print(f'df is {df}')
                 print(f'current close df is {current_close}')
