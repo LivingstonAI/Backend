@@ -585,7 +585,7 @@ def update_user_assets(request, user_email):
 # @csrf_exempt
 def save_news_data():
     try:
-        news = NewsData.objects.all().delete()
+        news = News.objects.all().delete()
     except:
         pass
     today = timezone.localtime(timezone.now()).date()
