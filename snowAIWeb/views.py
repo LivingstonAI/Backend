@@ -908,7 +908,7 @@ async def handle_api_request_bbands(length, std):
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
     length = int(len(df) * 0.25)
-    bt = Backtest(df[:length], SmaCross, exclusive_orders=False, cash=10000)
+    bt = Backtest(df[:length], BBands, exclusive_orders=False, cash=10000)
     output = bt.run()
     
     # Convert the relevant output fields to a dictionary
