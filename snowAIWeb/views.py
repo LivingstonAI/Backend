@@ -878,20 +878,20 @@ async def handle_api_request_bbands(length, std):
         def bbands(self, df):
             if df.tail(1)['Close'].values[0] >= df.tail(1)[self.upper_band].values[0]:
                 price = self.data.Close[-1]
-                gain_amount = self.reward_percentage * self.equity
-                risk_amount = self.risk_percentage * self.equity
-                tp_level = price + (gain_amount/self.equity)
-                sl_level = price - (risk_amount/self.equity)
+                gain_amount = self.reward_percentage
+                risk_amount = self.risk_percentage 
+                tp_level = price + gain_amount
+                sl_level = price - risk_amount
                 if self.position:
                     self.position.close()
                 self.buy(tp=tp_level, sl=sl_level)
                 # self.buy()
             elif df.tail(1)['Close'].values[0] <= df.tail(1)[self.bottom_band].values[0]:
                 price = self.data.Close[-1]
-                gain_amount = self.reward_percentage * self.equity
-                risk_amount = self.risk_percentage * self.equity
-                tp_level = price - (gain_amount/self.equity)
-                sl_level = price + (risk_amount/self.equity)
+                gain_amount = self.reward_percentage
+                risk_amount = self.risk_percentage 
+                tp_level = price - gain_amount
+                sl_level = price + risk_amount
                 if self.position:
                     self.position.close()
                 self.sell(tp=tp_level, sl=sl_level)
