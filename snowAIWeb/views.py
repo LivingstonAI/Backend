@@ -900,6 +900,7 @@ async def handle_api_request_bbands(length, std):
                 df[self.bottom_band] = current_close[self.bottom_band]
                 self.bbands(df)
             except Exception as e:
+                print(f'df is {df}')
                 print(f'Exception is {e}')
                 pass
 
