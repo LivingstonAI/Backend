@@ -904,14 +904,14 @@ async def handle_api_request_bbands(length, std):
                 print(f'current close df is {current_close}')
                 print(f'df is {df}')
                 print(f'Exception is {e}')
-                pass
+                
 
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
     df = pd.read_csv(df_path)
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
-    length = int(len(df) * 0.25)
-    bt = Backtest(df[:length], BBands, exclusive_orders=False, cash=10000)
+    test_length = int(len(df) * 0.25)
+    bt = Backtest(df[:test_length], BBands, exclusive_orders=False, cash=10000)
     output = bt.run()
     
     # Convert the relevant output fields to a dictionary
