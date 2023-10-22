@@ -857,6 +857,7 @@ df.index = pd.to_datetime(df['Time'].values)
 del df['Time']
 test_length = int(len(df) * 0.25)
 
+
 @csrf_exempt
 async def handle_api_request_bbands(length, std):
     global df, test_length
@@ -950,12 +951,12 @@ async def handle_api_request_bbands(length, std):
 
 @csrf_exempt
 def bbands_bot(request, length, std):
-    async def inner():
+    async def inner_bband():
         result = await handle_api_request_bbands(length, std)
         return JsonResponse({'Output': result})
 
     # Run the asynchronous code using the event loop
     loop = asyncio.get_event_loop()
-    return loop.run_until_complete(inner())
+    return loop.run_until_complete(inner_bband())
 
 
