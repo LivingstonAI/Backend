@@ -902,6 +902,7 @@ async def handle_api_request_bbands(length, std):
             except Exception as e:
                 # print(f'df is {df}')
                 print(f'current close df is {current_close}')
+                print(f'df is {df}')
                 print(f'Exception is {e}')
                 pass
 
