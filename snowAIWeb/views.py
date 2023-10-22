@@ -852,3 +852,103 @@ def moving_average_bot(request, type_1, type_2, ma1, ma2):
 
 
 
+@csrf_exempt
+async def handle_api_request_bbands(length, std):
+    class BBands(Strategy):
+        equity = 100000
+        risk_percentage = 5
+        reward_percentage = 10
+        # current_price = 0
+        reward_ratio = 15
+        position_size = 0.01
+        current_position = ''
+
+
+        def init(self):
+            price = self.data.Close
+            self.ma1 = self.I(SMA, price, 10)
+            self.ma2 = self.I(SMA, price, 20)
+
+
+        def bbands(self, df):
+            if df['Close'].iloc[-1] >= df['BB_Upper_20_2.0'].iloc[-1]:
+                price = self.data.Close[-1]
+                gain_amount = self.reward_percentage * self.equity
+                risk_amount = self.risk_percentage * self.equity
+                tp_level = price + (gain_amount/self.equity)
+                sl_level = price - (risk_amount/self.equity)
+                self.buy(tp=tp_level,sl=sl_level)
+            elif df['Close'].iloc[-1] <= df['BB_Lower_20_2.0'].iloc[-1]:
+                price = self.data.Close[-1]
+                gain_amount = self.reward_percentage * self.equity
+                risk_amount = self.risk_percentage * self.equity
+                tp_level = price - (gain_amount/self.equity)
+                sl_level = price + (risk_amount/self.equity)
+                self.sell(tp=tp_level, sl=sl_level)
+
+
+        def next(self):
+            df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
+            current_close = df['Close']
+            current_close = ta.bbands(close=df['Close'], length=length, std=std, append=True)
+            try:
+                df['BB_Upper_20_2.0'] = current_close['BBU_200_2.0']
+                df['BB_Middle_20_2.0'] = current_close['BBM_200_2.0']
+                df['BB_Lower_20_2.0'] = current_close['BBL_200_2.0']
+                self.bbands(df)
+            except:
+                pass
+
+    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
+    df = pd.read_csv(df_path)
+    df.index = pd.to_datetime(df['Time'].values)
+    del df['Time']
+    length = int(len(df) * 0.25)
+    bt = Backtest(df[:length], SmaCross, exclusive_orders=False, cash=10000)
+    output = bt.run()
+    
+    # Convert the relevant output fields to a dictionary
+    result_dict = {
+        "Start": str(output['Start']),
+        "End": str(output['End']),
+        "Duration": str(output['Duration']),
+        "Exposure Time [%]": output['Exposure Time [%]'],
+        "Equity Final [$]": output['Equity Final [$]'],
+        "Equity Peak [$]": output['Equity Peak [$]'],
+        "Return [%]": output['Return [%]'],
+        "Buy & Hold Return [%]": output['Buy & Hold Return [%]'],
+        "Return (Ann.) [%]": output['Return (Ann.) [%]'],
+        "Volatility (Ann.) [%]": output['Volatility (Ann.) [%]'],
+        "Sharpe Ratio": output['Sharpe Ratio'],
+        "Sortino Ratio": output['Sortino Ratio'],
+        "Calmar Ratio": output['Calmar Ratio'],
+        "Max. Drawdown [%]": output['Max. Drawdown [%]'],
+        "Avg. Drawdown [%]": output['Avg. Drawdown [%]'],
+        "Max. Drawdown Duration": str(output['Max. Drawdown Duration']),
+        "Avg. Drawdown Duration": str(output['Avg. Drawdown Duration']),
+        "# Trades": output['# Trades'],
+        "Win Rate [%]": output['Win Rate [%]'],
+        "Best Trade [%]": output['Best Trade [%]'],
+        "Worst Trade [%]": output['Worst Trade [%]'],
+        "Avg. Trade [%]": output['Avg. Trade [%]'],
+        "Max. Trade Duration": str(output['Max. Trade Duration']),
+        "Avg. Trade Duration": str(output['Avg. Trade Duration']),
+        "Profit Factor": output['Profit Factor'],
+        "Expectancy [%]": output['Expectancy [%]'],
+        "SQN": output['SQN'],
+    }
+    
+    return result_dict
+
+
+@csrf_exempt
+def bbands_bot(request, length, std):
+    async def inner():
+        result = await handle_api_request_bbands(length, std)
+        return JsonResponse({'Output': result})
+
+    # Run the asynchronous code using the event loop
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(inner())
+
+    
