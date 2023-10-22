@@ -591,6 +591,7 @@ def save_news_data():
     today = timezone.localtime(timezone.now()).date()
     # List of assets to fetch news data for
     assets_to_fetch = [
+        "EURUSD",
         "GBPUSD",  # Add more assets as needed
     ]
 
