@@ -907,13 +907,7 @@ async def handle_api_request_bbands(length, std):
                 df[self.middle_band] = current_close[self.middle_band]
                 df[self.bottom_band] = current_close[self.bottom_band]
                 self.bbands(df)
-                print(f'df is {df}')
-                # print(f'Current Close is {current_close}')
             except Exception as e:
-                # print(f'df is {df}')
-                # print(f'current close df is {current_close}')
-                # print(f'df is {df}')
-                # print(f'Exception is {e}')
                 pass
             
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
