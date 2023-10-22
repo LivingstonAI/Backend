@@ -661,7 +661,7 @@ def fetch_news_data(request):
     # Check if news data for the current day already exists
     existing_news = News.objects.filter(day_created=today)
     
-    if existing_news.exists():
+    if not existing_news.exists():
         # If data for the current day exists, return a message indicating it
         save_news_data()
         # return JsonResponse({'message': 'News data for today already exists.'})
