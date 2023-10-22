@@ -851,9 +851,15 @@ def moving_average_bot(request, type_1, type_2, ma1, ma2):
 
 
 
+df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
+df = pd.read_csv(df_path)
+df.index = pd.to_datetime(df['Time'].values)
+del df['Time']
+test_length = int(len(df) * 0.25)
 
 @csrf_exempt
 async def handle_api_request_bbands(length, std):
+    global df, test_length
     class BBands(Strategy):
         equity = 100000
         risk_percentage = 5
@@ -904,13 +910,7 @@ async def handle_api_request_bbands(length, std):
                 print(f'current close df is {current_close}')
                 print(f'df is {df}')
                 print(f'Exception is {e}')
-                
-
-    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
-    df = pd.read_csv(df_path)
-    df.index = pd.to_datetime(df['Time'].values)
-    del df['Time']
-    test_length = int(len(df) * 0.25)
+            
     bt = Backtest(df[:test_length], BBands, exclusive_orders=False, cash=10000)
     output = bt.run()
     
