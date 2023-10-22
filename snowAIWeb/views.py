@@ -862,6 +862,9 @@ async def handle_api_request_bbands(length, std):
         reward_ratio = 15
         position_size = 0.01
         current_position = ''
+        upper_band = f'BBU_{length}_{float(std)}'
+        middle_band = f'BBM_{length}_{float(std)}'
+        bottom_band = f'BBL_{length}_{float(std)}'
 
 
         def init(self):
@@ -871,14 +874,14 @@ async def handle_api_request_bbands(length, std):
 
 
         def bbands(self, df):
-            if df['Close'].iloc[-1] >= df['BB_Upper_20_2.0'].iloc[-1]:
+            if df['Close'].iloc[-1] >= df[self.upper_band].iloc[-1]:
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage * self.equity
                 risk_amount = self.risk_percentage * self.equity
                 tp_level = price + (gain_amount/self.equity)
                 sl_level = price - (risk_amount/self.equity)
                 self.buy(tp=tp_level,sl=sl_level)
-            elif df['Close'].iloc[-1] <= df['BB_Lower_20_2.0'].iloc[-1]:
+            elif df['Close'].iloc[-1] <= df[self.bottom_band].iloc[-1]:
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage * self.equity
                 risk_amount = self.risk_percentage * self.equity
@@ -892,11 +895,12 @@ async def handle_api_request_bbands(length, std):
             current_close = df['Close']
             current_close = ta.bbands(close=df['Close'], length=length, std=std, append=True)
             try:
-                df['BB_Upper_20_2.0'] = current_close['BBU_200_2.0']
-                df['BB_Middle_20_2.0'] = current_close['BBM_200_2.0']
-                df['BB_Lower_20_2.0'] = current_close['BBL_200_2.0']
+                df[self.upper_band] = current_close[self.upper_band]
+                df[self.middle_band] = current_close[self.middle_band]
+                df[self.bottom_band] = current_close[self.bottom_band]
                 self.bbands(df)
-            except:
+            except Exception as e:
+                print(f'Exception is {e}')
                 pass
 
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
@@ -951,4 +955,4 @@ def bbands_bot(request, length, std):
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(inner())
 
-    
+
