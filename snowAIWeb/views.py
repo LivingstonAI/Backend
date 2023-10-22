@@ -906,6 +906,7 @@ async def handle_api_request_bbands(length, std):
                 print(f'current close df is {current_close}')
                 print(f'df is {df}')
                 print(f'Exception is {e}')
+                pass
             
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
     df = pd.read_csv(df_path).drop_duplicates()
