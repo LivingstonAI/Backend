@@ -584,10 +584,16 @@ def update_user_assets(request, user_email):
 
 # @csrf_exempt
 def save_news_data():
+    try:
+        news = NewsData.objects.all().delete()
+    except:
+        pass
     today = timezone.localtime(timezone.now()).date()
     # List of assets to fetch news data for
     assets_to_fetch = [
-        "EURUSD",  # Add more assets as needed
+        "EURUSD",
+        "GBPUSD",
+        "USDJPY",  # Add more assets as needed
     ]
 
     # Establish a connection to the API
