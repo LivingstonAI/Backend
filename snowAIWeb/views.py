@@ -911,7 +911,7 @@ async def handle_api_request_bbands(length, std):
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
-test_length = int(len(df) * 0.25)
+    test_length = int(len(df) * 0.25)
     bt = Backtest(df, BBands, exclusive_orders=False, cash=10000)
     output = bt.run()
     
