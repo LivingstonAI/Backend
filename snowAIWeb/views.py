@@ -893,7 +893,7 @@ async def handle_api_request_bbands(length, std):
         def next(self):
             df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close})
             # current_close = df['Close']
-            current_close = ta.bbands(close=df['Close'], length=200, std=2, append=True)
+            current_close = ta.bbands(close=df['Close'], length=int(length), std=int(std), append=True)
             try:
                 df[self.upper_band] = current_close[self.upper_band]
                 df[self.middle_band] = current_close[self.middle_band]
