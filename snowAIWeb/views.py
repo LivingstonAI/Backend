@@ -884,8 +884,8 @@ async def handle_api_request_bbands(length, std):
                 sl_level = price - risk_amount
                 if self.position:
                     self.position.close()
-                self.buy(sl=sl_level, tp=tp_level)
-                # self.buy()
+                # self.buy(sl=sl_level)
+                self.buy()
             elif df.tail(1)['Close'].values[0] <= df.tail(1)[self.bottom_band].values[0]:
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage
@@ -894,8 +894,8 @@ async def handle_api_request_bbands(length, std):
                 sl_level = price + risk_amount
                 if self.position:
                     self.position.close()
-                self.sell(sl=sl_level, tp=tp_level)
-                # self.sell()
+                # self.sell(sl=sl_level)
+                self.sell()
 
 
         def next(self):
