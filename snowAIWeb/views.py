@@ -962,10 +962,8 @@ def bbands_bot(request, length, std):
     return loop.run_until_complete(inner_bband())
 
 
-
-
 @csrf_exempt
-async def handle_api_request_rsi(length):
+async def handle_api_request_rsi(length, overbought_level, oversold_level):
     class RSI(Strategy):
         equity = 100000
         risk_percentage = 20
@@ -981,7 +979,7 @@ async def handle_api_request_rsi(length):
 
 
         def rsi(self, df):
-            if df.tail(1)['RSI'].values[0] > 80:
+            if df.tail(1)['RSI'].values[0] > int(overbought_level):
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage
                 risk_amount = self.risk_percentage
@@ -991,7 +989,7 @@ async def handle_api_request_rsi(length):
                     self.position.close()
                 # self.sell(tp=tp_level, sl=sl_level)
                 self.sell()
-            elif df.tail(1)['RSI'].values[0] < 20:
+            elif df.tail(1)['RSI'].values[0] < int(oversold_level):
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage
                 risk_amount = self.risk_percentage
