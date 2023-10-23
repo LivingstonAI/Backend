@@ -1057,7 +1057,7 @@ def rsi_bot(request, length, overbought_level, oversold_level):
     oversold_level = int(oversold_level.remove(f'{length}_'))
     async def inner_rsi():
         # print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
-        result = await handle_api_request_rsi(length, overbought_level, 20)
+        result = await handle_api_request_rsi(length, overbought_level, oversold_level)
         return JsonResponse({'Output': result})
 
     # Run the asynchronous code using the event loop
