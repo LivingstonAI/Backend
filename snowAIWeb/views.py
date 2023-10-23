@@ -971,13 +971,13 @@ def bbands_bot(request, length, std):
 async def handle_api_request_rsi(length, overbought_level, oversold_level):
     class RSI(Strategy):
         equity = 100000
-        risk_percentage = 10
+        risk_percentage = 20
         reward_percentage = 50
         # current_price = 0
         reward_ratio = 15
         position_size = 0.01
         current_position = ''
-        
+
         def init(self):
             price = self.data.Close
             self.ma1 = self.I(SMA, price, 10)
