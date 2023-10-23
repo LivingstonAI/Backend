@@ -753,9 +753,11 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
                 tp_level = self.data.Close[-1] + self.reward_percentage
                 sl_level = self.data.Close[-1] - self.risk_percentage
                 if self.check_moving_averages_for_buy(df=df, range=self.range):
-                    if self.position:
-                        self.position.close()
-                    self.buy()
+                    if self.current_position != 'buy':
+                        if self.position:
+                            self.position.close()
+                        self.buy()
+                        self.current_position = 'buy'
             elif df.tail(1)[self.ma2_type].values[0] < df.tail(1)[self.ma1_type].values[0]:
                 # price = self.data.Close[-1]
                 # gain_amount = self.reward_percentage * self.equity
@@ -768,9 +770,11 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
                 tp_level = self.data.Close[-1] - self.reward_percentage
                 sl_level = self.data.Close[-1] + self.risk_percentage
                 if self.check_moving_averages_for_sell(df=df, range=self.range):
-                    if self.position:
-                        self.position.close()
-                self.sell()
+                    if self.current_position != 'sell':
+                        if self.position:
+                            self.position.close()
+                        self.sell()
+                        self.current_position = 'sell'
 
 
         def next(self):
@@ -795,7 +799,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
                 pass
 
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
-    df = pd.read_csv(df_path)
+    df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
     length = int(len(df) * 0.25)
@@ -832,7 +836,6 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
         "Expectancy [%]": output['Expectancy [%]'],
         "SQN": output['SQN'],
     }
-    
     return result_dict
 
 
@@ -848,9 +851,6 @@ def moving_average_bot(request, type_1, type_2, ma1, ma2):
 
 
 # https://backend-production-c0ab.up.railway.app/create-bot/sma/ema/200/50
-
-
-
 
 
 @csrf_exempt
@@ -881,20 +881,26 @@ async def handle_api_request_bbands(length, std):
                 risk_amount = self.risk_percentage 
                 tp_level = price + gain_amount
                 sl_level = price - risk_amount
-                if self.position:
-                    self.position.close()
+
                 # self.buy(sl=sl_level)
-                self.buy()
+                if self.current_position != 'buy':
+                    if self.position:
+                        self.position.close()
+                    self.buy()
+                    self.current_position = 'buy'
             elif df.tail(1)['Close'].values[0] <= df.tail(1)[self.bottom_band].values[0]:
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage
                 risk_amount = self.risk_percentage 
                 tp_level = price - gain_amount
                 sl_level = price + risk_amount
-                if self.position:
-                    self.position.close()
+
                 # self.sell(sl=sl_level)
-                self.sell()
+                if self.current_position != 'sell':
+                    if self.position:
+                        self.position.close()
+                    self.sell()
+                    self.current_position = 'sell'
 
 
         def next(self):
@@ -985,24 +991,25 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
                 risk_amount = self.risk_percentage
                 tp_level = price - gain_amount
                 sl_level = price + risk_amount
-                if self.position:
-                    self.position.close()
                 # self.sell(tp=tp_level, sl=sl_level)
                 if self.current_position != 'sell':
+                    if self.position:
+                        self.position.close()
                     self.sell()
-                self.current_position = 'sell'
+                    self.current_position = 'sell'
             elif df.tail(1)['RSI'].values[0] < int(oversold_level):
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage
                 risk_amount = self.risk_percentage
                 tp_level = price + gain_amount
                 sl_level = price - risk_amount
-                if self.position:
-                    self.position.close()
+                
                 # self.buy(tp=tp_level,sl=sl_level)
                 if self.current_position != 'buy':
+                    if self.position:
+                        self.position.close()
                     self.buy()
-                self.current_position = 'buy'
+                    self.current_position = 'buy'
 
 
         def next(self):
