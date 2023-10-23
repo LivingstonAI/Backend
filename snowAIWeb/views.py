@@ -1000,7 +1000,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
                 if self.position:
                     self.position.close()
                 # self.buy(tp=tp_level,sl=sl_level)
-                if self.current_position == 'buy':
+                if self.current_position != 'buy':
                     self.buy()
                 self.current_position = 'buy'
 
