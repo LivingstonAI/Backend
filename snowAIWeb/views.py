@@ -953,7 +953,6 @@ async def handle_api_request_bbands(length, std):
         "Expectancy [%]": output['Expectancy [%]'],
         "SQN": output['SQN'],
     }
-    
     return result_dict
 
 
@@ -972,12 +971,13 @@ def bbands_bot(request, length, std):
 async def handle_api_request_rsi(length, overbought_level, oversold_level):
     class RSI(Strategy):
         equity = 100000
-        risk_percentage = 20
+        risk_percentage = 10
         reward_percentage = 50
         # current_price = 0
         reward_ratio = 15
         position_size = 0.01
         current_position = ''
+        
         def init(self):
             price = self.data.Close
             self.ma1 = self.I(SMA, price, 10)
@@ -995,7 +995,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
                 if self.current_position != 'sell':
                     if self.position:
                         self.position.close()
-                    self.sell()
+                    self.sell(sl=sl_level)
                     self.current_position = 'sell'
             elif df.tail(1)['RSI'].values[0] < int(oversold_level):
                 price = self.data.Close[-1]
@@ -1003,12 +1003,11 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
                 risk_amount = self.risk_percentage
                 tp_level = price + gain_amount
                 sl_level = price - risk_amount
-                
                 # self.buy(tp=tp_level,sl=sl_level)
                 if self.current_position != 'buy':
                     if self.position:
                         self.position.close()
-                    self.buy()
+                    self.buy(sl=sl_level)
                     self.current_position = 'buy'
 
 
