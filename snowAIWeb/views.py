@@ -1007,8 +1007,8 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
             try:
                 self.rsi(df)
             except Exception as e:
-                print(f'Exception is {e}')
                 print(f'df is {df}')
+                print(f'Exception is {e}')
                 pass        
                 
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
