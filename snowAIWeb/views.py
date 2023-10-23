@@ -1055,6 +1055,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
 @csrf_exempt
 def rsi_bot(request, length, overbought_level, oversold_level):
     async def inner_rsi():
+        print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
         result = await handle_api_request_rsi(length, overbought_level, oversold_level)
         return JsonResponse({'Output': result})
 
