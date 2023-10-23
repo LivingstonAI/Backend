@@ -1051,15 +1051,17 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
     }
     return result_dict
 
+try:
+    @csrf_exempt
+    def rsi_bot(request, length, overbought_level, oversold_level):
+        # oversold_level = int(oversold_level.remove(f'{length}_'))
+        async def inner_rsi():
+            # print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
+            result = await handle_api_request_rsi(length, overbought_level, oversold_level)
+            return JsonResponse({'Output': result})
 
-@csrf_exempt
-def rsi_bot(request, length, overbought_level, oversold_level):
-    # oversold_level = int(oversold_level.remove(f'{length}_'))
-    async def inner_rsi():
-        # print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
-        result = await handle_api_request_rsi(length, overbought_level, oversold_level)
-        return JsonResponse({'Output': result})
-
-    # Run the asynchronous code using the event loop
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(inner_rsi())
+        # Run the asynchronous code using the event loop
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(inner_rsi())
+except Exception as e:
+    print(f'Exception is {e}')
