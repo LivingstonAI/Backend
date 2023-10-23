@@ -988,7 +988,9 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
                 if self.position:
                     self.position.close()
                 # self.sell(tp=tp_level, sl=sl_level)
-                self.sell()
+                if self.current_position != 'sell':
+                    self.sell()
+                self.current_position = 'sell'
             elif df.tail(1)['RSI'].values[0] < int(oversold_level):
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage
@@ -998,7 +1000,9 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
                 if self.position:
                     self.position.close()
                 # self.buy(tp=tp_level,sl=sl_level)
-                self.buy()
+                if self.current_position:
+                    self.buy()
+                self.current_position = 'buy'
 
 
         def next(self):
