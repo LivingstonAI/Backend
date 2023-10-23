@@ -963,7 +963,7 @@ def bbands_bot(request, length, std):
 
 
 @csrf_exempt
-async def handle_api_request_rsi(length, overbought_level, oversold_level):
+async def handle_api_request_rsi(length, overbought_level):
     class RSI(Strategy):
         equity = 100000
         risk_percentage = 20
@@ -989,7 +989,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
                     self.position.close()
                 # self.sell(tp=tp_level, sl=sl_level)
                 self.sell()
-            elif df.tail(1)['RSI'].values[0] < int(oversold_level):
+            elif df.tail(1)['RSI'].values[0] < 30:
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage
                 risk_amount = self.risk_percentage
@@ -1051,17 +1051,16 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
     }
     return result_dict
 
-try:
-    @csrf_exempt
-    def rsi_bot(request, length, overbought_level, oversold_level):
-        # oversold_level = int(oversold_level.remove(f'{length}_'))
-        async def inner_rsi():
-            # print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
-            result = await handle_api_request_rsi(length, overbought_level, oversold_level)
-            return JsonResponse({'Output': result})
 
-        # Run the asynchronous code using the event loop
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(inner_rsi())
-except Exception as e:
-    print(f'Exception is {e}')
+@csrf_exempt
+def rsi_bot(request, length, overbought_level):
+    # oversold_level = int(oversold_level.remove(f'{length}_'))
+    async def inner_rsi():
+        # print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
+        result = await handle_api_request_rsi(length, overbought_level)
+        return JsonResponse({'Output': result})
+
+    # Run the asynchronous code using the event loop
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(inner_rsi())
+
