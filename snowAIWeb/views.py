@@ -1003,7 +1003,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
 
         def next(self):
             df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
-            df['RSI'] = ta.rsi(df['Close'], length = int(length))
+            df['RSI'] = ta.rsi(df['Close'], length = 14)
             try:
                 self.rsi(df)
             except Exception as e:
