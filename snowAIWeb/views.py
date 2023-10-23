@@ -963,7 +963,7 @@ def bbands_bot(request, length, std):
 
 
 @csrf_exempt
-async def handle_api_request_rsi(length):
+async def handle_api_request_rsi(length, overbought_level):
     class RSI(Strategy):
         equity = 100000
         risk_percentage = 20
@@ -979,7 +979,7 @@ async def handle_api_request_rsi(length):
 
 
         def rsi(self, df):
-            if df.tail(1)['RSI'].values[0] > 70:
+            if df.tail(1)['RSI'].values[0] > int(overbought_level):
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage
                 risk_amount = self.risk_percentage
@@ -1053,10 +1053,10 @@ async def handle_api_request_rsi(length):
 
 
 @csrf_exempt
-def rsi_bot(request, length):
+def rsi_bot(request, length, overbought_level):
     async def inner_rsi():
         # print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
-        result = await handle_api_request_rsi(length)
+        result = await handle_api_request_rsi(length, overbought_level)
         return JsonResponse({'Output': result})
 
     # Run the asynchronous code using the event loop
