@@ -1052,9 +1052,9 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
 
 
 @csrf_exempt
-def rsi_bot(request, length):
+def rsi_bot(request, length, overbought_level, oversold_level):
     async def inner_rsi():
-        result = await handle_api_request_rsi(length)
+        result = await handle_api_request_rsi(length, overbought_level, oversold_level)
         return JsonResponse({'Output': result})
 
     # Run the asynchronous code using the event loop
