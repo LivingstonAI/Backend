@@ -1003,7 +1003,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
 
         def next(self):
             df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
-            df['RSI'] = ta.rsi(df['Close'], length = 14)
+            df['RSI'] = ta.rsi(df['Close'], length = int(length))
             try:
                 self.rsi(df)
             except Exception as e:
@@ -1055,7 +1055,10 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
 @csrf_exempt
 def rsi_bot(request, length, overbought_level, oversold_level):
     async def inner_rsi():
-        result = await handle_api_request_rsi(length, overbought_level, oversold_level)
+        try:
+            result = await handle_api_request_rsi(length, overbought_level, oversold_level)
+        except:
+            print('Error occurs here in rsi bot function.')
         return JsonResponse({'Output': result})
 
     # Run the asynchronous code using the event loop
