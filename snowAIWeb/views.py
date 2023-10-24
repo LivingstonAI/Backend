@@ -1620,11 +1620,89 @@ async def handle_api_request_candlesticks():
                             # if thirty_eight_retracement <= testing_candle.Close <= sixty_one8_retracement:
                             self.sell(tp=tp_level, sl=sl_level)
 
+            
+
+        def methods(self, df):
+            dataframe = df.drop_duplicates()
+            df = df.drop_duplicates()
+            df = df.tail(8)
+            test_size = len(df)
+            rising_methods = 0
+            falling_methods = 0
+            price = self.data.Close[-1]
+
+            for i in range(test_size-7):
+                first_prev_candle = df.iloc[i]
+                second_prev_candle = df.iloc[i+1]
+                third_prev_candle = df.iloc[i+2]
+                prev_candle = df.iloc[i+3]
+                testing_candle = df.iloc[i+4]
+                testing_candle_2 = df.iloc[i+5]
+                testing_candle_3 = df.iloc[i+6]
+                final_candle = df.iloc[7]
+
+                if is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle) and testing_candle.Close < prev_candle.Close and is_bearish_run_3(testing_candle, testing_candle_2, testing_candle_3):
+                    if final_candle.Close > prev_candle.Close:
+                        rising_methods += 1
+                        # print('rising three methods')
+                        price = self.data.Close[-1]
+                        gain_amount = self.reward_percentage
+                        risk_amount = self.risk_percentage
+                        tp_level = price + self.reward_percentage
+                        sl_level = price - self.risk_percentage
+
+                        # dataframe.index = pd.to_datetime(dataframe.index)
+                        # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                        # Create the figure object without plotting
+                        # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                        # plt.close(fig)
+                        # Save the figure to a file
+                        # fig.savefig('candlestick_chart.png')
+                        # plt.close(fig)
+
+                        if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
+                            # levels = get_fibonacci_levels(df=dataframe.tail(75), trend='uptrend')
+                            # thirty_eight_retracement = levels[2]
+                            # sixty_one8_retracement = levels[4]
+                            # if thirty_eight_retracement <= testing_candle_3.Close <= sixty_one8_retracement:
+                            self.buy(tp=tp_level, sl=sl_level)
+
+                elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle) and testing_candle.Close > prev_candle.Close and is_bullish_run_3(testing_candle, testing_candle_2, testing_candle_3):
+                    if final_candle.Close < prev_candle.Close:
+                        falling_methods += 1
+                        # print('falling three methods')
+                        price = self.data.Close[-1]
+                        gain_amount = self.reward_percentage * self.equity
+                        risk_amount = self.risk_percentage * self.equity
+                        tp_level = price - self.reward_percentage
+                        sl_level = price + self.risk_percentage
+
+                        # dataframe.index = pd.to_datetime(dataframe.index)
+                        # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                        # Create the figure object without plotting
+                        # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                        # plt.close(fig)
+                        # Save the figure to a file
+                        # fig.savefig('candlestick_chart.png')
+                        # plt.close(fig)
+
+                        if df.tail(1)['EMA_50'].values[0] < df.tail(1)['SMA_200'].values[0]:
+                            # levels = get_fibonacci_levels(df=dataframe.tail(75), trend='downtrend')
+                            # thirty_eight_retracement = levels[2]
+                            # sixty_one8_retracement = levels[4]
+                            # if thirty_eight_retracement <= testing_candle_3.Close <= sixty_one8_retracement:
+                            self.sell(tp=tp_level, sl=sl_level)
+
+
 
         
         def analyze_candlesticks(self, df):
             if not self.position:
-                self.morning_star(df=df)
+                self.methods(df=df)
+            # if not self.position:
+            #     self.morning_star(df=df)
             # if not self.position:
             #     self.three_white_soldier(df=df)
         # self.support_and_resistance(df=df)
@@ -1642,8 +1720,6 @@ async def handle_api_request_candlesticks():
         # if not self.position:
         # if not self.position:
         #   self.matching(df=df)
-        # if not self.position:
-        #   self.methods(df=df)
 
 
         def next(self):
