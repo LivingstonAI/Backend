@@ -30,7 +30,7 @@ urlpatterns = [
     path('create-bot/<str:type_1>/<str:type_2>/<int:ma1>/<int:ma2>', views.moving_average_bot, name='create-bot'),
     path('create-bot/bbands/<int:length>/<int:std>', views.bbands_bot, name='create-bot-bbands'),
     path('create-bot/rsi/<int:length>/<int:overbought_level>/<int:oversold_level>/', views.rsi_bot, name='create-bot-rsi'),
-    path('create-bot/momentum', views.momentum_bot, name='create-bot-momentum')
+    path('create-bot/momentum/', views.momentum_bot, name='create-bot-momentum')
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 
