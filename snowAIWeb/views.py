@@ -1699,16 +1699,16 @@ async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three
 
         
         def analyze_candlesticks(self, df):
+            if not self.position and engulfing:
+                self.bullish_engulfing(df=df)
+                self.bearish_engulfing(df=df)
+            if not self.position and three_white_soldiers:
+                self.three_white_soldier(df=df)
             if not self.position and methods:
                 self.methods(df=df)
             if not self.position and morning_star:
                 self.morning_star(df=df)
-            if not self.position and three_white_soldiers:
-                self.three_white_soldier(df=df)
         # self.support_and_resistance(df=df)
-            if not self.position and engulfing:
-                self.bullish_engulfing(df=df)
-                self.bearish_engulfing(df=df)
             if not self.position and pinbar:
                 self.bullish_pinbar(df=df)
                 # if not self.position:
