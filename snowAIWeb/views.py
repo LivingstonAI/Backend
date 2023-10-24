@@ -1495,7 +1495,7 @@ async def handle_api_request_candlesticks():
                         three_white_soldiers += 1
                         # print('bullish three white soldiers')
                         if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
-                            dataframe.index = pd.to_datetime(dataframe.index)
+                            # dataframe.index = pd.to_datetime(dataframe.index)
                             # style = mpf.make_mpf_style(base_mpf_style='classic')
 
                             # Create the figure object without plotting
@@ -1604,7 +1604,7 @@ async def handle_api_request_candlesticks():
     del df['Time']
     df["SMA_200"] = ta.sma(df["Close"], length=200)
     df["EMA_50"] = ta.ema(df["Close"], length=50)
-    test_length = int(len(df) * 0.1)
+    test_length = int(len(df) * 0.2)
     bt = Backtest(df[:test_length], Strat, exclusive_orders=False, cash=10000)
     output = bt.run()
     
