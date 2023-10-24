@@ -1225,7 +1225,7 @@ def momentum_bot(request):
 
 
 @csrf_exempt
-async def handle_api_request_candlesticks():
+async def handle_api_request_candlesticks(lst):
     class Strat(Strategy):
 
         current_day = 0
@@ -1740,6 +1740,7 @@ async def handle_api_request_candlesticks():
             # self.current_day = new_day
             if not self.position:
                 try:
+                    print(f'lst is {lst}')
                     self.analyze_candlesticks(df=df)
                 except Exception as e:
                     print(f'Error occured here: {e}')
@@ -1792,11 +1793,28 @@ async def handle_api_request_candlesticks():
 @csrf_exempt
 def candlesticks_bot(request):
     async def inner_candlesticks():
-        result = await handle_api_request_candlesticks()
-        return JsonResponse({'Output': result})
+        try:
+            data = json.loads(request.body)
+             # Access the boolean values
+            engulfing = data.get('engulfing', False)
+            pinbar = data.get('pinbar', False)
+            morningStar = data.get('morningStar', False)
+            threeWhiteSoldiers = data.get('threeWhiteSoldiers', False)
+            dojiStar = data.get('dojiStar', False)
+            methods = data.get('methods', False)
+
+
+            lst = [engulfing, pinbar, morningStar, threeWhiteSoldiers, dojiStar, methods]
+
+            result = await handle_api_request_candlesticks(lst)
+            return JsonResponse({'Output': result})
+        except Exception as e:
+            return JsonResponse({'Error': str(e)})
 
     # Run the asynchronous code using the event loop
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(inner_candlesticks())
+
+
 
 
