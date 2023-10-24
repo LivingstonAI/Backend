@@ -1094,17 +1094,20 @@ async def handle_api_request_momentum():
 
 
         def momentum(self, df):
-            
+
             if df.tail(1)['MOM'].values[0] > 80:
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage
                 risk_amount = self.risk_percentage
                 tp_level = price - gain_amount
                 sl_level = price + risk_amount
-                if self.position:
-                    self.position.close()
-                self.sell(tp=tp_level, sl=sl_level)
-            # self.sell()
+
+                if self.current_position != 'sell':
+                    if self.position:
+                        self.position.close()
+                    self.sell(tp=tp_level, sl=sl_level)
+                    self.current_position = 'sell'
+                    # self.sell()
 
             elif df.tail(1)['MOM'].values[0] < 20:
                 price = self.data.Close[-1]
@@ -1112,10 +1115,13 @@ async def handle_api_request_momentum():
                 risk_amount = self.risk_percentage
                 tp_level = price + gain_amount
                 sl_level = price - risk_amount
-                if self.position:
-                    self.position.close()
-                self.buy(tp=tp_level,sl=sl_level)
-            # self.buy()
+                
+                if self.current_position != 'buy':
+                    if self.position:
+                        self.position.close()
+                    self.buy(tp=tp_level,sl=sl_level)
+                    self.current_position = 'buy'
+                    # self.buy()
 
 
         def next(self):
@@ -1171,9 +1177,7 @@ async def handle_api_request_momentum():
 
 @csrf_exempt
 def momentum_bot(request):
-    # oversold_level = int(oversold_level.remove(f'{length}_'))
     async def inner_momentum():
-        # print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
         result = await handle_api_request_momentum()
         return JsonResponse({'Output': result})
 
