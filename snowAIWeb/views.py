@@ -1494,9 +1494,9 @@ async def handle_api_request_candlesticks():
                     if testing_candle_2.Close > testing_candle.Close and testing_candle.Close > prev_candle.Close:
                         three_white_soldiers += 1
                         # print('bullish three white soldiers')
-                        if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
+                        if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
                             dataframe.index = pd.to_datetime(dataframe.index)
-                            style = mpf.make_mpf_style(base_mpf_style='classic')
+                            # style = mpf.make_mpf_style(base_mpf_style='classic')
 
                             # Create the figure object without plotting
                             # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
@@ -1522,7 +1522,7 @@ async def handle_api_request_candlesticks():
                     if testing_candle_2.Close < testing_candle.Close and testing_candle.Close < prev_candle.Close:
                         three_black_crows += 1
                         # print('bearish three black crows')
-                        if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
+                        if df.tail(1)['EMA_50'].values[0] < df.tail(1)['SMA_200'].values[0]:
                             # df.index = pd.to_datetime(df.index)
                             # style = mpf.make_mpf_style(base_mpf_style='classic')
 
