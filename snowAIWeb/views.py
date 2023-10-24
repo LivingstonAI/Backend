@@ -1102,11 +1102,11 @@ async def handle_api_request_momentum():
                 tp_level = price - gain_amount
                 sl_level = price + risk_amount
 
-                if self.current_position != 'sell':
-                    if self.position:
-                        self.position.close()
-                    self.sell()
-                    self.current_position = 'sell'
+                # if self.current_position != 'sell':
+                if self.position:
+                    self.position.close()
+                self.sell(tp=tp_level, sl=sl_level)
+                    # self.current_position = 'sell'
                     # self.sell()
 
             elif df.tail(1)['MOM'].values[0] < 20:
@@ -1116,11 +1116,11 @@ async def handle_api_request_momentum():
                 tp_level = price + gain_amount
                 sl_level = price - risk_amount
                 
-                if self.current_position != 'buy':
-                    if self.position:
-                        self.position.close()
-                    self.buy()
-                    self.current_position = 'buy'
+                # if self.current_position != 'buy':
+                if self.position:
+                    self.position.close()
+                self.buy(tp=tp_level,sl=sl_level)
+                # self.current_position = 'buy'
                     # self.buy()
 
 
