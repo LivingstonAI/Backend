@@ -1130,6 +1130,7 @@ async def handle_api_request_momentum():
             # if not self.position:
             try:
                 self.momentum(df)
+                print('Running Backtesting Algorithm...')
             except Exception as e:
                 print(f'Exception is {e}')
                 pass
@@ -1185,4 +1186,5 @@ def momentum_bot(request):
     # Run the asynchronous code using the event loop
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(inner_momentum())
+
 
