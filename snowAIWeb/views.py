@@ -1140,7 +1140,7 @@ async def handle_api_request_momentum():
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
-    test_length = int(len(df) * 0.2)
+    test_length = int(len(df) * 0.25)
     bt = Backtest(df[:test_length], Momentum, exclusive_orders=False, cash=10000)
     output = bt.run()
     
