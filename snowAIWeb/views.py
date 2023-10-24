@@ -1130,7 +1130,7 @@ async def handle_api_request_momentum():
             # if not self.position:
             try:
                 self.momentum(df)
-                print('Running Backtesting Algorithm...')
+                # print('Running Backtesting Algorithm...')
             except Exception as e:
                 print(f'Exception is {e}')
                 pass
