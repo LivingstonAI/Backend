@@ -1506,7 +1506,7 @@ async def handle_api_request_candlesticks():
                             # plt.close(fig)
                             # if self.position:
                             #   self.position.close()
-                            if process_image(self.path) == 2:
+                            # if process_image(self.path) == 2:
                             price = self.data.Close[-1]
                             gain_amount = self.reward_percentage
                             risk_amount = self.risk_percentage
