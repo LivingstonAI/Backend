@@ -1225,7 +1225,13 @@ def momentum_bot(request):
 
 
 @csrf_exempt
-async def handle_api_request_candlesticks(lst):
+async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three_white_soldiers, doji_star, methods):
+    print(f'Enguling is {engulfing}')
+    print(f'Pinbar is {pinbar}')
+    print(f'Morning Star is {morning_star}')
+    print(f'Three White Soldiers is {three_white_soldiers}')
+    print(f'Doji Star is {doji_star}')
+    print(f'Methods is {methods}')
     class Strat(Strategy):
 
         current_day = 0
@@ -1740,7 +1746,7 @@ async def handle_api_request_candlesticks(lst):
             # self.current_day = new_day
             if not self.position:
                 try:
-                    print(f'lst is {lst}')
+                    # print(f'lst is {lst}')
                     self.analyze_candlesticks(df=df)
                 except Exception as e:
                     print(f'Error occured here: {e}')
@@ -1795,6 +1801,7 @@ def candlesticks_bot(request):
     async def inner_candlesticks():
         try:
             data = json.loads(request.body)
+
              # Access the boolean values
             engulfing = data.get('engulfing', False)
             pinbar = data.get('pinbar', False)
@@ -1803,10 +1810,9 @@ def candlesticks_bot(request):
             dojiStar = data.get('dojiStar', False)
             methods = data.get('methods', False)
 
-
-            lst = [engulfing, pinbar, morningStar, threeWhiteSoldiers, dojiStar, methods]
-
-            result = await handle_api_request_candlesticks(lst)
+            result = await handle_api_request_candlesticks(engulfing=engulfing, 
+            pinbar=pinbar, morning_star=morningStar, three_white_soldiers=threeWhiteSoldiers, 
+            doji_star=dojiStar, methods=methods)
             return JsonResponse({'Output': result})
         except Exception as e:
             return JsonResponse({'Error': str(e)})
