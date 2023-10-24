@@ -1384,11 +1384,11 @@ async def handle_api_request_candlesticks():
             #     self.position.close()
             # self.current_day = new_day
             if not self.position:
-            try:
-                self.analyze_candlesticks(df=df)
-            except Exception as e:
-                print(f'Error occured here: {e}')
-                pass
+                try:
+                    self.analyze_candlesticks(df=df)
+                except Exception as e:
+                    print(f'Error occured here: {e}')
+                    pass
     
                 
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
