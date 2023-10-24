@@ -1342,16 +1342,83 @@ async def handle_api_request_candlesticks():
                         self.sell(tp=tp_level, sl=sl_level)
                 break
 
+            
+        
+        def bullish_pinbar(self, df):
+            dataframe = df.drop_duplicates()
+            df = df.tail(1)
+            df = df.drop_duplicates()
+            test_size = len(df)
+            num_pin_bars = 0
+            price = self.data.Close[-1]
+
+            for i in range(test_size-1):
+                candle = df.iloc[i]
+                is_pin_bar = (candle.Close - candle.Low) > 5
+                if is_pin_bar:
+                    num_pin_bars += 1
+                    # print('Bullish Pin Bar')
+                    price = self.data.Close[-1]
+                    gain_amount = self.reward_percentage
+                    risk_amount = self.risk_percentage
+                    tp_level = price + gain_amount
+                    sl_level = price - risk_amount
+
+                    # dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+
+                    if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
+                        self.buy(tp=tp_level, sl=sl_level)
+
+
+    def bearish_pinbar(self, df):
+        dataframe = df.drop_duplicates()
+        df = df.tail(1)
+        df = df.drop_duplicates()
+        test_size = len(df)
+        num_pin_bars = 0
+
+        for i in range(test_size-1):
+            candle = df.iloc[i]
+            is_pin_bar = abs(candle.Close - candle.High) <  5
+            if is_pin_bar:
+                num_pin_bars += 1
+                # print('Bearish Pin Bar')
+                price = self.data.Close[-1]
+                gain_amount = self.reward_percentage
+                risk_amount = self.risk_percentage
+                tp_level = price - gain_amount
+                sl_level = price + risk_amount
+
+                # dataframe.index = pd.to_datetime(dataframe.index)
+                # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                # Create the figure object without plotting
+                # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                # plt.close(fig)
+                # Save the figure to a file
+                # fig.savefig('candlestick_chart.png')
+
+                if df.tail(1)['EMA_50'].values[0] < df.tail(1)['SMA_200'].values[0]:
+                    self.sell(tp=tp_level, sl=sl_level)
+
+
         
         def analyze_candlesticks(self, df):
         # self.support_and_resistance(df=df)
+            # if not self.position:
+            #     self.bullish_engulfing(df=df)
+            #     self.bearish_engulfing(df=df)
             if not self.position:
-                self.bullish_engulfing(df=df)
-                self.bearish_engulfing(df=df)
-        # if not self.position:
-        # self.bullish_pinbar(df=df)
-        # if not self.position:
-        # self.bearish_pinbar(df=df)
+                self.bullish_pinbar(df=df)
+                # if not self.position:
+                self.bearish_pinbar(df=df)
         # if not self.position:
         #   self.shooting_star(df=df)
         # if not self.position:
