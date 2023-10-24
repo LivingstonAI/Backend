@@ -1226,12 +1226,6 @@ def momentum_bot(request):
 
 @csrf_exempt
 async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three_white_soldiers, doji_star, methods):
-    print(f'Enguling is {engulfing}')
-    print(f'Pinbar is {pinbar}')
-    print(f'Morning Star is {morning_star}')
-    print(f'Three White Soldiers is {three_white_soldiers}')
-    print(f'Doji Star is {doji_star}')
-    print(f'Methods is {methods}')
     class Strat(Strategy):
 
         current_day = 0
@@ -1747,6 +1741,12 @@ async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three
             if not self.position:
                 try:
                     # print(f'lst is {lst}')
+                    print(f'Enguling is {engulfing}')
+                    print(f'Pinbar is {pinbar}')
+                    print(f'Morning Star is {morning_star}')
+                    print(f'Three White Soldiers is {three_white_soldiers}')
+                    print(f'Doji Star is {doji_star}')
+                    print(f'Methods is {methods}')
                     self.analyze_candlesticks(df=df)
                 except Exception as e:
                     print(f'Error occured here: {e}')
