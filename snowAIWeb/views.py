@@ -1102,11 +1102,11 @@ async def handle_api_request_momentum():
                 tp_level = price - gain_amount
                 sl_level = price + risk_amount
 
-                if self.current_position != 'sell':
-                    if self.position:
-                        self.position.close()
-                    self.sell(tp=tp_level, sl=sl_level)
-                    self.current_position = 'sell'
+                # if self.current_position != 'sell':
+                if self.position:
+                    self.position.close()
+                self.sell(tp=tp_level, sl=sl_level)
+                    # self.current_position = 'sell'
                     # self.sell()
 
             elif df.tail(1)['MOM'].values[0] < 20:
@@ -1116,11 +1116,11 @@ async def handle_api_request_momentum():
                 tp_level = price + gain_amount
                 sl_level = price - risk_amount
                 
-                if self.current_position != 'buy':
-                    if self.position:
-                        self.position.close()
-                    self.buy(tp=tp_level,sl=sl_level)
-                    self.current_position = 'buy'
+                # if self.current_position != 'buy':
+                if self.position:
+                    self.position.close()
+                self.buy(tp=tp_level,sl=sl_level)
+                # self.current_position = 'buy'
                     # self.buy()
 
 
@@ -1130,7 +1130,7 @@ async def handle_api_request_momentum():
             # if not self.position:
             try:
                 self.momentum(df)
-                # print('Running Backtesting Algorithm...')
+                print('Running Backtesting Algorithm...')
             except Exception as e:
                 print(f'Exception is {e}')
                 pass
@@ -1140,7 +1140,7 @@ async def handle_api_request_momentum():
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
-    test_length = int(len(df) * 0.25)
+    test_length = int(len(df) * 0.05)
     bt = Backtest(df[:test_length], Momentum, exclusive_orders=False, cash=10000)
     output = bt.run()
     
