@@ -34,6 +34,42 @@ import pandas_ta as ta
 current_hour = datetime.datetime.now().time().hour
 
 
+def is_bullish_run(candle1, candle2, candle3, candle4):
+    if candle2.Close > candle1.Close and candle3.Close > candle2.Close and candle4.Close > candle3.Close:
+        return True
+    return False
+
+
+def is_bearish_run(candle1, candle2, candle3, candle4):
+    if candle2.Close < candle1.Close and candle3.Close < candle2.Close and candle4.Close < candle3.Close:
+        return True
+    return False
+
+
+def is_bullish_run_3(candle1, candle2, candle3):
+    if candle2.Close > candle1.Close and candle3.Close > candle2.Close:
+        return True
+    return False
+
+
+def is_bearish_run_3(candle1, candle2, candle3):
+    if candle2.Close < candle1.Close and candle3.Close < candle2.Close:
+        return True
+    return False
+
+
+def is_bearish_candle(candle):
+    if candle.Close < candle.Open:
+        return True
+    return False
+
+
+def is_bullish_candle(candle):
+    if candle.Close > candle.Open:
+        return True
+    return False
+
+
 def get_openai_key(request):
     return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
 
@@ -1186,5 +1222,226 @@ def momentum_bot(request):
     # Run the asynchronous code using the event loop
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(inner_momentum())
+
+
+@csrf_exempt
+async def handle_api_request_candlesticks():
+    class Strat(Strategy):
+
+        current_day = 0
+        equity = 100000
+        risk_percentage = 20
+        reward_percentage = 50
+        # current_price = 0
+        reward_ratio = 15
+        position_size = 0.01
+        # path = '/content/trading-bot/candlestick_chart.png'
+        # sr_path  = '/content/sar'
+        candlestick_backtrack = 288
+
+
+        def init(self):
+            # super().init()
+            # super().set_trailing_sl(3)
+            close = self.data.Close
+    
+
+        def bullish_engulfing(self, df):
+
+            df_test = df.tail(6)
+            df_test = df_test.drop_duplicates()
+            test_size = len(df)
+            num_engulfing = 0
+
+            for i in range(test_size-1):
+                first_candle = df_test.iloc[i-1]
+                second_candle = df_test.iloc[i-2]
+                third_candle  = df_test.iloc[i-3]
+                fourth_candle = df_test.iloc[i-4]
+                fifth_candle = df_test.iloc[i-5]
+                second_test = first_candle.Close > second_candle.Open
+
+                if is_bearish_candle(second_candle) and is_bullish_candle(first_candle) and second_test == True and is_bearish_run(fifth_candle, fourth_candle, third_candle, second_candle):
+                    # num_engulfing += 1
+                    # print('Bullish Engulfing')
+                    if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
+                        # # Set the style of the plot
+                        # df.index = pd.to_datetime(df.index)
+                        # style = mpf.make_mpf_style(base_mpf_style='classic')
+                        # Create the figure object without plotting
+                        # fig, axes = mpf.plot(df.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                        # plt.close(fig)
+                        # # Save the figure to a file
+                        # fig.savefig('candlestick_chart.png')
+                        # # if self.position:
+                        # #     self.position.close()
+
+                        # if process_image(self.path) == 2:
+                        price = self.data.Close[-1]
+                        gain_amount = self.reward_percentage
+                        risk_amount = self.risk_percentage
+                        tp_level = price + self.reward_percentage
+                        sl_level = price - self.risk_percentage
+
+                        # levels = get_fibonacci_levels(df=df.tail(75), trend='uptrend')
+                        # thirty_eight_retracement = levels[2]
+                        # sixty_one8_retracement = levels[4]
+                        # if thirty_eight_retracement <= price <= sixty_one8_retracement:
+                            # self.position.close()
+                        if self.position:
+                            self.position.close()
+                        self.buy(tp=tp_level, sl=sl_level)
+                break
+
+
+    def bearish_engulfing(self, df):
+        df_test = df.tail(6)
+        df_test = df_test.drop_duplicates()
+        test_size = len(df)
+        num_engulfing = 0
+
+        for i in range(test_size-1):
+            first_candle = df_test.iloc[i-1]
+            second_candle = df_test.iloc[i-2]
+            third_candle  = df_test.iloc[i-3]
+            fourth_candle = df_test.iloc[i-4]
+            fifth_candle = df_test.iloc[i-5]
+            # first_test = first_candle.Open < second_candle.Close
+            second_test = first_candle.Close < second_candle.Open
+
+            if is_bullish_candle(second_candle) and is_bearish_candle(first_candle) and second_test == True and is_bullish_run(fifth_candle, fourth_candle, third_candle, second_candle):
+                # num_engulfing += 1
+                # print('Bearish Engulfing')
+                price = self.data.Close[-1]
+
+                if df.tail(1)['EMA_50'].values[0] < df.tail(1)['SMA_200'].values[0]:
+                    # df.index = pd.to_datetime(df.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # # Create the figure object without plotting
+                    # fig, axes = mpf.plot(df.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+
+                    # if self.position:
+                    #     self.position.close()
+                        # pass
+                    # if process_image(self.path) == 0:
+                    gain_amount = self.reward_percentage
+                    risk_amount = self.risk_percentage
+                    tp_level = price - self.reward_percentage
+                    sl_level = price + self.risk_percentage
+                    # levels = get_fibonacci_levels(df=df.tail(75), trend='downtrend')
+                    # thirty_eight_retracement = levels[2]
+                    # sixty_one8_retracement = levels[4]
+                        # if thirty_eight_retracement <= price <= sixty_one8_retracement:
+                        # self.position.close()
+                    if self.position:
+                        self.position.close()
+                    self.sell(tp=tp_level, sl=sl_level)
+            break
+
+        
+        def analyze_candlesticks(self, df):
+        # self.support_and_resistance(df=df)
+            if not self.position:
+                self.bullish_engulfing(df=df)
+                self.bearish_engulfing(df=df)
+        # if not self.position:
+        # self.bullish_pinbar(df=df)
+        # if not self.position:
+        # self.bearish_pinbar(df=df)
+        # if not self.position:
+        #   self.shooting_star(df=df)
+        # if not self.position:
+        #   self.doji_star(df=df)
+        # if not self.position:
+        # if not self.position:
+        #   self.three_white_soldier(df=df)
+        # if not self.position:
+        # self.morning_star(df=df)
+        # if not self.position:
+        #   self.matching(df=df)
+        # if not self.position:
+        #   self.methods(df=df)
+
+
+    def next(self):
+        # super().next()
+        # Creating a Pandas DataFrame
+        # print(self.data)
+        df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'SMA_200': self.data.SMA_200, 'EMA_50': self.data.EMA_50})
+        # df.dropna(inplace=True)
+        df = df.fillna(0)
+        new_day = self.data.index[-1].day
+        mod = new_day % 5
+        # print(df)
+        # if mod == 0 and self.position:
+        #   self.position.close()
+
+        # if self.current_day < new_day and self.position:
+        #     self.position.close()
+        # self.current_day = new_day
+        if not self.position:
+          try:
+            self.analyze_candlesticks(df=df)
+          except Exception as e:
+            print(f'Error occured here: {e}')
+            pass
+    
+                
+    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
+    df = pd.read_csv(df_path).drop_duplicates()
+    df.index = pd.to_datetime(df['Time'].values)
+    del df['Time']
+    df["SMA_200"] = ta.sma(df["Close"], length=200)
+    df["EMA_50"] = ta.ema(df["Close"], length=50)
+    test_length = int(len(df) * 0.25)
+    bt = Backtest(df[:test_length], Strat, exclusive_orders=False, cash=10000)
+    output = bt.run()
+    
+    # Convert the relevant output fields to a dictionary
+    result_dict = {
+        "Start": str(output['Start']),
+        "End": str(output['End']),
+        "Duration": str(output['Duration']),
+        "Exposure Time [%]": output['Exposure Time [%]'],
+        "Equity Final [$]": output['Equity Final [$]'],
+        "Equity Peak [$]": output['Equity Peak [$]'],
+        "Return [%]": output['Return [%]'],
+        "Buy & Hold Return [%]": output['Buy & Hold Return [%]'],
+        "Return (Ann.) [%]": output['Return (Ann.) [%]'],
+        "Volatility (Ann.) [%]": output['Volatility (Ann.) [%]'],
+        "Sharpe Ratio": output['Sharpe Ratio'],
+        "Sortino Ratio": output['Sortino Ratio'],
+        "Calmar Ratio": output['Calmar Ratio'],
+        "Max. Drawdown [%]": output['Max. Drawdown [%]'],
+        "Avg. Drawdown [%]": output['Avg. Drawdown [%]'],
+        "Max. Drawdown Duration": str(output['Max. Drawdown Duration']),
+        "Avg. Drawdown Duration": str(output['Avg. Drawdown Duration']),
+        "# Trades": output['# Trades'],
+        "Win Rate [%]": output['Win Rate [%]'],
+        "Best Trade [%]": output['Best Trade [%]'],
+        "Worst Trade [%]": output['Worst Trade [%]'],
+        "Avg. Trade [%]": output['Avg. Trade [%]'],
+        "Max. Trade Duration": str(output['Max. Trade Duration']),
+        "Avg. Trade Duration": str(output['Avg. Trade Duration']),
+        "Profit Factor": output['Profit Factor'],
+        "Expectancy [%]": output['Expectancy [%]'],
+        "SQN": output['SQN'],
+    }
+    return result_dict
+
+
+@csrf_exempt
+def candlesticks_bot(request):
+    async def inner_candlesticks():
+        result = await handle_api_request_candlesticks()
+        return JsonResponse({'Output': result})
+
+    # Run the asynchronous code using the event loop
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(inner_candlesticks())
 
 
