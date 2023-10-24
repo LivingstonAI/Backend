@@ -1752,7 +1752,7 @@ async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three
     del df['Time']
     df["SMA_200"] = ta.sma(df["Close"], length=200)
     df["EMA_50"] = ta.ema(df["Close"], length=50)
-    test_length = int(len(df) * 0.35)
+    test_length = int(len(df) * 0.5)
     bt = Backtest(df[:test_length], Strat, exclusive_orders=False, cash=10000)
     output = bt.run()
     
