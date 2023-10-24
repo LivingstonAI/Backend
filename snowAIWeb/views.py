@@ -1105,7 +1105,7 @@ async def handle_api_request_momentum():
                 if self.current_position != 'sell':
                     if self.position:
                         self.position.close()
-                    self.sell(tp=tp_level, sl=sl_level)
+                    self.sell()
                     self.current_position = 'sell'
                     # self.sell()
 
@@ -1119,7 +1119,7 @@ async def handle_api_request_momentum():
                 if self.current_position != 'buy':
                     if self.position:
                         self.position.close()
-                    self.buy(tp=tp_level,sl=sl_level)
+                    self.buy()
                     self.current_position = 'buy'
                     # self.buy()
 
