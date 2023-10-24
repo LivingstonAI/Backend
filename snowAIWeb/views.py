@@ -1130,7 +1130,8 @@ async def handle_api_request_momentum():
             # if not self.position:
             try:
                 self.momentum(df)
-            except:
+            except Exception as e:
+                print(f'Exception is {e}')
                 pass
     
                 
