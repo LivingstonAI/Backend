@@ -1367,28 +1367,28 @@ async def handle_api_request_candlesticks():
         #   self.methods(df=df)
 
 
-    def next(self):
-        # super().next()
-        # Creating a Pandas DataFrame
-        # print(self.data)
-        df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'SMA_200': self.data.SMA_200, 'EMA_50': self.data.EMA_50})
-        # df.dropna(inplace=True)
-        df = df.fillna(0)
-        new_day = self.data.index[-1].day
-        mod = new_day % 5
-        # print(df)
-        # if mod == 0 and self.position:
-        #   self.position.close()
+        def next(self):
+            # super().next()
+            # Creating a Pandas DataFrame
+            # print(self.data)
+            df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'SMA_200': self.data.SMA_200, 'EMA_50': self.data.EMA_50})
+            # df.dropna(inplace=True)
+            df = df.fillna(0)
+            new_day = self.data.index[-1].day
+            mod = new_day % 5
+            # print(df)
+            # if mod == 0 and self.position:
+            #   self.position.close()
 
-        # if self.current_day < new_day and self.position:
-        #     self.position.close()
-        # self.current_day = new_day
-        if not self.position:
-          try:
-            self.analyze_candlesticks(df=df)
-          except Exception as e:
-            print(f'Error occured here: {e}')
-            pass
+            # if self.current_day < new_day and self.position:
+            #     self.position.close()
+            # self.current_day = new_day
+            if not self.position:
+            try:
+                self.analyze_candlesticks(df=df)
+            except Exception as e:
+                print(f'Error occured here: {e}')
+                pass
     
                 
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
