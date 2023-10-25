@@ -1234,7 +1234,7 @@ async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three
         current_day = 0
         equity = 100000
         risk_percentage = 20
-        reward_percentage = 80
+        reward_percentage = 50
         # current_price = 0
         reward_ratio = 15
         position_size = 0.01
