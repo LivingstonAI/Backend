@@ -522,7 +522,7 @@ def save_conversation(request, user_email, identifier):
 
 @csrf_exempt
 def fetch_conversations(request, user_email):
-    all_conversations = Conversation.objects.filter(user_email=user_email)
+    all_conversations = Conversation.objects.filter(user_email=user_email).order_by('-id')
     conversations_data = [{'id': conversation.conversation_id, 'conversation': conversation.conversation} for conversation in all_conversations]
     return JsonResponse({'conversations': conversations_data})
 
