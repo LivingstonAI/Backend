@@ -792,11 +792,11 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
                 tp_level = self.data.Close[-1] + self.reward_percentage
                 sl_level = self.data.Close[-1] - self.risk_percentage
                 if self.check_moving_averages_for_buy(df=df, range=self.range):
-                    if self.current_position != 'buy':
-                        if self.position:
-                            self.position.close()
-                        self.buy()
-                        self.current_position = 'buy'
+                    # if self.current_position != 'buy':
+                    if self.position:
+                        self.position.close()
+                    self.buy()
+                    self.current_position = 'buy'
             elif df.tail(1)[self.ma2_type].values[0] < df.tail(1)[self.ma1_type].values[0]:
                 # price = self.data.Close[-1]
                 # gain_amount = self.reward_percentage * self.equity
@@ -809,11 +809,11 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
                 tp_level = self.data.Close[-1] - self.reward_percentage
                 sl_level = self.data.Close[-1] + self.risk_percentage
                 if self.check_moving_averages_for_sell(df=df, range=self.range):
-                    if self.current_position != 'sell':
-                        if self.position:
-                            self.position.close()
-                        self.sell()
-                        self.current_position = 'sell'
+                    # if self.current_position != 'sell':
+                    if self.position:
+                        self.position.close()
+                    self.sell()
+                    self.current_position = 'sell'
 
 
         def next(self):
@@ -843,7 +843,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
     del df['Time']
     length = int(len(df) * 0.5)
     second_length = int(len(df)* 0.7)
-    bt = Backtest(df[length:], SmaCross, exclusive_orders=False, cash=10000)
+    bt = Backtest(df[:length], SmaCross, exclusive_orders=False, cash=10000)
     output = bt.run()
     
     # Convert the relevant output fields to a dictionary
