@@ -841,7 +841,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe):
         df_to_use = './XAUUSD1H.csv'
     elif dataframe == '1H':
         df_to_use = './XAUUSD15M.csv'
-    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD1H.csv')
+    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
