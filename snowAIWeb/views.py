@@ -837,7 +837,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
                 print(f'Error occured: {e}')
                 pass
 
-    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
+    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD60.csv')
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
@@ -850,7 +850,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
     result_dict = {
         "Start": str(output['Start']),
         "End": str(output['End']),
-        "Duration": str(output['Duration']),
+        "Duration": str(output['Duration'])w,
         "Exposure Time [%]": output['Exposure Time [%]'],
         "Equity Final [$]": output['Equity Final [$]'],
         "Equity Peak [$]": output['Equity Peak [$]'],
