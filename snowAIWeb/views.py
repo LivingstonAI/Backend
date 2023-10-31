@@ -832,7 +832,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
             
             try:
                 self.moving_average(df)
-                # print('Running Algorithm...')
+                print('Running Algorithm...')
                 # self.check_moving_averages_for_buy(df, self.range)
             except Exception as e:
                 print(f'Error occured: {e}')
