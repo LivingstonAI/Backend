@@ -726,7 +726,7 @@ def fetch_news_data(request):
     
 
 @csrf_exempt
-async def handle_api_request(type_1, type_2, ma1, ma2):
+async def handle_api_request(type_1, type_2, ma1, ma2, dataframe):
     class SmaCross(Strategy):
         n0 = 18 # Exponential Moving Average
         n1 = 50 # Exponential Moving Average
@@ -837,7 +837,10 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
             except Exception as e:
                 print(f'Error occured: {e}')
                 pass
-
+    if dataframe == '15Min':
+        df_to_use = './XAUUSD1H.csv'
+    elif dataframe == '1H':
+        df_to_use = './XAUUSD15M.csv'
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD1H.csv')
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
@@ -881,9 +884,9 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
 
 
 @csrf_exempt
-def moving_average_bot(request, type_1, type_2, ma1, ma2):
+def moving_average_bot(request, type_1, type_2, ma1, ma2, dataframe):
     async def inner():
-        result = await handle_api_request(type_1, type_2, ma1, ma2)
+        result = await handle_api_request(type_1, type_2, ma1, ma2, dataframe)
         return JsonResponse({'Output': result})
 
     # Run the asynchronous code using the event loop
