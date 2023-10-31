@@ -842,7 +842,8 @@ async def handle_api_request(type_1, type_2, ma1, ma2):
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
     length = int(len(df) * 0.35)
-    bt = Backtest(df[:length], SmaCross, exclusive_orders=False, cash=10000)
+    second_length = int(len(df)* 70)
+    bt = Backtest(df[length:second_length], SmaCross, exclusive_orders=False, cash=10000)
     output = bt.run()
     
     # Convert the relevant output fields to a dictionary
