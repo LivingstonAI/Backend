@@ -1026,11 +1026,11 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
     upper_band = f'BBU_{length}_{float(std)}'
     middle_band = f'BBM_{length}_{float(std)}'
     bottom_band = f'BBL_{length}_{float(std)}'
+
+    print(f'current close first is {current_close}')
     df[upper_band] = current_close[upper_band]
     df[middle_band] = current_close[middle_band]
     df[bottom_band] = current_close[bottom_band]
-
-    # print(f'current close first is {current_close}')
     print(f'first df is {df}')
     length = int(len(df) * start)
     second_length = int(len(df) * end)
