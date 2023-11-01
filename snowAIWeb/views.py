@@ -926,7 +926,7 @@ def moving_average_bot(request, type_1, type_2, ma1, ma2, dataframe, backtest_pe
 
 
 @csrf_exempt
-async def handle_api_request_bbands(length, std):
+async def handle_api_request_bbands(length, std, dataframe, backtest_period):
     class BBands(Strategy):
         equity = 100000
         risk_percentage = 20
@@ -986,8 +986,36 @@ async def handle_api_request_bbands(length, std):
                 self.bbands(df)
             except Exception as e:
                 pass
+
+    
+    if dataframe == '5Min':
+        df_to_use = './XAUUSD5M.csv'
+    elif dataframe == '15Min':
+        df_to_use = './XAUUSD15M.csv'
+    elif dataframe == '30Min':
+        df_to_use = './XAUUSD30M.csv'
+    elif dataframe == '1H':
+        df_to_use = './XAUUSD1H.csv'
+    elif dataframe == '4H':
+        df_to_use = './XAUUSD4H.csv'
+    elif dataframe == '1D':
+        df_to_use = './XAUUSD1D.csv'
+    
+    if backtest_period == '0-25':
+        start = 0
+        end = 0.25
+    elif backtest_period == '25-50':
+        start = 0.25
+        end = 0.5
+    elif backtest_period == '50-75':
+        start = 0.5
+        end = 0.75
+    elif backtest_period == '75-100':
+        start = 0.75
+        end = 1
+
             
-    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
+    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
@@ -1029,9 +1057,9 @@ async def handle_api_request_bbands(length, std):
 
 
 @csrf_exempt
-def bbands_bot(request, length, std):
+def bbands_bot(request, length, std, dataframe, backtest_period):
     async def inner_bband():
-        result = await handle_api_request_bbands(length, std)
+        result = await handle_api_request_bbands(length, std, dataframe, backtest_period)
         return JsonResponse({'Output': result})
 
     # Run the asynchronous code using the event loop
