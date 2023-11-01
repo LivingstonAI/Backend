@@ -976,7 +976,7 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
 
 
         def next(self):
-            df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close})
+            df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, self.upper_band: self.data.upper_band, self.bottom_band: self.data.bottom_band})
             # current_close = df['Close']
             # print('1')
             current_close = ta.bbands(close=df['Close'], length=int(length), std=int(std), append=True)
@@ -984,9 +984,6 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
             # print('2')
             try:
                 # print('3')
-                df[self.upper_band] = current_close[self.upper_band]
-                df[self.middle_band] = current_close[self.middle_band]
-                df[self.bottom_band] = current_close[self.bottom_band]
                 print(f'Running Algorithm...')
                 self.bbands(df)
             except Exception as e:
@@ -1026,7 +1023,15 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
     current_close = ta.bbands(close=df['Close'], length=int(length), std=int(std), append=True)
-    print(f'current close first is {current_close}')
+    upper_band = f'BBU_{length}_{float(std)}'
+    middle_band = f'BBM_{length}_{float(std)}'
+    bottom_band = f'BBL_{length}_{float(std)}'
+    df[upper_band] = current_close[self.upper_band]
+    df[middle_band] = current_close[self.middle_band]
+    df[bottom_band] = current_close[self.bottom_band]
+
+    # print(f'current close first is {current_close}')
+    print(f'first df is {df}')
     length = int(len(df) * start)
     second_length = int(len(df) * end)
     bt = Backtest(df[length:second_length], BBands, exclusive_orders=False, cash=10000)
