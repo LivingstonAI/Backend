@@ -32,7 +32,7 @@ import pandas as pd
 import pandas_ta as ta
 # import MetaTrader5 as mt
 from datetime import datetime
-from matplotlib import pyplot as plt
+# from matplotlib import pyplot as plt
 import pandas_ta as ta
 
 current_hour = datetime.datetime.now().time().hour
