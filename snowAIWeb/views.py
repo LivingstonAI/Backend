@@ -1014,7 +1014,7 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
         start = 0.75
         end = 1
 
-            
+    # comment
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
