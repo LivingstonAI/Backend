@@ -30,6 +30,10 @@ import asyncio
 from backtesting.test import SMA, GOOG, EURUSD
 import pandas as pd
 import pandas_ta as ta
+import MetaTrader5 as mt
+from datetime import datetime
+from matplotlib import pyplot as plt
+import pandas_ta as ta
 
 current_hour = datetime.datetime.now().time().hour
 
@@ -72,6 +76,779 @@ def is_bullish_candle(candle):
 
 def get_openai_key(request):
     return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
+
+
+def trading_bot(strategy, df):
+    global position
+    login = 74999874
+    password = 'Eh+dFyI2'
+    server = 'MetaQuotes-Demo'
+
+    mt.initialize()
+    mt.login(login, password, server)
+
+    open_positions = mt.positions_get()
+
+
+    ticker = 'EURUSD'
+    interval = mt.TIMEFRAME_M15
+    from_date = datetime.now()
+    no_of_rows = 250
+    lot_size = 0.01
+    formatted_date = datetime.now()
+    year = formatted_date.year
+    month = formatted_date.month
+    day = formatted_date.day - 6
+
+    # Extract the last 100 rows from now
+    rates = mt.copy_rates_from(ticker, interval, from_date, no_of_rows)
+
+    account_info = mt.account_info()
+
+    # Exctract the last x rows based on from and now
+    new_rates = mt.copy_rates_range(ticker, interval, datetime(year, month, day), from_date)
+
+    ohlc = pd.DataFrame(new_rates)
+
+    # ohlc['time'] = pd.to_datetime(ohlc['time'])
+
+    # New Trading Bot Code starts here
+
+
+    candlestick_backtrack = 96
+
+
+    def is_bullish_run(candle1, candle2, candle3, candle4):
+        if candle2.close > candle1.close and candle3.close > candle2.close and candle4.close > candle3.close:
+            return True
+        return False
+
+
+    def is_bearish_run(candle1, candle2, candle3, candle4):
+        if candle2.close < candle1.close and candle3.close < candle2.close and candle4.close < candle3.close:
+            return True
+        return False
+
+
+    def is_bullish_run_3(candle1, candle2, candle3):
+        if candle2.close > candle1.close and candle3.close > candle2.close:
+            return True
+        return False
+
+
+    def is_bearish_run_3(candle1, candle2, candle3):
+        if candle2.close < candle1.close and candle3.close < candle2.close:
+            return True
+        return False
+
+
+    def is_bearish_candle(candle):
+        if candle.close < candle.open:
+            return True
+        return False
+
+
+    def is_bullish_candle(candle):
+        if candle.close > candle.open:
+            return True
+        return False
+
+
+    def process_image(live_image):
+        image = cv2.imread(live_image)
+        # print(live_image)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        # Resize the image to match the expected input shape
+        resized_image = cv2.resize(image, new_size)
+        # cv2_imshow(live_image)
+        # Add a batch dimension to the resized image
+        resized_image = np.expand_dims(resized_image, axis=0)
+
+        # Preprocess the image if necessary (e.g., normalize pixel values)
+
+        # Make predictions
+        predictions = model.predict(resized_image)
+        predicted_class = np.argmax(predictions)
+
+
+        # print(f'Predicted Class is: {predicted_class}')
+        return predicted_class
+
+
+    def bullish_engulfing(df):
+            df_test = df.tail(6)
+            df_test = df_test.drop_duplicates()
+            test_size = len(df)
+            num_engulfing = 0
+
+            for i in range(test_size-1):
+                first_candle = df_test.iloc[i-1]
+                second_candle = df_test.iloc[i-2]
+                third_candle  = df_test.iloc[i-3]
+                fourth_candle = df_test.iloc[i-4]
+                try:
+                    fifth_candle = df_test.iloc[i-5]
+                except:
+                    print(df)
+                    print('')
+                    print(df_test)
+                second_test = first_candle.close > second_candle.open
+
+                if is_bearish_candle(second_candle) and is_bullish_candle(first_candle) and second_test == True and is_bearish_run(fifth_candle, fourth_candle, third_candle, second_candle):
+                    num_engulfing += 1
+
+                    # print('Bullish Engulfing')
+                    if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
+
+                        # Set the style of the plot
+                        df.index = pd.to_datetime(df.index)
+                        # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                        # Create the figure object without plotting
+                        # fig, axes = mpf.plot(df.tail(candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                        # plt.close(fig)
+                        # Save the figure to a file
+                        # fig.savefig('candlestick_chart.png')
+                        # if self.position:
+                        #     self.position.close()
+
+                        # if process_image(self.path) == 2:
+                        #     price = self.data.Close[-1]
+                        #     gain_amount = self.reward_percentage * self.equity
+                        #     risk_amount = self.risk_percentage * self.equity
+                        #     tp_level = price + self.reward_percentage
+                        #     sl_level = price - self.risk_percentage
+                        #     levels = get_fibonacci_levels(df=df.tail(75), trend='uptrend')
+                        #     thirty_eight_retracement = levels[2]
+                        #     sixty_one8_retracement = levels[4]
+                        #     # if thirty_eight_retracement <= price <= sixty_one8_retracement:
+                        #     # self.position.close()
+                        #     self.buy(tp=tp_level, sl=sl_level)
+                        create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+                break
+
+    
+    def bearish_engulfing(df):
+        df_test = df.tail(6)
+        df_test = df_test.drop_duplicates()
+        test_size = len(df)
+        num_engulfing = 0
+
+        for i in range(test_size-1):
+            first_candle = df_test.iloc[i-1]
+            second_candle = df_test.iloc[i-2]
+            third_candle  = df_test.iloc[i-3]
+            fourth_candle = df_test.iloc[i-4]
+            fifth_candle = df_test.iloc[i-5]
+            # first_test = first_candle.Open < second_candle.Close
+            second_test = first_candle.close < second_candle.open
+
+            if is_bullish_candle(second_candle) and is_bearish_candle(first_candle) and second_test == True and is_bullish_run(fifth_candle, fourth_candle, third_candle, second_candle):
+                num_engulfing += 1
+                # print('Bearish Engulfing')
+                # price = self.data.Close[-1]
+
+                if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
+                    df.index = pd.to_datetime(df.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(df.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+
+                    # if self.position:
+                    #     self.position.close()
+                        # pass
+                    # if process_image(self.path) == 0:
+                    #     gain_amount = self.reward_percentage * self.equity
+                    #     risk_amount = self.risk_percentage * self.equity
+                    #     tp_level = price - self.reward_percentage
+                    #     sl_level = price + self.risk_percentage
+                    #     levels = get_fibonacci_levels(df=df.tail(75), trend='downtrend')
+                    #     thirty_eight_retracement = levels[2]
+                    #     sixty_one8_retracement = levels[4]
+                    #     # if thirty_eight_retracement <= price <= sixty_one8_retracement:
+                    #     # self.position.close()
+                    #     self.sell(tp=tp_level, sl=sl_level)
+                    create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+
+            break
+
+    def shooting_star(df):
+        # print('')
+        dataframe = df.drop_duplicates()
+        df = df.tail(5)
+        df = df.drop_duplicates()
+        test_size = len(df)
+        num_shooting_stars = 0
+        bullish_shooting_stars = 0
+
+        for i in range((test_size-1)-3):
+            first_prev_candle = df.iloc[i]
+            second_prev_candle = df.iloc[i+1]
+            third_prev_candle = df.iloc[i+2]
+            prev_candle = df.iloc[i+3]
+            testing_candle = df.iloc[i+4]
+            if is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
+                test= abs(testing_candle.high - testing_candle.close)
+                if 2 < test < 2.1:
+                    num_shooting_stars += 1
+
+                    dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(75), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+
+                    # print('bearish shooting star')
+                    if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
+                        create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+
+            elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
+
+                test = abs(testing_candle.high - testing_candle.close)
+                if test > 2 and test < 2.1:
+                    bullish_shooting_stars += 1
+                    # print('bullish shooting star')
+                    dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+
+                    if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
+                        create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+
+
+    def three_white_soldiers(df):
+        # print('')
+        dataframe = df.drop_duplicates()
+        df = df.drop_duplicates()
+        df = df.tail(6)
+        test_size = len(df)
+        three_white_soldiers = 0
+        three_black_crows = 0
+
+        for i in range(test_size-5):
+            first_prev_candle = df.iloc[i]
+            second_prev_candle = df.iloc[i+1]
+            third_prev_candle = df.iloc[i+2]
+            prev_candle = df.iloc[i+3]
+            testing_candle = df.iloc[i+4]
+            testing_candle_2 = df.iloc[i+5]
+
+            if is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
+                if testing_candle_2.close > testing_candle.close and testing_candle.close > prev_candle.close:
+                    three_white_soldiers += 1
+                    # print('bullish three white soldiers')
+                    if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
+                        dataframe.index = pd.to_datetime(dataframe.index)
+                        # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                        # Create the figure object without plotting
+                        # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                        # plt.close(fig)
+                        # Save the figure to a file
+                        # fig.savefig('candlestick_chart.png')
+                        # plt.close(fig)
+                        # if self.position:
+                        #   self.position.close()
+                        # if process_image(self.path) == 2:
+                        #     price = self.data.Close[-1]
+                        #     gain_amount = self.reward_percentage
+                        #     risk_amount = self.risk_percentage
+                        #     tp_level = price + self.reward_percentage
+                        #     sl_level = price - self.risk_percentage
+                        #     levels = get_fibonacci_levels(df=dataframe.tail(75), trend='uptrend')
+                        #     thirty_eight_retracement = levels[2]
+                        #     sixty_one8_retracement = levels[4]
+                            # if thirty_eight_retracement <= prev_candle.Close <= sixty_one8_retracement:
+                            # self.position.close()
+                        create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+                            
+            elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
+                if testing_candle_2.close < testing_candle.close and testing_candle.close < prev_candle.close:
+                    three_black_crows += 1
+                    # print('bearish three black crows')
+                    if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
+                        df.index = pd.to_datetime(df.index)
+                        # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                        # Create the figure object without plotting
+                        # fig, axes = mpf.plot(df.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                        # plt.close(fig)
+                        # # Save the figure to a file
+                        # fig.savefig('candlestick_chart.png')
+                        # plt.close(fig)
+                        # if self.position:
+                        #   self.position.close()
+                        # if process_image(self.path) == 0:
+                        #     price = self.data.Close[-1]
+                        #     gain_amount = self.reward_percentage * self.equity
+                        #     risk_amount = self.risk_percentage * self.equity
+                        #     tp_level = price - self.reward_percentage
+                        #     sl_level = price + self.risk_percentage
+                        #     levels = get_fibonacci_levels(df=dataframe.tail(75), trend='downtrend')
+                        #     thirty_eight_retracement = levels[2]
+                        #     sixty_one8_retracement = levels[4]
+                            # if thirty_eight_retracement <= prev_candle.Close <= sixty_one8_retracement:
+                            # self.position.close()
+                        create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+
+    def doji_star(df):
+        # print('')
+        df = df.drop_duplicates()
+        dataframe = df
+        df = df.tail(5)
+        test_size = len(df)
+        bullish_doji = 0
+        bearish_doji = 0
+
+        for i in range(test_size-4):
+            first_prev_candle = df.iloc[i]
+            second_prev_candle = df.iloc[i+1]
+            third_prev_candle = df.iloc[i+2]
+            prev_candle = df.iloc[i+3]
+            testing_candle = df.iloc[i+4]
+            # price = self.data.Close[-1]
+
+            if is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
+                test1 = testing_candle.high - testing_candle.close
+                test2 = testing_candle.close - testing_candle.low
+                if test1 == test2:
+                    bullish_doji += 1
+                    # print('bullish doji star')
+                    # price = self.data.Close[-1]
+                    # gain_amount = self.reward_percentage
+                    # risk_amount = self.risk_percentage
+                    # tp_level = price - gain_amount
+                    # sl_level = price + risk_amount
+
+                    dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+
+                    if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
+                        create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+            elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
+                test1 = testing_candle.open - testing_candle.close
+                test2 = testing_candle.close - testing_candle.low
+                if test1 == test2:
+                    bearish_doji += 1
+
+                    dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+
+                    if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
+                        create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+
+    
+    def bullish_pinbar(df):
+        dataframe = df.drop_duplicates()
+        df = df.tail(1)
+        df = df.drop_duplicates()
+        test_size = len(df)
+        num_pin_bars = 0
+        # price = self.data.Close[-1]
+
+        for i in range(test_size-1):
+            candle = df.iloc[i]
+            is_pin_bar = (candle.close - candle.low) > 0.004
+            if is_pin_bar:
+                num_pin_bars += 1
+                # print('Bullish Pin Bar')
+
+                dataframe.index = pd.to_datetime(dataframe.index)
+                # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                # Create the figure object without plotting
+                # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                # plt.close(fig)
+                # Save the figure to a file
+                # fig.savefig('candlestick_chart.png')
+
+                if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
+                    create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+
+
+    def bearish_pinbar(df):
+        dataframe = df.drop_duplicates()
+        df = df.tail(1)
+        df = df.drop_duplicates()
+        test_size = len(df)
+        num_pin_bars = 0
+
+        for i in range(test_size-1):
+            candle = df.iloc[i]
+            is_pin_bar = abs(candle.close - candle.high) <  0.004
+            if is_pin_bar:
+                num_pin_bars += 1
+                # print('Bearish Pin Bar')
+
+                dataframe.index = pd.to_datetime(dataframe.index)
+                # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                # Create the figure object without plotting
+                # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                # plt.close(fig)
+                # Save the figure to a file
+                # fig.savefig('candlestick_chart.png')
+                if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
+                    create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+
+
+    def morning_star(df):
+        # print('')
+        dataframe = df.drop_duplicates()
+        df = df.drop_duplicates()
+        df = df.tail(6)
+        test_size = len(df)
+        morning_stars = 0
+        evening_stars = 0
+        # price = self.data.Close[-1]
+
+        for i in range(test_size-5):
+            first_prev_candle = df.iloc[i]
+            second_prev_candle = df.iloc[i+1]
+            third_prev_candle = df.iloc[i+2]
+            prev_candle = df.iloc[i+3]
+            testing_candle = df.iloc[i+4]
+            testing_candle_2 = df.iloc[i+5]
+
+            if is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
+                test = testing_candle.open - testing_candle.close
+                if testing_candle_2.close > testing_candle.close and 0 < test < 2:
+                    morning_stars += 1
+                    # print('bullish morning star')
+                 
+
+                    dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+                    # plt.close(fig)
+                    if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
+                        # levels = get_fibonacci_levels(df=dataframe.tail(75), trend='uptrend')
+                        # thirty_eight_retracement = levels[2]
+                        # sixty_one8_retracement = levels[4]
+                        # if thirty_eight_retracement <= testing_candle.Close <= sixty_one8_retracement:
+                        create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+
+            elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
+                test = testing_candle.open - testing_candle.close
+                if testing_candle_2.close < testing_candle.close and 0 < test < 2 and testing_candle.close < prev_candle.close:
+                    evening_stars += 1
+                    # print('bearish morning star')
+
+                    dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+                    # plt.close(fig)
+                    if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
+                        # levels = get_fibonacci_levels(df=dataframe.tail(75), trend='downtrend')
+                        # thirty_eight_retracement = levels[2]
+                        # sixty_one8_retracement = levels[4]
+                        # if thirty_eight_retracement <= testing_candle.Close <= sixty_one8_retracement:
+                        create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+
+
+    def matching(df):
+        # print('')
+        df = df.drop_duplicates()
+        dataframe = df
+        df = df.tail(5)
+        test_size = len(df)
+        matching_lows = 0
+        matching_highs = 0
+
+        for i in range(test_size-4):
+            first_prev_candle = df.iloc[i]
+            second_prev_candle = df.iloc[i+1]
+            third_prev_candle = df.iloc[i+2]
+            prev_candle = df.iloc[i+3]
+            testing_candle = df.iloc[i+4]
+
+            if is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
+                if prev_candle.low == testing_candle.low and prev_candle.close == testing_candle.close:
+                    matching_lows += 1
+                    # print('matching low')
+
+                    dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+
+                    if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
+                        create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+            elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
+                if prev_candle.high == testing_candle.high and prev_candle.high == testing_candle.high:
+                    matching_highs += 1
+                    # print('matching high')
+
+                    dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+
+                    if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
+                        create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+
+
+    def methods(df):
+        dataframe = df.drop_duplicates()
+        df = df.drop_duplicates()
+        df = df.tail(8)
+        test_size = len(df)
+        rising_methods = 0
+        falling_methods = 0
+        # price = self.data.Close[-1]
+
+        for i in range(test_size-7):
+            first_prev_candle = df.iloc[i]
+            second_prev_candle = df.iloc[i+1]
+            third_prev_candle = df.iloc[i+2]
+            prev_candle = df.iloc[i+3]
+            testing_candle = df.iloc[i+4]
+            testing_candle_2 = df.iloc[i+5]
+            testing_candle_3 = df.iloc[i+6]
+            final_candle = df.iloc[7]
+
+            if is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle) and testing_candle.close < prev_candle.close and is_bearish_run_3(testing_candle, testing_candle_2, testing_candle_3):
+                if final_candle.close > prev_candle.close:
+                    rising_methods += 1
+                    # print('rising three methods')
+
+                    dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+                    # plt.close(fig)
+
+                    if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
+                        # levels = get_fibonacci_levels(df=dataframe.tail(75), trend='uptrend')
+                        # thirty_eight_retracement = levels[2]
+                        # sixty_one8_retracement = levels[4]
+                        # if thirty_eight_retracement <= testing_candle_3.Close <= sixty_one8_retracement:
+                        create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+
+            elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle) and testing_candle.close > prev_candle.close and is_bullish_run_3(testing_candle, testing_candle_2, testing_candle_3):
+                if final_candle.close < prev_candle.close:
+                    falling_methods += 1
+                    # print('falling three methods')
+
+                    dataframe.index = pd.to_datetime(dataframe.index)
+                    # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                    # Create the figure object without plotting
+                    # fig, axes = mpf.plot(dataframe.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                    # plt.close(fig)
+                    # Save the figure to a file
+                    # fig.savefig('candlestick_chart.png')
+                    # plt.close(fig)
+
+                    if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
+                        # if thirty_eight_retracement <= testing_candle_3.Close <= sixty_one8_retracement:
+                        create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+
+
+    position = ''
+    def moving_average(df):
+        open_positions = mt.positions_get()
+        position = ''
+        fema = df['EMA_50'].iloc[-1]
+        tsma = df['SMA_200'].iloc[-1]
+        # print(f'df ema 50 is {fema}')
+        # print(f'df sma 200 is {tsma}')
+        if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0] and position != 'buy':
+            # if open_positions is not None:
+            #     close_order(ticker, lot_size, buy_order_type,  buy_price)
+            #     print('4')
+            position = 'buy'
+            create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+        elif df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1] and position != 'sell':
+            # if open_positions is not None:
+            #     print('7.0')
+            #     close_order(ticker, lot_size, sell_order_type,  sell_price)
+            #     print('7')
+            position = 'sell'
+            create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+
+
+    def bbands(df):
+        try:
+            if df['close'].iloc[-1] >= df['BB_Upper_20_2.0'].iloc[-1]:
+                create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+            elif df['close'].iloc[-1] <= df['BB_Lower_20_2.0'].iloc[-1]:
+                create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+        except: 
+            pass
+
+
+    def rsi(df):
+        if df['RSI'].iloc[-1] > 80:
+          create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+        elif df['RSI'].iloc[-1] < 20:
+          create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+
+
+    def momentum(df):
+        if df['MOM'].iloc[-1] > 80:
+          create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+        elif df['MOM'].iloc[-1] < 20:
+          create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+
+
+    buy_order_type = mt.ORDER_TYPE_BUY
+    sell_order_type = mt.ORDER_TYPE_SELL
+    buy_price = mt.symbol_info_tick(ticker).ask
+    sell_price = mt.symbol_info_tick(ticker).bid
+
+    sl_pct = 0.1
+    tp_pct = 0.2
+
+    buy_sl = buy_price * (1 - sl_pct)
+    buy_tp = buy_price * (1 + tp_pct)
+
+    sell_sl = sell_price * (1 + sl_pct)
+    sell_tp = sell_price * (1 - tp_pct)
+
+
+    def create_order(ticker, lot_size, order_type, price, sl, tp):
+        request = {
+        'action': mt.TRADE_ACTION_DEAL,
+        'symbol': ticker,
+        'volume': lot_size,
+        'type': order_type,
+        'price': price,
+        'sl': sl,
+        'tp': tp,
+        'comment': 'Python Open Position',
+        'type_time': mt.ORDER_TIME_GTC,
+        'type_filling': mt.ORDER_FILLING_IOC
+        }
+
+        order = mt.order_send(request)
+        return order
+
+
+    def close_order(ticker, lot_size, order_type, price):
+        request = {
+        'action': mt.TRADE_ACTION_DEAL,
+        'symbol': ticker,
+        'volume': lot_size,
+        'type': order_type,
+        'position': mt.positions_get()[0]._asdict()['ticket'],
+        'price': price,
+        'comment': 'Python Close Position',
+        'type_time': mt.ORDER_TIME_GTC,
+        'type_filling': mt.ORDER_FILLING_IOC
+        }
+
+        order = mt.order_send(request)
+        return order
+
+
+    # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+    # close_order(ticker, lot_size, buy_order_type, buy_price)
+
+    df = ohlc
+    df['SMA_200'] = df['close'].rolling(window=200).mean()
+    df['EMA_50'] = df['close'].ewm(span=50, adjust=False).mean()
+    df['EMA_18'] = df['close'].ewm(span=18, adjust=False).mean()
+    df['EMA_6'] = df['close'].ewm(span=6, adjust=False).mean()
+
+    current_close = df['close']
+    current_close = ta.bbands(close=df['close'], length=200, std=2, append=True)
+    try:
+        df['BB_Upper_20_2.0'] = current_close['BBU_200_2.0']
+        df['BB_Middle_20_2.0'] = current_close['BBM_200_2.0']
+        df['BB_Lower_20_2.0'] = current_close['BBL_200_2.0']
+    except: 
+        pass
+
+    df['RSI'] = ta.rsi(df['close'], length = 14)
+
+    df['MOM'] = ta.mom(df['close'])
+
+    open_positions = mt.positions_get()
+
+    if strategy == 'engulfing' and open_positions is None:
+        bullish_engulfing(df=df)
+        bearish_engulfing(df=df)
+    elif strategy == 'shooting_star' and open_positions is None:
+        shooting_star(df=df)
+    elif strategy == 'soldiers' and open_positions is None:
+        three_white_soldiers(df=df)
+    elif strategy == 'doji_star' and open_positions is None:
+        doji_star(df=df)
+    elif strategy == 'pinbar' and open_positions is None:
+        bullish_pinbar(df=df)
+        bearish_pinbar(df=df)
+    elif strategy == 'star' and open_positions is None:
+        morning_star(df=df)
+    elif strategy == 'matching' and open_positions is None:
+        matching(df=df)
+    elif strategy == 'methods' and open_positions is None:
+        methods(df=df)
+    elif strategy == 'moving_average':
+        moving_average(df=df)
+    elif strategy == 'bbands' and open_positions is None:
+        bbands(df=df)
+    elif strategy == 'rsi' and open_positions is None:
+        rsi(df=df)
+    elif strategy == 'momentum' and open_positions is None:
+        momentum(df=df)
+    elif strategy == 'all' and open_positions is None:
+        bullish_engulfing(df=df)
+        bearish_engulfing(df=df)
+        morning_star(df=df)
+        matching(df=df)
+        methods(df=df)
+        moving_average(df=df)
+        bbands(df=df)
+        rsi(df=df)
+        momentum(df=df)
 
 
 def get_news_data():
@@ -841,6 +1618,8 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe):
         df_to_use = './XAUUSD15M.csv'
     elif dataframe == '1H':
         df_to_use = './XAUUSD1H.csv'
+    elif dataframe == '4H':
+        df_to_use = './XAUUSD4H.csv'
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
