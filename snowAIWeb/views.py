@@ -841,7 +841,10 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe):
             except Exception as e:
                 print(f'Error occured: {e}')
                 pass
-    if dataframe == '15Min':
+    
+    if dataframe == '5Min':
+        df_to_use = './XAUUSD5M.csv'
+    elif dataframe == '15Min':
         df_to_use = './XAUUSD15M.csv'
     elif dataframe == '30Min':
         df_to_use = './XAUUSD30M.csv'
