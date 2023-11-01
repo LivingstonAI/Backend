@@ -843,6 +843,8 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe):
                 pass
     if dataframe == '15Min':
         df_to_use = './XAUUSD15M.csv'
+    elif dataframe == '30Min':
+        df_to_use = './XAUUSD30M.csv'
     elif dataframe == '1H':
         df_to_use = './XAUUSD1H.csv'
     elif dataframe == '4H':
