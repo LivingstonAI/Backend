@@ -35,7 +35,7 @@ from datetime import datetime
 # from matplotlib import pyplot as plt
 import pandas_ta as ta
 
-current_hour = datetime.datetime.now().time().hour
+# current_hour = datetime.datetime.now().time().hour
 
 
 def is_bullish_run(candle1, candle2, candle3, candle4):
