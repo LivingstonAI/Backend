@@ -730,7 +730,7 @@ def fetch_news_data(request):
     
 
 @csrf_exempt
-async def handle_api_request(type_1, type_2, ma1, ma2, dataframe):
+async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_period):
     class SmaCross(Strategy):
         n0 = 18 # Exponential Moving Average
         n1 = 50 # Exponential Moving Average
@@ -854,13 +854,28 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe):
         df_to_use = './XAUUSD4H.csv'
     elif dataframe == '1D':
         df_to_use = './XAUUSD1D.csv'
+    
+    if backtest_period == '0-25':
+        start = 0
+        end = 0.25
+    elif backtest_period == '25-50':
+        start = 0.25
+        end = 0.5
+    elif backtest_period == '50-75':
+        start = 0.5
+        end = 0.75
+    elif backtest_period == '75-100':
+        start = 0.75
+        end = 1
+
+        
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
-    length = int(len(df) * 0.75)
-    second_length = int(len(df)* 0.7)
-    bt = Backtest(df[length:], SmaCross, exclusive_orders=False, cash=10000)
+    length = int(len(df) * start)
+    second_length = int(len(df) * end)
+    bt = Backtest(df[length:end], SmaCross, exclusive_orders=False, cash=10000)
     output = bt.run()
     
     # Convert the relevant output fields to a dictionary
@@ -897,9 +912,9 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe):
 
 
 @csrf_exempt
-def moving_average_bot(request, type_1, type_2, ma1, ma2, dataframe):
+def moving_average_bot(request, type_1, type_2, ma1, ma2, dataframe, backtest_period):
     async def inner():
-        result = await handle_api_request(type_1, type_2, ma1, ma2, dataframe)
+        result = await handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_period)
         return JsonResponse({'Output': result})
 
     # Run the asynchronous code using the event loop
