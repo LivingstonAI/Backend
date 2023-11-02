@@ -35,6 +35,7 @@ from datetime import datetime
 # from matplotlib import pyplot as plt
 import pandas_ta as ta
 
+# Comment
 # current_hour = datetime.datetime.now().time().hour
 
 
