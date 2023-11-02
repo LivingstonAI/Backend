@@ -987,7 +987,7 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
             # print('2')
             try:
                 # print('3')
-                print(f'Running Algorithm...')
+                # print(f'Running Algorithm...')
                 self.bbands(df)
             except Exception as e:
                 print(f'Exception is {e}')
