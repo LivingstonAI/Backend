@@ -1128,8 +1128,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level, dataf
 
 
         def next(self):
-            df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
-            df['RSI'] = ta.rsi(df['Close'], length = int(length))
+            df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'RSI': self.data.RSI})
             try:
                 self.rsi(df)
             except Exception as e:
@@ -1168,6 +1167,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level, dataf
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
+    df['RSI'] = ta.rsi(df['Close'], length = int(length))
     test_length = int(len(df) * 0.25)
     length = int(len(df) * start)
     second_length = int(len(df) * end)
