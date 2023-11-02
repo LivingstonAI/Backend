@@ -1171,7 +1171,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level, dataf
     df.index = pd.to_datetime(df['Time'].values)
     print(f'No error here')
     del df['Time']
-    # df['RSI'] = ta.rsi(df['Close'], length = int(length))
+    df['RSI'] = ta.rsi(df['Close'], length = int(length))
     print(f'df 1 is {df}')
     length = int(len(df) * start)
     second_length = int(len(df) * end)
