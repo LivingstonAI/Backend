@@ -1085,7 +1085,7 @@ def bbands_bot(request, length, std, dataframe, backtest_period):
 
 @csrf_exempt
 async def handle_api_request_rsi(length, overbought_level, oversold_level, dataframe, backtest_period):
-
+    print('1 is here!!!!!!!!!!!')
     class RSI(Strategy):
         equity = 100000
         risk_percentage = 20
