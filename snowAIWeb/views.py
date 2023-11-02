@@ -1227,7 +1227,7 @@ def rsi_bot(request, length, overbought_level, oversold_level, dataframe, backte
 
 
 @csrf_exempt
-async def handle_api_request_momentum():
+async def handle_api_request_momentum(dataframe, backtest_period):
 
     class Momentum(Strategy):
         equity = 100000
@@ -1286,13 +1286,43 @@ async def handle_api_request_momentum():
                 print(f'Exception is {e}')
                 pass
     
-                
-    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
+
+    if dataframe == '5Min':
+        df_to_use = './XAUUSD5M.csv'
+    elif dataframe == '15Min':
+        df_to_use = './XAUUSD15M.csv'
+    elif dataframe == '30Min':
+        df_to_use = './XAUUSD30M.csv'
+    elif dataframe == '1H':
+        df_to_use = './XAUUSD1H.csv'
+    elif dataframe == '4H':
+        df_to_use = './XAUUSD4H.csv'
+    elif dataframe == '1D':
+        df_to_use = './XAUUSD1D.csv'
+    
+
+    if backtest_period == '0-25':
+        start = 0
+        end = 0.25
+    elif backtest_period == '25-50':
+        start = 0.25
+        end = 0.5
+    elif backtest_period == '50-75':
+        start = 0.5
+        end = 0.75
+    elif backtest_period == '75-100':
+        start = 0.75
+        end = 1
+
+
+    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
-    test_length = int(len(df) * 0.25)
-    bt = Backtest(df[:test_length], Momentum, exclusive_orders=False, cash=10000)
+    # test_length = int(len(df) * 0.25)
+    length = int(len(df) * start)
+    second_length = int(len(df) * end)
+    bt = Backtest(df[length:second_length], Momentum, exclusive_orders=False, cash=10000)
     output = bt.run()
     
     # Convert the relevant output fields to a dictionary
@@ -1329,9 +1359,9 @@ async def handle_api_request_momentum():
 
 
 @csrf_exempt
-def momentum_bot(request):
+def momentum_bot(request, dataframe, backtest_period):
     async def inner_momentum():
-        result = await handle_api_request_momentum()
+        result = await handle_api_request_momentum(dataframe, backtest_period)
         return JsonResponse({'Output': result})
 
     # Run the asynchronous code using the event loop
@@ -1340,7 +1370,7 @@ def momentum_bot(request):
 
 
 @csrf_exempt
-async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three_white_soldiers, doji_star, methods):
+async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three_white_soldiers, doji_star, methods, dataframe, backtest_period):
     class Strat(Strategy):
 
         current_day = 0
@@ -1859,16 +1889,46 @@ async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three
                 except Exception as e:
                     print(f'Error occured here: {e}')
                     pass
+
+    
+    if dataframe == '5Min':
+        df_to_use = './XAUUSD5M.csv'
+    elif dataframe == '15Min':
+        df_to_use = './XAUUSD15M.csv'
+    elif dataframe == '30Min':
+        df_to_use = './XAUUSD30M.csv'
+    elif dataframe == '1H':
+        df_to_use = './XAUUSD1H.csv'
+    elif dataframe == '4H':
+        df_to_use = './XAUUSD4H.csv'
+    elif dataframe == '1D':
+        df_to_use = './XAUUSD1D.csv'
+    
+
+    if backtest_period == '0-25':
+        start = 0
+        end = 0.25
+    elif backtest_period == '25-50':
+        start = 0.25
+        end = 0.5
+    elif backtest_period == '50-75':
+        start = 0.5
+        end = 0.75
+    elif backtest_period == '75-100':
+        start = 0.75
+        end = 1
+
     
                 
-    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
+    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
     df["SMA_200"] = ta.sma(df["Close"], length=200)
     df["EMA_50"] = ta.ema(df["Close"], length=50)
-    test_length = int(len(df) * 0.25)
-    bt = Backtest(df[:test_length], Strat, exclusive_orders=False, cash=10000)
+    length = int(len(df) * start)
+    second_length = int(len(df) * end)
+    bt = Backtest(df[length:second_length], Strat, exclusive_orders=False, cash=10000)
     output = bt.run()
     
     # Convert the relevant output fields to a dictionary
@@ -1905,7 +1965,7 @@ async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three
 
 
 @csrf_exempt
-def candlesticks_bot(request):
+def candlesticks_bot(request, dataframe, backtest_period):
     async def inner_candlesticks():
         try:
             data = json.loads(request.body)
@@ -1920,7 +1980,7 @@ def candlesticks_bot(request):
 
             result = await handle_api_request_candlesticks(engulfing=engulfing, 
             pinbar=pinbar, morning_star=morningStar, three_white_soldiers=threeWhiteSoldiers, 
-            doji_star=dojiStar, methods=methods)
+            doji_star=dojiStar, methods=methods, dataframe, backtest_period)
             return JsonResponse({'Output': result})
         except Exception as e:
             return JsonResponse({'Error': str(e)})
