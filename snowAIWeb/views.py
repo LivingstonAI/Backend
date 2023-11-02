@@ -977,9 +977,10 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
 
 
         def next(self):
-            df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, self.data.upper_band: self.data.upper_band, self.data.bottom_band: self.data.bottom_band})
+            df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close})
             # current_close = df['Close']
             # print('1')
+            print(f'data is {self.data}')
             current_close = ta.bbands(close=df['Close'], length=int(length), std=int(std), append=True)
             # print(f'current_close is {current_close}')
             # print('2')
