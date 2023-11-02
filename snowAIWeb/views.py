@@ -1085,6 +1085,7 @@ def bbands_bot(request, length, std, dataframe, backtest_period):
 
 @csrf_exempt
 async def handle_api_request_rsi(length, overbought_level, oversold_level, dataframe, backtest_period):
+
     class RSI(Strategy):
         equity = 100000
         risk_percentage = 20
@@ -1170,7 +1171,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level, dataf
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
     df['RSI'] = ta.rsi(df['Close'], length = int(length))
-    test_length = int(len(df) * 0.25)
+    print(f'df 1 is {df}')
     length = int(len(df) * start)
     second_length = int(len(df) * end)
     bt = Backtest(df[length:second_length], RSI, exclusive_orders=False, cash=10000)
