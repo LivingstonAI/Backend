@@ -1169,8 +1169,9 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level, dataf
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
+    print(f'No error here')
     del df['Time']
-    df['RSI'] = ta.rsi(df['Close'], length = int(length))
+    # df['RSI'] = ta.rsi(df['Close'], length = int(length))
     print(f'df 1 is {df}')
     length = int(len(df) * start)
     second_length = int(len(df) * end)
@@ -1213,7 +1214,9 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level, dataf
 @csrf_exempt
 def rsi_bot(request, length, overbought_level, oversold_level, dataframe, backtest_period):
     # oversold_level = int(oversold_level.remove(f'{length}_'))
+    print('Hello World!!!!!!!!!!!!!!!!!')
     async def inner_rsi():
+        print('Code runnning...')
         # print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
         result = await handle_api_request_rsi(length, overbought_level, oversold_level, dataframe, backtest_period)
         return JsonResponse({'Output': result})
