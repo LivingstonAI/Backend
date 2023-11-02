@@ -993,7 +993,6 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
                 print(f'Exception is {e}')
                 pass
 
-    
     if dataframe == '5Min':
         df_to_use = './XAUUSD5M.csv'
     elif dataframe == '15Min':
@@ -1085,7 +1084,7 @@ def bbands_bot(request, length, std, dataframe, backtest_period):
 
 
 @csrf_exempt
-async def handle_api_request_rsi(length, overbought_level, oversold_level):
+async def handle_api_request_rsi(length, overbought_level, oversold_level, dataframe, backtest_period):
     class RSI(Strategy):
         equity = 100000
         risk_percentage = 20
@@ -1137,13 +1136,42 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
                 print(f'df is {df}')
                 print(f'Exception is {e}')
                 pass        
+
+            
+    if dataframe == '5Min':
+        df_to_use = './XAUUSD5M.csv'
+    elif dataframe == '15Min':
+        df_to_use = './XAUUSD15M.csv'
+    elif dataframe == '30Min':
+        df_to_use = './XAUUSD30M.csv'
+    elif dataframe == '1H':
+        df_to_use = './XAUUSD1H.csv'
+    elif dataframe == '4H':
+        df_to_use = './XAUUSD4H.csv'
+    elif dataframe == '1D':
+        df_to_use = './XAUUSD1D.csv'
+    
+    if backtest_period == '0-25':
+        start = 0
+        end = 0.25
+    elif backtest_period == '25-50':
+        start = 0.25
+        end = 0.5
+    elif backtest_period == '50-75':
+        start = 0.5
+        end = 0.75
+    elif backtest_period == '75-100':
+        start = 0.75
+        end = 1
                 
-    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './XAUUSD.csv')
+    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
     test_length = int(len(df) * 0.25)
-    bt = Backtest(df[:test_length], RSI, exclusive_orders=False, cash=10000)
+    length = int(len(df) * start)
+    second_length = int(len(df) * end)
+    bt = Backtest(df[length:second_length], RSI, exclusive_orders=False, cash=10000)
     output = bt.run()
     
     # Convert the relevant output fields to a dictionary
@@ -1180,11 +1208,11 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level):
 
 
 @csrf_exempt
-def rsi_bot(request, length, overbought_level, oversold_level):
+def rsi_bot(request, length, overbought_level, oversold_level, dataframe, backtest_period):
     # oversold_level = int(oversold_level.remove(f'{length}_'))
     async def inner_rsi():
         # print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
-        result = await handle_api_request_rsi(length, overbought_level, oversold_level)
+        result = await handle_api_request_rsi(length, overbought_level, oversold_level, dataframe, backtest_period)
         return JsonResponse({'Output': result})
 
     # Run the asynchronous code using the event loop
