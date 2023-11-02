@@ -1128,6 +1128,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level, dataf
 
 
         def next(self):
+            print(f'self.data is {self.data}')
             df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'RSI': self.data.RSI})
             print(f'df is {df}')
             try:
