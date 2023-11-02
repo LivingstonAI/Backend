@@ -1980,7 +1980,7 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
             result = await handle_api_request_candlesticks(engulfing=engulfing, 
             pinbar=pinbar, morning_star=morningStar, three_white_soldiers=threeWhiteSoldiers, 
-            doji_star=dojiStar, methods=methods, dataframe, backtest_period)
+            doji_star=dojiStar, methods=methods, dataframe=dataframe, backtest_period=backtest_period)
             return JsonResponse({'Output': result})
         except Exception as e:
             return JsonResponse({'Error': str(e)})
