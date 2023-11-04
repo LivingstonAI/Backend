@@ -31,7 +31,8 @@ urlpatterns = [
     path('create-bot/bbands/<int:length>/<int:std>/<str:dataframe>/<str:backtest_period>', views.bbands_bot, name='create-bot-bbands'),
     path('create-bot/rsi/<str:length>/<str:overbought_level>/<str:oversold_level>/<str:dataframe>/<str:backtest_period>', views.rsi_bot, name='create-bot-rsi'),
     path('create-bot/momentum/<str:dataframe>/<str:backtest_period>', views.momentum_bot, name='create-bot-momentum'),
-    path('create-bot/candlesticks/<str:dataframe>/<str:backtest_period>', views.candlesticks_bot, name='create-bot-candlesticks')
+    path('create-bot/candlesticks/<str:dataframe>/<str:backtest_period>', views.candlesticks_bot, name='create-bot-candlesticks'),
+    path('api-test', views.api_call_test, name='api-call'),
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 

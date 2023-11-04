@@ -1991,4 +1991,6 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 
 
-
+@csrf_exempt
+def api_call_test(request):
+    return JsonResponse({'message': 'successfully called api!'})
