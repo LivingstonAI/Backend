@@ -30,7 +30,7 @@ import asyncio
 from backtesting.test import SMA, GOOG, EURUSD
 import pandas as pd
 import pandas_ta as ta
-import MetaTrader5 as mt
+# import MetaTrader5 as mt
 from datetime import datetime
 # from matplotlib import pyplot as plt
 import pandas_ta as ta
