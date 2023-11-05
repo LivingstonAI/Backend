@@ -1992,7 +1992,7 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 
 @csrf_exempt
-def api_call(request, asset, data):
+def api_call(request, asset):
     if request.method == 'POST':
         try:
             
