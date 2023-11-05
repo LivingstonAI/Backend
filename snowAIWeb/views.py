@@ -1995,14 +1995,14 @@ def candlesticks_bot(request, dataframe, backtest_period):
 def api_call(request, asset):
     if request.method == 'POST':
         try:
-            data = json.loads(request.body.decode('utf-8'))
+            data = json.loads(request.POST.get('data'))
             # Process the JSON data as needed
             symbol = data.get('symbol')
             open_price = data.get('open')
             high_price = data.get('high')
             low_price = data.get('low')
             close_price = data.get('close')
-            
+
             # Perform your processing logic here
             # ...
 
