@@ -1992,22 +1992,15 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 
 @csrf_exempt
-def api_call(request, asset):
+def api_call(request, asset, data):
     if request.method == 'POST':
         try:
-            retrieved_data = request.body
-            data = json.loads(retrieved_data)
-            # Process the JSON data as needed
-            symbol = data.get('symbol')
-            open_price = data.get('open')
-            high_price = data.get('high')
-            low_price = data.get('low')
-            close_price = data.get('close')
-
+            
+            print(f'Data is {data}')
             # Perform your processing logic here
             # ...
 
-            return JsonResponse({'status': 'success'})
+            return JsonResponse({'status': 'sucess'})
 
         except Exception as e:
             return JsonResponse({'message': f'{str(retrieved_data)}'})
