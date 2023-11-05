@@ -1997,10 +1997,11 @@ def api_call(request, asset):
         try:
             retrieved_data = 'test'
             print(f'Data is {retrieved_data}')
+            retrieved_data = request.post
             # Perform your processing logic here
             # ...
 
-            return JsonResponse({'message': 'success'})
+            return JsonResponse({'message': f'{retrieved_data}'})
 
         except Exception as e:
             return JsonResponse({'message': f'{str(retrieved_data)}'})
