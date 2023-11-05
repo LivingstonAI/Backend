@@ -2008,7 +2008,12 @@ def api_call(request, asset):
             # ...
 
             return JsonResponse({'status': 'success'})
+
+        except Exception as e:
+            print(f'Error is: {e} and retrieved data is {retrieved_data}')
+
         except json.JSONDecodeError as e:
             return JsonResponse({'status': 'error', 'message': f'Invalid JSON data: {str(retrieved_data)}'})
+        
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
