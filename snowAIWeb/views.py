@@ -1992,5 +1992,8 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 
 @csrf_exempt
-def api_call_test(request):
+def api_call_test(request, asset):
     return JsonResponse({'message': '1'})
+
+
+
