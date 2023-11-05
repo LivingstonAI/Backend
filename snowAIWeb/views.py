@@ -2008,6 +2008,6 @@ def api_call(request, asset):
 
             return JsonResponse({'status': 'success'})
         except json.JSONDecodeError as e:
-            return JsonResponse({'status': 'error', 'message': 'Invalid JSON data'})
+            return JsonResponse({'status': 'error', 'message': f'Invalid JSON data: {str(json)}'})
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
