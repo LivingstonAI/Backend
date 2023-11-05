@@ -1995,7 +1995,7 @@ def candlesticks_bot(request, dataframe, backtest_period):
 def api_call(request, asset):
     if request.method == 'POST':
         try:
-            retrieved_data = request.post
+            retrieved_data = request.body
             # Perform your processing logic here
             # ...
 
