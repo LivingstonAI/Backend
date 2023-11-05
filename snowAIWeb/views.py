@@ -2000,7 +2000,7 @@ def api_call(request, asset, data):
             # Perform your processing logic here
             # ...
 
-            return JsonResponse({'status': 'sucess'})
+            return JsonResponse({'message': 'sucess'})
 
         except Exception as e:
             return JsonResponse({'message': f'{str(retrieved_data)}'})
