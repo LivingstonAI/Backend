@@ -34,7 +34,7 @@ import pandas_ta as ta
 from datetime import datetime
 # from matplotlib import pyplot as plt
 import pandas_ta as ta
-
+import yfinance as yf
 # Comment
 # current_hour = datetime.datetime.now().time().hour
 
