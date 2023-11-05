@@ -1992,8 +1992,22 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 
 @csrf_exempt
-def api_call_test(request, asset):
-    return JsonResponse({'message': f'1 for Asset: {asset}'})
+def api_call(request, asset):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            # Process the JSON data as needed
+            symbol = data.get('symbol')
+            open_price = data.get('open')
+            high_price = data.get('high')
+            low_price = data.get('low')
+            close_price = data.get('close')
+            
+            # Perform your processing logic here
+            # ...
 
-
-
+            return JsonResponse({'status': 'success'})
+        except json.JSONDecodeError as e:
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON data'})
+    else:
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
