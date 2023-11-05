@@ -1996,7 +1996,7 @@ def api_call(request, asset):
     if request.method == 'POST':
         try:
             retrieved_data = 'test'
-            print(f'Data is {test}')
+            print(f'Data is {retrieved_data}')
             # Perform your processing logic here
             # ...
 
