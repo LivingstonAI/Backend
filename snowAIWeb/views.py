@@ -1990,22 +1990,19 @@ def candlesticks_bot(request, dataframe, backtest_period):
     return loop.run_until_complete(inner_candlesticks())
 
 
-
 @csrf_exempt
 def api_call(request, asset):
     if request.method == 'POST':
         try:
-            retrieved_data = request.body
-            # Perform your processing logic here
-            # ...
+            received_data = request.body.decode('utf-8')  # Decode the received data
+            data = json.loads(received_data)  # Parse the JSON data
 
-            return JsonResponse({'message': f'{retrieved_data}'})
+            # Now, you can work with 'data' which should be a list of OHLC data
+
+            return JsonResponse({'message': 'Data received successfully'})
 
         except Exception as e:
-            return JsonResponse({'message': f'error: {e}, {str(retrieved_data)}'})
+            return JsonResponse({'message': f'Error: {e}'})
 
-        except json.JSONDecodeError as e:
-            return JsonResponse({'status': 'error', 'message': f'Invalid JSON data: {str(retrieved_data)}'})
-        
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
