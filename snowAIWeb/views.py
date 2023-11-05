@@ -1995,8 +1995,6 @@ def candlesticks_bot(request, dataframe, backtest_period):
 def api_call(request, asset):
     if request.method == 'POST':
         try:
-            retrieved_data = 'test'
-            print(f'Data is {retrieved_data}')
             retrieved_data = request.post
             # Perform your processing logic here
             # ...
@@ -2004,7 +2002,7 @@ def api_call(request, asset):
             return JsonResponse({'message': f'{retrieved_data}'})
 
         except Exception as e:
-            return JsonResponse({'message': f'{str(retrieved_data)}'})
+            return JsonResponse({'message': f'error: {e}, {str(retrieved_data)}'})
 
         except json.JSONDecodeError as e:
             return JsonResponse({'status': 'error', 'message': f'Invalid JSON data: {str(retrieved_data)}'})
