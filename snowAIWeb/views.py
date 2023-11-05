@@ -1993,30 +1993,21 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 @csrf_exempt
 def api_call(request, asset):
-    try:
-        # Get the JSON data sent from MetaTrader
-        data = json.loads(request.body)
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            # Process the JSON data as needed
+            symbol = data.get('symbol')
+            open_price = data.get('open')
+            high_price = data.get('high')
+            low_price = data.get('low')
+            close_price = data.get('close')
+            
+            # Perform your processing logic here
+            # ...
 
-        # Process the data as needed
-        # You can iterate through the JSON array and access individual data points
-        for rate in data:
-            bar = rate.get("Bar")
-            time = rate.get("Time")
-            open_price = rate.get("Open")
-            high_price = rate.get("High")
-            low_price = rate.get("Low")
-            close_price = rate.get("Close")
-
-            # Perform your processing logic here, such as saving to a database, analysis, etc.
-
-        # Return a JSON response to acknowledge successful processing
-        response_data = {"message": "Data processed successfully"}
-        return JsonResponse(response_data)
-    except json.JSONDecodeError as e:
-        # Handle JSON decoding errors
-        response_data = {"error": "Invalid JSON data"}
-        return JsonResponse(response_data, status=400)
-    except Exception as e:
-        # Handle other exceptions
-        response_data = {"error": "An error occurred while processing the data"}
-        return JsonResponse(response_data, status=500)
+            return JsonResponse({'status': 'success'})
+        except json.JSONDecodeError as e:
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON data'})
+    else:
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
