@@ -1995,7 +1995,8 @@ def candlesticks_bot(request, dataframe, backtest_period):
 def api_call(request, asset):
     if request.method == 'POST':
         try:
-            data = json.loads(request.POST.get('data'))
+            retrieved_data = request.POST.get('data')
+            data = json.loads(retrieved_data)
             # Process the JSON data as needed
             symbol = data.get('symbol')
             open_price = data.get('open')
@@ -2008,6 +2009,6 @@ def api_call(request, asset):
 
             return JsonResponse({'status': 'success'})
         except json.JSONDecodeError as e:
-            return JsonResponse({'status': 'error', 'message': f'Invalid JSON data'})
+            return JsonResponse({'status': 'error', 'message': f'Invalid JSON data: {str(retrieved_data)}'})
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
