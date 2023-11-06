@@ -2084,7 +2084,7 @@ def api_call(request, asset):
 
         moving_average_output = moving_average(df=data)
             
-        return JsonResponse({'message:': f'Data received successfully with output of: {moving_average_output}'})
+        return JsonResponse({'message:': f'{moving_average_output}'})
 
     except Exception as e:
         return JsonResponse({'message:': f'Error: {e}'})
