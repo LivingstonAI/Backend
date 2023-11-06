@@ -2018,7 +2018,8 @@ def check_moving_averages_for_sell(df, range):
         # print('False')
         return False
     
-
+    
+@csrf_exempt
 def moving_average(df):
         range = 2
 
@@ -2065,8 +2066,6 @@ def moving_average(df):
             return 0
         else:
             return 0
-
-
 
 
 @csrf_exempt
