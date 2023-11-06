@@ -1991,19 +1991,20 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 
 @csrf_exempt
-def api_call(request, asset):
-    if request.method == 'POST':
-        try:
-            received_data = request.body.decode('utf-8')  # Decode the received data
-            data = json.loads(received_data)  # Parse the JSON data
+def api_call(request, asset):   
+    try:
+        end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-            # Now, you can work with 'data' which should be a list of OHLC data
+        # Calculate the date 30 days ago from the current day
+        start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
-            return JsonResponse({'message': 'Data received successfully'})
+        # Download data using the calculated dates
+        forex_asset = f"{asset}=X"
+        data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
+            
+        return JsonResponse({'message': 'Data received successfully'})
 
-        except Exception as e:
-            return JsonResponse({'message': f'Error: {e}'})
+    except Exception as e:
+        return JsonResponse({'message': f'Error: {e}'})
 
-    else:
-        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
 
