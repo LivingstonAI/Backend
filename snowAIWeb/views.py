@@ -2090,3 +2090,7 @@ def api_call(request, asset):
     except Exception as e:
         return JsonResponse({'message:': f'Error: {e}'})
 
+
+@csrf_exempt
+def api_test(request, asset):
+    return JsonResponse({"message": "Hello World"})
