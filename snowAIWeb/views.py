@@ -2047,6 +2047,7 @@ def moving_average(df):
                 # close_order(ticker, lot_size, buy_order_type, buy_price) # NB
                 # time.sleep(1)
                 return 'buy'
+            return 'dont buy'
                
         elif df.tail(1)['SMA_149'].values[0] < df.tail(1)['SMA_202'].values[0]:
             # print('2')
@@ -2061,6 +2062,7 @@ def moving_average(df):
                     # time.sleep(1)
                 # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                 return 'sell'
+            return 'dont sell'
         else:
             return 'do nothing'
 
