@@ -2069,7 +2069,7 @@ def moving_average(df):
 
 
 @csrf_exempt
-def api_call(request, asset): 
+def api_call(request, asset, timeframe): 
     # return JsonResponse({"message": "API Call Works!"})  
 
     try:
@@ -2080,7 +2080,7 @@ def api_call(request, asset):
 
         # Download data using the calculated dates
         forex_asset = f"{asset}=X"
-        data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
+        data = yf.download(forex_asset, start=start_date, end=end_date, interval=timeframe)
 
         moving_average_output = moving_average(df=data)
             
