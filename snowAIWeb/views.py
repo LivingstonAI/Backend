@@ -2002,8 +2002,8 @@ def api_call(request, asset):
         forex_asset = f"{asset}=X"
         data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
             
-        return JsonResponse({'message': 'Data received successfully'})
+        return JsonResponse({'message:': 'Data received successfully'})
 
     except Exception as e:
-        return JsonResponse({'message': f'Error: {e}'})
+        return JsonResponse({'message:': f'Error: {e}'})
 
