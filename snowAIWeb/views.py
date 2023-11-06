@@ -1992,7 +1992,7 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 @csrf_exempt
 def api_call(request, asset): 
-    return JsonResponse({"message:": "API Call Works!"})  
+    return JsonResponse({"message": "API Call Works!"})  
     # try:
     #     end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
