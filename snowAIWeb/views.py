@@ -1990,21 +1990,100 @@ def candlesticks_bot(request, dataframe, backtest_period):
     return loop.run_until_complete(inner_candlesticks())
 
 
+def check_moving_averages_for_buy(df, range):
+        past_10_rows = df[['SMA_149', 'SMA_202']].tail(range)
+        past_10_rows['Converge'] = past_10_rows['SMA_149'] < past_10_rows['SMA_202']
+        past = past_10_rows.tail(1)['Converge'].values[0]
+        second_last_row = past_10_rows['Converge'].iloc[-2]
+        print(past_10_rows)
+        if past == False and second_last_row == True:
+                # print('True')
+            return True
+        else:
+                # print('False')
+            return False
+
+
+def check_moving_averages_for_sell(df, range):
+    past_10_rows = df[['SMA_149', 'SMA_202']].tail(range)
+    past_10_rows['Diverge'] = past_10_rows['SMA_149'] > past_10_rows['SMA_202']
+    past = past_10_rows.tail(1)['Diverge'].values[0]
+    second_last_row = past_10_rows['Diverge'].iloc[-2]
+    # print(past)
+    print(past_10_rows)
+    if past == False and second_last_row == True:
+        # print('True')
+        return True
+    else:
+        # print('False')
+        return False
+    
+
+def moving_average(df):
+        range = 2
+
+        df['SMA_202'] = ta.sma(df['Close'], length=202)
+        df['SMA_149'] = ta.sma(df['Close'], length=149)
+        # 1 represents 'BUY'
+        # -1 represents 'SELL'
+        # 0 represents 'DO NOTHING'
+
+        # already_sell = None
+        # already_buy = None
+        # try:
+        #     already_sell = mt.positions_get()[0]._asdict()['type'] == 1
+        # except:
+        #     pass
+        
+        # try:
+        #     already_buy = mt.positions_get()[0]._asdict()['type'] == 0
+        # except:
+        #     pass
+
+        if df.tail(1)['SMA_149'].values[0] > df.tail(1)['SMA_202'].values[0]:
+        
+            if check_moving_averages_for_buy(df=df, range=range):
+                # if already_sell:
+                # close_order(ticker, lot_size, buy_order_type, buy_price) # NB
+                # time.sleep(1)
+                return 1
+               
+        elif df.tail(1)['SMA_149'].values[0] < df.tail(1)['SMA_202'].values[0]:
+            # print('2')
+            # if open_positions is not None:
+            #     print('7.0')
+            #     close_order(ticker, lot_size, sell_order_type,  sell_price)
+            #     print('7')
+            # position = 'sell'
+            if check_moving_averages_for_sell(df=df, range=range):
+                # if already_buy:
+                    # close_order(ticker, lot_size, sell_order_type, sell_price)
+                    # time.sleep(1)
+                # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
+                return -1
+        else:
+            return 0
+
+
+
+
 @csrf_exempt
 def api_call(request, asset): 
-    return JsonResponse({"message": "API Call Works!"})  
-    # try:
-    #     end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    # return JsonResponse({"message": "API Call Works!"})  
+    try:
+        end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    #     # Calculate the date 30 days ago from the current day
-    #     start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        # Calculate the date 30 days ago from the current day
+        start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
-    #     # Download data using the calculated dates
-    #     forex_asset = f"{asset}=X"
-    #     data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
+        # Download data using the calculated dates
+        forex_asset = f"{asset}=X"
+        data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
+
+        moving_average_output = moving_average(df=data)
             
-    #     return JsonResponse({'message:': 'Data received successfully'})
+        return JsonResponse({'message:': f'Data received successfully with output of: {moving_average_output}'})
 
-    # except Exception as e:
-    #     return JsonResponse({'message:': f'Error: {e}'})
+    except Exception as e:
+        return JsonResponse({'message:': f'Error: {e}'})
 
