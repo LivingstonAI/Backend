@@ -2080,7 +2080,7 @@ def api_call(request, asset, timeframe):
 
         # Download data using the calculated dates
         forex_asset = f"{asset}=X"
-        data = yf.download(forex_asset, start=start_date, end=end_date, interval=timeframe)
+        data = yf.download(forex_asset, start=start_date, end=end_date, interval=timeframe.lower())
 
         moving_average_output = moving_average(df=data)
             
