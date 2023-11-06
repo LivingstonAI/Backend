@@ -2071,23 +2071,18 @@ def moving_average(df):
 @csrf_exempt
 def api_call(request, asset): 
     # return JsonResponse({"message": "API Call Works!"})  
+    end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    try:
-        end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    # Calculate the date 30 days ago from the current day
+    start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
 
-        # Calculate the date 30 days ago from the current day
-        start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+    # Download data using the calculated dates
+    forex_asset = f"{asset}=X"
+    data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
 
-        # Download data using the calculated dates
-        forex_asset = f"{asset}=X"
-        data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
-
-        moving_average_output = moving_average(df=data)
+    moving_average_output = moving_average(df=data)
             
-        return JsonResponse({'message': f'{moving_average_output}'})
-
-    except Exception as e:
-        return JsonResponse({'message': f'Error: {e}'})
+    return JsonResponse({'message': f'{moving_average_output}'})
 
 
 @csrf_exempt
