@@ -33,7 +33,7 @@ urlpatterns = [
     path('create-bot/momentum/<str:dataframe>/<str:backtest_period>', views.momentum_bot, name='create-bot-momentum'),
     path('create-bot/candlesticks/<str:dataframe>/<str:backtest_period>', views.candlesticks_bot, name='create-bot-candlesticks'),
     path('api-call/<str:asset>', views.api_call, name='api-call'),
-    path('api-test/<str:asset>', views.api_test, name='api-test'),
+    path('api-test', views.api_test, name='api-test'),
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 
