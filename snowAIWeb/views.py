@@ -2018,7 +2018,7 @@ def check_moving_averages_for_sell(df, range):
         # print('False')
         return False
     
-    
+
 @csrf_exempt
 def moving_average(df):
         range = 2
@@ -2071,6 +2071,8 @@ def moving_average(df):
 @csrf_exempt
 def api_call(request, asset): 
     # return JsonResponse({"message": "API Call Works!"})  
+    if request.method == 'POST':
+        return JsonResponse({"message": "Api call works!"})
     try:
         end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
