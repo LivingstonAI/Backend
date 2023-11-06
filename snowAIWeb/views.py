@@ -2071,8 +2071,7 @@ def moving_average(df):
 @csrf_exempt
 def api_call(request, asset): 
     # return JsonResponse({"message": "API Call Works!"})  
-    if request.method == 'POST':
-        return JsonResponse({"message": "Api call works!"})
+
     try:
         end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -2085,12 +2084,15 @@ def api_call(request, asset):
 
         moving_average_output = moving_average(df=data)
             
-        return JsonResponse({'message:': f'{moving_average_output}'})
+        return JsonResponse({'message': f'{moving_average_output}'})
 
     except Exception as e:
-        return JsonResponse({'message:': f'Error: {e}'})
+        return JsonResponse({'message': f'Error: {e}'})
 
 
 @csrf_exempt
 def api_test(request, asset):
     return JsonResponse({"message": "Hello World"})
+
+
+
