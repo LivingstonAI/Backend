@@ -2006,3 +2006,4 @@ def api_call(request, asset):
 
     else:
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+
