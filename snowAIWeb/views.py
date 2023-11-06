@@ -19,7 +19,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 import datetime
-from datetime import date
+from datetime import datetime, timedelta
 import time
 import os
 import http.client
@@ -2006,5 +2006,4 @@ def api_call(request, asset):
 
     except Exception as e:
         return JsonResponse({'message': f'Error: {e}'})
-
 
