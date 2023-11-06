@@ -1991,19 +1991,20 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 
 @csrf_exempt
-def api_call(request, asset):   
-    try:
-        end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+def api_call(request, asset): 
+    return JsonResponse({"message:": "API Call Works!"})  
+    # try:
+    #     end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-        # Calculate the date 30 days ago from the current day
-        start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    #     # Calculate the date 30 days ago from the current day
+    #     start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
-        # Download data using the calculated dates
-        forex_asset = f"{asset}=X"
-        data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
+    #     # Download data using the calculated dates
+    #     forex_asset = f"{asset}=X"
+    #     data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
             
-        return JsonResponse({'message:': 'Data received successfully'})
+    #     return JsonResponse({'message:': 'Data received successfully'})
 
-    except Exception as e:
-        return JsonResponse({'message:': f'Error: {e}'})
+    # except Exception as e:
+    #     return JsonResponse({'message:': f'Error: {e}'})
 
