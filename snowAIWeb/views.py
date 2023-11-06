@@ -2046,7 +2046,7 @@ def moving_average(df):
                 # if already_sell:
                 # close_order(ticker, lot_size, buy_order_type, buy_price) # NB
                 # time.sleep(1)
-                return 1
+                return 'buy'
                
         elif df.tail(1)['SMA_149'].values[0] < df.tail(1)['SMA_202'].values[0]:
             # print('2')
@@ -2060,9 +2060,9 @@ def moving_average(df):
                     # close_order(ticker, lot_size, sell_order_type, sell_price)
                     # time.sleep(1)
                 # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
-                return -1
+                return 'sell'
         else:
-            return 0
+            return 'do nothing'
 
 
 
@@ -2074,7 +2074,7 @@ def api_call(request, asset):
         end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
         # Calculate the date 30 days ago from the current day
-        start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
 
         # Download data using the calculated dates
         forex_asset = f"{asset}=X"
