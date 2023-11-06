@@ -2095,4 +2095,6 @@ def api_test(request):
     return JsonResponse({"message": "Hello World"})
 
 
-
+@csrf_exempt
+def new_test(request):
+    return JsonResponse({"message": "Heyo!"})
