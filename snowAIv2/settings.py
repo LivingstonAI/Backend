@@ -50,10 +50,10 @@ REST_FRAMEWORK = {
 # )
 
 CSRF_TRUSTED_ORIGINS = [
-    '*',
     'http://localhost:5173',
     'https://frontend-2yg4.vercel.app',
     'https://backend-production-c0ab.up.railway.app',
+    'https://www.metatrader5.com/en/trading-platform/web-trading',
 ]
 
 AUTH_USER_MODEL = 'snowAIWeb.User'
@@ -181,9 +181,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # CORS_ALLOW_ALL_ORIGINS = True # If this is used then `CORS_ALLOWED_ORIGINS` will not have any effect
 # CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
-    "*",
     "https://frontend-2yg4.vercel.app",
     "http://localhost:5173",
+    "https://www.metatrader5.com/en/trading-platform/web-trading",
 ] # If this is used, then not need to use `CORS_ALLOW_ALL_ORIGINS = True`
 
 
