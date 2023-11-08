@@ -1991,8 +1991,8 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 
 def check_moving_averages_for_buy(df, range):
-        past_10_rows = df[['SMA_149', 'SMA_202']].tail(range)
-        past_10_rows['Converge'] = past_10_rows['SMA_149'] < past_10_rows['SMA_202']
+        past_10_rows = df[['SMA_50', 'SMA_200']].tail(range)
+        past_10_rows['Converge'] = past_10_rows['SMA_50'] < past_10_rows['SMA_200']
         past = past_10_rows.tail(1)['Converge'].values[0]
         second_last_row = past_10_rows['Converge'].iloc[-2]
         print(past_10_rows)
@@ -2005,8 +2005,8 @@ def check_moving_averages_for_buy(df, range):
 
 
 def check_moving_averages_for_sell(df, range):
-    past_10_rows = df[['SMA_149', 'SMA_202']].tail(range)
-    past_10_rows['Diverge'] = past_10_rows['SMA_149'] > past_10_rows['SMA_202']
+    past_10_rows = df[['SMA_50', 'SMA_200']].tail(range)
+    past_10_rows['Diverge'] = past_10_rows['SMA_50'] > past_10_rows['SMA_200']
     past = past_10_rows.tail(1)['Diverge'].values[0]
     second_last_row = past_10_rows['Diverge'].iloc[-2]
     # print(past)
@@ -2023,8 +2023,8 @@ def check_moving_averages_for_sell(df, range):
 def moving_average(df):
         range = 2
 
-        df['SMA_202'] = ta.sma(df['Close'], length=202)
-        df['SMA_149'] = ta.sma(df['Close'], length=149)
+        df['SMA_200'] = ta.sma(df['Close'], length=200)
+        df['SMA_50'] = ta.sma(df['Close'], length=50)
         # 1 represents 'BUY'
         # -1 represents 'SELL'
         # 0 represents 'DO NOTHING'
@@ -2041,7 +2041,7 @@ def moving_average(df):
         # except:
         #     pass
 
-        if df.tail(1)['SMA_149'].values[0] > df.tail(1)['SMA_202'].values[0]:
+        if df.tail(1)['SMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
         
             if check_moving_averages_for_buy(df=df, range=range):
                 # if already_sell:
@@ -2050,7 +2050,7 @@ def moving_average(df):
                 return 1
             return 0
                
-        elif df.tail(1)['SMA_149'].values[0] < df.tail(1)['SMA_202'].values[0]:
+        elif df.tail(1)['SMA_50'].values[0] < df.tail(1)['SMA_200'].values[0]:
             # print('2')
             # if open_positions is not None:
             #     print('7.0')
