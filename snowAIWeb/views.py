@@ -2080,6 +2080,7 @@ def moving_average(df):
 def api_call(request, asset): 
     # return JsonResponse({"message": "API Call Works!"})  
     # timeframe = timeframe.lower()
+    test_variable = MovingAverageBot.objects.all()
     try:
         end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -2092,7 +2093,7 @@ def api_call(request, asset):
 
         moving_average_output = moving_average(df=data)
             
-        return JsonResponse({'message': f'{moving_average_output}'})
+        return JsonResponse({'message': f'{moving_average_output} Test var is: {str(test_variable)}'})
 
     except Exception as e:
         return JsonResponse({'message': f'Error: {e}'})
