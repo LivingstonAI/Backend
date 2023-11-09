@@ -2000,7 +2000,7 @@ def candlesticks_bot(request, dataframe, backtest_period):
 
 def check_moving_averages_for_buy(df, range, ma1_type, ma1, ma2_type, ma2):
     first_ma = f'{ma1_type}_{ma1}'
-    second_ma = f'{ma2_type}_{ma2_type}'
+    second_ma = f'{ma2_type}_{ma2}'
     past_10_rows = df[[second_ma, first_ma]].tail(range)
     past_10_rows['Converge'] = past_10_rows[second_ma] < past_10_rows[first_ma]
     past = past_10_rows.tail(1)['Converge'].values[0]
@@ -2016,7 +2016,7 @@ def check_moving_averages_for_buy(df, range, ma1_type, ma1, ma2_type, ma2):
 
 def check_moving_averages_for_sell(df, range, ma1_type, ma1, ma2_type, ma2):
     first_ma = f'{ma1_type}_{ma1}'
-    second_ma = f'{ma2_type}_{ma2_type}'
+    second_ma = f'{ma2_type}_{ma2}'
     past_10_rows = df[[second_ma, first_ma]].tail(range)
     past_10_rows['Diverge'] = past_10_rows[second_ma] > past_10_rows[first_ma]
     past = past_10_rows.tail(1)['Diverge'].values[0]
@@ -2036,7 +2036,7 @@ def moving_average(df, ma1_type, ma1, ma2_type, ma2):
         range = 2
         # Higher MA
         first_ma = f'{ma1_type}_{ma1}'
-        second_ma = f'{ma2_type}_{ma2_type}'
+        second_ma = f'{ma2_type}_{ma2}'
         if ma1_type == 'SMA':
             df[first_ma] = ta.sma(df['Close'], length=int(ma1))
         else:
