@@ -917,7 +917,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_perio
 def moving_average_bot(request, type_1, type_2, ma1, ma2, dataframe, backtest_period):
 
     try:
-        MovingAverageBot.all().delete()
+        MovingAverageBot.objects.all().delete()
         print(f'All deleted successfully!')
     except Exception as e:
         print(f'Exception when deleting is: {e}')
