@@ -732,6 +732,17 @@ def fetch_news_data(request):
 
 @csrf_exempt
 async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_period):
+
+    try:
+        MovingAverageBot.all().delete()
+        print(f'All deleted successfully!')
+    except Exception as e:
+        print(f'Exception when deleting is: {e}')
+        pass
+    new_moving_average_backtest = MovingAverageBot(ma1_type=type_1, ma1=int(ma1), ma2_type=type_2, ma2=int(ma2))
+    new_moving_average_backtest.save()
+
+
     class SmaCross(Strategy):
         n0 = 18 # Exponential Moving Average
         n1 = 50 # Exponential Moving Average
@@ -1839,9 +1850,6 @@ async def handle_api_request_candlesticks(engulfing, pinbar, morning_star, three
                             # sixty_one8_retracement = levels[4]
                             # if thirty_eight_retracement <= testing_candle_3.Close <= sixty_one8_retracement:
                             self.sell(tp=tp_level, sl=sl_level)
-
-
-
         
         def analyze_candlesticks(self, df):
             if not self.position and engulfing:
