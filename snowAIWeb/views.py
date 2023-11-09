@@ -1995,7 +1995,7 @@ def check_moving_averages_for_buy(df, range):
         past_10_rows['Converge'] = past_10_rows['SMA_50'] < past_10_rows['SMA_200']
         past = past_10_rows.tail(1)['Converge'].values[0]
         second_last_row = past_10_rows['Converge'].iloc[-2]
-        print(past_10_rows)
+        # print(past_10_rows)
         if past == False and second_last_row == True:
                 # print('True')
             return True
@@ -2010,7 +2010,7 @@ def check_moving_averages_for_sell(df, range):
     past = past_10_rows.tail(1)['Diverge'].values[0]
     second_last_row = past_10_rows['Diverge'].iloc[-2]
     # print(past)
-    print(past_10_rows)
+    # print(past_10_rows)
     if past == False and second_last_row == True:
         # print('True')
         return True
@@ -2112,6 +2112,7 @@ def download_mq4_file(request):
 
         # Create an HTTP response with the file content
         response = HttpResponse(file_data, content_type='application/vnd.ms-excel')
+        return response
         response['Content-Disposition'] = 'attachment; filename="bot.mq4"'
 
         return response
