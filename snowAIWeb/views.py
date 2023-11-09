@@ -2080,7 +2080,7 @@ def moving_average(df):
 def api_call(request, asset): 
     # return JsonResponse({"message": "API Call Works!"})  
     # timeframe = timeframe.lower()
-    test_variable = MovingAverageBot.objects.all()
+    test_variable = MovingAverageBot.objects.all()[0]
     try:
         end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
