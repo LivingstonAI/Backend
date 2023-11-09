@@ -733,16 +733,6 @@ def fetch_news_data(request):
 @csrf_exempt
 async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_period):
 
-    try:
-        MovingAverageBot.all().delete()
-        print(f'All deleted successfully!')
-    except Exception as e:
-        print(f'Exception when deleting is: {e}')
-        pass
-    new_moving_average_backtest = MovingAverageBot(ma1_type=type_1, ma1=int(ma1), ma2_type=type_2, ma2=int(ma2))
-    new_moving_average_backtest.save()
-
-
     class SmaCross(Strategy):
         n0 = 18 # Exponential Moving Average
         n1 = 50 # Exponential Moving Average
@@ -925,6 +915,16 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_perio
 
 @csrf_exempt
 def moving_average_bot(request, type_1, type_2, ma1, ma2, dataframe, backtest_period):
+
+    try:
+        MovingAverageBot.all().delete()
+        print(f'All deleted successfully!')
+    except Exception as e:
+        print(f'Exception when deleting is: {e}')
+        pass
+    new_moving_average_backtest = MovingAverageBot(ma1_type=type_1, ma1=int(ma1), ma2_type=type_2, ma2=int(ma2))
+    new_moving_average_backtest.save()
+
     async def inner():
         result = await handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_period)
         return JsonResponse({'Output': result})
