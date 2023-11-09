@@ -2110,7 +2110,8 @@ def api_call(request, asset):
 
         moving_average_output = moving_average(df=data, ma1_type=ma1_type, ma1=ma1, ma2_type=ma2_type, ma2=ma2)
             
-        return JsonResponse({'message': f'{moving_average_output}}')
+        output = f'{moving_average_output}'
+        return JsonResponse({'message': output})
 
     except Exception as e:
         return JsonResponse({'message': f'Error: {e}'})
