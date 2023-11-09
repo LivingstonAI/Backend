@@ -2093,7 +2093,7 @@ def api_call(request, asset):
 
         moving_average_output = moving_average(df=data)
             
-        return JsonResponse({'message': f'{moving_average_output} Test var is: {str(test_variable)}'})
+        return JsonResponse({'message': f'{moving_average_output} Test var is: {str(test_variable.ma1_type)}, {str(test_variable.ma2_type)} {str(test_variable.ma1)} {str(test_variable.ma2)}'})
 
     except Exception as e:
         return JsonResponse({'message': f'Error: {e}'})
