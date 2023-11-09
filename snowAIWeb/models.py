@@ -88,3 +88,10 @@ class CreateModel(models.Model):
     bot_type = models.CharField(max_length=200)
     params = models.CharField(max_length=200)
     
+
+class MovingAverageBot(models.Model):
+    # user_email = models.EmailField()
+    ma1_type = models.CharField(max_length=20)
+    ma2_type = models.CharField(max_length=20)
+    ma1 = models.IntegerField()
+    ma2 = models.IntegerField()
