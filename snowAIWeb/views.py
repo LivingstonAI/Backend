@@ -1998,27 +1998,31 @@ def candlesticks_bot(request, dataframe, backtest_period):
     return loop.run_until_complete(inner_candlesticks())
 
 
-def check_moving_averages_for_buy(df, range):
-        past_10_rows = df[['SMA_50', 'SMA_200']].tail(range)
-        past_10_rows['Converge'] = past_10_rows['SMA_50'] < past_10_rows['SMA_200']
-        past = past_10_rows.tail(1)['Converge'].values[0]
-        second_last_row = past_10_rows['Converge'].iloc[-2]
-        # print(past_10_rows)
-        if past == False and second_last_row == True:
+def check_moving_averages_for_buy(df, range, ma1_type, ma1, ma2_type, ma2):
+    first_ma = f'{ma1_type}_{ma1}'
+    second_ma = f'{ma2_type}_{ma2_type}'
+    past_10_rows = df[[second_ma, first_ma]].tail(range)
+    past_10_rows['Converge'] = past_10_rows[second_ma] < past_10_rows[first_ma]
+    past = past_10_rows.tail(1)['Converge'].values[0]
+    second_last_row = past_10_rows['Converge'].iloc[-2]
+    print(past_10_rows)
+    if past == False and second_last_row == True:
                 # print('True')
-            return True
-        else:
+        return True
+    else:
                 # print('False')
-            return False
+        return False
 
 
-def check_moving_averages_for_sell(df, range):
-    past_10_rows = df[['SMA_50', 'SMA_200']].tail(range)
-    past_10_rows['Diverge'] = past_10_rows['SMA_50'] > past_10_rows['SMA_200']
+def check_moving_averages_for_sell(df, range, ma1_type, ma1, ma2_type, ma2):
+    first_ma = f'{ma1_type}_{ma1}'
+    second_ma = f'{ma2_type}_{ma2_type}'
+    past_10_rows = df[[second_ma, first_ma]].tail(range)
+    past_10_rows['Diverge'] = past_10_rows[second_ma] > past_10_rows[first_ma]
     past = past_10_rows.tail(1)['Diverge'].values[0]
     second_last_row = past_10_rows['Diverge'].iloc[-2]
     # print(past)
-    # print(past_10_rows)
+    print(past_10_rows)
     if past == False and second_last_row == True:
         # print('True')
         return True
@@ -2028,11 +2032,20 @@ def check_moving_averages_for_sell(df, range):
     
 
 @csrf_exempt
-def moving_average(df):
+def moving_average(df, ma1_type, ma1, ma2_type, ma2):
         range = 2
-
-        df['SMA_200'] = ta.sma(df['Close'], length=200)
-        df['SMA_50'] = ta.sma(df['Close'], length=50)
+        # Higher MA
+        first_ma = f'{ma1_type}_{ma1}'
+        second_ma = f'{ma2_type}_{ma2_type}'
+        if ma1_type == 'SMA':
+            df[first_ma] = ta.sma(df['Close'], length=int(ma1))
+        else:
+            df[first_ma] = ta.ema(df['Close'], length=int(ma1))
+        # Lower MA
+        if ma2_type == 'SMA':
+            df[second_ma] = ta.sma(df['Close'], length=int(ma2))
+        else:
+            df[second_ma] = ta.ema(df['Close'], length=int(ma2))
         # 1 represents 'BUY'
         # -1 represents 'SELL'
         # 0 represents 'DO NOTHING'
@@ -2049,23 +2062,23 @@ def moving_average(df):
         # except:
         #     pass
 
-        if df.tail(1)['SMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
+        if df.tail(1)[second_ma].values[0] > df.tail(1)[first_ma].values[0]:
         
-            if check_moving_averages_for_buy(df=df, range=range):
+            if check_moving_averages_for_buy(df=df, range=range, ma1_type=ma1_type, ma1=ma1, ma2_type=ma2_type, ma2=ma2):
                 # if already_sell:
                 # close_order(ticker, lot_size, buy_order_type, buy_price) # NB
                 # time.sleep(1)
                 return 1
             return 0
                
-        elif df.tail(1)['SMA_50'].values[0] < df.tail(1)['SMA_200'].values[0]:
+        elif df.tail(1)[second_ma].values[0] < df.tail(1)[first_ma].values[0]:
             # print('2')
             # if open_positions is not None:
             #     print('7.0')
             #     close_order(ticker, lot_size, sell_order_type,  sell_price)
             #     print('7')
             # position = 'sell'
-            if check_moving_averages_for_sell(df=df, range=range):
+            if check_moving_averages_for_sell(df=df, range=range, ma1_type=ma1_type, ma1=ma1, ma2_type=ma2_type, ma2=ma2):
                 # if already_buy:
                     # close_order(ticker, lot_size, sell_order_type, sell_price)
                     # time.sleep(1)
@@ -2081,6 +2094,10 @@ def api_call(request, asset):
     # return JsonResponse({"message": "API Call Works!"})  
     # timeframe = timeframe.lower()
     test_variable = MovingAverageBot.objects.all()[0]
+    ma1_type = str(test_variable.ma1_type)
+    ma2_type = str(test_variable.ma2_type)
+    ma1 = str(test_variable.ma1)
+    ma2 = str(test_variable.ma2)
     try:
         end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -2091,9 +2108,9 @@ def api_call(request, asset):
         forex_asset = f"{asset}=X"
         data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
 
-        moving_average_output = moving_average(df=data)
+        moving_average_output = moving_average(df=data, ma1_type=ma1_type, ma1=ma1, ma2_type=ma2_type, ma2=ma2)
             
-        return JsonResponse({'message': f'{moving_average_output} Test var is: {str(test_variable.ma1_type)}, {str(test_variable.ma2_type)} {str(test_variable.ma1)} {str(test_variable.ma2)}'})
+        return JsonResponse({'message': f'{moving_average_output}}')
 
     except Exception as e:
         return JsonResponse({'message': f'Error: {e}'})
