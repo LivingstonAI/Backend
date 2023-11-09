@@ -2098,3 +2098,23 @@ def api_test(request):
 @csrf_exempt
 def new_test(request):
     return JsonResponse({"message": "Heyo!"})
+
+
+@csrf_exempt
+def download_mq4_file(request):
+    # Replace with the actual path to your .mq4 file
+    location = './moving-average-bot.mq4'
+    file_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), location)
+
+    try:
+        with open(file_location, 'r') as f:
+            file_data = f.read()
+
+        # Create an HTTP response with the file content
+        response = HttpResponse(file_data, content_type='application/vnd.ms-excel')
+        response['Content-Disposition'] = 'attachment; filename="bot.mq4"'
+
+        return response
+    except FileNotFoundError:
+        # Handle file not exist case
+        return HttpResponseNotFound('<h1>File not found</h1>')

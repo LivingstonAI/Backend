@@ -35,6 +35,7 @@ urlpatterns = [
     path('api-call/<str:asset>', views.api_call, name='api-call'),
     path('api-test', views.api_test, name='api-test'),
     path('new-test', views.new_test, name='new-test'),
+    path('download-mq4', views.download_mq4_file, name='download_mq4_file'),
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 
