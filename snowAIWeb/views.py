@@ -2153,23 +2153,22 @@ def download_mq4_file(request):
 
 
 @csrf_exempt
-# Function to encode the image
 def encode_image(image_path):
     try:
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
     except Exception as e:
-        return JsonResponse({"error": f"error in encoding image function: {e}"})
+        return {"error": f"Error in encoding image function: {e}"}
 
 
 @csrf_exempt
-def analyse_image(image_path):
+def analyse_image(image_data):
     try:
         # OpenAI API Key
-        api_key = os.environ['OPENAI_API_KEY']
+        api_key = os.environ.get('OPENAI_API_KEY', '')
 
         # Getting the base64 string
-        base64_image = encode_image(image_path)
+        base64_image = base64.b64encode(image_data).decode('utf-8')
 
         headers = {
             "Content-Type": "application/json",
@@ -2179,32 +2178,31 @@ def analyse_image(image_path):
         payload = {
             "model": "gpt-4-vision-preview",
             "messages": [
-            {
-                "role": "user",
-                "content": [
                 {
-                    "type": "text",
-                    "text": "What’s in this image?"
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64_image}"
-                    }
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "What’s in this image?"
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
                 }
-                ]
-            }
             ],
             "max_tokens": 300
         }
 
         response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
 
-        return response
+        return response.json()
 
     except Exception as e:
-        return JsonResponse({"error": f"Error occured in analyse image function: {e}"})
-
+        return {"error": f"Error occurred in analyse image function: {e}"}
 
 @csrf_exempt
 def process_image(request):
@@ -2217,18 +2215,15 @@ def process_image(request):
             # Decode the base64 image data
             image_data = base64.b64decode(image_base64.encode('utf-8'))
 
-            # Save the image to a file or process it directly
-            # ...
-
-            # Perform GPT-4 Vision processing (similar to your existing code)
-            # ...
-
+            # Perform GPT-4 Vision processing
             analysed_image = analyse_image(image_data)
 
-            return JsonResponse({"status": "success", "result": f"Processed image successfully with response: {str(analysed_image)}"})
+            return JsonResponse({"status": "success", "result": analysed_image})
         except Exception as e:
             return JsonResponse({"status": "error", "error": str(e)})
 
     return JsonResponse({"status": "error", "error": "Invalid request method"})
-   
 # {status: 'error', error: 'embedded null byte'}
+
+
+
