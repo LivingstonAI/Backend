@@ -2183,7 +2183,7 @@ def analyse_image(image_data):
                     "content": [
                         {
                             "type": "text",
-                            "text": "What’s in this image?"
+                            "text": "Please give a technical analysis of the image if it is a candlestick chart."
                         },
                         {
                             "type": "image_url",
