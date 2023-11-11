@@ -2183,7 +2183,7 @@ def analyse_image(image_data):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Please give a technical analysis of the image if it is a candlestick chart."
+                            "text": "Please give a technical analysis of this image with at most 2 paragraphs in your response."
                         },
                         {
                             "type": "image_url",
@@ -2194,7 +2194,7 @@ def analyse_image(image_data):
                     ]
                 }
             ],
-            "max_tokens": 300
+            "max_tokens": 200
         }
 
         response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
