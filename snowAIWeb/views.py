@@ -2166,7 +2166,7 @@ def encode_image(image_path):
 def analyse_image(image_path):
     try:
         # OpenAI API Key
-        api_key = os.environ['OPENAI_API_KEY']
+        api_key = "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"
 
         # Getting the base64 string
         base64_image = encode_image(image_path)
