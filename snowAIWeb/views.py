@@ -2225,7 +2225,7 @@ def process_image(request):
 
             analysed_image = analyse_image(image_data)
 
-            return JsonResponse({"status": "success", "result": "Processed image successfully"})
+            return JsonResponse({"status": "success", "result": f"Processed image successfully with response: {str(analysed_image)}"})
         except Exception as e:
             return JsonResponse({"status": "error", "error": str(e)})
 
