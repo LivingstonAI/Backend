@@ -2194,7 +2194,7 @@ def analyse_image(image_data):
                     ]
                 }
             ],
-            "max_tokens": 200
+            "max_tokens": 300
         }
 
         response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
