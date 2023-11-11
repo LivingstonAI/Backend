@@ -2209,7 +2209,7 @@ def process_image(request):
             image_base64 = data.get('imageBase64', '')
 
             # Decode the base64 image data
-            image_data = base64.b64decode(image_base64)
+            image_data = base64.b64decode(image_base64.encode('utf-8'))
 
             # Save the image to a file or process it directly
             # ...
@@ -2217,10 +2217,10 @@ def process_image(request):
             # Perform GPT-4 Vision processing (similar to your existing code)
             # ...
 
-            analysed_image = analyse_image(image_data)
-
-            return JsonResponse({"status": "success", "result": f"Processed image successfully:{analysed_image}"})
+            return JsonResponse({"status": "success", "result": "Processed image successfully"})
         except Exception as e:
             return JsonResponse({"status": "error", "error": str(e)})
 
-    return JsonResponse({"status": "error", "error": "Invalid request method"})    
+    return JsonResponse({"status": "error", "error": "Invalid request method"})
+   
+# {status: 'error', error: 'embedded null byte'}
