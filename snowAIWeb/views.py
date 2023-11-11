@@ -2198,8 +2198,10 @@ def analyse_image(image_data):
         }
 
         response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-
-        return response.json()
+        
+        json_data = response.json()
+        final_response = json_data['choices'][0]['message']['content']
+        return final_response
 
     except Exception as e:
         return {"error": f"Error occurred in analyse image function: {e}"}
