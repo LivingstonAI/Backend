@@ -2228,4 +2228,6 @@ def process_image(request):
 # {status: 'error', error: 'embedded null byte'}
 
 
-
+@csrf_exempt
+def chosen_models(request):
+    return JsonResponse({"message": "api-call-works"})

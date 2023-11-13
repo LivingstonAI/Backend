@@ -37,6 +37,7 @@ urlpatterns = [
     path('new-test', views.new_test, name='new-test'),
     path('download-mq4', views.download_mq4_file, name='download_mq4_file'),
     path('process-image', views.process_image, name='process_image'),
+    path('chosen-models', views.chosen_models, name='chosen_models'),
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 
