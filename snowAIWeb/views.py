@@ -2231,7 +2231,7 @@ def process_image(request):
 @csrf_exempt
 def chosen_models(request):
     try:
-        if request.methods == 'POST':
+        if request.method == 'POST':
             data = json.loads(request.body)
             return JsonResponse({"message": f"api-call-works with data: {data}"})
         else:
