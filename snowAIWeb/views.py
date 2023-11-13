@@ -2233,7 +2233,7 @@ def chosen_models(request):
     try:
         if request.method == 'POST':
             data = json.loads(request.body)
-            return JsonResponse({"message": f"api-call-works with data: {data}"})
+            return JsonResponse({"message": f"{data}"})
         else:
             return JsonResponse({"message": "invalid request method"})
     except Exception as e:
