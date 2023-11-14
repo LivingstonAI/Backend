@@ -2233,7 +2233,16 @@ def chosen_models(request):
     try:
         if request.method == 'POST':
             data = json.loads(request.body)
-            return JsonResponse({"message": f"{data}"})
+            json_object = ""
+            for element in data:
+
+                try:
+                    json_object = json.loads(element)
+                    
+                except ValueError:
+                    pass
+
+            return JsonResponse({"message": f"{data} and json: {json_object}"})
         else:
             return JsonResponse({"message": "invalid request method"})
     except Exception as e:
