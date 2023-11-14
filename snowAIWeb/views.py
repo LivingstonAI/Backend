@@ -2236,9 +2236,9 @@ def chosen_models(request):
             data_str = request.body.decode('utf-8')
             data = json.loads(data_str)
 
-            json_obj = check_json_in_list(data)
+            # json_obj = check_json_in_list(data)
 
-            return JsonResponse({"message": f"{data} and json: {json_obj}"})
+            return JsonResponse({"message": f"{data} with type: {type(data)}:"})
         else:
             return JsonResponse({"message": "invalid request method"})
     except Exception as e:
