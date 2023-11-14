@@ -2233,8 +2233,7 @@ def chosen_models(request):
     try:
         if request.method == 'POST':
             data = json.loads(request.body)
-            first_data = data[0]
-            return JsonResponse({"message": f"{data} and {first_data}"})
+            return JsonResponse({"message": f"{data}"})
         else:
             return JsonResponse({"message": "invalid request method"})
     except Exception as e:
