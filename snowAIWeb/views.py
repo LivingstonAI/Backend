@@ -2242,7 +2242,7 @@ def chosen_models(request):
                 except ValueError:
                     pass
 
-            return JsonResponse({"message": f"{data} and json: {json_object}"})
+            return JsonResponse({"message": f"{data} and json: {str(json_object)}"})
         else:
             return JsonResponse({"message": "invalid request method"})
     except Exception as e:
