@@ -2233,7 +2233,7 @@ def chosen_models(request):
     try:
         if request.method == 'POST':
             data = json.loads(request.body)
-            json_object = ""
+            json_object = dict()
             for element in data:
 
                 try:
