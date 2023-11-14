@@ -2236,9 +2236,10 @@ def chosen_models(request):
             data_str = request.body.decode('utf-8')
             data = json.loads(data_str)
 
-            # json_obj = check_json_in_list(data)
+            # Find the dictionary in the list
+            dict_in_list = next((item for item in data if isinstance(item, dict)), None)
 
-            return JsonResponse({"message": f"{data} with type: {type(data)}:"})
+            return JsonResponse({"message": f"{data} and dict: {dict_in_list}"})
         else:
             return JsonResponse({"message": "invalid request method"})
     except Exception as e:
