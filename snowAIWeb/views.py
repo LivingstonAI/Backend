@@ -2232,7 +2232,9 @@ def process_image(request):
 def chosen_models(request):
     try:
         if request.method == 'POST':
-            data = json.loads(request.body)
+            # Decode the bytes to a string
+            data_str = request.body.decode('utf-8')
+            data = json.loads(data_str)
 
             json_obj = check_json_in_list(data)
 
@@ -2241,6 +2243,7 @@ def chosen_models(request):
             return JsonResponse({"message": "invalid request method"})
     except Exception as e:
         return JsonResponse({"Error": f"{e}"})
+
 
 
 def check_json_in_list(lst):
