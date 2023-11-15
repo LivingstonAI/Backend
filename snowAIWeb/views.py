@@ -2239,7 +2239,7 @@ def chosen_models(request):
             # Find the dictionary in the list
             dict_in_list = next((item for item in data if isinstance(item, dict)), None)
 
-            return JsonResponse({"message": f"{data} and dict {dict_in_list}"})
+            return JsonResponse({"message": f"{dict_in_list}"})
         else:
             return JsonResponse({"message": "invalid request method"})
     except Exception as e:
