@@ -2303,13 +2303,13 @@ def trading_bot(df, params):
         bbands_length = dict_in_list['bbandsLength']
         bbands_std = dict_in_list['bbandsStd']
 
-    elif 'Moving Average Bot' in trader_params:
+    elif 'Moving Averages' in trader_params:
         ma1_type = dict_in_list['ma1Type']
         ma1 = dict_in_list['ma1']
         ma2_type = dict_in_list['ma2Type']
         ma2 = dict_in_list['ma2']
     
-    elif 'Relative Strength Index' in trader_params:
+    elif 'Relative Strength Index (RSI)' in trader_params:
         rsi_period = dict_in_list['rsiPeriod']
         rsi_overbought = dict_in_list['rsiOverbought']
         rsi_oversold = dict_in_list['rsiOversell']
@@ -2897,7 +2897,7 @@ def trading_bot(df, params):
         # tsma = df['SMA_200'].iloc[-1]
         # print(f'df ema 50 is {fema}')
         # print(f'df sma 200 is {tsma}')
-        if df.tail(1)['SMA_149'].values[0] > df.tail(1)['SMA_202'].values[0]:
+        if df.tail(1)['MA_Lower'].values[0] > df.tail(1)['MA_Upper'].values[0]:
             # print('1')
             # if open_positions is not None:
             #     close_order(ticker, lot_size, buy_order_type,  buy_price)
@@ -2906,7 +2906,7 @@ def trading_bot(df, params):
                 # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                 return 1
             # return 0
-        elif df.tail(1)['SMA_149'].values[0] < df.tail(1)['SMA_202'].values[0]:
+        elif df.tail(1)['MA_Lower'].values[0] < df.tail(1)['MA_Upper'].values[0]:
             # print('2')
             # if open_positions is not None:
             #     print('7.0')
@@ -2936,11 +2936,11 @@ def trading_bot(df, params):
 
 
     def rsi(df):
-        if df['RSI'].iloc[-1] > 80:
+        if df['RSI'].iloc[-1] > rsi_overbought:
             # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
             return -1
         
-        elif df['RSI'].iloc[-1] < 20:
+        elif df['RSI'].iloc[-1] < rsi_oversold:
             # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
             return 1
         return 0
@@ -2954,9 +2954,16 @@ def trading_bot(df, params):
             # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
             return 1
         return 0
-
-    df['SMA_202'] = ta.sma(df['Close'], length=202)
-    df['SMA_149'] = ta.sma(df['Close'], length=149)
+    if ma1_type == 'SMA':
+        df['MA_Upper'] = ta.sma(df['Close'], length=ma1)
+    elif ma1_type == 'EMA':
+        df['MA_Upper'] = ta.ema(df['Close'], length=ma1)
+    
+    if ma2_type == 'SMA':
+        df['MA_Lower'] = ta.sma(df['Close'], length=ma2)
+    elif ma2_type == 'EMA':
+        df['MA_Lower'] = ta.ema(df['Close'], length=ma2)
+    # df['MA_Lower'] = ta.sma(df['Close'], length=ma2)
     # print(df)
     current_close = df['Close']
     current_close = ta.bbands(close=df['Close'], length=bbands_length, std=bbands_std, append=True)
@@ -2968,36 +2975,34 @@ def trading_bot(df, params):
     except: 
         pass
 
-    df['RSI'] = ta.rsi(df['Close'], length = 14)
+    df['RSI'] = ta.rsi(df['Close'], length = rsi_period)
 
     df['MOM'] = ta.mom(df['Close'])
 
 
-    if 'engulfing' in trader_params:
+    if 'Engulfing' in trader_params:
         bullish_engulfing(df=df)
         bearish_engulfing(df=df)
     elif 'shooting_star' in trader_params:
         shooting_star(df=df)
-    elif 'soldiers' in trader_params:
+    elif 'Three White Soldiers' in trader_params:
         three_white_soldiers(df=df)
-    elif 'doji_star' in trader_params:
+    elif 'Doji Star' in trader_params:
         doji_star(df=df)
-    elif 'pinbar' in trader_params:
+    elif 'Pin Bar' in trader_params:
         bullish_pinbar(df=df)
         bearish_pinbar(df=df)
-    elif 'star' in trader_params:
+    elif 'Morning Star' in trader_params:
         morning_star(df=df)
-    elif 'matching' in trader_params:
+    elif 'Matching' in trader_params:
         matching(df=df)
-    elif 'methods' in trader_params:
+    elif 'Methods' in trader_params:
         methods(df=df)
-    elif 'moving_average' in trader_params:
-        # tester = df[['SMA_149', 'SMA_202']]
-        # print(f'df is {df}')
+    elif 'Moving Averages' in trader_params:
         moving_average(df=df)
     elif 'BBands' in trader_params:
         bbands(df=df)
-    elif 'Relative Strength Index' in trader_params:
+    elif 'Relative Strength Index (RSI)' in trader_params:
         rsi(df=df)
     elif 'Momentum Trading Bot' in trader_params:
         momentum(df=df)
