@@ -2894,11 +2894,11 @@ def trading_bot(df, params):
 
     def bbands(df):
         try:
-            if df['close'].iloc[-1] >= df['BB_Upper_20_2.0'].iloc[-1]:
+            if df['Close'].iloc[-1] >= df['BB_Upper_20_2.0'].iloc[-1]:
                 # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                 return 1
             
-            elif df['close'].iloc[-1] <= df['BB_Lower_20_2.0'].iloc[-1]:
+            elif df['Close'].iloc[-1] <= df['BB_Lower_20_2.0'].iloc[-1]:
                 # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                 return -1
             return 0
