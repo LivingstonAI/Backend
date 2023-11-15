@@ -2283,12 +2283,24 @@ def run_bot(request, user_email, magic_number, asset):
     # Find the dictionary in the list
     dict_in_list = next((item for item in model_parameters if isinstance(item, dict)), None)
 
-    return JsonResponse({"output": f"params are: {model_parameters} and output of {output} and dict: {dict_in_list}"})
+
+    
+    dict_in_list = next((item for item in trader_params if isinstance(item, dict)), None)
+
+    bbands_length = ''
+    bbands_std = ''
+
+    if 'BBands' in model_parameters:
+        bbands_length = dict_in_list['bbandsLength']
+        bbands_std = dict_in_list['bbandsStd']
+
+    return JsonResponse({"output": f"params are: {model_parameters} and output of {output} and dict: {dict_in_list} and bbandslen: {bbands_length} and bbandsstd: {bbands_std}"})
 
 
 def trading_bot(df, params):
 
     trader_params = params
+
     # Find the dictionary in the list
     # dict_in_list = next((item for item in data if isinstance(item, dict)), None)
 
