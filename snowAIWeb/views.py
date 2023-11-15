@@ -2294,7 +2294,7 @@ def trading_bot(df, params):
     # Find the dictionary in the list
     # dict_in_list = next((item for item in data if isinstance(item, dict)), None)
     
-    dict_in_list = next((item for item in model_parameters if isinstance(item, dict)), None)
+    dict_in_list = next((item for item in trader_params if isinstance(item, dict)), None)
 
     bbands_length = ''
     bbands_std = ''
