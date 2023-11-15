@@ -2239,6 +2239,8 @@ def chosen_models(request, user_email, magic_number):
             # Find the dictionary in the list
             dict_in_list = next((item for item in data if isinstance(item, dict)), None)
 
+            
+
             return JsonResponse({"message": f"{dict_in_list} with params: {user_email} and {magic_number}"})
         else:
             return JsonResponse({"message": "invalid request method"})

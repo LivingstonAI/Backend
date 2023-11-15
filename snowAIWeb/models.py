@@ -95,3 +95,10 @@ class MovingAverageBot(models.Model):
     ma2_type = models.CharField(max_length=20)
     ma1 = models.IntegerField()
     ma2 = models.IntegerField()
+
+
+class Bot(models.Model):
+    username = models.EmailField()
+    magic_number = models.IntegerField()
+    time_saved = models.DateTimeField()
+    parameters = models.TextField()
