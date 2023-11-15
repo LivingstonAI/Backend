@@ -2263,7 +2263,8 @@ def check_json_in_list(lst):
 
 
 @csrf_exempt
-def check_model_data(request, user_email, magic_number):
+def run_bot(request, user_email, magic_number):
     model_data = Bot.objects.filter(username=user_email, magic_number=magic_number).first()
-    return JsonResponse({"output": f"{model_data.parameters}"})
+    model_parameters = model_data.parameters
+    return JsonResponse({"output": f"params are: {model_parameters} with type: {type(model_parameters)}"})
 
