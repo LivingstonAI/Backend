@@ -2926,11 +2926,11 @@ def trading_bot(df, params):
             return 1
         return 0
 
-    df['SMA_202'] = ta.sma(df['close'], length=202)
-    df['SMA_149'] = ta.sma(df['close'], length=149)
+    df['SMA_202'] = ta.sma(df['Close'], length=202)
+    df['SMA_149'] = ta.sma(df['Close'], length=149)
     # print(df)
-    current_close = df['close']
-    current_close = ta.bbands(close=df['close'], length=200, std=2, append=True)
+    current_close = df['Close']
+    current_close = ta.bbands(close=df['Close'], length=200, std=2, append=True)
     try:
         df['BB_Upper_20_2.0'] = current_close['BBU_200_2.0']
         df['BB_Middle_20_2.0'] = current_close['BBM_200_2.0']
@@ -2938,9 +2938,9 @@ def trading_bot(df, params):
     except: 
         pass
 
-    df['RSI'] = ta.rsi(df['close'], length = 14)
+    df['RSI'] = ta.rsi(df['Close'], length = 14)
 
-    df['MOM'] = ta.mom(df['close'])
+    df['MOM'] = ta.mom(df['Close'])
 
 
     if 'engulfing' in trader_params:
