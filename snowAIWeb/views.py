@@ -2279,10 +2279,10 @@ def run_bot(request, user_email, magic_number, asset):
     forex_asset = f"{asset}=X"
     data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
 
-    # output = trading_bot(df=data, params=model_parameters)
+    output = trading_bot(df=data, params=model_parameters)
     # Find the dictionary in the list
     dict_in_list = next((item for item in model_parameters if isinstance(item, dict)), None)
-    
+
 
     return JsonResponse({"output": f"params are: {model_parameters} and dict: {dict_in_list}"})
 
@@ -2298,6 +2298,15 @@ def trading_bot(df, params):
 
     bbands_length = ''
     bbands_std = ''
+
+    ma1_type = ''
+    ma2_type = ''
+    ma1 = ''
+    ma2 = ''
+
+    rsi_period = ''
+    rsi_overbought = ''
+    rsi_oversold = ''
 
     if 'BBands' in trader_params:
         bbands_length = dict_in_list['bbandsLength']
