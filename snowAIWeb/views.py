@@ -2229,7 +2229,7 @@ def process_image(request):
 
 
 @csrf_exempt
-def chosen_models(request):
+def chosen_models(request, user_email, magic_number):
     try:
         if request.method == 'POST':
             # Decode the bytes to a string
@@ -2239,7 +2239,7 @@ def chosen_models(request):
             # Find the dictionary in the list
             dict_in_list = next((item for item in data if isinstance(item, dict)), None)
 
-            return JsonResponse({"message": f"{dict_in_list}"})
+            return JsonResponse({"message": f"{dict_in_list} with params: {user_email} and {magic_number}"})
         else:
             return JsonResponse({"message": "invalid request method"})
     except Exception as e:
