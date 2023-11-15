@@ -2281,7 +2281,7 @@ def run_bot(request, user_email, magic_number, asset):
 
     output = trading_bot(df=data, params=model_parameters)
 
-    return JsonResponse({"output": f"params are: {model_parameters} with type: {type(model_parameters)} and output of {output}"})
+    return JsonResponse({"output": f"params are: {model_parameters} and output of {output}"})
 
 
 def trading_bot(df, params):
@@ -2618,6 +2618,7 @@ def trading_bot(df, params):
                 if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
                     return 1
                     # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
+        return 0
 
 
     def bearish_pinbar(df):
