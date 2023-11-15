@@ -2299,17 +2299,17 @@ def trading_bot(df, params):
     bbands_length = ''
     bbands_std = ''
 
-    if 'BBands' in model_parameters:
+    if 'BBands' in trader_params:
         bbands_length = dict_in_list['bbandsLength']
         bbands_std = dict_in_list['bbandsStd']
 
-    elif 'Moving Average Bot' in model_parameters:
+    elif 'Moving Average Bot' in trader_params:
         ma1_type = dict_in_list['ma1Type']
         ma1 = dict_in_list['ma1']
         ma2_type = dict_in_list['ma2Type']
         ma2 = dict_in_list['ma2']
     
-    elif 'Relative Strength Index' in model_parameters:
+    elif 'Relative Strength Index' in trader_params:
         rsi_period = dict_in_list['rsiPeriod']
         rsi_overbought = dict_in_list['rsiOverbought']
         rsi_oversold = dict_in_list['rsiOversell']
