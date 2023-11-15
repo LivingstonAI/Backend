@@ -2282,8 +2282,17 @@ def run_bot(request, user_email, magic_number, asset):
     output = trading_bot(df=data, params=model_parameters)
     # Find the dictionary in the list
     dict_in_list = next((item for item in model_parameters if isinstance(item, dict)), None)
+    
+
+    return JsonResponse({"output": f"params are: {model_parameters} and output of {output} and dict: {dict_in_list}"})
 
 
+def trading_bot(df, params):
+
+    trader_params = params
+
+    # Find the dictionary in the list
+    # dict_in_list = next((item for item in data if isinstance(item, dict)), None)
     
     dict_in_list = next((item for item in model_parameters if isinstance(item, dict)), None)
 
@@ -2294,15 +2303,17 @@ def run_bot(request, user_email, magic_number, asset):
         bbands_length = dict_in_list['bbandsLength']
         bbands_std = dict_in_list['bbandsStd']
 
-    return JsonResponse({"output": f"params are: {model_parameters} and output of {output} and dict: {dict_in_list} and bbandslen: {bbands_length} and bbandsstd: {bbands_std}"})
-
-
-def trading_bot(df, params):
-
-    trader_params = params
-
-    # Find the dictionary in the list
-    # dict_in_list = next((item for item in data if isinstance(item, dict)), None)
+    elif 'Moving Average Bot' in model_parameters:
+        ma1_type = dict_in_list['ma1Type']
+        ma1 = dict_in_list['ma1']
+        ma2_type = dict_in_list['ma2Type']
+        ma2 = dict_in_list['ma2']
+    
+    elif 'Relative Strength Index' in model_parameters:
+        rsi_period = dict_in_list['rsiPeriod']
+        rsi_overbought = dict_in_list['rsiOverbought']
+        rsi_oversold = dict_in_list['rsiOversell']
+    
 
     def bullish_engulfing(df):
         df_test = df.tail(6)
@@ -2909,12 +2920,14 @@ def trading_bot(df, params):
 
 
     def bbands(df):
+        upper_band = f'BBU_{bbands_length}_{float(bbands_std)}'
+        lower_band = f'BBL_{bbands_length}_{float(bbands_std)}'
         try:
-            if df['Close'].iloc[-1] >= df['BB_Upper_20_2.0'].iloc[-1]:
+            if df['Close'].iloc[-1] >= df[upper_band].iloc[-1]:
                 # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                 return 1
             
-            elif df['Close'].iloc[-1] <= df['BB_Lower_20_2.0'].iloc[-1]:
+            elif df['Close'].iloc[-1] <= df[lower_band].iloc[-1]:
                 # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                 return -1
             return 0
@@ -2946,11 +2959,12 @@ def trading_bot(df, params):
     df['SMA_149'] = ta.sma(df['Close'], length=149)
     # print(df)
     current_close = df['Close']
-    current_close = ta.bbands(close=df['Close'], length=200, std=2, append=True)
+    current_close = ta.bbands(close=df['Close'], length=bbands_length, std=bbands_std, append=True)
     try:
-        df['BB_Upper_20_2.0'] = current_close['BBU_200_2.0']
-        df['BB_Middle_20_2.0'] = current_close['BBM_200_2.0']
-        df['BB_Lower_20_2.0'] = current_close['BBL_200_2.0']
+        upper_band = f'BBU_{bbands_length}_{float(bbands_std)}'
+        lower_band = f'BBL_{bbands_length}_{float(bbands_std)}'
+        df[upper_band] = current_close[upper_band]
+        df[lower_band] = current_close[lower_band]
     except: 
         pass
 
@@ -2983,7 +2997,7 @@ def trading_bot(df, params):
         moving_average(df=df)
     elif 'BBands' in trader_params:
         bbands(df=df)
-    elif 'rsi' in trader_params:
+    elif 'Relative Strength Index' in trader_params:
         rsi(df=df)
     elif 'Momentum Trading Bot' in trader_params:
         momentum(df=df)
