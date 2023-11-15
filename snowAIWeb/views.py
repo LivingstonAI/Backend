@@ -2236,11 +2236,13 @@ def chosen_models(request, user_email, magic_number):
             data_str = request.body.decode('utf-8')
             data = json.loads(data_str)
 
+            today = timezone.localtime(timezone.now()).date()
+
             # Find the dictionary in the list
             dict_in_list = next((item for item in data if isinstance(item, dict)), None)
 
-            
-
+            new_model = Bot(user_email=user_email, magic_number=magic_number, parameters=data, time_saved=today)
+            new_model.save()
             return JsonResponse({"message": f"{dict_in_list} with params: {user_email} and {magic_number}"})
         else:
             return JsonResponse({"message": "invalid request method"})
@@ -2258,3 +2260,9 @@ def check_json_in_list(lst):
         except json.JSONDecodeError:
             pass
     return None        
+
+
+@csrf_exempt
+def check_model_data(request, user_email, magic_number):
+    model_data = Bot.objects.filter(user_email=user_email, magic_number=magic_number).first()
+    return JsonResponse({"output": f"{model_data}"})
