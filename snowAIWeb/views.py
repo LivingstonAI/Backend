@@ -2285,7 +2285,7 @@ def run_bot(request, user_email, magic_number, asset):
 
 
     
-    dict_in_list = next((item for item in trader_params if isinstance(item, dict)), None)
+    dict_in_list = next((item for item in model_parameters if isinstance(item, dict)), None)
 
     bbands_length = ''
     bbands_std = ''
