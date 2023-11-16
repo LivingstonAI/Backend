@@ -2280,14 +2280,14 @@ def run_bot(request, user_email, magic_number, asset):
     forex_asset = f"{asset}=X"
     data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
 
-    # output = trading_bot(df=data, params=model_parameters)
+    output = trading_bot(df=data, params=model_parameters)
 
     # output = f'{data}'
     # Find the dictionary in the list
     dict_in_list = next((item for item in model_parameters if isinstance(item, dict)), None)
 
 
-    return JsonResponse({"output": f"{data}"})
+    return JsonResponse({"output": f"{data} with ouput: {output}"})
 
 
 def trading_bot(df, params):
