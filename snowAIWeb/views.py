@@ -2295,8 +2295,6 @@ def trading_bot(df, params):
 
     trader_params = params
 
-    temp_dict = {}
-
     # Find the dictionary in the list
     # dict_in_list = next((item for item in data if isinstance(item, dict)), None)
     
@@ -2985,9 +2983,6 @@ def trading_bot(df, params):
 
     df['MOM'] = ta.mom(df['Close'])
 
-    temp_dict['buy'] = 0
-    temp_dict['sell'] = 0
-
     buy = 0
     sell = 0
 
@@ -2995,118 +2990,97 @@ def trading_bot(df, params):
         bullish_engulfing_output = bullish_engulfing(df=df)
         bearish_engulfing_output = bearish_engulfing(df=df)
         if bullish_engulfing_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
             # return bullish_engulfing_output
         elif bullish_engulfing_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
         if bearish_engulfing_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
             # return bearish_engulfing_output
         elif bearish_engulfing_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
     elif 'Three White Soldiers' in trader_params:
         three_white_soldiers_output = three_white_soldiers(df=df)
         if three_white_soldiers_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
             # return three_white_soldiers_output
         elif three_white_soldiers_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
     elif 'Doji Star' in trader_params:
         doji_star_output = doji_star(df=df)
         if doji_star_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
             # return doji_star_output
         elif doji_star_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
     elif 'Pin Bar' in trader_params:
         bullish_pinbar_output = bullish_pinbar(df=df)
         bearish_pinbar_output = bearish_pinbar(df=df)
         if bullish_pinbar_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
             # return bullish_pinbar_output
         elif bullish_pinbar_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
         if bearish_pinbar_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
         elif bearish_pinbar_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
             # return bearish_pinbar_output
     elif 'Morning Star' in trader_params:
         morning_star_output = morning_star(df=df)
         if morning_star_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
             # return morning_star_output
         elif morning_star_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
     elif 'Matching' in trader_params:
         matching_output = matching(df=df)
         if matching_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
             # return matching_output
         elif matching_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
     elif 'Methods' in trader_params:
         methods_output = methods(df=df)
         if methods_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
         elif methods_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
             # return methods_output
     elif 'Moving Averages' in trader_params:
         ma_output = moving_average(df=df)
         if ma_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
         elif ma_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
             # return ma_output
     elif 'BBands' in trader_params:
         bbands_output = bbands(df=df)
         if bbands_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
         elif bbands_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
             # return bbands_output
     elif 'Relative Strength Index (RSI)' in trader_params:
         rsi_output = rsi(df=df)
         if rsi_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
             # return rsi_output
         elif rsi_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
     elif 'Momentum Trading Bot' in trader_params:
         momentum_output = momentum(df=df)
         if momentum_output == 1:
-            temp_dict['buy'] += 1
             buy += 1
         elif momentum_output == -1:
-            temp_dict['sell'] += 1
             sell += 1
+
+    temp_dict = {}
+
+    temp_dict['buy'] = buy
+    temp_dict['sell'] = sell
     
-    return buy, sell
+    return temp_dict
             # return momentum_output
 
 
