@@ -2956,7 +2956,7 @@ def trading_bot(df, params):
         elif df['MOM'].iloc[-1] < 20:
             # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
             return 1
-            
+
     if ma1_type == 'SMA':
         df['MA_Upper'] = ta.sma(df['Close'], length=ma1)
     elif ma1_type == 'EMA':
@@ -2984,31 +2984,55 @@ def trading_bot(df, params):
 
 
     if 'Engulfing' in trader_params:
-        bullish_engulfing(df=df)
-        bearish_engulfing(df=df)
-    elif 'shooting_star' in trader_params:
-        shooting_star(df=df)
+        bullish_engulfing_output = bullish_engulfing(df=df)
+        bearish_engulfing_output = bearish_engulfing(df=df)
+        if bullish_engulfing_output != None:
+            return bullish_engulfing_output
+        elif bearish_engulfing_output != None:
+            return bearish_engulfing_output
     elif 'Three White Soldiers' in trader_params:
-        three_white_soldiers(df=df)
+        three_white_soldiers_output = three_white_soldiers(df=df)
+        if three_white_soldiers_output != None:
+            return three_white_soldiers_output
     elif 'Doji Star' in trader_params:
-        doji_star(df=df)
+        doji_star_output = doji_star(df=df)
+        if doji_star_output != None:
+            return doji_star_output
     elif 'Pin Bar' in trader_params:
-        bullish_pinbar(df=df)
-        bearish_pinbar(df=df)
+        bullish_pinbar_output = bullish_pinbar(df=df)
+        bearish_pinbar_output = bearish_pinbar(df=df)
+        if bullish_pinbar_output != None:
+            return bullish_pinbar_output
+        elif bearish_pinbar_output != None:
+            return bearish_pinbar_output
     elif 'Morning Star' in trader_params:
-        morning_star(df=df)
+        morning_star_output = morning_star(df=df)
+        if morning_star_output != None:
+            return morning_star_output
     elif 'Matching' in trader_params:
-        matching(df=df)
+        matching_output = matching(df=df)
+        if matching_output != None:
+            return matching_output
     elif 'Methods' in trader_params:
-        methods(df=df)
+        methods_output = methods(df=df)
+        if methods_output != None:
+            return methods_output
     elif 'Moving Averages' in trader_params:
-        moving_average(df=df)
+        ma_output = moving_average(df=df)
+        if ma_output != None:
+            return ma_output
     elif 'BBands' in trader_params:
-        bbands(df=df)
+        bbands_output = bbands(df=df)
+        if bbands_output != None:
+            return bbands_output
     elif 'Relative Strength Index (RSI)' in trader_params:
-        rsi(df=df)
+        rsi_output = rsi(df=df)
+        if rsi_output != None:
+            return rsi_output
     elif 'Momentum Trading Bot' in trader_params:
-        momentum(df=df)
+        momentum_output = momentum(df=df)
+        if momentum_output != None:
+            return momentum_output
 
 
             
