@@ -2383,6 +2383,7 @@ def trading_bot(df, params):
                     return 1
             # break
                 return 0
+            return 0
 
 
     def bearish_engulfing(df):
@@ -2432,6 +2433,7 @@ def trading_bot(df, params):
                     # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                     return -1
                 return 0
+            return 0
 
             # break
 
@@ -2469,6 +2471,7 @@ def trading_bot(df, params):
                     if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
                         return -1
                     return 0
+                return 0
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
 
             elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
@@ -2491,6 +2494,8 @@ def trading_bot(df, params):
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
 
                     return 0
+                return 0
+            return 0
 
 
     def three_white_soldiers(df):
@@ -2540,6 +2545,8 @@ def trading_bot(df, params):
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                         return 1
                     return 0
+                return 0
+        
                             
             elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
                 if testing_candle_2.Close < testing_candle.Close and testing_candle.Close < prev_candle.Close:
@@ -2571,6 +2578,8 @@ def trading_bot(df, params):
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                         return -1
                     return 0
+                return 0
+            return 0
 
 
     def doji_star(df):
@@ -2614,6 +2623,8 @@ def trading_bot(df, params):
                     if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
                         return -1
                     return 0
+                return 0
+            
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
             elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
                 test1 = testing_candle.Open - testing_candle.Close
@@ -2634,6 +2645,8 @@ def trading_bot(df, params):
                         return 1
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                     return 0
+                return 0
+            return 0
 
 
     def bullish_pinbar(df):
@@ -2664,6 +2677,7 @@ def trading_bot(df, params):
                     return 1
                     # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                 return 0
+            return 0
 
 
     def bearish_pinbar(df):
@@ -2692,6 +2706,7 @@ def trading_bot(df, params):
                     return -1
                     # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                 return 0
+            return 0
 
 
     def morning_star(df):
@@ -2736,6 +2751,8 @@ def trading_bot(df, params):
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                         return 1
                     return 0
+                return 0
+
 
             elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
                 test = testing_candle.Open - testing_candle.Close
@@ -2760,6 +2777,8 @@ def trading_bot(df, params):
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                         return -1
                     return 0
+                return 0
+            return 0
 
 
     def matching(df):
@@ -2796,6 +2815,7 @@ def trading_bot(df, params):
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                         return 1
                     return 0
+                return 0
             elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
                 if prev_candle.High == testing_candle.High and prev_candle.High == testing_candle.High:
                     matching_highs += 1
@@ -2814,6 +2834,8 @@ def trading_bot(df, params):
                         return -1
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                     return 0
+                return 0
+            return 0
 
 
     def methods(df):
@@ -2858,6 +2880,7 @@ def trading_bot(df, params):
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                         return 1
                     return 0
+                return 0
 
             elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle) and testing_candle.close > prev_candle.close and is_bullish_run_3(testing_candle, testing_candle_2, testing_candle_3):
                 if final_candle.Close < prev_candle.Close:
@@ -2879,6 +2902,8 @@ def trading_bot(df, params):
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                         return -1
                     return 0
+                return 0
+            return 0
 
 
     def check_moving_averages_for_buy(df, range):
@@ -2938,6 +2963,7 @@ def trading_bot(df, params):
                 # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                 return -1
             return 0
+        return 0
 
 
     def bbands(df):
