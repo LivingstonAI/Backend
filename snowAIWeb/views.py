@@ -2114,9 +2114,10 @@ def api_call(request, asset):
         forex_asset = f"{asset}=X"
         data = yf.download(forex_asset, start=start_date, end=end_date, interval="15m")
 
-        moving_average_output = moving_average(df=data, ma1_type=ma1_type, ma1=ma1, ma2_type=ma2_type, ma2=ma2)
+        # moving_average_output = moving_average(df=data, ma1_type=ma1_type, ma1=ma1, ma2_type=ma2_type, ma2=ma2)
             
-        output = f'{moving_average_output}'
+        # output = f'{moving_average_output}'
+        output f"{data}"
         return JsonResponse({'message': output})
 
     except Exception as e:
