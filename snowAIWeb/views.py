@@ -2330,7 +2330,7 @@ def trading_bot(df, params):
     def bullish_engulfing(df):
         df_test = df.tail(7)
         df_test = df_test.drop_duplicates()
-        test_size = len(df)
+        test_size = len(df_test)
         num_engulfing = 0
 
         for i in range(test_size-1):
@@ -2385,7 +2385,7 @@ def trading_bot(df, params):
     def bearish_engulfing(df):
         df_test = df.tail(7)
         df_test = df_test.drop_duplicates()
-        test_size = len(df)
+        test_size = len(df_test)
         num_engulfing = 0
 
         for i in range(test_size-1):
