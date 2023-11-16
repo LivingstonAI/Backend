@@ -2327,7 +2327,7 @@ def trading_bot(df, params):
     elif 'Relative Strength Index (RSI)' in trader_params:
         rsi_period = dict_in_list['rsiPeriod']
         rsi_overbought = dict_in_list['rsiOverbought']
-        rsi_oversold = dict_in_list['rsiOversell']
+        rsi_oversold = dict_in_list['rsiOversold']
     
 
     def bullish_engulfing(df):
@@ -2382,8 +2382,6 @@ def trading_bot(df, params):
                     # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                     return 1
             # break
-                return 0
-            return 0
 
 
     def bearish_engulfing(df):
@@ -2432,9 +2430,6 @@ def trading_bot(df, params):
                     #     self.sell(tp=tp_level, sl=sl_level)
                     # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                     return -1
-                return 0
-            return 0
-
             # break
 
 
@@ -2470,8 +2465,7 @@ def trading_bot(df, params):
                     # print('bearish shooting star')
                     if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
                         return -1
-                    return 0
-                return 0
+
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
 
             elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
@@ -2492,10 +2486,6 @@ def trading_bot(df, params):
                     if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
                         return 1
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
-
-                    return 0
-                return 0
-            return 0
 
 
     def three_white_soldiers(df):
@@ -2544,9 +2534,7 @@ def trading_bot(df, params):
                             # self.position.close()
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                         return 1
-                    return 0
-                return 0
-        
+            
                             
             elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
                 if testing_candle_2.Close < testing_candle.Close and testing_candle.Close < prev_candle.Close:
@@ -2577,10 +2565,7 @@ def trading_bot(df, params):
                             # self.position.close()
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                         return -1
-                    return 0
-                return 0
-            return 0
-
+                
 
     def doji_star(df):
         # print('')
@@ -2622,9 +2607,6 @@ def trading_bot(df, params):
 
                     if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
                         return -1
-                    return 0
-                return 0
-            
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
             elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
                 test1 = testing_candle.Open - testing_candle.Close
@@ -2644,9 +2626,6 @@ def trading_bot(df, params):
                     if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
                         return 1
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
-                    return 0
-                return 0
-            return 0
 
 
     def bullish_pinbar(df):
@@ -2676,8 +2655,6 @@ def trading_bot(df, params):
                 if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
                     return 1
                     # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
-                return 0
-            return 0
 
 
     def bearish_pinbar(df):
@@ -2705,8 +2682,6 @@ def trading_bot(df, params):
                 if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
                     return -1
                     # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
-                return 0
-            return 0
 
 
     def morning_star(df):
@@ -2750,9 +2725,6 @@ def trading_bot(df, params):
                         # if thirty_eight_retracement <= testing_candle.Close <= sixty_one8_retracement:
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                         return 1
-                    return 0
-                return 0
-
 
             elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
                 test = testing_candle.Open - testing_candle.Close
@@ -2776,9 +2748,6 @@ def trading_bot(df, params):
                         # if thirty_eight_retracement <= testing_candle.Close <= sixty_one8_retracement:
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                         return -1
-                    return 0
-                return 0
-            return 0
 
 
     def matching(df):
@@ -2814,8 +2783,7 @@ def trading_bot(df, params):
                     if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                         return 1
-                    return 0
-                return 0
+
             elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
                 if prev_candle.High == testing_candle.High and prev_candle.High == testing_candle.High:
                     matching_highs += 1
@@ -2833,9 +2801,6 @@ def trading_bot(df, params):
                     if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
                         return -1
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
-                    return 0
-                return 0
-            return 0
 
 
     def methods(df):
@@ -2879,8 +2844,6 @@ def trading_bot(df, params):
                         # if thirty_eight_retracement <= testing_candle_3.Close <= sixty_one8_retracement:
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                         return 1
-                    return 0
-                return 0
 
             elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle) and testing_candle.close > prev_candle.close and is_bullish_run_3(testing_candle, testing_candle_2, testing_candle_3):
                 if final_candle.Close < prev_candle.Close:
@@ -2901,9 +2864,6 @@ def trading_bot(df, params):
                         # if thirty_eight_retracement <= testing_candle_3.Close <= sixty_one8_retracement:
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                         return -1
-                    return 0
-                return 0
-            return 0
 
 
     def check_moving_averages_for_buy(df, range):
@@ -2951,7 +2911,7 @@ def trading_bot(df, params):
             if check_moving_averages_for_buy(df=df, range=range):
                 # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                 return 1
-            return 0
+        
         elif df.tail(1)['MA_Lower'].values[0] < df.tail(1)['MA_Upper'].values[0]:
             # print('2')
             # if open_positions is not None:
@@ -2962,8 +2922,6 @@ def trading_bot(df, params):
                 
                 # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                 return -1
-            return 0
-        return 0
 
 
     def bbands(df):
@@ -2977,10 +2935,8 @@ def trading_bot(df, params):
             elif df['Close'].iloc[-1] <= df[lower_band].iloc[-1]:
                 # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                 return -1
-            return 0
         except: 
             # pass
-            return 0
 
 
     def rsi(df):
@@ -2991,7 +2947,6 @@ def trading_bot(df, params):
         elif df['RSI'].iloc[-1] < rsi_oversold:
             # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
             return 1
-        return 0
 
 
     def momentum(df):
@@ -3001,7 +2956,7 @@ def trading_bot(df, params):
         elif df['MOM'].iloc[-1] < 20:
             # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
             return 1
-        return 0
+            
     if ma1_type == 'SMA':
         df['MA_Upper'] = ta.sma(df['Close'], length=ma1)
     elif ma1_type == 'EMA':
