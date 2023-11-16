@@ -2311,6 +2311,9 @@ def trading_bot(df, params):
     rsi_overbought = ''
     rsi_oversold = ''
 
+    df['EMA_50'] = ta.ema(df['Close'], length=50)
+    df['SMA_200'] = ta.sma(df['Close'], length=200)
+
     if 'BBands' in trader_params:
         bbands_length = dict_in_list['bbandsLength']
         bbands_std = dict_in_list['bbandsStd']
