@@ -2936,7 +2936,7 @@ def trading_bot(df, params):
                 # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
                 return -1
         except: 
-            # pass
+            pass
 
 
     def rsi(df):
