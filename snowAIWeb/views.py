@@ -2341,7 +2341,7 @@ def trading_bot(df, params):
                 print(df)
                 print('')
                 print(df_test)
-            second_test = first_candle.close > second_candle.open
+            second_test = first_candle.Close > second_candle.Open
 
             if is_bearish_candle(second_candle) and is_bullish_candle(first_candle) and second_test == True and is_bearish_run(fifth_candle, fourth_candle, third_candle, second_candle):
                 num_engulfing += 1
@@ -2392,7 +2392,7 @@ def trading_bot(df, params):
             fourth_candle = df_test.iloc[i-4]
             fifth_candle = df_test.iloc[i-5]
             # first_test = first_candle.Open < second_candle.Close
-            second_test = first_candle.close < second_candle.open
+            second_test = first_candle.Close < second_candle.Open
 
             if is_bullish_candle(second_candle) and is_bearish_candle(first_candle) and second_test == True and is_bullish_run(fifth_candle, fourth_candle, third_candle, second_candle):
                 num_engulfing += 1
@@ -2446,7 +2446,7 @@ def trading_bot(df, params):
             prev_candle = df.iloc[i+3]
             testing_candle = df.iloc[i+4]
             if is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
-                test= abs(testing_candle.high - testing_candle.close)
+                test= abs(testing_candle.High - testing_candle.Close)
                 if 2 < test < 2.1:
                     num_shooting_stars += 1
 
@@ -2466,7 +2466,7 @@ def trading_bot(df, params):
 
             elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
 
-                test = abs(testing_candle.high - testing_candle.close)
+                test = abs(testing_candle.High - testing_candle.Close)
                 if test > 2 and test < 2.1:
                     bullish_shooting_stars += 1
                     # print('bullish shooting star')
@@ -2504,7 +2504,7 @@ def trading_bot(df, params):
             testing_candle_2 = df.iloc[i+5]
 
             if is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
-                if testing_candle_2.close > testing_candle.close and testing_candle.close > prev_candle.close:
+                if testing_candle_2.Close > testing_candle.Close and testing_candle.Close > prev_candle.Close:
                     three_white_soldiers += 1
                     # print('bullish three white soldiers')
                     if df['EMA_50'].iloc[-1] > df['SMA_200'].iloc[-1]:
@@ -2534,7 +2534,7 @@ def trading_bot(df, params):
                         return 1
                             
             elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
-                if testing_candle_2.close < testing_candle.close and testing_candle.close < prev_candle.close:
+                if testing_candle_2.Close < testing_candle.Close and testing_candle.Close < prev_candle.Close:
                     three_black_crows += 1
                     # print('bearish three black crows')
                     if df['EMA_50'].iloc[-1] < df['SMA_200'].iloc[-1]:
@@ -2583,8 +2583,8 @@ def trading_bot(df, params):
             # price = self.data.Close[-1]
 
             if is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
-                test1 = testing_candle.high - testing_candle.close
-                test2 = testing_candle.close - testing_candle.low
+                test1 = testing_candle.High - testing_candle.Close
+                test2 = testing_candle.Close - testing_candle.Low
                 if test1 == test2:
                     bullish_doji += 1
                     # print('bullish doji star')
@@ -2607,8 +2607,8 @@ def trading_bot(df, params):
                         return -1
                         # create_order(ticker, lot_size, sell_order_type, sell_price, sell_sl, sell_tp)
             elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
-                test1 = testing_candle.open - testing_candle.close
-                test2 = testing_candle.close - testing_candle.low
+                test1 = testing_candle.Open - testing_candle.Close
+                test2 = testing_candle.Close - testing_candle.Low
                 if test1 == test2:
                     bearish_doji += 1
 
@@ -2637,7 +2637,7 @@ def trading_bot(df, params):
 
         for i in range(test_size-1):
             candle = df.iloc[i]
-            is_pin_bar = (candle.close - candle.low) > 0.05
+            is_pin_bar = (candle.Close - candle.Low) > 0.05
             if is_pin_bar:
                 num_pin_bars += 1
                 # print('Bullish Pin Bar')
@@ -2666,7 +2666,7 @@ def trading_bot(df, params):
 
         for i in range(test_size-1):
             candle = df.iloc[i]
-            is_pin_bar = abs(candle.close - candle.high) <  0.05
+            is_pin_bar = abs(candle.Close - candle.High) <  0.05
             if is_pin_bar:
                 num_pin_bars += 1
                 # print('Bearish Pin Bar')
@@ -2704,8 +2704,8 @@ def trading_bot(df, params):
             testing_candle_2 = df.iloc[i+5]
 
             if is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
-                test = testing_candle.open - testing_candle.close
-                if testing_candle_2.close > testing_candle.close and 0 < test < 2:
+                test = testing_candle.Open - testing_candle.Close
+                if testing_candle_2.Close > testing_candle.Close and 0 < test < 2:
                     morning_stars += 1
                     # print('bullish morning star')
                     
@@ -2728,8 +2728,8 @@ def trading_bot(df, params):
                         return 1
 
             elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
-                test = testing_candle.open - testing_candle.close
-                if testing_candle_2.close < testing_candle.close and 0 < test < 2 and testing_candle.close < prev_candle.close:
+                test = testing_candle.Open - testing_candle.Close
+                if testing_candle_2.Close < testing_candle.Close and 0 < test < 2 and testing_candle.Close < prev_candle.Close:
                     evening_stars += 1
                     # print('bearish morning star')
 
@@ -2769,7 +2769,7 @@ def trading_bot(df, params):
             testing_candle = df.iloc[i+4]
 
             if is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
-                if prev_candle.low == testing_candle.low and prev_candle.close == testing_candle.close:
+                if prev_candle.Low == testing_candle.Low and prev_candle.Close == testing_candle.Close:
                     matching_lows += 1
                     # print('matching low')
 
@@ -2786,7 +2786,7 @@ def trading_bot(df, params):
                         # create_order(ticker, lot_size, buy_order_type, buy_price, buy_sl, buy_tp)
                         return 1
             elif is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle):
-                if prev_candle.high == testing_candle.high and prev_candle.high == testing_candle.high:
+                if prev_candle.High == testing_candle.High and prev_candle.High == testing_candle.High:
                     matching_highs += 1
                     # print('matching high')
 
@@ -2825,7 +2825,7 @@ def trading_bot(df, params):
             final_candle = df.iloc[7]
 
             if is_bullish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle) and testing_candle.close < prev_candle.close and is_bearish_run_3(testing_candle, testing_candle_2, testing_candle_3):
-                if final_candle.close > prev_candle.close:
+                if final_candle.Close > prev_candle.Close:
                     rising_methods += 1
                     # print('rising three methods')
 
@@ -2848,7 +2848,7 @@ def trading_bot(df, params):
                         return 1
 
             elif is_bearish_run(first_prev_candle, second_prev_candle, third_prev_candle, prev_candle) and testing_candle.close > prev_candle.close and is_bullish_run_3(testing_candle, testing_candle_2, testing_candle_3):
-                if final_candle.close < prev_candle.close:
+                if final_candle.Close < prev_candle.Close:
                     falling_methods += 1
                     # print('falling three methods')
 
