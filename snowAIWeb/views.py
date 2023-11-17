@@ -2287,7 +2287,7 @@ def run_bot(request, user_email, magic_number, asset):
     # Find the dictionary in the list
     dict_in_list = next((item for item in model_parameters if isinstance(item, dict)), None)
 
-    return JsonResponse({"output": f"{output}"})
+    return JsonResponse({"message": f"{output}"})
 
 
 def trading_bot(df, params):
