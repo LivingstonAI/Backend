@@ -2287,7 +2287,6 @@ def run_bot(request, user_email, magic_number, asset):
     # Find the dictionary in the list
     dict_in_list = next((item for item in model_parameters if isinstance(item, dict)), None)
 
-
     return JsonResponse({"output": f"model params: {model_parameters} and dict: {dict_in_list}, with ouput: {output}"})
 
 
@@ -3079,9 +3078,12 @@ def trading_bot(df, params):
 
     temp_dict['buy'] = buy
     temp_dict['sell'] = sell
+
+    if buy > sell:
+        return 1
+    elif sell > buy:
+        return -1
+    else:
+        return 0
     
-    return temp_dict
-            # return momentum_output
-
-
-            
+    
