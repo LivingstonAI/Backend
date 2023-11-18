@@ -3228,10 +3228,12 @@ async def handle_api_request_backtest(dataframe, backtest_period):
 def run_backtest(request, dataframe, backtest_period):
     try:
         if request.method == 'POST':
-            bots = request.body
+            # Decode the bytes to a string
+            data_str = request.body.decode('utf-8')
+            data = json.loads(data_str)
             async def inner_backtest():
                 result = await handle_api_request_backtest(dataframe, backtest_period)
-                return JsonResponse({'Output': f'{result} parameters: {bots}'})
+                return JsonResponse({'Output': f'{result} parameters: {data}'})
 
             # Run the asynchronous code using the event loop
             loop = asyncio.get_event_loop()
