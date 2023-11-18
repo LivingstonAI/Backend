@@ -3231,7 +3231,7 @@ def run_backtest(request, dataframe, backtest_period):
             # Decode the bytes to a string
             data_str = request.body.decode('utf-8')
             data = json.loads(data_str)
-            model_parameters = ast.literal_eval(data)
+            model_parameters = data
             async def inner_backtest():
                 result = await handle_api_request_backtest(dataframe, backtest_period)
                 return JsonResponse({'Output': f'{result} parameters: {model_parameters} with type: {type(model_parameters)}'})
@@ -3241,3 +3241,4 @@ def run_backtest(request, dataframe, backtest_period):
             return loop.run_until_complete(inner_backtest())
     except Exception as e:
         return JsonResponse({"Error": f'{e}'})
+
