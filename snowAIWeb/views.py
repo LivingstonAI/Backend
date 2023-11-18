@@ -3135,6 +3135,10 @@ async def handle_api_request_backtest(dataframe, backtest_period):
                 self.buy()
                 # self.current_position = 'buy'
                     # self.buy()
+        
+        def all_bots(self, df):
+            self.momentum(df=df)
+            
 
 
         def next(self):
@@ -3142,7 +3146,7 @@ async def handle_api_request_backtest(dataframe, backtest_period):
             df['MOM'] = ta.mom(df['Close'])
             # if not self.position:
             try:
-                self.momentum(df)
+                self.all_bots(df=df)
                 # print('Running Backtesting Algorithm...')
             except Exception as e:
                 print(f'Exception is {e}')
