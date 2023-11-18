@@ -3608,6 +3608,8 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
         def next(self):
             df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
             df['MOM'] = ta.mom(df['Close'])
+            df['EMA_50'] = ta.ema(df['Close'], length=50)
+            df['SMA_200'] = ta.sma(df['Close'], length=200)
             # if not self.position:
             try:
                 self.all_bots(df=df)
@@ -3651,8 +3653,6 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
     # test_length = int(len(df) * 0.25)
     length = int(len(df) * start)
     second_length = int(len(df) * end)
-    df['EMA_50'] = ta.ema(df['Close'], length=50)
-    df['SMA_200'] = ta.sma(df['Close'], length=200)
     bt = Backtest(df[length:second_length], backtestAgent, exclusive_orders=False, cash=10000)
     output = bt.run()
     
