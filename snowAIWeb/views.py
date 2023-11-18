@@ -3330,7 +3330,7 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
                         if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
                             self.buy(tp=tp_level, sl=sl_level)
 
-        def three_white_soldier(self, df):
+        def three_white_soldiers(self, df):
             # print('')
             dataframe = df.drop_duplicates()
             df = df.drop_duplicates()
