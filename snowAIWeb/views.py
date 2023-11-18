@@ -3226,10 +3226,15 @@ async def handle_api_request_backtest(dataframe, backtest_period):
 
 @csrf_exempt
 def run_backtest(request, dataframe, backtest_period):
-    async def inner_backtest():
-        result = await handle_api_request_backtest(dataframe, backtest_period)
-        return JsonResponse({'Output': result})
+    try:
+        if request.method == 'POST':
+            bots = request.body
+            async def inner_backtest():
+                result = await handle_api_request_backtest(dataframe, backtest_period)
+                return JsonResponse({'Output': f'{result} parameters: {bots}'})
 
-    # Run the asynchronous code using the event loop
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(inner_backtest())
+            # Run the asynchronous code using the event loop
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(inner_backtest())
+    except Exception as e:
+        return JsonResponse({"Error": f'{e}'})
