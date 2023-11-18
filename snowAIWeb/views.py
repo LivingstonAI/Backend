@@ -3106,8 +3106,6 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
 
             
         def bullish_engulfing(self, df):
-            df['EMA_50'] = ta.ema(df['Close'], length=50)
-            df['SMA_200'] = ta.sma(df['Close'], length=200)
             df_test = df.tail(6)
             df_test = df_test.drop_duplicates()
             test_size = len(df)
@@ -3606,8 +3604,6 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
             if 'Methods' in parameters:
                 self.methods(df=df)
             
-            
-
 
         def next(self):
             df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
