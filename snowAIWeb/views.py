@@ -3091,7 +3091,7 @@ def trading_bot(df, params):
 @csrf_exempt
 async def handle_api_request_backtest(dataframe, backtest_period):
 
-    class Momentum(Strategy):
+    class backtestAgent(Strategy):
         equity = 100000
         risk_percentage = 20
         reward_percentage = 50
@@ -3184,7 +3184,7 @@ async def handle_api_request_backtest(dataframe, backtest_period):
     # test_length = int(len(df) * 0.25)
     length = int(len(df) * start)
     second_length = int(len(df) * end)
-    bt = Backtest(df[length:second_length], Momentum, exclusive_orders=False, cash=10000)
+    bt = Backtest(df[length:second_length], backtestAgent, exclusive_orders=False, cash=10000)
     output = bt.run()
     
     # Convert the relevant output fields to a dictionary
