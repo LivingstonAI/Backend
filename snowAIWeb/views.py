@@ -3105,9 +3105,105 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
             self.ma1 = self.I(SMA, price, 10)
             self.ma2 = self.I(SMA, price, 20)
 
+            
+        def bullish_engulfing(self, df):
+            df_test = df.tail(6)
+            df_test = df_test.drop_duplicates()
+            test_size = len(df)
+            num_engulfing = 0
+
+            for i in range(test_size-1):
+                first_candle = df_test.iloc[i-1]
+                second_candle = df_test.iloc[i-2]
+                third_candle  = df_test.iloc[i-3]
+                fourth_candle = df_test.iloc[i-4]
+                fifth_candle = df_test.iloc[i-5]
+                second_test = first_candle.Close > second_candle.Open
+
+                if is_bearish_candle(second_candle) and is_bullish_candle(first_candle) and second_test == True and is_bearish_run(fifth_candle, fourth_candle, third_candle, second_candle):
+                    # num_engulfing += 1
+                    # print('Bullish Engulfing')
+                    if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
+                        # # Set the style of the plot
+                        # df.index = pd.to_datetime(df.index)
+                        # style = mpf.make_mpf_style(base_mpf_style='classic')
+                        # Create the figure object without plotting
+                        # fig, axes = mpf.plot(df.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                        # plt.close(fig)
+                        # # Save the figure to a file
+                        # fig.savefig('candlestick_chart.png')
+                        # # if self.position:
+                        # #     self.position.close()
+
+                        # if process_image(self.path) == 2:
+                        price = self.data.Close[-1]
+                        gain_amount = self.reward_percentage
+                        risk_amount = self.risk_percentage
+                        tp_level = price + self.reward_percentage
+                        sl_level = price - self.risk_percentage
+
+                        # levels = get_fibonacci_levels(df=df.tail(75), trend='uptrend')
+                        # thirty_eight_retracement = levels[2]
+                        # sixty_one8_retracement = levels[4]
+                        # if thirty_eight_retracement <= price <= sixty_one8_retracement:
+                            # self.position.close()
+                        if self.position:
+                            self.position.close()
+                        self.buy(tp=tp_level, sl=sl_level)
+                break
+
+
+        def bearish_engulfing(self, df):
+            df_test = df.tail(6)
+            df_test = df_test.drop_duplicates()
+            test_size = len(df)
+            num_engulfing = 0
+
+            for i in range(test_size-1):
+                first_candle = df_test.iloc[i-1]
+                second_candle = df_test.iloc[i-2]
+                third_candle  = df_test.iloc[i-3]
+                fourth_candle = df_test.iloc[i-4]
+                fifth_candle = df_test.iloc[i-5]
+                # first_test = first_candle.Open < second_candle.Close
+                second_test = first_candle.Close < second_candle.Open
+
+                if is_bullish_candle(second_candle) and is_bearish_candle(first_candle) and second_test == True and is_bullish_run(fifth_candle, fourth_candle, third_candle, second_candle):
+                    # num_engulfing += 1
+                    # print('Bearish Engulfing')
+                    price = self.data.Close[-1]
+
+                    if df.tail(1)['EMA_50'].values[0] < df.tail(1)['SMA_200'].values[0]:
+                        # df.index = pd.to_datetime(df.index)
+                        # style = mpf.make_mpf_style(base_mpf_style='classic')
+
+                        # # Create the figure object without plotting
+                        # fig, axes = mpf.plot(df.tail(self.candlestick_backtrack), type='candle', volume=True, returnfig=True, style=style)
+                        # plt.close(fig)
+                        # # Save the figure to a file
+                        # fig.savefig('candlestick_chart.png')
+
+                        # if self.position:
+                        #     self.position.close()
+                            # pass
+                        # if process_image(self.path) == 0:
+                        gain_amount = self.reward_percentage
+                        risk_amount = self.risk_percentage
+                        tp_level = price - self.reward_percentage
+                        sl_level = price + self.risk_percentage
+                        # levels = get_fibonacci_levels(df=df.tail(75), trend='downtrend')
+                        # thirty_eight_retracement = levels[2]
+                        # sixty_one8_retracement = levels[4]
+                            # if thirty_eight_retracement <= price <= sixty_one8_retracement:
+                            # self.position.close()
+                        if self.position:
+                            self.position.close()
+                        self.sell(tp=tp_level, sl=sl_level)
+                # Break statement might not be neccessary here. Think it might be safe to remove.
+                break
+
 
         def momentum(self, df):
-
             if df.tail(1)['MOM'].values[0] > 80:
                 price = self.data.Close[-1]
                 gain_amount = self.reward_percentage
@@ -3136,10 +3232,13 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
                 # self.current_position = 'buy'
                     # self.buy()
         
+
         def all_bots(self, df):
             if 'Momentum Trading Bot' in parameters:
                 self.momentum(df=df)
-            
+            if 'Engulfing' in parameters:
+                self.bullish_engulfing(df=df)
+                self.bearish_engulfing(df=df)  
 
 
         def next(self):
@@ -3181,11 +3280,12 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
         start = 0.75
         end = 1
 
-
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
+    df['EMA_50'] = ta.ema(df['Close'], length=50)
+    df['SMA_200'] = ta.sma(df['Close'], length=200)
     # test_length = int(len(df) * 0.25)
     length = int(len(df) * start)
     second_length = int(len(df) * end)
