@@ -3107,6 +3107,8 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
 
             
         def bullish_engulfing(self, df):
+            df['EMA_50'] = ta.ema(df['Close'], length=50)
+            df['SMA_200'] = ta.sma(df['Close'], length=200)
             df_test = df.tail(6)
             df_test = df_test.drop_duplicates()
             test_size = len(df)
@@ -3154,6 +3156,8 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
 
 
         def bearish_engulfing(self, df):
+            df['EMA_50'] = ta.ema(df['Close'], length=50)
+            df['SMA_200'] = ta.sma(df['Close'], length=200)
             df_test = df.tail(6)
             df_test = df_test.drop_duplicates()
             test_size = len(df)
@@ -3284,8 +3288,6 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
     df = pd.read_csv(df_path).drop_duplicates()
     df.index = pd.to_datetime(df['Time'].values)
     del df['Time']
-    df['EMA_50'] = ta.ema(df['Close'], length=50)
-    df['SMA_200'] = ta.sma(df['Close'], length=200)
     # test_length = int(len(df) * 0.25)
     length = int(len(df) * start)
     second_length = int(len(df) * end)
