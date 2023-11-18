@@ -3231,9 +3231,10 @@ def run_backtest(request, dataframe, backtest_period):
             # Decode the bytes to a string
             data_str = request.body.decode('utf-8')
             data = json.loads(data_str)
+            model_parameters = ast.literal_eval(data)
             async def inner_backtest():
                 result = await handle_api_request_backtest(dataframe, backtest_period)
-                return JsonResponse({'Output': f'{result} parameters: {data}'})
+                return JsonResponse({'Output': f'{result} parameters: {model_parameters} with type: {type(model_parameters)}'})
 
             # Run the asynchronous code using the event loop
             loop = asyncio.get_event_loop()
