@@ -3235,7 +3235,7 @@ def run_backtest(request, dataframe, backtest_period):
             model_parameters = data
             async def inner_backtest():
                 result = await handle_api_request_backtest(dataframe, backtest_period, model_parameters)
-                return JsonResponse({'Output': f'{result}'})
+                return JsonResponse({'Output': result})
 
             # Run the asynchronous code using the event loop
             loop = asyncio.get_event_loop()
