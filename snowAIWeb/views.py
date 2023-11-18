@@ -3086,4 +3086,7 @@ def trading_bot(df, params):
     else:
         return 0
     
-    
+
+@csrf_exempt    
+def run_backtest(request):
+    return JsonResponse({'message': 'Request Successful'})

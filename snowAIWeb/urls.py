@@ -39,6 +39,7 @@ urlpatterns = [
     path('process-image', views.process_image, name='process_image'),
     path('chosen-models/<str:user_email>/<int:magic_number>', views.chosen_models, name='chosen_models'),
     path('run-bot/<str:user_email>/<int:magic_number>/<str:asset>', views.run_bot, name='run-bot'),
+    path('run-backtest', views.run_backtest, name='run-backtest')
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 
