@@ -3089,7 +3089,7 @@ def trading_bot(df, params):
 
 
 @csrf_exempt
-async def handle_api_request_backtest(dataframe, backtest_period):
+async def handle_api_request_backtest(dataframe, backtest_period, parameters):
 
     class backtestAgent(Strategy):
         equity = 100000
@@ -3137,7 +3137,8 @@ async def handle_api_request_backtest(dataframe, backtest_period):
                     # self.buy()
         
         def all_bots(self, df):
-            self.momentum(df=df)
+            if 'Momentum Trading Bot' in parameters:
+                self.momentum(df=df)
             
 
 
@@ -3233,7 +3234,7 @@ def run_backtest(request, dataframe, backtest_period):
             data = json.loads(data_str)
             model_parameters = data
             async def inner_backtest():
-                result = await handle_api_request_backtest(dataframe, backtest_period)
+                result = await handle_api_request_backtest(dataframe, backtest_period, parameters)
                 return JsonResponse({'Output': f'{result} parameters: {model_parameters} with type: {type(model_parameters)}'})
 
             # Run the asynchronous code using the event loop
