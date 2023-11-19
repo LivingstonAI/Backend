@@ -3099,6 +3099,7 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
         position_size = 0.01
         current_position = ''
 
+
         def init(self):
             price = self.data.Close
             self.ma1 = self.I(SMA, price, 10)
