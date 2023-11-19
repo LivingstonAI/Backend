@@ -3330,6 +3330,7 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
                         if df.tail(1)['EMA_50'].values[0] > df.tail(1)['SMA_200'].values[0]:
                             self.buy(tp=tp_level, sl=sl_level)
 
+
         def three_white_soldiers(self, df):
             # print('')
             dataframe = df.drop_duplicates()
@@ -3483,7 +3484,7 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
         def methods(self, df):
             dataframe = df.drop_duplicates()
             df = df.drop_duplicates()
-            df = df.tail(8)
+            df = df.tail(9)
             test_size = len(df)
             rising_methods = 0
             falling_methods = 0
@@ -3553,8 +3554,6 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
                             # if thirty_eight_retracement <= testing_candle_3.Close <= sixty_one8_retracement:
                             self.sell(tp=tp_level, sl=sl_level)
         
-
-
 
         def momentum(self, df):
             if df.tail(1)['MOM'].values[0] > 80:
