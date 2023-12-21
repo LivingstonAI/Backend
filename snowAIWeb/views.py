@@ -3725,7 +3725,7 @@ def update_news_data(request):
         print("Received currencies:", currencies)
 
         # Send back a JSON response indicating success
-        return JsonResponse({'message': 'success'})
+        return JsonResponse({'message': f'{currencies}'})
 
     # Handle other HTTP methods or invalid requests
     return JsonResponse({'message': 'Invalid request'}, status=400)
