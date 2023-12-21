@@ -3708,6 +3708,7 @@ def run_backtest(request, dataframe, backtest_period):
         return JsonResponse({"Error": f'{e}'})
 
 
+@csrf_exempt
 def update_news_data(request):
     if request.method == 'POST':
         # Retrieve the array of currencies from the request body
