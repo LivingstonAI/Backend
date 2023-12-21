@@ -3707,3 +3707,24 @@ def run_backtest(request, dataframe, backtest_period):
     except Exception as e:
         return JsonResponse({"Error": f'{e}'})
 
+
+def update_news_data(request):
+    if request.method == 'POST':
+        # Retrieve the array of currencies from the request body
+        data = request.POST  # For form-encoded data
+        # For JSON data, use request.body and decode it
+        # Example for JSON data:
+        json_data = json.loads(request.body)
+        currencies = json_data.get('currencies', [])
+
+        # Process the currencies array as needed
+        # Perform preprocessing or any other operations here
+        
+        # Example: Log the received currencies
+        print("Received currencies:", currencies)
+
+        # Send back a JSON response indicating success
+        return JsonResponse({'message': 'success'})
+
+    # Handle other HTTP methods or invalid requests
+    return JsonResponse({'message': 'Invalid request'}, status=400)
