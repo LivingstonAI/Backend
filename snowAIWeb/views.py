@@ -631,19 +631,14 @@ def update_user_assets(request, user_email):
 
 
 # @csrf_exempt
-def save_news_data():
+def save_news_data(assets):
     try:
         news = News.objects.all().delete()
     except:
         pass
     today = timezone.localtime(timezone.now()).date()
     # List of assets to fetch news data for
-    assets_to_fetch = [
-        "EURUSD",
-        "GBPUSD", 
-        "USDJPY",
-        "EURGBP" # Add more assets as needed
-    ]
+    assets_to_fetch = assets
 
     # Establish a connection to the API
     conn = http.client.HTTPSConnection('api.marketaux.com')
@@ -705,35 +700,38 @@ def save_news_data():
 
 @csrf_exempt
 def fetch_news_data(request):
-    # Check if news data for the current day already exists
-    today = timezone.localtime(timezone.now()).date()
+    try:
+        # Check if news data for the current day already exists
+        today = timezone.localtime(timezone.now()).date()
 
-    # Check if news data for the current day already exists
-    existing_news = News.objects.filter(day_created=today)
-    
-    if not existing_news.exists():
-        # If data for the current day exists, return a message indicating it
-        save_news_data()
-        # return JsonResponse({'message': 'News data for today already exists.'})
-    # else:
-        # If data for the current day doesn't exist, fetch and save news data
-        # return JsonResponse({'message': f'News data for today does not exist {str(today)}'})
-    
-    # Fetch all news data without using serializers
-    news_objects = News.objects.all()
-    
-    # Create a list of dictionaries representing the model instances
-    news_data = []
-    for news in news_objects:
-        news_data.append({
-            "symbol": news.symbol,
-            "description": news.data,
-            "created_on": news.day_created,
-            'today': today,
-        })
-    
-    # # Convert the list to JSON and return it
-    return JsonResponse({"news_data": news_data}, safe=False)
+        # Check if news data for the current day already exists
+        existing_news = News.objects.filter(day_created=today)
+        
+        # if not existing_news.exists():
+        #     # If data for the current day exists, return a message indicating it
+        #     save_news_data()
+            # return JsonResponse({'message': 'News data for today already exists.'})
+        # else:
+            # If data for the current day doesn't exist, fetch and save news data
+            # return JsonResponse({'message': f'News data for today does not exist {str(today)}'})
+        
+        # Fetch all news data without using serializers
+        news_objects = News.objects.all()
+        
+        # Create a list of dictionaries representing the model instances
+        news_data = []
+        for news in news_objects:
+            news_data.append({
+                "symbol": news.symbol,
+                "description": news.data,
+                "created_on": news.day_created,
+                'today': today,
+            })
+        
+        # # Convert the list to JSON and return it
+        return JsonResponse({"news_data": news_data}, safe=False)
+    except Exception as e:
+        return JsonResponse({"news_data": "no current news data"})
     
 
 @csrf_exempt
@@ -3723,7 +3721,9 @@ def update_news_data(request):
         
         # Example: Log the received currencies
         print("Received currencies:", currencies)
+        # Example currency list: ['EURUSD', 'GBPUSD', 'USDJPY', 'EURGBP']
 
+        save_news_data(currencies)
         # Send back a JSON response indicating success
         return JsonResponse({'message': f'Data is: {currencies} with type: {type(currencies)}'})
 
