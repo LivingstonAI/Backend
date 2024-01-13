@@ -3740,5 +3740,5 @@ def interest_rates(request):
         result = response.text
     else:
         result = response.status_code, response.text
-    return JsonResponse({'message': result})
+    return JsonResponse({'Interest Rates': result})
     
