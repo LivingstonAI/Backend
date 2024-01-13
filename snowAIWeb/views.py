@@ -3729,3 +3729,9 @@ def update_news_data(request):
 
     # Handle other HTTP methods or invalid requests
     return JsonResponse({'message': 'Invalid request'}, status=400)
+
+
+def interest_rates(request):
+    
+    return JsonResponse({'message': 'Successfull API Request!'})
+    
