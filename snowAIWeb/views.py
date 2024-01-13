@@ -3732,6 +3732,13 @@ def update_news_data(request):
 
 
 def interest_rates(request):
-    
-    return JsonResponse({'message': 'Successfull API Request!'})
+    api_ninjas_key = 'fhw7p7lWporgmk7eGGdpiQ==ce3O6xofIN88xuH2'
+    api_url = 'https://api.api-ninjas.com/v1/interestrate'
+    result = ''
+    response = requests.get(api_url, headers={'X-Api-Key': api_ninjas_key})
+    if response.status_code == requests.codes.ok:
+        result = response.text
+    else:
+        result = response.status_code, response.text
+    return JsonResponse({'message': result})
     
