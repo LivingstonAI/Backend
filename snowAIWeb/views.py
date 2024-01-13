@@ -3735,7 +3735,7 @@ def interest_rates(request):
     api_ninjas_key = 'fhw7p7lWporgmk7eGGdpiQ==ce3O6xofIN88xuH2'
     api_url = 'https://api.api-ninjas.com/v1/interestrate'
     result = ''
-    response = requests.get(api_url, headers={'X-Api-Key': api_ninjas_key})
+    response = requests.get(api_url, headers={'X-Api-Key': api_ninjas_key, 'central_bank_only': 'true'})
     if response.status_code == requests.codes.ok:
         result = response.text
     else:
