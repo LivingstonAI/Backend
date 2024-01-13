@@ -3730,7 +3730,7 @@ def update_news_data(request):
     # Handle other HTTP methods or invalid requests
     return JsonResponse({'message': 'Invalid request'}, status=400)
 
-
+@csrf_exempt
 def interest_rates(request):
     api_ninjas_key = 'fhw7p7lWporgmk7eGGdpiQ==ce3O6xofIN88xuH2'
     api_url = 'https://api.api-ninjas.com/v1/interestrate'
