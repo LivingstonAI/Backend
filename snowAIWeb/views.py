@@ -2183,7 +2183,7 @@ def analyse_image(image_data):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Please give a technical analysis of this image with at most 2 paragraphs in your response."
+                            "text": "Please give a technical analysis of this image with at most 2 paragraphs in your response. If not provided a trading chart, please respond with a query to send a trading chart."
                         },
                         {
                             "type": "image_url",
@@ -3689,12 +3689,15 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
 
 @csrf_exempt
 def run_backtest(request, dataframe, backtest_period):
+    dummy_param1 = None
+    dummy_param2 = None
     try:
         if request.method == 'POST':
             # Decode the bytes to a string
             data_str = request.body.decode('utf-8')
             data = json.loads(data_str)
             model_parameters = data
+            dummy_param1 = data
             async def inner_backtest():
                 result = await handle_api_request_backtest(dataframe, backtest_period, model_parameters)
                 return JsonResponse({'Output': result})
@@ -3703,7 +3706,7 @@ def run_backtest(request, dataframe, backtest_period):
             loop = asyncio.get_event_loop()
             return loop.run_until_complete(inner_backtest())
     except Exception as e:
-        return JsonResponse({"Error": f'{e}'})
+        return JsonResponse({"Error": f'{e} with dummy_param: {dummy_param}'})
 
 
 @csrf_exempt
