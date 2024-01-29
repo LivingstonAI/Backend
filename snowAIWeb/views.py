@@ -50,7 +50,7 @@ def clear_tables(request):
         Journals.objects.all().delete()
         NewsData.objects.all().delete()
         Conversations.objects.all().delete()
-        converstion.objects.all().delete()
+        Conversation.objects.all().delete()
         News.objects.all().delete()
         CreateModel.objects.all().delete()
         MovingAverageBot.objects.all().delete()
