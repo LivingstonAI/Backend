@@ -703,7 +703,7 @@ def save_news_data(assets, user_email):
 def fetch_news_data(request, user_email):
     try:
         # # Check if news data for the current day already exists
-        # today = timezone.localtime(timezone.now()).date()
+        today = timezone.localtime(timezone.now()).date()
 
         # # Check if news data for the current day already exists
         # existing_news = News.objects.filter(user_email=user_email, day_created=today)
