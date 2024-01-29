@@ -42,7 +42,7 @@ urlpatterns = [
     path('run-backtest/<str:dataframe>/<str:backtest_period>', views.run_backtest, name='run-backtest'),
     path('update-news-data', views.update_news_data, name='update-news-data'),
     path('interest-rates-data', views.interest_rates, name='interest-rates-data'),
-    path('clear-tables' views.clear_tables, name='clear-tables'),
+    path('clear-tables', views.clear_tables, name='clear-tables'),
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 
