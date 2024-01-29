@@ -25,7 +25,7 @@ urlpatterns = [
     path('get_openai_key', views.get_openai_key, name='get_openai_key'),
     path('update_user_data/<str:user_email>/', views.update_tell_us_more, name='update_user_data'),
     path('update_assets/<str:user_email>/', views.update_user_assets, name='update_assets'),
-    path('fetch_news_data/user_email', views.fetch_news_data, name='fetch_news_data'),
+    path('fetch_news_data/<str:user_email>', views.fetch_news_data, name='fetch_news_data'),
     # path('save_news_data', views.save_news_data, name='save_news_data'),
     path('create-bot/<str:type_1>/<str:type_2>/<int:ma1>/<int:ma2>/<str:dataframe>/<str:backtest_period>', views.moving_average_bot, name='create-bot'),
     path('create-bot/bbands/<int:length>/<int:std>/<str:dataframe>/<str:backtest_period>', views.bbands_bot, name='create-bot-bbands'),
@@ -40,7 +40,7 @@ urlpatterns = [
     path('chosen-models/<str:user_email>/<int:magic_number>', views.chosen_models, name='chosen_models'),
     path('run-bot/<str:user_email>/<int:magic_number>/<str:asset>', views.run_bot, name='run-bot'),
     path('run-backtest/<str:dataframe>/<str:backtest_period>', views.run_backtest, name='run-backtest'),
-    path('update-news-data', views.update_news_data, name='update-news-data'),
+    path('update-news-data/<str:user_email>', views.update_news_data, name='update-news-data'),
     path('interest-rates-data', views.interest_rates, name='interest-rates-data'),
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
