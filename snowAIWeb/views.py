@@ -631,9 +631,9 @@ def update_user_assets(request, user_email):
 
 
 # @csrf_exempt
-def save_news_data(assets):
+def save_news_data(assets, user_email):
     try:
-        news = News.objects.all().delete()
+        news = News.objects.filter(user_email=user_email).delete()
     except:
         pass
     today = timezone.localtime(timezone.now()).date()
@@ -690,6 +690,7 @@ def save_news_data(assets):
 
             # Create a News instance and save it to the database
             news_entry = News(
+                user_email=user_email
                 symbol=asset,  # Set the symbol to the current asset
                 data=news_entry_data,  # Store the specific fields as JSON data
                 day_created=today,  # Use the current datetime as the day_created value
@@ -699,13 +700,13 @@ def save_news_data(assets):
 
 
 @csrf_exempt
-def fetch_news_data(request):
+def fetch_news_data(request, user_email):
     try:
-        # Check if news data for the current day already exists
-        today = timezone.localtime(timezone.now()).date()
+        # # Check if news data for the current day already exists
+        # today = timezone.localtime(timezone.now()).date()
 
-        # Check if news data for the current day already exists
-        existing_news = News.objects.filter(day_created=today)
+        # # Check if news data for the current day already exists
+        # existing_news = News.objects.filter(user_email=user_email, day_created=today)
         
         # if not existing_news.exists():
         #     # If data for the current day exists, return a message indicating it
@@ -716,7 +717,7 @@ def fetch_news_data(request):
             # return JsonResponse({'message': f'News data for today does not exist {str(today)}'})
         
         # Fetch all news data without using serializers
-        news_objects = News.objects.all()
+        news_objects = News.objects.filter(user_email=user_email)
         
         # Create a list of dictionaries representing the model instances
         news_data = []
@@ -733,6 +734,31 @@ def fetch_news_data(request):
     except Exception as e:
         return JsonResponse({"news_data": "no current news data"})
     
+
+
+@csrf_exempt
+def update_news_data(request, user_email):
+    if request.method == 'POST':
+        # Retrieve the array of currencies from the request body
+        data = request.POST  # For form-encoded data
+        # For JSON data, use request.body and decode it
+        # Example for JSON data:
+        json_data = json.loads(request.body)
+        currencies = json_data.get('currencies', [])
+
+        # Process the currencies array as needed
+        # Perform preprocessing or any other operations here
+        
+        # Example: Log the received currencies
+        print("Received currencies:", currencies)
+        # Example currency list: ['EURUSD', 'GBPUSD', 'USDJPY', 'EURGBP']
+
+        save_news_data(currencies, user_email)
+        # Send back a JSON response indicating success
+        return JsonResponse({'message': f'Data is: {currencies} with type: {type(currencies)}'})
+
+    # Handle other HTTP methods or invalid requests
+    return JsonResponse({'message': 'Invalid request'}, status=400)    
 
 @csrf_exempt
 async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_period):
@@ -3708,30 +3734,6 @@ def run_backtest(request, dataframe, backtest_period):
     except Exception as e:
         return JsonResponse({"Error Occured Here": f'{e} with dummy_param: {dummy_param}'})
 
-
-@csrf_exempt
-def update_news_data(request):
-    if request.method == 'POST':
-        # Retrieve the array of currencies from the request body
-        data = request.POST  # For form-encoded data
-        # For JSON data, use request.body and decode it
-        # Example for JSON data:
-        json_data = json.loads(request.body)
-        currencies = json_data.get('currencies', [])
-
-        # Process the currencies array as needed
-        # Perform preprocessing or any other operations here
-        
-        # Example: Log the received currencies
-        print("Received currencies:", currencies)
-        # Example currency list: ['EURUSD', 'GBPUSD', 'USDJPY', 'EURGBP']
-
-        save_news_data(currencies)
-        # Send back a JSON response indicating success
-        return JsonResponse({'message': f'Data is: {currencies} with type: {type(currencies)}'})
-
-    # Handle other HTTP methods or invalid requests
-    return JsonResponse({'message': 'Invalid request'}, status=400)
 
 @csrf_exempt
 def interest_rates(request):
