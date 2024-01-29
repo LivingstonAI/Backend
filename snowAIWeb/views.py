@@ -732,7 +732,7 @@ def fetch_news_data(request, user_email):
         # # Convert the list to JSON and return it
         return JsonResponse({"news_data": news_data}, safe=False)
     except Exception as e:
-        return JsonResponse({"news_data": "no current news data"})
+        return JsonResponse({"news_data": f"no current news data with exception: {e}"})
     
 
 
