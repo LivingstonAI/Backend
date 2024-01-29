@@ -690,7 +690,7 @@ def save_news_data(assets, user_email):
 
             # Create a News instance and save it to the database
             news_entry = News(
-                user_email=user_email
+                user_email=user_email,
                 symbol=asset,  # Set the symbol to the current asset
                 data=news_entry_data,  # Store the specific fields as JSON data
                 day_created=today,  # Use the current datetime as the day_created value
