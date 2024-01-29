@@ -42,6 +42,22 @@ import ast
 # Comment
 # current_hour = datetime.datetime.now().time().hour
 
+@csrf_exempt
+def clear_tables(request):
+    try:
+        Trade.objects.all().delete()
+        Journal.objects.all().delete()
+        Journals.objects.all().delete()
+        NewsData.objects.all().delete()
+        Conversations.objects.all().delete()
+        converstion.objects.all().delete()
+        News.objects.all().delete()
+        CreateModel.objects.all().delete()
+        MovingAverageBot.objects.all().delete()
+        Bot.objects.all().delete()
+        return JsonResponse({'Message': 'Tables Cleared Successfully!'})
+    except Exception as e:
+        return JsonResponse({'Error Occured': f'{e}'})
 
 def is_bullish_run(candle1, candle2, candle3, candle4):
     if candle2.Close > candle1.Close and candle3.Close > candle2.Close and candle4.Close > candle3.Close:
