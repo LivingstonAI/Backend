@@ -80,7 +80,7 @@ class Conversation(models.Model):
 
 class News(models.Model):
     user_email = models.EmailField()
-    symbol = models.CharField(max_length=50)
+    symbol = models.CharField(max_length=100)
     data = models.TextField()
     day_created = models.DateTimeField()
 
