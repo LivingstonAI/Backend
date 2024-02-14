@@ -27,9 +27,9 @@ SECRET_KEY = 'django-insecure-754g_4e%89qf6mj(&0q3oyk(6fz54h70*+@$jfr635n8$esjpn
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    "https://frontend-2yg4.vercel.app",
-    "http://localhost:5173",
-    "https://backend-production-c0ab.up.railway.app/",
+    # "https://frontend-2yg4.vercel.app",
+    # "http://localhost:5173",
+    # "https://backend-production-c0ab.up.railway.app/",
     '*',
 ]
 
