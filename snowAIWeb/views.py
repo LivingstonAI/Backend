@@ -2167,14 +2167,12 @@ def download_mq4_file(request, bot):
     file_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), location)
 
     try:
-        with open(file_location, 'r', encoding='utf-8') as f:
+        with open(file_location, 'rb') as f:
             file_data = f.read()
 
         # Create an HTTP response with the file content
-        response = HttpResponse(file_data, content_type='application/vnd.ms-excel')
-        return response
+        response = HttpResponse(file_data, content_type='application/octet-stream')
         response['Content-Disposition'] = 'attachment; filename="risk-bot.ex5"'
-
         return response
     except FileNotFoundError:
         # Handle file not exist case
