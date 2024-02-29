@@ -1402,7 +1402,7 @@ async def handle_api_request_momentum(dataframe, backtest_period):
         "Expectancy [%]": output['Expectancy [%]'],
         "SQN": output['SQN'],
     }
-    return JsonResponse({'result': result_dict, 'image-html': html})
+    return result_dict, html
 
 
 @csrf_exempt
