@@ -1127,7 +1127,6 @@ def bbands_bot(request, length, std, dataframe, backtest_period):
 
 @csrf_exempt
 async def handle_api_request_rsi(length, overbought_level, oversold_level, dataframe, backtest_period):
-    print('1 is here!!!!!!!!!!!')
     class RSI(Strategy):
         equity = 100000
         risk_percentage = 20
@@ -1256,9 +1255,7 @@ async def handle_api_request_rsi(length, overbought_level, oversold_level, dataf
 @csrf_exempt
 def rsi_bot(request, length, overbought_level, oversold_level, dataframe, backtest_period):
     # oversold_level = int(oversold_level.remove(f'{length}_'))
-    print('Hello World!!!!!!!!!!!!!!!!!')
     async def inner_rsi():
-        print('Code runnning...')
         # print(f'Length is {length}. Overbought Level is {overbought_level}. Oversold Level is {oversold_level}.')
         result = await handle_api_request_rsi(length, overbought_level, oversold_level, dataframe, backtest_period)
         return JsonResponse({'Output': result})
@@ -3689,10 +3686,6 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
 
     # Convert the plot to HTML
     html = file_html(plot, CDN, "backtesting plot")
-
-    print(html)
-    print(type(html))
-
     
     # Convert the relevant output fields to a dictionary
     result_dict = {
@@ -3724,7 +3717,7 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
         "Expectancy [%]": output['Expectancy [%]'],
         "SQN": output['SQN'],
     }
-    return result_dict
+    return result_dict, html
 
 
 @csrf_exempt
