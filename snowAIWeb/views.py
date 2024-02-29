@@ -38,6 +38,10 @@ import yfinance as yf
 import base64
 import requests
 import ast
+from bokeh.io import export_png
+from bokeh.plotting import output_file, save
+from bokeh.embed import file_html
+from bokeh.resources import CDN
 
 # Comment
 # current_hour = datetime.datetime.now().time().hour
@@ -749,8 +753,7 @@ def update_news_data(request, user_email):
         # Process the currencies array as needed
         # Perform preprocessing or any other operations here
         
-        # Example: Log the received currencies
-        print("Received currencies:", currencies)
+        
         # Example currency list: ['EURUSD', 'GBPUSD', 'USDJPY', 'EURGBP']
 
         save_news_data(currencies, user_email)
@@ -1363,6 +1366,11 @@ async def handle_api_request_momentum(dataframe, backtest_period):
     second_length = int(len(df) * end)
     bt = Backtest(df[length:second_length], Momentum, exclusive_orders=False, cash=10000)
     output = bt.run()
+
+    p = bt.plot()
+
+    # Convert the plot to HTML
+    html = file_html(p, CDN, "my plot")
     
     # Convert the relevant output fields to a dictionary
     result_dict = {
@@ -1394,7 +1402,7 @@ async def handle_api_request_momentum(dataframe, backtest_period):
         "Expectancy [%]": output['Expectancy [%]'],
         "SQN": output['SQN'],
     }
-    return result_dict
+    return result_dict, html
 
 
 @csrf_exempt
@@ -2049,7 +2057,6 @@ def check_moving_averages_for_sell(df, range, ma1_type, ma1, ma2_type, ma2):
     past = past_10_rows.tail(1)['Diverge'].values[0]
     second_last_row = past_10_rows['Diverge'].iloc[-2]
     # print(past)
-    print(past_10_rows)
     if past == False and second_last_row == True:
         # print('True')
         return True
@@ -2208,7 +2215,7 @@ def analyse_image(image_data):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Please give a technical analysis of this image with at most 2 paragraphs in your response. If not provided a trading chart, please respond with a query to send a trading chart."
+                            "text": "Please give a technical analysis of this image (of a trading chart). If not provided a trading chart, please respond with a query to send a trading chart."
                         },
                         {
                             "type": "image_url",
@@ -3678,6 +3685,14 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
     second_length = int(len(df) * end)
     bt = Backtest(df[length:second_length], backtestAgent, exclusive_orders=False, cash=10000)
     output = bt.run()
+    plot = bt.plot()
+
+    # Convert the plot to HTML
+    html = file_html(plot, CDN, "backtesting plot")
+
+    print(html)
+    print(type(html))
+
     
     # Convert the relevant output fields to a dictionary
     result_dict = {
