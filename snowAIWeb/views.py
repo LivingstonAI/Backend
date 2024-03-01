@@ -38,6 +38,7 @@ import yfinance as yf
 import base64
 import requests
 import ast
+import bokeh
 from bokeh.io import export_png
 from bokeh.plotting import output_file, save
 from bokeh.embed import file_html
