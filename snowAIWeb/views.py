@@ -3744,7 +3744,7 @@ def run_backtest(request, dataframe, backtest_period):
             loop = asyncio.get_event_loop()
             return loop.run_until_complete(inner_backtest())
     except Exception as e:
-        return JsonResponse({"Error Occured Here": f'{e} with dummy_param: {dummy_param}'})
+        return JsonResponse({"Error Occured Here": f'{e}'})
 
 
 @csrf_exempt
