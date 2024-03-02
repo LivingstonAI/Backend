@@ -3686,7 +3686,11 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
     plot = bt.plot()
 
     # Convert the plot to HTML
-    html = file_html(plot, CDN, "backtesting plot")
+    # html = file_html(plot, CDN, "backtesting plot")
+
+    
+    plot_json = json_item(plot, "myplot")
+    # print(item)
     
     # Convert the relevant output fields to a dictionary
     result_dict = {
@@ -3718,7 +3722,7 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
         "Expectancy [%]": output['Expectancy [%]'],
         "SQN": output['SQN'],
     }
-    return result_dict, html
+    return result_dict, json.dumps(plot_json)
 
 
 @csrf_exempt
