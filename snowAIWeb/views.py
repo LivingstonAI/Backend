@@ -879,6 +879,9 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_perio
             except Exception as e:
                 print(f'Error occured: {e}')
                 pass
+
+    return_plot = False
+        
     
     if dataframe == '5Min':
         df_to_use = './XAUUSD5M.csv'
@@ -890,8 +893,10 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_perio
         df_to_use = './XAUUSD1H.csv'
     elif dataframe == '4H':
         df_to_use = './XAUUSD4H.csv'
+        return_plot = True
     elif dataframe == '1D':
         df_to_use = './XAUUSD1D.csv'
+        return_plot = True
     
     if backtest_period == '0-25':
         start = 0
@@ -916,12 +921,16 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_perio
     bt = Backtest(df[length:second_length], SmaCross, exclusive_orders=False, cash=10000)
     output = bt.run()
 
-    p = bt.plot()
-    
-    item = json_item(p, "myplot")
-    # print(item)
+    if return_plot:
 
-    plot_json = json.dumps(item)
+        p = bt.plot()
+        
+        item = json_item(p, "myplot")
+        # print(item)
+        
+        plot_json = json.dumps(item)
+    else:
+        plot_json = {}
 
     # Convert the relevant output fields to a dictionary
     result_dict = {
@@ -1047,6 +1056,8 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
                 print(f'Exception is {e}')
                 pass
 
+    return_plot = False
+
     if dataframe == '5Min':
         df_to_use = './XAUUSD5M.csv'
     elif dataframe == '15Min':
@@ -1057,8 +1068,10 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
         df_to_use = './XAUUSD1H.csv'
     elif dataframe == '4H':
         df_to_use = './XAUUSD4H.csv'
+        return_plot = True
     elif dataframe == '1D':
         df_to_use = './XAUUSD1D.csv'
+        return_plot = True
     
     if backtest_period == '0-25':
         start = 0
@@ -1091,12 +1104,16 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
     bt = Backtest(df[length:second_length], BBands, exclusive_orders=False, cash=10000)
     output = bt.run()
 
-    p = bt.plot()
-    
-    item = json_item(p, "myplot")
-    # print(item)
+    if return_plot:
 
-    plot_json = json.dumps(item)
+        p = bt.plot()
+        
+        item = json_item(p, "myplot")
+        # print(item)
+        
+        plot_json = json.dumps(item)
+    else:
+        plot_json = {}
 
     # image = bt.plot()
     # Convert the relevant output fields to a dictionary
@@ -3662,6 +3679,8 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
             except Exception as e:
                 print(f'Exception is {e}')
                 pass
+
+    return_plot = False
     
 
     if dataframe == '5Min':
@@ -3674,8 +3693,10 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
         df_to_use = './XAUUSD1H.csv'
     elif dataframe == '4H':
         df_to_use = './XAUUSD4H.csv'
+        return_plot = True
     elif dataframe == '1D':
         df_to_use = './XAUUSD1D.csv'
+        return_plot = True
     
 
     if backtest_period == '0-25':
@@ -3700,7 +3721,17 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
     second_length = int(len(df) * end)
     bt = Backtest(df[length:second_length], backtestAgent, exclusive_orders=False, cash=10000)
     output = bt.run()
-    plot = bt.plot()
+    
+    if return_plot:
+
+        p = bt.plot()
+        
+        item = json_item(p, "myplot")
+        # print(item)
+        
+        plot_json = json.dumps(item)
+    else:
+        plot_json = {}
 
     # Convert the plot to HTML
     # html = file_html(plot, CDN, "backtesting plot")
@@ -3739,7 +3770,7 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
         "Expectancy [%]": output['Expectancy [%]'],
         "SQN": output['SQN'],
     }
-    return result_dict, json.dumps(plot_json)
+    return result_dict, plot_json
 
 
 @csrf_exempt
