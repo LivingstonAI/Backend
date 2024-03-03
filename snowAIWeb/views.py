@@ -915,7 +915,14 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_perio
     second_length = int(len(df) * end)
     bt = Backtest(df[length:second_length], SmaCross, exclusive_orders=False, cash=10000)
     output = bt.run()
+
+    p = bt.plot()
     
+    item = json_item(p, "myplot")
+    # print(item)
+
+    plot_json = json.dumps(item)
+
     # Convert the relevant output fields to a dictionary
     result_dict = {
         "Start": str(output['Start']),
@@ -946,7 +953,7 @@ async def handle_api_request(type_1, type_2, ma1, ma2, dataframe, backtest_perio
         "Expectancy [%]": output['Expectancy [%]'],
         "SQN": output['SQN'],
     }
-    return result_dict
+    return result_dict, plot_json
 
 
 @csrf_exempt
