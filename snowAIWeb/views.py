@@ -1090,6 +1090,14 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
     second_length = int(len(df) * end)
     bt = Backtest(df[length:second_length], BBands, exclusive_orders=False, cash=10000)
     output = bt.run()
+
+    p = bt.plot()
+    
+    item = json_item(p, "myplot")
+    # print(item)
+
+    plot_json = json.dumps(item)
+
     # image = bt.plot()
     # Convert the relevant output fields to a dictionary
     result_dict = {
@@ -1121,7 +1129,7 @@ async def handle_api_request_bbands(length, std, dataframe, backtest_period):
         "Expectancy [%]": output['Expectancy [%]'],
         "SQN": output['SQN'],
     }
-    return result_dict
+    return result_dict, plot_json
 
 
 @csrf_exempt
