@@ -3737,7 +3737,7 @@ async def handle_api_request_backtest(dataframe, backtest_period, parameters):
     # html = file_html(plot, CDN, "backtesting plot")
 
     
-    plot_json = json_item(plot, "myplot")
+    # plot_json = json_item(plot, "myplot")
     # print(item)
     
     # Convert the relevant output fields to a dictionary
