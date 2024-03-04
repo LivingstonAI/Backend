@@ -187,7 +187,7 @@ class TellUsMoreCreateView(APIView):
 
 
 class UserLoginView(APIView):
-    @csrf_exempt
+    # @csrf_exempt
     def post(self, request, *args, **kwargs):
         global email_of_user
         try:
@@ -207,8 +207,6 @@ class UserLoginView(APIView):
             return Response({'message': 'No account with that email'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 
 
 class TradeView(APIView):
