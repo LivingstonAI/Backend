@@ -204,7 +204,7 @@ class UserLoginView(APIView):
             else:
                 return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)
         except User.DoesNotExist:
-            return Response({'message': 'No account with that email'}, status=status.HTTP_404)
+            return Response({'message': 'No account with that email'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
