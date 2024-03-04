@@ -147,7 +147,6 @@ def get_news_data():
 
 
 class UserRegistrationView(APIView):
-    @csrf_exempt
     def post(self, request, format=None):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
