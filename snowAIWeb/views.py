@@ -190,19 +190,23 @@ class UserLoginView(APIView):
     @csrf_exempt
     def post(self, request, *args, **kwargs):
         global email_of_user
-        email = request.data.get('email')
-        password = request.data.get('password')
-        test_user = User.objects.get(email=email)
-    
-        user = authenticate(request, email=email, password=password)
+        try:
+            email = request.data.get('email')
+            password = request.data.get('password')
+            test_user = User.objects.get(email=email)
         
-        if user is not None:
-            # request.session['USER_EMAIL'] = email  # Store email in session
-            email_of_user = email
-            login(request,user)
-            return Response({'message': 'Login successful', 'email': email}, status=status.HTTP_200_OK)
-        else:
-            return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+            user = authenticate(request, email=email, password=password)
+            
+            if user is not None:
+                email_of_user = email
+                login(request, user)
+                return Response({'message': 'Login successful', 'email': email}, status=status.HTTP_200_OK)
+            else:
+                return Response({'message': 'Invalid login credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        except User.DoesNotExist:
+            return Response({'message': 'No account with that email'}, status=status.HTTP_404)
+        except Exception as e:
+            return Response({'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
