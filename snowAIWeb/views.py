@@ -4161,7 +4161,7 @@ def genesys_backest(code):
             buy = self.buy
             sell = self.sell
 
-            exec(code)    
+        exec(code)    
           
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
