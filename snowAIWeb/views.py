@@ -3815,7 +3815,7 @@ def genesys(request):
         try:
             data = json.loads(request.body)
             generated_code = data.get('generatedCode', '')
-            generated_code = generated_code.remove('\n')
+            # generated_code = generated_code.remove('\n')
             # Process the generated code as needed
             # Here, you can include your logic to compile or execute the generated Python code
             # For demonstration purposes, I'll simply return it in the JSON response
