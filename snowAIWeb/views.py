@@ -4164,6 +4164,11 @@ def genesys_backest(code):
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume, 'SMA_200': self.data.SMA_200, 'EMA_50': self.data.EMA_50})
 
+    bt = Backtest(GOOG, SmaCross, commission=.002,
+              exclusive_orders=True)
+    stats = bt.run()
+
+
 
 @csrf_exempt
 def genesys(request):
