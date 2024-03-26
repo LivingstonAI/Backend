@@ -4197,7 +4197,7 @@ def genesys_backest(code):
         "Expectancy [%]": output['Expectancy [%]'],
         "SQN": output['SQN'],
     }
-    return result
+    return result_dict
 
 
 @csrf_exempt
