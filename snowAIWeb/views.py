@@ -3809,8 +3809,28 @@ def interest_rates(request):
     return JsonResponse({'Interest Rates': result})
     
 
+def engulfing(type):
+    return
+
+def buy():
+    return
+
+def sell():
+    return
+
 @csrf_exempt
 def genesys(request):
+
+    class SmaCross(Strategy):
+        def init(self):
+            price = self.data.Close
+            self.ma1 = self.I(SMA, price, 10)
+            self.ma2 = self.I(SMA, price, 20)
+
+        def next(self):
+            df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume, 'SMA_200': self.data.SMA_200, 'EMA_50': self.data.EMA_50})
+
+
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
