@@ -3815,13 +3815,14 @@ def genesys(request):
         try:
             data = json.loads(request.body)
             generated_code = data.get('generatedCode', '')
-            # generated_code = generated_code.replace('\n', '')
-            # Process the generated code as needed
-            # Here, you can include your logic to compile or execute the generated Python code
-            # For demonstration purposes, I'll simply return it in the JSON response
-            # if engulfing(type=bullish):  buy()elif engulfing(type=bearish):  sell()
-            return JsonResponse({f'generatedCode': generated_code})
+
+            # Execute the generated code
+            try:
+                exec(generated_code)
+                return JsonResponse({'message': 'Code executed successfully'})
+            except Exception as e:
+                return JsonResponse({'error': f'Error executing code: {str(e)}'}, status=400)
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON data'}, status=400)
     else:
-        return JsonResponse({'message': 'if engulfing(type=bullish):\n  buy()\nelif engulfing(type=bearish):\n  sell()\n'})
+        return JsonResponse({'message': 'api-call works!'})
