@@ -3808,3 +3808,7 @@ def interest_rates(request):
         result = response.status_code, response.text
     return JsonResponse({'Interest Rates': result})
     
+
+
+def genesys(request):
+    return JsonResponse({'message': 'api-call works!'})
