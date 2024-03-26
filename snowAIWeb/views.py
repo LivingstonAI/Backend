@@ -3819,6 +3819,347 @@ def sell():
     return
 
 
+def is_bearish_candle(candle):
+    # Function to check if a candle is a bearish candle
+    if candle.Open > candle.Close:
+        return True
+    return False
+
+
+def is_bullish_candle(candle):
+    # Function to check if a candle is a bullish candle
+    if candle.Open < candle.Close:
+        return True
+    else:
+        return False
+    
+# candle_type = is_bullish_candle(temp_dataset.head(1))
+# print(f'Bullish Candle Type is: {candle_type}\n')
+
+
+def is_bullish_engulfing(data):
+
+    # In this function we take the final 3 candles. We then check if the first two 
+    # candles (excluding the latest 3rd one) satisfies the candle that it is a bullish 
+    # engulfing.
+    candle1 = data.iloc[-3]
+    candle2 = data.iloc[-2]
+
+    if is_bearish_candle(candle1) and is_bullish_candle(candle2):
+        if candle2.Close > candle1.Open and candle2.Open < candle1.Close:
+            return True
+        return False
+    return False
+
+
+def is_bearish_engulfing(data):
+
+    # In this function we take the final 3 candles. We then check if the first two 
+    # candles (excluding the latest 3rd one) satisfies the candle that it is a bearish
+    # engulfing.
+    candle1 = data.iloc[-3]
+    candle2 = data.iloc[-2]
+
+    if is_bullish_candle(candle1) and is_bearish_candle(candle2):
+        if candle2.Close < candle1.Open and candle2.Open > candle1.Close:
+            return True
+        return False
+    return False
+
+
+def is_morning_star(data):
+
+    # In this function we take the final 3 candles. We then check if the first two 
+    # candles (excluding the latest 3rd one) satisfies the candle that it is a morning
+    # star.
+    candle1 = data.iloc[-4]
+    candle2 = data.iloc[-3]
+    candle3 = data.iloc[-2]
+
+    if is_bearish_candle(candle1) and is_bullish_candle(candle3):
+        if candle3.Close < candle1.Open and candle2.Close < candle3.Close:
+            return True
+        return False
+    return False
+
+
+def is_evening_star(data):
+
+    # In this function we take the final 3 candles. We then check if the first two 
+    # candles (excluding the latest 3rd one) satisfies the candle that it is an evening
+    # star.
+    candle1 = data.iloc[-4]
+    candle2 = data.iloc[-3]
+    candle3 = data.iloc[-2]
+
+    if is_bullish_candle(candle1) and is_bearish_candle(candle3):
+        if candle3.Close > candle1.Open and candle2.Close > candle3.Close:
+            return True
+        return False
+    return False
+
+
+def is_three_white_soldiers(data):
+     # In this function we take the final 3 candles. We then check if the first two 
+    # candles (excluding the latest 3rd one) satisfies the candle that it is a three
+    # white soldiers.
+    candle1 = data.iloc[-4]
+    candle2 = data.iloc[-3]
+    candle3 = data.iloc[-2]
+
+    if is_bullish_candle(candle3) and is_bullish_candle(candle2) and is_bullish_candle(candle1):
+        if candle3.Close > candle2.Close and candle2.Close > candle1.Close:
+            return True
+        return False
+    return False
+
+
+def is_three_black_crows(data):
+     # In this function we take the final 3 candles. We then check if the first two 
+    # candles (excluding the latest 3rd one) satisfies the candle that it is a three
+    # white soldiers.
+    candle1 = data.iloc[-4]
+    candle2 = data.iloc[-3]
+    candle3 = data.iloc[-2]
+
+    if is_bearish_candle(candle3) and is_bearish_candle(candle2) and is_bearish_candle(candle1):
+        if candle3.Close < candle2.Close and candle2.Close < candle1.Close:
+            return True
+        return False
+    return False
+
+
+def is_morning_doji_star(data):
+    # In this function we take the final 3 candles. We then check if the first two 
+    # candles (excluding the latest 3rd one) satisfies the candle that it is a morning
+    # doji star.
+    candle1 = data.iloc[-4]
+    candle2 = data.iloc[-3]
+    candle3 = data.iloc[-2]
+
+    if is_bearish_candle(candle1) and is_bullish_candle(candle3) and candle3.Close < candle1.Open:
+        if candle2.Open == candle2.Close:
+            return True
+        return False
+    return False
+
+
+def is_evening_doji_star(data):
+    # In this function we take the final 3 candles. We then check if the first two 
+    # candles (excluding the latest 3rd one) satisfies the candle that it is a morning
+    # doji star.
+    candle1 = data.iloc[-4]
+    candle2 = data.iloc[-3]
+    candle3 = data.iloc[-2]
+
+    if is_bullish_candle(candle1) and is_bearish_candle(candle3) and candle3.Close > candle1.Open:
+        if candle2.Open == candle2.Close:
+            return True
+        return False
+    return False
+
+
+def is_rising_three_methods(data):
+
+    candle1 = data.iloc[-6]
+    candle2 = data.iloc[-5]
+    candle3 = data.iloc[-4]
+    candle4 = data.iloc[-3]
+    candle5 = data.iloc[-2]
+
+    if is_bullish_candle(candle1) and is_bearish_candle(candle2) \
+    and is_bearish_candle(candle3) and is_bearish_candle(candle4) and is_bullish_candle(candle5):
+        if candle2.Close > candle3.Close and candle3.Close > candle4.Close and \
+            candle5.Close > candle1.Close:
+            return True
+        return False
+    return False
+
+
+def is_falling_three_methods(data):
+
+    candle1 = data.iloc[-6]
+    candle2 = data.iloc[-5]
+    candle3 = data.iloc[-4]
+    candle4 = data.iloc[-3]
+    candle5 = data.iloc[-2]
+
+    if is_bearish_candle(candle1) and is_bullish_candle(candle2) \
+    and is_bullish_candle(candle3) and is_bullish_candle(candle4) and is_bearish_candle(candle5):
+        if candle2.Close < candle3.Close and candle3.Close < candle4.Close and \
+            candle5.Close < candle1.Close:
+            return True
+        return False
+    return False
+
+
+def is_hammer(data):
+
+    candle1 = data.iloc[-6]
+    candle2 = data.iloc[-5]
+    candle3 = data.iloc[-4]
+    candle4 = data.iloc[-3]
+    candle5 = data.iloc[-2]
+
+    if is_bearish_candle(candle1) and is_bearish_candle(candle2) and is_bullish_candle(candle3) \
+    and is_bullish_candle(candle4) and is_bullish_candle(candle5):
+        if abs(candle3.Close - candle3.Open) < abs(candle3.Open - candle3.Low): 
+            return True
+        return False
+    return False
+
+
+def is_hanging_man(data):
+
+    candle1 = data.iloc[-6]
+    candle2 = data.iloc[-5]
+    candle3 = data.iloc[-4]
+    candle4 = data.iloc[-3]
+    candle5 = data.iloc[-2]
+
+    if is_bullish_candle(candle1) and is_bullish_candle(candle2) and is_bearish_candle(candle3) \
+    and is_bearish_candle(candle4) and is_bearish_candle(candle5):
+        if abs(candle3.Open - candle3.Close) < abs(candle3.Close - candle3.Low): 
+            return True
+        return False
+    return False
+
+
+def is_inverted_hammer(data):
+
+    candle1 = data.iloc[-6]
+    candle2 = data.iloc[-5]
+    candle3 = data.iloc[-4]
+    candle4 = data.iloc[-3]
+    candle5 = data.iloc[-2]
+
+    if is_bearish_candle(candle1) and is_bearish_candle(candle2) and is_bullish_candle(candle3) \
+    and is_bullish_candle(candle4) and is_bullish_candle(candle5):
+        if abs(candle3.Close - candle3.Open) < abs(candle3.High - candle3.Close): 
+            return True
+        return False
+    
+    elif is_bearish_candle(candle1) and is_bearish_candle(candle2) and is_bearish_candle(candle3) \
+    and is_bullish_candle(candle4) and is_bullish_candle(candle5):
+        if abs(candle3.Close - candle3.Open) < abs(candle3.High - candle3.Open): 
+            return True
+        return False
+    
+    return False
+
+
+def is_shooting_star(data):
+
+    candle1 = data.iloc[-6]
+    candle2 = data.iloc[-5]
+    candle3 = data.iloc[-4]
+    candle4 = data.iloc[-3]
+    candle5 = data.iloc[-2]
+
+    if is_bullish_candle(candle1) and is_bullish_candle(candle2) and is_bullish_candle(candle3) \
+    and is_bearish_candle(candle4) and is_bearish_candle(candle5):
+        if abs(candle3.Close - candle3.Open) < abs(candle3.High - candle3.Close): 
+            return True
+        return False
+
+    elif is_bullish_candle(candle1) and is_bullish_candle(candle2) and is_bearish_candle(candle3) \
+    and is_bearish_candle(candle4) and is_bearish_candle(candle5):
+        if abs(candle3.Close - candle3.Open) < abs(candle3.High - candle3.Open): 
+            return True
+        return False
+    
+    return False
+
+
+def is_bullish_kicker(data):
+
+    candle1 = data.iloc[-5]
+    candle2 = data.iloc[-4]
+    candle3 = data.iloc[-3]
+    candle4 = data.iloc[-2]
+
+    if is_bearish_candle(candle1) and is_bearish_candle(candle2) and is_bearish_candle(candle3) \
+    and is_bullish_candle(candle4):
+        if candle4.Close > candle3.Open:
+            return True
+        return False
+    
+    return False
+
+
+def is_bearish_kicker(data):
+
+    candle1 = data.iloc[-5]
+    candle2 = data.iloc[-4]
+    candle3 = data.iloc[-3]
+    candle4 = data.iloc[-2]
+
+    if is_bullish_candle(candle1) and is_bullish_candle(candle2) and is_bullish_candle(candle3) \
+    and is_bearish_candle(candle4):
+        if candle4.Close < candle3.Open:
+            return True
+        return False    
+    return False
+
+
+def is_bullish_harami(data):
+
+    candle1 = data.iloc[-3]
+    candle2 = data.iloc[-2]
+
+    if is_bearish_candle(candle1) and is_bullish_candle(candle2):
+        if candle2.Close < candle1.Open and candle2.Open > candle1.Close:
+            return True
+        return False
+    return False
+
+
+def is_bearish_harami(data):
+
+    candle1 = data.iloc[-3]
+    candle2 = data.iloc[-2]
+
+    if is_bullish_candle(candle1) and is_bearish_candle(candle2):
+        if candle2.Close > candle1.Open and candle2.Open < candle1.Close:
+            return True
+        return False
+    return False
+
+
+def is_bullish_three_line_strike(data):
+
+    candle1 = data.iloc[-5]
+    candle2 = data.iloc[-4]
+    candle3 = data.iloc[-3]
+    candle4 = data.iloc[-2]
+
+    if is_bearish_candle(candle1) and is_bearish_candle(candle2) and is_bearish_candle(candle3) \
+    and is_bullish_candle(candle4):
+        if candle2.Close < candle1.Close and candle3.Close < candle2.Close and \
+        candle4.Close > candle1.Open:
+            return True
+        return False
+
+    return False
+
+
+def is_bearish_three_line_strike(data):
+
+    candle1 = data.iloc[-5]
+    candle2 = data.iloc[-4]
+    candle3 = data.iloc[-3]
+    candle4 = data.iloc[-2]
+
+    if is_bullish_candle(candle1) and is_bullish_candle(candle2) and is_bullish_candle(candle3) \
+    and is_bearish_candle(candle4):
+        if candle2.Close > candle1.Close and candle3.Close > candle2.Close and \
+        candle4.Close < candle1.Open:
+            return True
+        return False
+
+    return False
+
+
 def genesys_backest(code):
     class SmaCross(Strategy):
         def init(self):
@@ -3831,7 +4172,7 @@ def genesys_backest(code):
 
 @csrf_exempt
 def genesys(request):
-
+    dataset = EURUSD
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
@@ -3840,6 +4181,7 @@ def genesys(request):
             # Execute the generated code
             try:
                 genesys_backest(generated_code)
+                
                 return JsonResponse({'message': 'Code executed successfully'})
             except Exception as e:
                 return JsonResponse({'error': f'Error executing code: {str(e)}'}, status=400)
