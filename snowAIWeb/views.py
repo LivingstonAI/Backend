@@ -4158,12 +4158,12 @@ def genesys_backest(code):
     class SmaCross(Strategy):
         def init(self):
             price = self.data.Close
-            buy = self.buy
-            sell = self.sell
 
           
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
+            buy = self.buy
+            sell = self.sell
             try:
                 exec(code)    
             except:
