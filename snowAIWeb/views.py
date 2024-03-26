@@ -4195,7 +4195,7 @@ def genesys_backest(code):
         "Avg. Trade Duration": str(output['Avg. Trade Duration']),
         "Profit Factor": output['Profit Factor'],
         "Expectancy [%]": output['Expectancy [%]'],
-        "SQN": output['SQN'],
+        # "SQN": output['SQN'],
     }
     return result_dict
 
