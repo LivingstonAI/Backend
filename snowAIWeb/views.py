@@ -4164,10 +4164,40 @@ def genesys_backest(code):
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
 
-    bt = Backtest(GOOG, SmaCross, commission=.002,
+    bt = Backtest(dataset, SmaCross,
               exclusive_orders=True)
-    stats = bt.run()
-
+    output = bt.run()
+    # Convert the relevant output fields to a dictionary
+    result_dict = {
+        "Start": str(output['Start']),
+        "End": str(output['End']),
+        "Duration": str(output['Duration']),
+        "Exposure Time [%]": output['Exposure Time [%]'],
+        "Equity Final [$]": output['Equity Final [$]'],
+        "Equity Peak [$]": output['Equity Peak [$]'],
+        "Return [%]": output['Return [%]'],
+        "Buy & Hold Return [%]": output['Buy & Hold Return [%]'],
+        "Return (Ann.) [%]": output['Return (Ann.) [%]'],
+        "Volatility (Ann.) [%]": output['Volatility (Ann.) [%]'],
+        "Sharpe Ratio": output['Sharpe Ratio'],
+        "Sortino Ratio": output['Sortino Ratio'],
+        "Calmar Ratio": output['Calmar Ratio'],
+        "Max. Drawdown [%]": output['Max. Drawdown [%]'],
+        "Avg. Drawdown [%]": output['Avg. Drawdown [%]'],
+        "Max. Drawdown Duration": str(output['Max. Drawdown Duration']),
+        "Avg. Drawdown Duration": str(output['Avg. Drawdown Duration']),
+        "# Trades": output['# Trades'],
+        "Win Rate [%]": output['Win Rate [%]'],
+        "Best Trade [%]": output['Best Trade [%]'],
+        "Worst Trade [%]": output['Worst Trade [%]'],
+        "Avg. Trade [%]": output['Avg. Trade [%]'],
+        "Max. Trade Duration": str(output['Max. Trade Duration']),
+        "Avg. Trade Duration": str(output['Avg. Trade Duration']),
+        "Profit Factor": output['Profit Factor'],
+        "Expectancy [%]": output['Expectancy [%]'],
+        "SQN": output['SQN'],
+    }
+    return result
 
 
 @csrf_exempt
@@ -4179,9 +4209,9 @@ def genesys(request):
 
             # Execute the generated code
             try:
-                genesys_backest(generated_code)
+                result = genesys_backest(generated_code)
                 
-                return JsonResponse({'message': 'Code executed successfully'})
+                return JsonResponse({'message': f'Code executed successfully with result: {result}'})
             except Exception as e:
                 return JsonResponse({'error': f'Error executing code: {str(e)}'}, status=400)
         except json.JSONDecodeError:
