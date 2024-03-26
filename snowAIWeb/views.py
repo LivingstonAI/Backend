@@ -4151,7 +4151,7 @@ def is_bearish_three_line_strike(data):
     return False
 
 
-dataset = GOOG
+dataset = EURUSD
 
 
 def genesys_backest(code):
@@ -4166,7 +4166,7 @@ def genesys_backest(code):
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
 
-    bt = Backtest(GOOG, SmaCross,
+    bt = Backtest(EURUSD, SmaCross,
               exclusive_orders=False, cash=10000)
     output = bt.run()
     # Convert the relevant output fields to a dictionary
