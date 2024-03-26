@@ -4161,12 +4161,11 @@ def genesys_backest(code):
             buy = self.buy
             sell = self.sell
 
-              
+            exec(code)    
           
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
 
-            exec(code)
     bt = Backtest(EURUSD, SmaCross,
               exclusive_orders=False, cash=10000)
     output = bt.run()
