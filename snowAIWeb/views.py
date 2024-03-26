@@ -4150,7 +4150,11 @@ def is_bearish_three_line_strike(data):
 
     return False
 
-dataset = EURUSD
+df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
+df = pd.read_csv(df_path).drop_duplicates()
+df.index = pd.to_datetime(df['Time'].values)
+del df['Time']
+dataset = df
 
 def genesys_backest(code):
     class SmaCross(Strategy):
