@@ -3807,16 +3807,7 @@ def interest_rates(request):
     else:
         result = response.status_code, response.text
     return JsonResponse({'Interest Rates': result})
-    
 
-def engulfing(type):
-    return
-
-def buy():
-    return
-
-def sell():
-    return
 
 
 def is_bearish_candle(candle):
@@ -4165,10 +4156,13 @@ def genesys_backest(code):
     class SmaCross(Strategy):
         def init(self):
             price = self.data.Close
+            buy = self.buy()
+            sell = self.sell()
 
+        exec(code)      
+          
         def next(self):
-            df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume, 'SMA_200': self.data.SMA_200, 'EMA_50': self.data.EMA_50})
-    exec(code)        
+            dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume, 'SMA_200': self.data.SMA_200, 'EMA_50': self.data.EMA_50})
 
 
 @csrf_exempt
