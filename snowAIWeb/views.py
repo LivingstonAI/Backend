@@ -3818,18 +3818,19 @@ def buy():
 def sell():
     return
 
-@csrf_exempt
-def genesys(request):
 
+def genesys_backest(code):
     class SmaCross(Strategy):
         def init(self):
             price = self.data.Close
-            self.ma1 = self.I(SMA, price, 10)
-            self.ma2 = self.I(SMA, price, 20)
 
         def next(self):
             df = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume, 'SMA_200': self.data.SMA_200, 'EMA_50': self.data.EMA_50})
+    exec(code)        
 
+
+@csrf_exempt
+def genesys(request):
 
     if request.method == 'POST':
         try:
@@ -3838,7 +3839,7 @@ def genesys(request):
 
             # Execute the generated code
             try:
-                exec(generated_code)
+                genesys_backest(generated_code)
                 return JsonResponse({'message': 'Code executed successfully'})
             except Exception as e:
                 return JsonResponse({'error': f'Error executing code: {str(e)}'}, status=400)
