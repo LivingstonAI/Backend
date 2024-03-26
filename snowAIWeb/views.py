@@ -4159,6 +4159,7 @@ def is_bearish_three_line_strike(data):
 
     return False
 
+dataset = EURUSD
 
 def genesys_backest(code):
     class SmaCross(Strategy):
@@ -4172,7 +4173,6 @@ def genesys_backest(code):
 
 @csrf_exempt
 def genesys(request):
-    dataset = EURUSD
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
