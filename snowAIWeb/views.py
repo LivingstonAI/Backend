@@ -4158,8 +4158,8 @@ def genesys_backest(code):
     class SmaCross(Strategy):
         def init(self):
             price = self.data.Close
-            buy = self.buy()
-            sell = self.sell()
+            buy = self.buy
+            sell = self.sell
 
           
         def next(self):
