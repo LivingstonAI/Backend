@@ -3824,4 +3824,4 @@ def genesys(request):
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON data'}, status=400)
     else:
-        return JsonResponse({'message': 'api-call works!'})
+        return JsonResponse({'message': 'if engulfing(type=bullish):\n  buy()\nelif engulfing(type=bearish):\n  sell()\n'})
