@@ -4211,7 +4211,7 @@ def genesys(request):
             try:
                 result = genesys_backest(generated_code)
                 
-                return JsonResponse({'message': result})
+                return JsonResponse({'message': f'{result}'})
             except Exception as e:
                 return JsonResponse({'error': f'Error executing code: {str(e)}'}, status=400)
         except json.JSONDecodeError:
