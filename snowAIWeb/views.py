@@ -3808,11 +3808,11 @@ def interest_rates(request):
         result = response.status_code, response.text
     return JsonResponse({'Interest Rates': result})
     
-    
+
 @csrf_exempt
 def genesys(request):
     if request.method == 'POST':
-        generated_code = request.POST.get('generatedCode', '') # Get the generated Python code from the request body
+        generated_code = str(request.POST) # Get the generated Python code from the request body
         # Process the generated code as needed
         # Here, you can include your logic to compile or execute the generated Python code
         # For demonstration purposes, I'll simply return it in the JSON response
