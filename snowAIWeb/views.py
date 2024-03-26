@@ -4165,41 +4165,43 @@ def genesys_backest(code):
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
             exec(code)    
-
-    bt = Backtest(EURUSD, SmaCross,
-              exclusive_orders=False, cash=10000)
-    output = bt.run()
-    # Convert the relevant output fields to a dictionary
-    result_dict = {
-        "Start": str(output['Start']),
-        "End": str(output['End']),
-        "Duration": str(output['Duration']),
-        "Exposure Time [%]": str(output['Exposure Time [%]']),
-        "Equity Final [$]": str(output['Equity Final [$]']),
-        "Equity Peak [$]": str(output['Equity Peak [$]']),
-        "Return [%]": str(output['Return [%]']),
-        "Buy & Hold Return [%]": str(output['Buy & Hold Return [%]']),
-        "Return (Ann.) [%]": str(output['Return (Ann.) [%]']),
-        "Volatility (Ann.) [%]": str(output['Volatility (Ann.) [%]']),
-        "Sharpe Ratio": str(output['Sharpe Ratio']),
-        "Sortino Ratio": str(output['Sortino Ratio']),
-        "Calmar Ratio": str(output['Calmar Ratio']),
-        "Max. Drawdown [%]": str(output['Max. Drawdown [%]']),
-        "Avg. Drawdown [%]": str(output['Avg. Drawdown [%]']),
-        "Max. Drawdown Duration": str(output['Max. Drawdown Duration']),
-        "Avg. Drawdown Duration": str(output['Avg. Drawdown Duration']),
-        "# Trades": str(output['# Trades']),
-        "Win Rate [%]": str(output['Win Rate [%]']),
-        "Best Trade [%]": str(output['Best Trade [%]']),
-        "Worst Trade [%]": str(output['Worst Trade [%]']),
-        "Avg. Trade [%]": str(output['Avg. Trade [%]']),
-        "Max. Trade Duration": str(output['Max. Trade Duration']),
-        "Avg. Trade Duration": str(output['Avg. Trade Duration']),
-        "Profit Factor": str(output['Profit Factor']),
-        "Expectancy [%]": str(output['Expectancy [%]']),
-        # "SQN": output['SQN'],
-    }
-    return result_dict
+    try:
+        bt = Backtest(EURUSD, SmaCross,
+                exclusive_orders=False, cash=10000)
+        output = bt.run()
+        # Convert the relevant output fields to a dictionary
+        result_dict = {
+            "Start": str(output['Start']),
+            "End": str(output['End']),
+            "Duration": str(output['Duration']),
+            "Exposure Time [%]": str(output['Exposure Time [%]']),
+            "Equity Final [$]": str(output['Equity Final [$]']),
+            "Equity Peak [$]": str(output['Equity Peak [$]']),
+            "Return [%]": str(output['Return [%]']),
+            "Buy & Hold Return [%]": str(output['Buy & Hold Return [%]']),
+            "Return (Ann.) [%]": str(output['Return (Ann.) [%]']),
+            "Volatility (Ann.) [%]": str(output['Volatility (Ann.) [%]']),
+            "Sharpe Ratio": str(output['Sharpe Ratio']),
+            "Sortino Ratio": str(output['Sortino Ratio']),
+            "Calmar Ratio": str(output['Calmar Ratio']),
+            "Max. Drawdown [%]": str(output['Max. Drawdown [%]']),
+            "Avg. Drawdown [%]": str(output['Avg. Drawdown [%]']),
+            "Max. Drawdown Duration": str(output['Max. Drawdown Duration']),
+            "Avg. Drawdown Duration": str(output['Avg. Drawdown Duration']),
+            "# Trades": str(output['# Trades']),
+            "Win Rate [%]": str(output['Win Rate [%]']),
+            "Best Trade [%]": str(output['Best Trade [%]']),
+            "Worst Trade [%]": str(output['Worst Trade [%]']),
+            "Avg. Trade [%]": str(output['Avg. Trade [%]']),
+            "Max. Trade Duration": str(output['Max. Trade Duration']),
+            "Avg. Trade Duration": str(output['Avg. Trade Duration']),
+            "Profit Factor": str(output['Profit Factor']),
+            "Expectancy [%]": str(output['Expectancy [%]']),
+            # "SQN": output['SQN'],
+        }
+        return result_dict
+    except Exception as e:
+        return str(e)
 
 
 @csrf_exempt
