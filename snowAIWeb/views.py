@@ -3819,7 +3819,7 @@ def genesys(request):
             # Process the generated code as needed
             # Here, you can include your logic to compile or execute the generated Python code
             # For demonstration purposes, I'll simply return it in the JSON response
-            return JsonResponse({'generatedCode': type(generated_code)})
+            return JsonResponse({f'generatedCode {type(generated_code)}': generated_code})
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON data'}, status=400)
     else:
