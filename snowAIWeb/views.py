@@ -3809,6 +3809,12 @@ def interest_rates(request):
     return JsonResponse({'Interest Rates': result})
     
 
-
 def genesys(request):
-    return JsonResponse({'message': 'api-call works!'})
+    if request.method == 'POST':
+        generated_code = request.POST.get('generatedCode', '') # Get the generated Python code from the request body
+        # Process the generated code as needed
+        # Here, you can include your logic to compile or execute the generated Python code
+        # For demonstration purposes, I'll simply return it in the JSON response
+        return JsonResponse({'generatedCode': generated_code})
+    else:
+        return JsonResponse({'message': 'api-call works!'})
