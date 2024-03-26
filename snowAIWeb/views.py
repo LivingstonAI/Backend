@@ -4150,6 +4150,12 @@ def is_bearish_three_line_strike(data):
 
     return False
 
+df_to_use = './XAUUSD1H.csv'
+df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
+df = pd.read_csv(df_path).drop_duplicates()
+df.index = pd.to_datetime(df['Time'].values)
+del df['Time']
+dataset = df
 
 def genesys_backest(code):
     class SmaCross(Strategy):
@@ -4163,15 +4169,9 @@ def genesys_backest(code):
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
 
-    df_to_use = './XAUUSD1H.csv'
-    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
-    df = pd.read_csv(df_path).drop_duplicates()
-    df.index = pd.to_datetime(df['Time'].values)
-    del df['Time']
-    dataset = df
 
 
-    bt = Backtest(dataset, SmaCross,
+    bt = Backtest(EURUSD, SmaCross,
               exclusive_orders=True)
     output = bt.run()
     # Convert the relevant output fields to a dictionary
