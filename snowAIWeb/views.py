@@ -4165,6 +4165,7 @@ def genesys_backest(code):
             buy = self.buy
             sell = self.sell
             print(f'Executing Backtesting Function')
+            print(f'Code is: {code}')
             try:
                 exec(code)    
             except Exception as e:
