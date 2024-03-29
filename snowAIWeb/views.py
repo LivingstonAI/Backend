@@ -4162,8 +4162,8 @@ def genesys_backest(code):
           
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
-            buy = self.buy
-            sell = self.sell
+            # buy = self.bu
+            # sell = self.sell
             print(f'Executing Backtesting Function')
             print(f'Code is: {code}')
             try:
