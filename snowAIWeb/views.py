@@ -4151,14 +4151,85 @@ def is_bearish_three_line_strike(data):
     return False
 
 
-dataset = EURUSD
+def moving_average(type, number, data):
+    latest_moving_average_value = 0
+    if type == 'SMA':
+        latest_moving_average_value = data[f'{type}{number}'] = ta.sma(df['Close'], length=number)
+    elif type == 'EMA':
+        latest_moving_average_value = data[f'{type}{number}'] = ta.ema(df['Close'], length=number)
+    return latest_moving_average_value.iloc[-1]
+
+
+def bbands(condition, band, data):
+    band = band.upper()
+    condition = condition.upper()
+    bbands = ta.bbands(df['Close'], length=20, std=2)  # By default, it calculates with a length of 20 and std of 2
+    upper_band = df['BB_UPPER'] = bbands['BBU_20_2.0'].iloc[-1]
+    middle_band = df['BB_MIDDLE'] = bbands['BBM_20_2.0'].iloc[-1]
+    lower_band = df['BB_LOWER'] = bbands['BBL_20_2.0'].iloc[-1]
+    current_price = data.Close.iloc[-1]
+
+    if condition == 'LT' and band == 'LOWER':
+        if current_price < lower_band:
+            return True
+        return False
+    elif condition == 'LT' and band == 'MIDDLE':
+        if current_price < middle_band:
+            return True
+        return False
+    elif condition == 'LT' and band == 'UPPER':
+        if current_price < upper_band:
+            return True
+        return False
+    
+    elif condition == 'GT' and band == 'LOWER':
+        if current_price > lower_band:
+            return True
+        return False
+    elif condition == 'GT' and band == 'MIDDLE':
+        if current_price > middle_band:
+            return True
+        return False
+    elif condition == 'GT' and band == 'UPPER':
+        if current_price > upper_band:
+            return True
+        return False
+    return False
+
+
+def momentum(comparison, threshold, data):
+    comparison = comparison.upper()
+    current_momentum = ta.mom(data['Close']).iloc[-1]
+    if comparison == 'ABOVE':
+        if current_momentum > threshold:
+            return True
+        return False
+    elif comparison == 'BELOW':
+        if current_momentum < threshold:
+            return True
+        return False
+    return False
+
+
+def rsi(comparison, rsi_level, data):
+    comparison = comparison.upper()
+    current_rsi = ta.rsi(data['Close']).iloc[-1]
+    if comparison == 'ABOVE':
+        if current_rsi > rsi_level:
+            return True
+        return False
+    elif comparison == 'BELOW':
+        if current_rsi < rsi_level:
+            return True
+        return False
+    return False
 
 
 def genesys_backest(code):
+
     class SmaCross(Strategy):
         def init(self):
             price = self.data.Close
-
           
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
