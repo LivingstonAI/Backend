@@ -4164,12 +4164,10 @@ def genesys_backest(code):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
             # buy = self.buy
             # sell = self.sell
-            print(f'Executing Backtesting Function')
-            print(f'Code is: {code}')
             try:
                 exec(code)    
             except Exception as e:
-                print(f'Exception during backtest is: {e}')
+                pass
     try:
         bt = Backtest(EURUSD, SmaCross,
                 exclusive_orders=True, cash=10000)
