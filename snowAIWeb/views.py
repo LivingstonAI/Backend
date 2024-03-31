@@ -4225,7 +4225,7 @@ def rsi(comparison, rsi_level, data):
     return False
 
 
-def genesys_backest(code):
+async def genesys_backest(code):
 
     class SmaCross(Strategy):
         def init(self):
@@ -4292,9 +4292,15 @@ def genesys(request):
 
             # Execute the generated code
             try:
-                result = genesys_backest(generated_code)
-                
-                return JsonResponse({'message': f'{result}'})
+                async def inner_genesys_backtest():
+                    result = result = await genesys_backest(generated_code)
+                    return JsonResponse({'message': f'{result}}')
+
+                # Run the asynchronous code using the event loop
+                loop = asyncio.get_event_loop()
+                return loop.run_until_complete(inner_genesys_backtest())
+                    
+                # return JsonResponse({'message': f'{result}'})
             except Exception as e:
                 return JsonResponse({'error': f'Error executing code: {str(e)}'}, status=400)
         except json.JSONDecodeError:
