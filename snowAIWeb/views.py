@@ -4309,3 +4309,9 @@ def genesys(request):
             return JsonResponse({'error': 'Invalid JSON data'}, status=400)
     else:
         return JsonResponse({'message': 'api-call works!'})
+
+
+@csrf_exempt
+def save_datasets(request):
+    return
+    

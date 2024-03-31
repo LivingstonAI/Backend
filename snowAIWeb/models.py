@@ -9,7 +9,6 @@ from django.db.models import JSONField
 
 
 class User(AbstractUser):
-
     class Meta:
         # Add this meta option to prevent clash with auth.User's related_name
         app_label = 'snowAIWeb'
@@ -103,3 +102,8 @@ class Bot(models.Model):
     magic_number = models.IntegerField()
     time_saved = models.DateTimeField()
     parameters = models.TextField()
+
+
+class SaveDataset(models.Model):
+    dataset = models.CharField(max_length=30)
+
