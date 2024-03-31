@@ -4238,7 +4238,7 @@ def genesys_backest(code):
             try:
                 exec(code)    
             except Exception as e:
-                print(f'Exception is: {e}')
+                pass
     try:
         bt = Backtest(EURUSD, SmaCross,
                 exclusive_orders=True, cash=10000)
