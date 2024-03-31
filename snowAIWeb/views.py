@@ -4250,7 +4250,7 @@ async def genesys_backest(code):
         print(df)
     
         bt = Backtest(EURUSD, GenesysBacktest,
-                exclusive_orders=False, cash=10000)
+                exclusive_orders=True, cash=10000)
         output = bt.run()
         # Convert the relevant output fields to a dictionary
         result_dict = {
