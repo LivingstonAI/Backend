@@ -4240,7 +4240,7 @@ async def genesys_backest(code):
             except Exception as e:
                 pass
     try:
-        df_to_use = './XAUUSD4H.csv'
+        df_to_use = './XAUUSD1H.csv'
         df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
         df = pd.read_csv(df_path).drop_duplicates()
         df.index = pd.to_datetime(df['Time'].values)
