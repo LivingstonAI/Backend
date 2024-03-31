@@ -4154,19 +4154,19 @@ def is_bearish_three_line_strike(data):
 def moving_average(type, number, data):
     latest_moving_average_value = 0
     if type == 'SMA':
-        latest_moving_average_value = data[f'{type}{number}'] = ta.sma(df['Close'], length=number)
+        latest_moving_average_value = ta.sma(data['Close'], length=number)
     elif type == 'EMA':
-        latest_moving_average_value = data[f'{type}{number}'] = ta.ema(df['Close'], length=number)
+        latest_moving_average_value = ta.ema(data['Close'], length=number)
     return latest_moving_average_value.iloc[-1]
 
 
 def bbands(condition, band, data):
     band = band.upper()
     condition = condition.upper()
-    bbands = ta.bbands(df['Close'], length=20, std=2)  # By default, it calculates with a length of 20 and std of 2
-    upper_band = df['BB_UPPER'] = bbands['BBU_20_2.0'].iloc[-1]
-    middle_band = df['BB_MIDDLE'] = bbands['BBM_20_2.0'].iloc[-1]
-    lower_band = df['BB_LOWER'] = bbands['BBL_20_2.0'].iloc[-1]
+    bbands = ta.bbands(data['Close'], length=20, std=2)  # By default, it calculates with a length of 20 and std of 2
+    upper_band = bbands['BBU_20_2.0'].iloc[-1]
+    middle_band = bbands['BBM_20_2.0'].iloc[-1]
+    lower_band = bbands['BBL_20_2.0'].iloc[-1]
     current_price = data.Close.iloc[-1]
 
     if condition == 'LT' and band == 'LOWER':
