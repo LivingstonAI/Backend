@@ -4246,7 +4246,7 @@ async def genesys_backest(code):
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
         bt = Backtest(df, GenesysBacktest,
-                exclusive_orders=True, cash=10000)
+                exclusive_orders=False, cash=10000)
         output = bt.run()
         # Convert the relevant output fields to a dictionary
         result_dict = {
