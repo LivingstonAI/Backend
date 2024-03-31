@@ -4283,6 +4283,7 @@ async def genesys_backest(code):
         }
         return result_dict
     except Exception as e:
+        print(f'Exception Occured: {e}')
         return str(e)
 
 
