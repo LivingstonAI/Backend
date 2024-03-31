@@ -4247,7 +4247,7 @@ async def genesys_backest(code):
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
 
-        print(df)
+        # print(df)
     
         bt = Backtest(df, GenesysBacktest,
                 exclusive_orders=True, cash=10000)
@@ -4298,7 +4298,7 @@ def genesys(request):
             # Execute the generated code
             try:
                 async def inner_genesys_backtest():
-                    result = result = await genesys_backest(generated_code)
+                    result = await genesys_backest(generated_code)
                     return JsonResponse({'message': f'{result}'})
 
                 # Run the asynchronous code using the event loop
