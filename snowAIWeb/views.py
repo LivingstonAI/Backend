@@ -4312,6 +4312,14 @@ def genesys(request):
 
 
 @csrf_exempt
-def save_datasets(request):
-    return
+def save_dataset(request, dataset):
+    dataset_to_save = dataset
+    try:
+        new_dataset = SaveDataset(dataset=dataset_to_save)
+        new_dataset.save()
+
+        return JsonResponse({'message': 'Data Saved Successfully!'})
+
+    except Exception as e:
+        return JsonResponse({'error': f'Error Occured: {e}'})
     
