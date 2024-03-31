@@ -4315,6 +4315,7 @@ def genesys(request):
 def save_dataset(request, dataset):
     dataset_to_save = dataset
     try:
+        SaveDataset.objects.all().delete()
         new_dataset = SaveDataset(dataset=dataset_to_save)
         new_dataset.save()
 
