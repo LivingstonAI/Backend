@@ -4227,7 +4227,7 @@ def rsi(comparison, rsi_level, data):
 
 async def genesys_backest(code):
 
-    class SmaCross(Strategy):
+    class GenesysBacktest(Strategy):
         def init(self):
             price = self.data.Close
           
@@ -4245,8 +4245,8 @@ async def genesys_backest(code):
         df = pd.read_csv(df_path).drop_duplicates()
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
-        bt = Backtest(df, SmaCross,
-                exclusive_orders=True, cash=10000)
+        bt = Backtest(df, GenesysBacktest,
+                exclusive_orders=False, cash=10000)
         output = bt.run()
         # Convert the relevant output fields to a dictionary
         result_dict = {
