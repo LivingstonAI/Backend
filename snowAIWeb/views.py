@@ -4319,7 +4319,7 @@ def save_dataset(request, dataset):
         new_dataset = SaveDataset(dataset=dataset_to_save)
         new_dataset.save()
 
-        query_test = SaveDataset.objects.all().first()
+        query_test = SaveDataset.objects.all().first().dataset
 
         return JsonResponse({'message': f'{query_test}'})
 
