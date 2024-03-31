@@ -4249,7 +4249,7 @@ async def genesys_backest(code):
 
         print(df)
     
-        bt = Backtest(df, GenesysBacktest,
+        bt = Backtest(EURUSD, GenesysBacktest,
                 exclusive_orders=False, cash=10000)
         output = bt.run()
         # Convert the relevant output fields to a dictionary
