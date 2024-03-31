@@ -4319,7 +4319,9 @@ def save_dataset(request, dataset):
         new_dataset = SaveDataset(dataset=dataset_to_save)
         new_dataset.save()
 
-        return JsonResponse({'message': 'Data Saved Successfully!'})
+        query_test = SaveDataset.objects.all()
+
+        return JsonResponse({'message': f'{query_test}'})
 
     except Exception as e:
         return JsonResponse({'error': f'Error Occured: {e}'})
