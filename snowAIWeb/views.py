@@ -4246,8 +4246,8 @@ async def genesys_backest(code):
         # df = pd.read_csv(df_path).drop_duplicates()
         # df.index = pd.to_datetime(df['Time'].values)
         # del df['Time']
-        df = EURUSD
-        bt = Backtest(df, GenesysBacktest,
+    
+        bt = Backtest(EURUSD, GenesysBacktest,
                 exclusive_orders=False, cash=10000)
         output = bt.run()
         # Convert the relevant output fields to a dictionary
