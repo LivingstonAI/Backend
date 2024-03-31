@@ -45,7 +45,6 @@ from bokeh.embed import file_html
 from bokeh.resources import CDN
 from bokeh.embed import json_item
 from asgiref.sync import sync_to_async
-
 # Comment
 # current_hour = datetime.datetime.now().time().hour
 
@@ -4224,7 +4223,6 @@ def rsi(comparison, rsi_level, data):
         return False
     return False
 
-
 async def genesys_backest(code):
 
     class GenesysBacktest(Strategy):
@@ -4241,9 +4239,10 @@ async def genesys_backest(code):
                 print(f'Execption: {e}')
                 pass
     try:
-        df_to_use = sync_to_async(SaveDataset.objects.all().first().dataset)
-        df_to_use = f'./{df_to_use}'
-        df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
+        # Query the model asynchronously using sync_to_async
+        queryset = await sync_to_async(SaveDataset.objects.all().first)()
+        dataset_to_use = f'./{queryset.dataset}'
+        df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), dataset_to_use)
         df = pd.read_csv(df_path).drop_duplicates()
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
@@ -4283,8 +4282,8 @@ async def genesys_backest(code):
         }
         return result_dict
     except Exception as e:
-        print(f'Exception Occured: {e}')
-        return str(e)
+        print(f'Exception Occurred: {e}')
+        return {'error': str(e)}
 
 
 @csrf_exempt
