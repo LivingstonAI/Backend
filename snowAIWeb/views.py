@@ -4240,11 +4240,12 @@ async def genesys_backest(code):
             except Exception as e:
                 pass
     try:
-        df_to_use = './XAUUSD1D.csv'
-        df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
-        df = pd.read_csv(df_path).drop_duplicates()
-        df.index = pd.to_datetime(df['Time'].values)
-        del df['Time']
+        # df_to_use = './XAUUSD1D.csv'
+        # df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), df_to_use)
+        # df = pd.read_csv(df_path).drop_duplicates()
+        # df.index = pd.to_datetime(df['Time'].values)
+        # del df['Time']
+        df = GOOG
         bt = Backtest(df, GenesysBacktest,
                 exclusive_orders=False, cash=10000)
         output = bt.run()
