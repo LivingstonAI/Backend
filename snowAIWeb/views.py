@@ -4238,7 +4238,7 @@ async def genesys_backest(code):
             try:
                 exec(code)    
             except Exception as e:
-                print(f'Execption: {e}')
+                # print(f'Execption: {e}')
                 pass
     try:
         # df_to_use = './XAUUSD1D.csv'
