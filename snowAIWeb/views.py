@@ -4231,12 +4231,9 @@ async def genesys_backest(code):
           
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
-            # buy = self.buy
-            # sell = self.sell
             try:
                 exec(code)    
             except Exception as e:
-                print(f'Execption: {e}')
                 pass
     try:
         # Query the model asynchronously using sync_to_async
