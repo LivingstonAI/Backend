@@ -4347,7 +4347,7 @@ def send_simple_message():
     sender = f"Excited User <postmaster@{domain}>"
     recipients = ["motingwetlotlo@yahoo.com"]
     subject = "Hello from Mailgun"
-    message_text = "Testing some Mailgun awesomeness!"
+    text = "Testing some Mailgun awesomeness!"
 
     # Send the email
     response = requests.post(url, auth=("api", api_key), data={
