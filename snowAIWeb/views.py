@@ -4354,7 +4354,7 @@ def send_simple_message():
         "from": sender,
         "to": recipients,
         "subject": subject,
-        "text": message_text
+        "text": text
     })
 
     # Return the response content as a JSON object
