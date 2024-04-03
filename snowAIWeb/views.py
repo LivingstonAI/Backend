@@ -4338,7 +4338,7 @@ def save_dataset(request, dataset):
 def send_simple_message():
     # Replace with your Mailgun domain and API key
     domain = "sandbox6747417a740b468e99342ded03f729d2.mailgun.org"
-    api_key = "pubkey-9ffcb8ca1ce8e5fd7d8e283f23c326e0"
+    api_key = "960344ff20127b1535bd68672bab9f62-4c205c86-92e2dfe4"
 
     # Mailgun API endpoint for sending messages
     url = f"https://api.mailgun.net/v3/{domain}/messages"
