@@ -4344,7 +4344,7 @@ def send_simple_message():
     url = f"https://api.mailgun.net/v3/{domain}/messages"
 
     # Email details
-    sender = f"Excited User <mailgun@{domain}>"
+    sender = f"Excited User <bb@{domain}>"
     recipients = ["motingwetlotlo@yahoo.com"]
     subject = "Hello from Mailgun"
     message_text = "Testing some Mailgun awesomeness!"
