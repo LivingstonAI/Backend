@@ -4341,7 +4341,7 @@ def send_simple_message():
     api_key = "pubkey-9ffcb8ca1ce8e5fd7d8e283f23c326e0"
 
     # Mailgun API endpoint for sending messages
-    url = f"https://api.mailgun.net/v3/{domain}/messages"
+    url = f"https://api.mailgun.net/v3/4ebcff62f17c77414e37fdf38f363735-73f745ed-aa6a5882/messages"
 
     # Email details
     sender = f"Excited User <bb@{domain}>"
