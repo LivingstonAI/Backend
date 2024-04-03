@@ -4366,7 +4366,7 @@ def send_simple_message():
 
 @csrf_exempt
 def contact_us(request):
-    # Sending Mailgun Email
+    # Sending Mailgun Email To Myself from User
     email_response = send_simple_message()
 
     return JsonResponse(email_response)
