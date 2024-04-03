@@ -45,8 +45,6 @@ from bokeh.embed import file_html
 from bokeh.resources import CDN
 from bokeh.embed import json_item
 from asgiref.sync import sync_to_async
-from django.core.mail import send_mail
-
 # Comment
 # current_hour = datetime.datetime.now().time().hour
 
@@ -4339,8 +4337,8 @@ def save_dataset(request, dataset):
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
-    domain = "motingwetlotlo@yahoo.com"
-    api_key = "960344ff20127b1535bd68672bab9f62-4c205c86-92e2dfe4"
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
 
     # Mailgun API endpoint for sending messages
     url = f"https://api.mailgun.net/v3/{domain}/messages"
@@ -4369,12 +4367,6 @@ def send_simple_message():
 @csrf_exempt
 def contact_us(request):
     # Sending Mailgun Email To Myself from User
-        
-    subject = "Subject here"
-    message = "Here is the message."
-    from_email = "motingwetlotlo@yahoo.com"
-    recipient_list = ["butterrobot83@gmail.com"]
-
-    email_response = send_mail(subject, message, from_email, recipient_list, fail_silently=False)    
+    email_response = send_simple_message()
 
     return JsonResponse(email_response)
