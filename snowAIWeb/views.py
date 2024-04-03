@@ -4337,7 +4337,7 @@ def save_dataset(request, dataset):
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
-    domain = "sandbox6747417a740b468e99342ded03f729d2.mailgun.org"
+    domain = "motingwetlotlo@yahoo.com"
     api_key = "960344ff20127b1535bd68672bab9f62-4c205c86-92e2dfe4"
 
     # Mailgun API endpoint for sending messages
