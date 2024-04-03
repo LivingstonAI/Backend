@@ -4337,7 +4337,7 @@ def save_dataset(request, dataset):
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
-    domain = "https://app.mailgun.com/app/sending/domains/sandbox6747417a740b468e99342ded03f729d2.mailgun.org"
+    domain = "sandbox6747417a740b468e99342ded03f729d2.mailgun.org"
     api_key = "pubkey-9ffcb8ca1ce8e5fd7d8e283f23c326e0"
 
     # Mailgun API endpoint for sending messages
@@ -4357,7 +4357,11 @@ def send_simple_message():
         "text": message_text
     })
 
-    return response
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
 
 
 @csrf_exempt
@@ -4365,4 +4369,4 @@ def contact_us(request):
     # Sending Mailgun Email
     email_response = send_simple_message()
 
-    return JsonResponse({"message": f"Email sent successfully with response: {email_response}!"})
+    return JsonResponse(email_response)
