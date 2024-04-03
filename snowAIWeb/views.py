@@ -45,6 +45,8 @@ from bokeh.embed import file_html
 from bokeh.resources import CDN
 from bokeh.embed import json_item
 from asgiref.sync import sync_to_async
+from django.core.mail import send_mail
+
 # Comment
 # current_hour = datetime.datetime.now().time().hour
 
@@ -4367,6 +4369,12 @@ def send_simple_message():
 @csrf_exempt
 def contact_us(request):
     # Sending Mailgun Email To Myself from User
-    email_response = send_simple_message()
+        
+    subject = "Subject here"
+    message = "Here is the message."
+    from_email = "motingwetlotlo@yahoo.com"
+    recipient_list = ["butterrobot83@gmail.com"]
+
+    email_response = send_mail(subject, message, from_email, recipient_list, fail_silently=False)    
 
     return JsonResponse(email_response)
