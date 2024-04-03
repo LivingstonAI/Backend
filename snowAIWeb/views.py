@@ -4362,5 +4362,7 @@ def send_simple_message():
 
 @csrf_exempt
 def contact_us(request):
+    # Sending Mailgun Email
     email_response = send_simple_message()
+
     return JsonResponse({"message": f"Email sent successfully with response: {email_response}!"})
