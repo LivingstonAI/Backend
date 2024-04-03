@@ -4329,3 +4329,38 @@ def save_dataset(request, dataset):
     except Exception as e:
         return JsonResponse({'error': f'Error Occured: {e}'})
     
+
+
+
+
+
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = "https://app.mailgun.com/app/sending/domains/sandbox6747417a740b468e99342ded03f729d2.mailgun.org"
+    api_key = "pubkey-9ffcb8ca1ce8e5fd7d8e283f23c326e0"
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <mailgun@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    message_text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": message_text
+    })
+
+    return response
+
+
+@csrf_exempt
+def contact_us(request):
+    email_response = send_simple_message()
+    return JsonResponse({"message": f"Email sent successfully with response: {email_response}!"})
