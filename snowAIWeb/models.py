@@ -107,3 +107,9 @@ class Bot(models.Model):
 class SaveDataset(models.Model):
     dataset = models.CharField(max_length=30)
 
+
+class ContactUs(models.Model):
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    email = models.EmailField()
+    message = models.TextField()
