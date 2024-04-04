@@ -4386,6 +4386,7 @@ def contact_us(request):
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
+@csrf_exempt
 def book_order(request):
     if request.method == "POST":
         # Get form data from request body
