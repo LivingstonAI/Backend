@@ -4366,7 +4366,21 @@ def send_simple_message():
 
 @csrf_exempt
 def contact_us(request):
-    # Sending Mailgun Email To Myself from User
-    email_response = send_simple_message()
-
-    return JsonResponse(email_response)
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
