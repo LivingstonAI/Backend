@@ -4384,3 +4384,24 @@ def contact_us(request):
         return JsonResponse({"message": "Email sent successfully and saved to database!"})
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("first_name")
+        last_name = data.get("last_name")
+        email = data.get("email")
+        interested_product = data.get("interested_product")
+        
+        # Save form data to the BookOrder model
+        book_order_entry = BookOrder.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            interested_product=interested_product
+        )
+        return JsonResponse({"message": "Order booked successfully!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
