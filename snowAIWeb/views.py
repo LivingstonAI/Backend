@@ -4414,3 +4414,12 @@ def book_order(request):
             return JsonResponse({'error': str(e)})
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+from .models import CustomUser
+from .serializers import CustomUserSerializer
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer

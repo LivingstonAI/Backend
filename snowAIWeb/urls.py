@@ -46,6 +46,7 @@ urlpatterns = [
     path('save-dataset/<str:dataset>', views.save_dataset, name='save-dataset'),
     path('contact-us', views.contact_us, name='contact-us'),
     path('book-order', views.book_order, name='book-order'),
+    path('api/register/', UserRegistrationView.as_view(), name='user-register'),
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 
