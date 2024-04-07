@@ -47,7 +47,8 @@ urlpatterns = [
     path('contact-us', views.contact_us, name='contact-us'),
     path('book-order', views.book_order, name='book-order'),
     path('api/register/', UserRegistrationView.as_view(), name='user-register'),
-    path('api/login/', views.user_login, name='user-login')
+    path('api/login/', views.user_login, name='user-login'),
+    path('api/csrf_token/', views.get_csrf_token, name='get_csrf_token'),
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 

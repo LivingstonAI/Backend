@@ -4438,3 +4438,11 @@ def user_login(request):
             return JsonResponse({'message': 'Invalid credentials'}, status=400)
     else:
         return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    csrf_token = get_token(request)
+    return JsonResponse({'csrfToken': csrf_token})
