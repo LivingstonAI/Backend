@@ -29,7 +29,7 @@ DEBUG = True
 ALLOWED_HOSTS = [
     "https://snowai.vercel.app",
     "http://localhost:5173",
-    # "https://backend-production-c0ab.up.railway.app/",
+    "https://backend-production-c0ab.up.railway.app/",
     
 ]
 
