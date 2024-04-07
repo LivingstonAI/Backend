@@ -121,4 +121,4 @@ class BookOrder(models.Model):
     interested_product = models.TextField()
     email = models.EmailField()
     phone_number = models.IntegerField(default=0)
-    number_of_units = models.IntegerField(default=0)
+    number_of_units = models.CharField(default='')
