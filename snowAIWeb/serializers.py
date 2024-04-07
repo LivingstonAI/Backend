@@ -27,3 +27,9 @@ class TradeSerializer(serializers.ModelSerializer):
         model = Trade
         fields = "__all__"
         
+
+class CustomUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser
+        fields = ('id', 'username', 'email', 'password')  # Add other fields as needed
+        extra_kwargs = {'password': {'write_only': True}}
