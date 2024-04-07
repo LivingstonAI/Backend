@@ -4410,6 +4410,7 @@ def book_order(request):
             )
             return JsonResponse({"message": "Order booked successfully!"})
         except Exception as e:
+            print(f'Exception occured: {e}')
             return JsonResponse({'error': str(e)})
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
