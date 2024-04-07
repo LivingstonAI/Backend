@@ -4390,23 +4390,26 @@ def contact_us(request):
 def book_order(request):
     if request.method == "POST":
         # Get form data from request body
-        data = json.loads(request.body)
-        first_name = data.get("first_name")
-        last_name = data.get("last_name")
-        email = data.get("email")
-        interested_product = data.get("interested_product")
-        number_of_units = data.get("number_of_units")
-        phone_number = data.get("phone_number")
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = data.get("number_of_units")
+            phone_number = data.get("phone_number")
 
-        # Save form data to the BookOrder model
-        book_order_entry = BookOrder.objects.create(
-            first_name=first_name,
-            last_name=last_name,
-            email=email,
-            interested_product=interested_product,
-            phone_number=phone_number,
-            number_of_units=number_of_units
-        )
-        return JsonResponse({"message": "Order booked successfully!"})
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            return JsonResponse({'error': str(e)})
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
