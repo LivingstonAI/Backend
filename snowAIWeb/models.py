@@ -7,6 +7,25 @@ import datetime
 from django.contrib.auth.models import AbstractUser
 from django.db.models import JSONField
 
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+
+class CustomUserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save()
+        return user
+
+class CustomUser(AbstractBaseUser):
+    email = models.EmailField(unique=True)
+    username = models.CharField(max_length=50, unique=True)
+    # Add other fields (e.g., first_name, last_name) if needed
+
+    objects = CustomUserManager()
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['username']
 
 class User(AbstractUser):
     class Meta:
