@@ -4396,7 +4396,7 @@ def book_order(request):
             last_name = data.get("last_name")
             email = data.get("email")
             interested_product = data.get("interested_product")
-            number_of_units = data.get("number_of_units")
+            number_of_units = int(data.get("number_of_units"))
             phone_number = data.get("phone_number")
 
             # Save form data to the BookOrder model
