@@ -47,7 +47,7 @@ urlpatterns = [
     path('contact-us', views.contact_us, name='contact-us'),
     path('book-order', views.book_order, name='book-order'),
     path('api/register/', UserRegistrationView.as_view(), name='user-register'),
-    path('api/login', views.user_login, name='user-login')
+    path('api/login/', views.user_login, name='user-login')
     # path('fetch_user_email', views.fetch_user_email, name='fetch_user_email')
 ]
 
