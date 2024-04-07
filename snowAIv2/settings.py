@@ -190,13 +190,3 @@ CORS_ALLOWED_ORIGINS = [
 # settings.py
 # Adjust the worker timeout value as per your requirements, e.g., 60 seconds
 # WORKER_TIMEOUT = 600
-
-
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_USE_TLS = False  # Set to True if using TLS
-EMAIL_USE_SSL = True   # Set to True if using SSL
-EMAIL_HOST = 'smtp.mail.yahoo.com'
-EMAIL_PORT = 465       # Use 587 if not using SSL
-EMAIL_HOST_USER = 'motingwetlotlo@yahoo.com'
-EMAIL_HOST_PASSWORD = 'Sentinel2003!'
-DEFAULT_FROM_EMAIL = 'motingwetlotlo@yahoo.com'
