@@ -44,6 +44,7 @@ urlpatterns = [
     path('interest-rates-data', views.interest_rates, name='interest-rates-data'),
     path('genesys', views.genesys, name='genesys'),
     path('save-dataset/<str:dataset>', views.save_dataset, name='save-dataset'),
+    path('split-dataset', views.split_dataset, name='split-dataset'),
     path('contact-us', views.contact_us, name='contact-us'),
     path('book-order', views.book_order, name='book-order'),
     path('api/register/', UserRegistrationView.as_view(), name='user-register'),

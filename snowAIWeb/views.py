@@ -4377,6 +4377,28 @@ def save_dataset(request, dataset):
         return JsonResponse({'error': f'Error Occured: {e}'})
     
 
+@csrf_exempt
+def split_dataset(request):
+    if request.method == 'POST':
+        # Parse the request data
+        data = json.loads(request.body)
+        start_year = data.get('start_year')
+        end_year = data.get('end_year')
+
+        # Perform any necessary validation
+        # For example, check if start_year and end_year are valid integers
+
+        # Save the start and end years to the database
+        split_dataset = SplitDataset.objects.create(
+            start_year=start_year,
+            end_year=end_year
+        )
+
+        # Return a success response
+        return JsonResponse({'message': 'Start and end years saved successfully.'})
+
+    # If the request method is not POST, return an error response
+    return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
 
 
 
