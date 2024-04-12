@@ -4432,7 +4432,25 @@ def split_dataset(request):
 
 @csrf_exempt
 def set_init_capital(request):
-    return
+
+    try:
+        SetInitCapital.objects.all().delete()
+    except Exception as e:
+        pass
+
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        initial_capital = data.get('initialCapital')
+
+        # Save initial capital to the database
+        SetInitCapital.objects.create(initial_capital=initial_capital)
+
+        return JsonResponse({'message': 'Initial capital saved successfully'})
+    else:
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+
 
 
 # LEGODI BACKEND CODE
