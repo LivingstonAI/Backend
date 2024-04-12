@@ -4430,6 +4430,9 @@ def split_dataset(request):
     return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
 
 
+@csrf_exempt
+def set_init_capital(request):
+    return
 
 
 # LEGODI BACKEND CODE

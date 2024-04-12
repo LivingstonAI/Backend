@@ -133,6 +133,10 @@ class SplitDataset(models.Model):
     end_year = models.CharField(max_length=30)
 
 
+class SetInitCapital(models.model):
+    initial_capital = models.FloatField()
+
+
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
