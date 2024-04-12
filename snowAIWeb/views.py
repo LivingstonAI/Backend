@@ -4223,6 +4223,18 @@ def rsi(comparison, rsi_level, data):
         return False
     return False
 
+
+# Function to split Dataset By Year 
+def split_df(df, start_year, end_year):
+    # Convert the index to datetime if it's not already
+    df.index = pd.to_datetime(df.index)
+    
+    # Filter rows based on the specified start and end years
+    new_df = df[(df.index.year >= start_year) & (df.index.year <= end_year)]
+    
+    return new_df
+
+
 async def genesys_backest(code):
 
     class GenesysBacktest(Strategy):
@@ -4276,6 +4288,8 @@ async def genesys_backest(code):
         df = pd.read_csv(df_path).drop_duplicates()
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
+
+        
 
         # print(df)
     

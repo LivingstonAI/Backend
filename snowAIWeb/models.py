@@ -128,6 +128,11 @@ class SaveDataset(models.Model):
     dataset = models.CharField(max_length=30)
 
 
+class SplitDataset(models.Model):
+    start_year = models.CharField(max_length=30)
+    end_year = models.CharField(max_length=30)
+
+
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
