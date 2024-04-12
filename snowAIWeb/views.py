@@ -9,7 +9,7 @@ from rest_framework import status
 from .serializers import *
 from .models import *
 from django.core import serializers
-from django.utils import timezone
+from django.utils import timezone 
 from collections import Counter, defaultdict
 import json
 from selenium import webdriver
@@ -4228,6 +4228,39 @@ async def genesys_backest(code):
     class GenesysBacktest(Strategy):
         def init(self):
             price = self.data.Close
+            self.init_equity = 0
+            self.true_init_equity = 10000
+
+        def set_take_profit(self, number, type):
+            current_equity = self.equity
+            # print(f'Current Equity: {current_equity}\n')
+            type = type.upper()
+            number = float(number)
+            
+            # print(f'self.init_equity: {self.init_equity} vs current equity: {current_equity} with diff: {((current_equity - self.init_equity) / self.true_init_equity) * 100}')
+            if type == 'PERCENTAGE':
+                percentage = ((current_equity - self.init_equity) / self.true_init_equity) * 100
+                if percentage >= number:
+                    self.position.close()
+            elif type == 'NUMBER':
+                difference = current_equity - self.init_equity
+                if difference >= number:
+                    self.position.close()
+        
+
+        def set_stop_loss(self, number, type):
+            type = type.upper()
+            number = -(float(number))
+            current_equity = self.equity
+            if type == 'PERCENTAGE':
+                percentage = ((current_equity - self.init_equity) / self.true_init_equity) * 100
+                if percentage <= number:
+                    self.position.close()
+            elif type == 'NUMBER':
+                difference = current_equity - self.init_equity
+                if difference <= number:
+                    self.position.close()
+
           
         def next(self):
             dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
@@ -4364,7 +4397,6 @@ def send_simple_message():
     }
 
 
-@csrf_exempt
 def contact_us(request):
     if request.method == "POST":
         # Get form data from request body
@@ -4386,7 +4418,6 @@ def contact_us(request):
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
-@csrf_exempt
 def book_order(request):
     if request.method == "POST":
         # Get form data from request body
