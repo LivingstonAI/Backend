@@ -4289,7 +4289,11 @@ async def genesys_backest(code):
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
 
-        # start_year = SplitDataset.objects.all().first()
+        split_queryset = await sync_to_sync(SplitDataset.objects.get())
+        start_year = int(split_queryset.start_year)
+        end_year = int(split_queryset.end_year)
+        new_df = split_df(df, start_year, end_year)
+        print(f'New Df is: {new_df}')
         # print(df)
     
         bt = Backtest(df, GenesysBacktest,
@@ -4378,7 +4382,7 @@ def save_dataset(request, dataset):
 
 @csrf_exempt
 def split_dataset(request):
-    
+
     try:
         SplitDataset.objects.all().delete()
     except Exception as e:
