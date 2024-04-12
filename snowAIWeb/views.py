@@ -4370,7 +4370,7 @@ def genesys(request):
             try:
                 async def inner_genesys_backtest():
                     result = await genesys_backest(generated_code)
-                    return JsonResponse({'message': f'{result}'})
+                    return JsonResponse({'message': result})
 
                 # Run the asynchronous code using the event loop
                 loop = asyncio.get_event_loop()
