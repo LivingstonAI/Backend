@@ -4289,12 +4289,12 @@ async def genesys_backest(code):
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
 
-        split_queryset = await sync_to_async(SplitDataset.all().first)()
+        split_queryset = await sync_to_async(SplitDataset.objects.all().first)()
 
-        # start_year = int(split_queryset.start_year)
-        # end_year = int(split_queryset.end_year)
-        # new_df = await sync_to_async(split_df)(df, start_year, end_year)()
-        # print(f'new df is: {new_df}')
+        start_year = int(split_queryset.start_year)
+        end_year = int(split_queryset.end_year)
+        new_df = await sync_to_async(split_df)(df, start_year, end_year)()
+        print(f'new df is: {new_df}')
         # print(df)
     
         bt = Backtest(df, GenesysBacktest,
