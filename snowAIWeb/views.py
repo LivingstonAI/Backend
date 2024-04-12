@@ -4297,7 +4297,7 @@ async def genesys_backest(code):
         # print(df)
         
         init_capital_queryset = await sync_to_async(SetInitCapital.objects.get)()
-        init_capital = float(init_capital_queryset.inital_capital)
+        init_capital = float(init_capital_queryset.initial_capital)
 
         bt = Backtest(new_df, GenesysBacktest,
                 exclusive_orders=True, cash=init_capital)
