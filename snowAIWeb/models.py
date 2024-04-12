@@ -133,7 +133,7 @@ class SplitDataset(models.Model):
     end_year = models.CharField(max_length=30)
 
 
-class SetInitCapital(models.model):
+class SetInitCapital(models.Model):
     initial_capital = models.FloatField()
 
 
