@@ -4267,7 +4267,7 @@ async def genesys_backest(code):
             try:
                 exec(code)    
             except Exception as e:
-                pass
+                print(f'Exception: {e}')
     try:
         # Query the model asynchronously using sync_to_async
         queryset = await sync_to_async(SaveDataset.objects.all().first)()
