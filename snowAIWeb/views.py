@@ -4293,7 +4293,7 @@ async def genesys_backest(code):
         start_year = int(split_queryset.start_year)
         end_year = int(split_queryset.end_year)
         new_df = await sync_to_async(split_df(df, start_year, end_year))
-        print(f'New Df is: {new_df}')
+        print(f'new df is: {new_df}')
         # print(df)
     
         bt = Backtest(df, GenesysBacktest,
