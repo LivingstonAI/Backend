@@ -4300,6 +4300,25 @@ async def genesys_backest(code):
         bt = Backtest(new_df, GenesysBacktest,
                 exclusive_orders=True, cash=10000)
         output = bt.run()
+
+        return_plot = False
+
+        if len(new_df) > 5000:
+            return_plot = True
+        else:
+            return_plot = False
+        
+        if return_plot:
+
+            p = bt.plot()
+            
+            item = json_item(p, "myplot")
+            # print(item)
+            
+            plot_json = json.dumps(item)
+        else:
+            plot_json = {}
+
         # Convert the relevant output fields to a dictionary
         result_dict = {
             "Start": str(output['Start']),
@@ -4330,7 +4349,7 @@ async def genesys_backest(code):
             "Expectancy [%]": str(output['Expectancy [%]']),
             # "SQN": output['SQN'],
         }
-        return result_dict
+        return result_dict, plot_json
     except Exception as e:
         print(f'Exception Occurred: {e}')
         return {'error': str(e)}
