@@ -4241,7 +4241,7 @@ async def genesys_backest(code):
         def init(self):
             price = self.data.Close
             self.init_equity = 0
-            self.true_init_equity = 10000
+            self.true_init_equity = init_capital
 
         def set_take_profit(self, number, type_of_setting):
             current_equity = self.equity
@@ -4295,9 +4295,13 @@ async def genesys_backest(code):
         end_year = int(split_queryset.end_year)
         new_df = split_df(df, start_year, end_year)
         # print(df)
-    
+        
+        init_capital_queryset = await sync_to_async(SetInitCapital.objects.get)()
+        init_capital = float(init_capital_queryset.inital_capital)
+
         bt = Backtest(new_df, GenesysBacktest,
-                exclusive_orders=True, cash=10000)
+                exclusive_orders=True, cash=init_capital)
+
         output = bt.run()
 
         # return_plot = False
