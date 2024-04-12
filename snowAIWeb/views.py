@@ -4297,7 +4297,7 @@ async def genesys_backest(code):
         print(f'new df is: {new_df}')
         # print(df)
     
-        bt = Backtest(df, GenesysBacktest,
+        bt = Backtest(new_df, GenesysBacktest,
                 exclusive_orders=True, cash=10000)
         output = bt.run()
         # Convert the relevant output fields to a dictionary
