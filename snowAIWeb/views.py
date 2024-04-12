@@ -4292,7 +4292,7 @@ async def genesys_backest(code):
         split_queryset = await sync_to_async(SplitDataset.objects.get())
         start_year = int(split_queryset.start_year)
         end_year = int(split_queryset.end_year)
-        new_df = split_df(df, start_year, end_year)
+        new_df = sync_to_async(split_df(df, start_year, end_year))
         print(f'New Df is: {new_df}')
         # print(df)
     
