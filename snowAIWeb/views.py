@@ -4289,8 +4289,7 @@ async def genesys_backest(code):
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
 
-        
-
+        # start_year = SplitDataset.objects.all().first()
         # print(df)
     
         bt = Backtest(df, GenesysBacktest,
@@ -4379,6 +4378,12 @@ def save_dataset(request, dataset):
 
 @csrf_exempt
 def split_dataset(request):
+    
+    try:
+        SplitDataset.objects.all().delete()
+    except Exception as e:
+        pass
+
     if request.method == 'POST':
         # Parse the request data
         data = json.loads(request.body)
