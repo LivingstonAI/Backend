@@ -4289,7 +4289,7 @@ async def genesys_backest(code):
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
 
-        split_queryset = await sync_to_async(SplitDataset.objects.all().first)()
+        split_queryset = await sync_to_async(SplitDataset.objects.get)()
 
         start_year = int(split_queryset.start_year)
         end_year = int(split_queryset.end_year)
