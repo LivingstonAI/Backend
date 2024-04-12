@@ -4300,7 +4300,7 @@ async def genesys_backest(code):
                 exclusive_orders=True, cash=10000)
         output = bt.run()
 
-        return_plot = False
+        # return_plot = False
 
         # if len(new_df) > 5000:
         #     return_plot = True
@@ -4313,7 +4313,7 @@ async def genesys_backest(code):
 
             print(f'Plot is: {p}')
             
-            item = json_item(p, "myplot")
+            item = json_item(p, "new_plot")
             # print(item)
             print(f'Item is: {item}')
             
