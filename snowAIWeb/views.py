@@ -4306,19 +4306,15 @@ async def genesys_backest(code):
         #     return_plot = True
         # else:
         #     return_plot = False
-        return_plot = True
-        if return_plot:
-
+        try:
             p = bt.plot()
-
-            print(f'Plot is: {p}')
-            
+                
             item = json_item(p, "new_plot")
             # print(item)
             print(f'Item is: {item}')
-            
+                
             plot_json = json.dumps(item)
-        else:
+        except Exception as e:
             plot_json = {}
         
         print(f'Plot Json is: {plot_json}')
