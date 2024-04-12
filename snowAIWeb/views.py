@@ -4231,32 +4231,32 @@ async def genesys_backest(code):
             self.init_equity = 0
             self.true_init_equity = 10000
 
-        def set_take_profit(self, number, type):
+        def set_take_profit(self, number, type_of_setting):
             current_equity = self.equity
             # print(f'Current Equity: {current_equity}\n')
-            type = type.upper()
+            type_of_setting = type_of_setting.upper()
             number = float(number)
             
             # print(f'self.init_equity: {self.init_equity} vs current equity: {current_equity} with diff: {((current_equity - self.init_equity) / self.true_init_equity) * 100}')
-            if type == 'PERCENTAGE':
+            if type_of_setting == 'PERCENTAGE':
                 percentage = ((current_equity - self.init_equity) / self.true_init_equity) * 100
                 if percentage >= number:
                     self.position.close()
-            elif type == 'NUMBER':
+            elif type_of_setting == 'NUMBER':
                 difference = current_equity - self.init_equity
                 if difference >= number:
                     self.position.close()
         
 
-        def set_stop_loss(self, number, type):
-            type = type.upper()
+        def set_stop_loss(self, number, type_of_setting):
+            type_of_setting = type_of_setting.upper()
             number = -(float(number))
             current_equity = self.equity
-            if type == 'PERCENTAGE':
+            if type_of_setting == 'PERCENTAGE':
                 percentage = ((current_equity - self.init_equity) / self.true_init_equity) * 100
                 if percentage <= number:
                     self.position.close()
-            elif type == 'NUMBER':
+            elif type_of_setting == 'NUMBER':
                 difference = current_equity - self.init_equity
                 if difference <= number:
                     self.position.close()
