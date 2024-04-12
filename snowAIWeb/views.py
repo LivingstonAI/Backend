@@ -4302,21 +4302,26 @@ async def genesys_backest(code):
 
         return_plot = False
 
-        if len(new_df) > 5000:
-            return_plot = True
-        else:
-            return_plot = False
-        
+        # if len(new_df) > 5000:
+        #     return_plot = True
+        # else:
+        #     return_plot = False
+        return_plot = True
         if return_plot:
 
             p = bt.plot()
+
+            print(f'Plot is: {p}')
             
             item = json_item(p, "myplot")
             # print(item)
+            print(f'Item is: {item}')
             
             plot_json = json.dumps(item)
         else:
             plot_json = {}
+        
+        print(f'Plot Json is: {plot_json}')
 
         # Convert the relevant output fields to a dictionary
         result_dict = {
