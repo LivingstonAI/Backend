@@ -4272,6 +4272,7 @@ async def genesys_backest(code):
                 difference = current_equity - self.init_equity
                 if difference <= number:
                     self.position.close()
+                    
 
           
         def next(self):
@@ -4453,6 +4454,10 @@ def set_init_capital(request):
     else:
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+
+
+def genesys_live(request):
+    return
 
 
 
