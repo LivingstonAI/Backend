@@ -4240,7 +4240,7 @@ async def genesys_backest(code):
     class GenesysBacktest(Strategy):
         def init(self):
             price = self.data.Close
-            self.init_equity = 0
+            self.current_equity = 0
             self.true_init_equity = init_capital
 
         def set_take_profit(self, number, type_of_setting):
@@ -4251,11 +4251,11 @@ async def genesys_backest(code):
             
             # print(f'self.init_equity: {self.init_equity} vs current equity: {current_equity} with diff: {((current_equity - self.init_equity) / self.true_init_equity) * 100}')
             if type_of_setting == 'PERCENTAGE':
-                percentage = ((current_equity - self.init_equity) / self.true_init_equity) * 100
+                percentage = ((current_equity - self.current_equity) / self.true_init_equity) * 100
                 if percentage >= number:
                     self.position.close()
             elif type_of_setting == 'NUMBER':
-                difference = current_equity - self.init_equity
+                difference = current_equity - self.current_equity
                 if difference >= number:
                     self.position.close()
         
@@ -4265,11 +4265,11 @@ async def genesys_backest(code):
             number = -(float(number))
             current_equity = self.equity
             if type_of_setting == 'PERCENTAGE':
-                percentage = ((current_equity - self.init_equity) / self.true_init_equity) * 100
+                percentage = ((current_equity - self.current_equity) / self.true_init_equity) * 100
                 if percentage <= number:
                     self.position.close()
             elif type_of_setting == 'NUMBER':
-                difference = current_equity - self.init_equity
+                difference = current_equity - self.current_equity
                 if difference <= number:
                     self.position.close()
                     
