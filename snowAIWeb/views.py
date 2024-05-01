@@ -4452,10 +4452,42 @@ def set_init_capital(request):
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+def set_take_profit(number, type_of_setting):
+    current_equity = equity
+    # print(f'Current Equity: {current_equity}\n')
+    type_of_setting = type_of_setting.upper()
+    number = float(number)
 
-def genesys_live(request):
+    # Get 'equity' here from the 'GenesysLive' model.
+            
+    if type_of_setting == 'PERCENTAGE':
+        percentage = ((current_equity - equity) / true_initial_equity) * 100
+        if percentage >= number:
+            return "close_position"
+    elif type_of_setting == 'NUMBER':
+        difference = current_equity - equity
+        if difference >= number:
+            return "close_position"
+        
 
-    return
+def set_stop_loss(number, type_of_setting):
+    type_of_setting = type_of_setting.upper()
+    number = -(float(number))
+    # Get 'equity' here from the 'GenesysLive' model.
+    current_equity = equity
+    if type_of_setting == 'PERCENTAGE':
+        percentage = ((current_equity - equity) / true_initial_equity) * 100
+        if percentage <= number:
+            return "close_position"
+        elif type_of_setting == 'NUMBER':
+            difference = current_equity - equity
+            if difference <= number:
+                return "close_position"
+
+
+def genesys_live(request, identifier, equity):
+
+    return JsonResponse({"message": "API Call Works!"})
 
 
 
