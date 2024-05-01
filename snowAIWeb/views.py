@@ -4322,8 +4322,6 @@ async def genesys_backest(code):
         except Exception as e:
             plot_json = {}
         
-        print(f'Plot Json is: {plot_json}')
-
         # Convert the relevant output fields to a dictionary
         result_dict = {
             "Start": str(output['Start']),
@@ -4356,7 +4354,6 @@ async def genesys_backest(code):
         }
         return result_dict, plot_json
     except Exception as e:
-        print(f'Exception Occurred: {e}')
         return {'error': str(e)}
 
 
@@ -4457,6 +4454,7 @@ def set_init_capital(request):
 
 
 def genesys_live(request):
+
     return
 
 
