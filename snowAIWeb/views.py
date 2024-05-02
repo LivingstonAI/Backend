@@ -4507,7 +4507,7 @@ def save_genesys_model(request):
             
             return JsonResponse({'message': 'Model saved successfully'})
         except Exception as e:
-            return JsonResponse({'message': f'model_id: {model_id}, true_initial_equity: {true_initial_equity}'})
+            return JsonResponse({'message': f'{e}\nmodel_id: {model_id}, true_initial_equity: {true_initial_equity}'})
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
