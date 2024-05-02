@@ -4499,7 +4499,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
 
     exec(model_code)
     
-    return JsonResponse({"message": f"{return_statement} with model_code: {model_code} with df: {dataset}"})
+    return JsonResponse({"message": f"{return_statement}"})
 
 
 @csrf_exempt
