@@ -4505,7 +4505,7 @@ def save_genesys_model(request):
             )
             new_model.save()
             
-            return JsonResponse({'message': 'Model saved successfully'})
+            return JsonResponse({'message': f'Model saved successfully\n model_id: {model_id}, true_initial_equity: {true_initial_equity}'})
         except Exception as e:
             return JsonResponse({'message': f'{e}\nmodel_id: {model_id}, true_initial_equity: {true_initial_equity}'})
     else:
