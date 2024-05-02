@@ -4489,9 +4489,9 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     if len(model_query) == 0:
         return JsonResponse({"message": f"Model has no such identifier"})
 
-    # return JsonResponse({"message": f"{model_query}"})
+    model_code = model_query[0].model_code
 
-    return JsonResponse({"message": f"{return_statement} with model_query: {model_query}"})
+    return JsonResponse({"message": f"{return_statement} with model_code: {model_code}"})
 
 
 @csrf_exempt
