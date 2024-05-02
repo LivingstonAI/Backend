@@ -138,7 +138,7 @@ class SetInitCapital(models.Model):
 
 
 class GenesysLive(models.Model):
-    model_id = models.IntegerField()
+    model_id = models.IntegerField(unique=True)
     model_code = models.TextField()
     true_initial_equity = models.FloatField()
     # current_equity = models.FloatField()
