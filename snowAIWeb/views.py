@@ -4491,7 +4491,13 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
 
     model_code = model_query[0].model_code
 
-    return JsonResponse({"message": f"{return_statement} with model_code: {model_code}"})
+    dataset_to_use = f'./USDJPY4H.csv'
+    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), dataset_to_use)
+    df = pd.read_csv(df_path).drop_duplicates()
+    df.index = pd.to_datetime(df['Time'].values)
+    del df['Time']
+
+    return JsonResponse({"message": f"{return_statement} with model_code: {model_code} with df: {df}"})
 
 
 @csrf_exempt
