@@ -4451,6 +4451,7 @@ def set_init_capital(request):
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+@csrf_exempt
 def genesys_live(request, identifier, initial_equity, current_equity, trade_equity):
 
     def set_take_profit(number, type_of_setting):
