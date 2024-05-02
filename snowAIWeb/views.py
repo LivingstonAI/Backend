@@ -4481,11 +4481,8 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
                 difference = current_equity - trade_equity
                 if difference <= number:
                     return "close_position"
-    model_query = None
-    try:
-        model_query = GenesysLive.objects.filter(model_id=identifier)
-    except Exception as e:
-        model_query = None
+    
+    model_query = GenesysLive.objects.filter(model_id=identifier)
 
     return JsonResponse({"message": f"{model_query}"})
 
