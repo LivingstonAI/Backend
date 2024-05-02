@@ -4451,7 +4451,7 @@ def set_init_capital(request):
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
-def genesys_live(request, identifier, initial_equity, current_equity):
+def genesys_live(request, identifier, initial_equity, current_equity, trade_equity):
 
     def set_take_profit(number, type_of_setting):
         # current_equity = equity
@@ -4460,11 +4460,11 @@ def genesys_live(request, identifier, initial_equity, current_equity):
         number = float(number)
                 
         if type_of_setting == 'PERCENTAGE':
-            percentage = ((current_equity - equity) / initial_equity) * 100
+            percentage = ((current_equity - trade_equity) / initial_equity) * 100
             if percentage >= number:
                 return "close_position"
         elif type_of_setting == 'NUMBER':
-            difference = current_equity - equity
+            difference = current_equity - trade_equity
             if difference >= number:
                 return "close_position"
         
@@ -4472,13 +4472,12 @@ def genesys_live(request, identifier, initial_equity, current_equity):
         type_of_setting = type_of_setting.upper()
         number = -(float(number))
         # Get 'equity' here from the 'GenesysLive' model.
-        current_equity = equity
         if type_of_setting == 'PERCENTAGE':
-            percentage = ((current_equity - equity) / initial_equity) * 100
+            percentage = ((current_equity - trade_equity) / initial_equity) * 100
             if percentage <= number:
                 return "close_position"
             elif type_of_setting == 'NUMBER':
-                difference = current_equity - equity
+                difference = current_equity - trade_equity
                 if difference <= number:
                     return "close_position"
 
@@ -4511,6 +4510,13 @@ def save_genesys_model(request):
             return JsonResponse({'message': f'{e}\nmodel_id: {model_id}, true_initial_equity: {true_initial_equity}'})
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+
+
+
+
+
+
 
 
 # LEGODI BACKEND CODE
