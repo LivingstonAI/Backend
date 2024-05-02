@@ -140,12 +140,14 @@ class SetInitCapital(models.Model):
 class GenesysLive(models.Model):
     model_id = models.IntegerField()
     model_code = models.TextField()
-    current_equity = models.FloatField()
-    take_profit_number = models.FloatField()
-    take_profit_type = models.CharField(max_length=20)
-    stop_loss_number = models.FloatField()
-    stop_loss_type = models.CharField(max_length=20)
     true_initial_equity = models.FloatField()
+    # current_equity = models.FloatField()
+    # take_profit_number = models.FloatField()
+    # take_profit_type = models.CharField(max_length=20)
+    # stop_loss_number = models.FloatField()
+    # stop_loss_type = models.CharField(max_length=20)
+
+
 
 
 class ContactUs(models.Model):

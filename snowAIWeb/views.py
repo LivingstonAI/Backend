@@ -4316,7 +4316,6 @@ async def genesys_backest(code):
                 
             item = json_item(p, "new_plot")
             # print(item)
-            print(f'Item is: {item}')
                 
             plot_json = json.dumps(item)
         except Exception as e:
@@ -4354,7 +4353,7 @@ async def genesys_backest(code):
         }
         return result_dict, plot_json
     except Exception as e:
-        return {'error': str(e)}
+        return JsonResponse({'error': str(e)})
 
 
 @csrf_exempt
@@ -4452,44 +4451,57 @@ def set_init_capital(request):
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
-def set_take_profit(number, type_of_setting):
-    current_equity = equity
-    # print(f'Current Equity: {current_equity}\n')
-    type_of_setting = type_of_setting.upper()
-    number = float(number)
+def genesys_live(request, identifier, initial_equity, current_equity):
 
-    # Get 'equity' here from the 'GenesysLive' model.
-            
-    if type_of_setting == 'PERCENTAGE':
-        percentage = ((current_equity - equity) / true_initial_equity) * 100
-        if percentage >= number:
-            return "close_position"
-    elif type_of_setting == 'NUMBER':
-        difference = current_equity - equity
-        if difference >= number:
-            return "close_position"
-        
-
-def set_stop_loss(number, type_of_setting):
-    type_of_setting = type_of_setting.upper()
-    number = -(float(number))
-    # Get 'equity' here from the 'GenesysLive' model.
-    current_equity = equity
-    if type_of_setting == 'PERCENTAGE':
-        percentage = ((current_equity - equity) / true_initial_equity) * 100
-        if percentage <= number:
-            return "close_position"
+    def set_take_profit(number, type_of_setting):
+        # current_equity = equity
+        # print(f'Current Equity: {current_equity}\n')
+        type_of_setting = type_of_setting.upper()
+        number = float(number)
+                
+        if type_of_setting == 'PERCENTAGE':
+            percentage = ((current_equity - equity) / initial_equity) * 100
+            if percentage >= number:
+                return "close_position"
         elif type_of_setting == 'NUMBER':
             difference = current_equity - equity
-            if difference <= number:
+            if difference >= number:
                 return "close_position"
+        
+    def set_stop_loss(number, type_of_setting):
+        type_of_setting = type_of_setting.upper()
+        number = -(float(number))
+        # Get 'equity' here from the 'GenesysLive' model.
+        current_equity = equity
+        if type_of_setting == 'PERCENTAGE':
+            percentage = ((current_equity - equity) / initial_equity) * 100
+            if percentage <= number:
+                return "close_position"
+            elif type_of_setting == 'NUMBER':
+                difference = current_equity - equity
+                if difference <= number:
+                    return "close_position"
 
-
-def genesys_live(request, identifier, equity):
-    
     return JsonResponse({"message": "API Call Works!"})
 
 
+@csrf_exempt
+def save_genesys_model(request):
+    if request.method == 'POST':
+        model_id = request.POST.get('model_id')
+        model_code = request.POST.get('model_code')
+        true_initial_equity = request.POST.get('true_initial_equity')
+        
+        # Save the data to your model
+        GenesysLive.objects.create(
+            model_id=model_id,
+            model_code=model_code,
+            true_initial_equity=true_initial_equity
+        )
+        
+        return JsonResponse({'message': 'Model saved successfully'})
+    else:
+        return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
 # LEGODI BACKEND CODE
