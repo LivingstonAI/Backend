@@ -4489,18 +4489,21 @@ def genesys_live(request, identifier, initial_equity, current_equity):
 def save_genesys_model(request):
     
     if request.method == 'POST':
-        model_id = request.POST.get('model_id')
-        model_code = request.POST.get('model_code')
-        true_initial_equity = request.POST.get('true_initial_equity')
-        
-        # Save the data to your model
-        GenesysLive.objects.create(
-            model_id=model_id,
-            model_code=model_code,
-            true_initial_equity=true_initial_equity
-        )
-        
-        return JsonResponse({'message': 'Model saved successfully'})
+        try:
+            model_id = request.POST.get('model_id')
+            model_code = request.POST.get('model_code')
+            true_initial_equity = request.POST.get('true_initial_equity')
+            
+            # Save the data to your model
+            GenesysLive.objects.create(
+                model_id=model_id,
+                model_code=model_code,
+                true_initial_equity=true_initial_equity
+            )
+            
+            return JsonResponse({'message': 'Model saved successfully'})
+        except Exception as e:
+            return JsonResponse({'message': f'model_id: {model_id}, true_initial_equity: {true_initial_equity}'})
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
