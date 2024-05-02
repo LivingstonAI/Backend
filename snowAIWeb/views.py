@@ -4493,9 +4493,9 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
 
     dataset_to_use = f'./USDJPY4H.csv'
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), dataset_to_use)
-    # dataset = pd.read_csv(df_path).drop_duplicates()
-    # dataset.index = pd.to_datetime(dataset['Time'].values)
-    # del dataset['Time']
+    dataset = pd.read_csv(df_path).drop_duplicates()
+    dataset.index = pd.to_datetime(dataset['Time'].values)
+    del dataset['Time']
 
     exec(model_code)
     
