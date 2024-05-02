@@ -4496,6 +4496,8 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     dataset = pd.read_csv(df_path).drop_duplicates()
     dataset.index = pd.to_datetime(dataset['Time'].values)
     del dataset['Time']
+
+    exec(model_code)
     
     return JsonResponse({"message": f"{return_statement} with model_code: {model_code} with df: {dataset}"})
 
