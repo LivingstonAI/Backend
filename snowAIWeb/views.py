@@ -4493,7 +4493,7 @@ def save_genesys_model(request):
         model_code = ''
         true_initial_equity = ''
         try:
-            data = request.body
+            data = json.loads(request.body)
             model_id = int(data.get('model_id'))
             model_code = data.get('model_code')
             true_initial_equity = float(data.get('true_initial_equity'))
