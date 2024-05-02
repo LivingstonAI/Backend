@@ -4486,7 +4486,7 @@ def set_stop_loss(number, type_of_setting):
 
 
 def genesys_live(request, identifier, equity):
-
+    
     return JsonResponse({"message": "API Call Works!"})
 
 
