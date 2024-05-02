@@ -4484,7 +4484,10 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
                 if difference <= number:
                     return_statement = "close_position"
     
-    model_query = GenesysLive.objects.filter(model_id=identifier)[0]
+    model_query = GenesysLive.objects.filter(model_id=identifier)
+
+    if len(model_query) == 0:
+        return JsonResponse({"message": f"Model has no such identifier"})
 
     # return JsonResponse({"message": f"{model_query}"})
 
