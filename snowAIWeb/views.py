@@ -4495,11 +4495,12 @@ def save_genesys_model(request):
             true_initial_equity = request.POST.get('true_initial_equity')
             
             # Save the data to your model
-            GenesysLive.objects.create(
+            new_model = GenesysLive(
                 model_id=model_id,
                 model_code=model_code,
                 true_initial_equity=true_initial_equity
             )
+            new_model.save()
             
             return JsonResponse({'message': 'Model saved successfully'})
         except Exception as e:
