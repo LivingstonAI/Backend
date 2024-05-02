@@ -4453,6 +4453,8 @@ def set_init_capital(request):
 
 @csrf_exempt
 def genesys_live(request, identifier, initial_equity, trade_equity, current_equity):
+    
+    return_statement = None
 
     def set_take_profit(number, type_of_setting):
         # current_equity = equity
@@ -4463,11 +4465,11 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
         if type_of_setting == 'PERCENTAGE':
             percentage = ((current_equity - trade_equity) / initial_equity) * 100
             if percentage >= number:
-                return "close_position"
+                return_statement = "close_position"
         elif type_of_setting == 'NUMBER':
             difference = current_equity - trade_equity
             if difference >= number:
-                return "close_position"
+                return_statement = "close_position"
         
     def set_stop_loss(number, type_of_setting):
         type_of_setting = type_of_setting.upper()
@@ -4476,16 +4478,18 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
         if type_of_setting == 'PERCENTAGE':
             percentage = ((current_equity - trade_equity) / initial_equity) * 100
             if percentage <= number:
-                return "close_position"
+                return_statement = "close_position"
             elif type_of_setting == 'NUMBER':
                 difference = current_equity - trade_equity
                 if difference <= number:
-                    return "close_position"
+                    return_statement = "close_position"
     
     model_query = GenesysLive.objects.filter(model_id=identifier)[0]
     set_take_profit(number=4, type_of_setting="percentage")
     set_stop_loss(number=4, type_of_setting="percentage")
     # return JsonResponse({"message": f"{model_query}"})
+
+    return JsonResponse({"message": f"{return_statement}"})
 
 
 @csrf_exempt
