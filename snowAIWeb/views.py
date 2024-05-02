@@ -4493,9 +4493,10 @@ def save_genesys_model(request):
         model_code = ''
         true_initial_equity = ''
         try:
-            model_id = int(request.POST.get('model_id'))
-            model_code = request.POST.get('model_code')
-            true_initial_equity = float(request.POST.get('true_initial_equity'))
+            data = request.body
+            model_id = int(data.get('model_id'))
+            model_code = data.get('model_code')
+            true_initial_equity = float(data.get('true_initial_equity'))
             
             # Save the data to your model
             new_model = GenesysLive(
