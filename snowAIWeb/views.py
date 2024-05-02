@@ -4487,6 +4487,7 @@ def genesys_live(request, identifier, initial_equity, current_equity):
 
 @csrf_exempt
 def save_genesys_model(request):
+    
     if request.method == 'POST':
         model_id = request.POST.get('model_id')
         model_code = request.POST.get('model_code')
