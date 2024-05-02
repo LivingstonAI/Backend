@@ -4482,7 +4482,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
                 if difference <= number:
                     return "close_position"
     
-    model_query = GenesysLive.objects.filter(model_id=identifier)
+    model_query = GenesysLive.objects.filter(model_id=identifier)[0]
     set_take_profit(number=4, type_of_setting="percentage")
     set_stop_loss(number=4, type_of_setting="percentage")
     # return JsonResponse({"message": f"{model_query}"})
