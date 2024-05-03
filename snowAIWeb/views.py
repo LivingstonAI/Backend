@@ -4452,10 +4452,10 @@ def set_init_capital(request):
 
 
 @csrf_exempt
-def genesys_live(request, identifier, initial_equity, trade_equity, current_equity):
+def genesys_live(request, identifier, initial_equity, trade_equity, current_equity, num_positions):
     
     return_statement = None
-
+    
     def set_take_profit(number, type_of_setting):
         # current_equity = equity
         # print(f'Current Equity: {current_equity}\n')
