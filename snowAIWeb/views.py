@@ -4483,6 +4483,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
                 difference = current_equity - trade_equity
                 if difference <= number:
                     return_statement = "close_position"
+                    
     
     model_query = GenesysLive.objects.filter(model_id=identifier)
 
