@@ -4466,7 +4466,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
                 
         if type_of_setting == 'PERCENTAGE':
             percentage = ((current_equity - trade_equity) / initial_equity) * 100
-            print(f'Percentage is: {percentage}')
+            print(f'Percentage is: {percentage}\n')
             if percentage >= number:
                 return_statement = "close_position"
         elif type_of_setting == 'NUMBER':
