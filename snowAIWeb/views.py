@@ -4464,7 +4464,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
         # print(f'Current Equity: {current_equity}\n')
         type_of_setting = type_of_setting.upper()
         number = float(number)
-        global percentage_test, return_statement
+        nonlocal percentage_test, return_statement
                 
         if type_of_setting == 'PERCENTAGE':
             percentage = ((current_equity - trade_equity) / initial_equity) * 100
@@ -4479,7 +4479,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
                 return_statement = "close_position"
         
     def set_stop_loss(number, type_of_setting):
-        global return_statement, percentage_test
+        nonlocal return_statement, percentage_test
         type_of_setting = type_of_setting.upper()
         number = -(float(number))
         return_statement = 'Not None'
@@ -4490,10 +4490,10 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
             percentage_test = variable
             if percentage <= number:
                 return_statement = "close_position"
-            elif type_of_setting == 'NUMBER':
-                difference = current_equity - trade_equity
-                if difference <= number:
-                    return_statement = "close_position"
+        elif type_of_setting == 'NUMBER':
+            difference = current_equity - trade_equity
+            if difference <= number:
+                return_statement = "close_position"
                     
     
     model_query = GenesysLive.objects.filter(model_id=identifier)
