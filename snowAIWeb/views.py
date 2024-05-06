@@ -4457,7 +4457,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     return_statement = None
     percentage_test = 0
 
-    print(f'Identifier: {identifier}\nInitial Equity: {initial_equity}\nTrade Equity: {trade_equity}\nNum Positions: {num_positions}\n')
+    # print(f'Identifier: {identifier}\nInitial Equity: {initial_equity}\nTrade Equity: {trade_equity}\nNum Positions: {num_positions}\n')
     
     def set_take_profit(number, type_of_setting):
         # current_equity = equity
@@ -4500,6 +4500,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
         return JsonResponse({"message": f"Model has no such identifier"})
 
     model_code = model_query[0].model_code
+    # test_model_id = 5505503
 
     dataset_to_use = f'./USDJPY4H.csv'
     df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), dataset_to_use)
