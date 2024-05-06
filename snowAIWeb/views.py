@@ -4482,6 +4482,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
         global return_statement, percentage_test
         type_of_setting = type_of_setting.upper()
         number = -(float(number))
+        return_statement = 'Not None'
         # Get 'equity' here from the 'GenesysLive' model.
         if type_of_setting == 'PERCENTAGE':
             percentage = ((current_equity - trade_equity) / initial_equity) * 100
