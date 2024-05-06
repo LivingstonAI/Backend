@@ -4464,7 +4464,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
         # print(f'Current Equity: {current_equity}\n')
         type_of_setting = type_of_setting.upper()
         number = float(number)
-        global percentage_test
+        global percentage_test, return_statement
                 
         if type_of_setting == 'PERCENTAGE':
             percentage = ((current_equity - trade_equity) / initial_equity) * 100
@@ -4479,6 +4479,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
                 return_statement = "close_position"
         
     def set_stop_loss(number, type_of_setting):
+        global return_statement
         type_of_setting = type_of_setting.upper()
         number = -(float(number))
         # Get 'equity' here from the 'GenesysLive' model.
