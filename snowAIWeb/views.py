@@ -4451,8 +4451,23 @@ def set_init_capital(request):
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+def obtain_dataset(asset, interval):
+
+    # Calculate the date 30 days ago from the current day
+    start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    # Get latest candle
+    end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # Download data using the calculated dates
+    forex_asset = f"{asset}=X"
+    data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+
+    return data
+
+
 @csrf_exempt
-def genesys_live(request, identifier, initial_equity, trade_equity, current_equity, num_positions):
+def genesys_live(request, identifier, initial_equity, trade_equity, current_equity, num_positions, asset, interval):
     
     return_statement = None
     percentage_test = 0
@@ -4499,14 +4514,10 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     if len(model_query) == 0:
         return JsonResponse({"message": f"Model has no such identifier"})
 
+    dataset = obtain_dataset(asset=asset, interval=interval)
+
     model_code = model_query[0].model_code
     # test_model_id = 5505503
-
-    dataset_to_use = f'./USDJPY4H.csv'
-    df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), dataset_to_use)
-    dataset = pd.read_csv(df_path).drop_duplicates()
-    dataset.index = pd.to_datetime(dataset['Time'].values)
-    del dataset['Time']
 
     exec(model_code)
 

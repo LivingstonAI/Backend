@@ -46,7 +46,7 @@ urlpatterns = [
     path('save-dataset/<str:dataset>', views.save_dataset, name='save-dataset'),
     path('split-dataset', views.split_dataset, name='split-dataset'),
     path('set-init-capital', views.set_init_capital, name='set-init-capital'),
-    path('genesys-live/<int:identifier>/<int:initial_equity>/<int:trade_equity>/<int:current_equity>/<int:num_positions>', views.genesys_live, name='genesys-live'),
+    path('genesys-live/<int:identifier>/<int:initial_equity>/<int:trade_equity>/<int:current_equity>/<int:num_positions>/<str:asset>/<str:interval>', views.genesys_live, name='genesys-live'),
     path('save-genesys-model', views.save_genesys_model, name='save-genesys-model'),
 
     path('contact-us', views.contact_us, name='contact-us'),
