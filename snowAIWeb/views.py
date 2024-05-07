@@ -2197,8 +2197,8 @@ def new_test(request):
 @csrf_exempt
 def download_mq4_file(request, bot):
     # Replace with the actual path to your .mq4 file
-    if bot == 'moving-average':
-        location = './moving-average-bot.mq4'
+    if bot == 'trading-model':
+        location = './trading-model.ex5'
     elif bot == 'risk-bot':
         location = './risk-bot.ex5'
     file_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), location)
