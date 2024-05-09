@@ -4492,9 +4492,10 @@ def generate_trading_image(df):
 def image_classification(data):
 
     generate_trading_image(df=data)
-  
+    print(f'Loading Model')
     new_model_path = os.path.join(os.getcwd(), 'snowAIWeb', 'image_model.keras')
     new_model = tf.keras.models.load_model(new_model_path)
+    print(f'Model Loaded')
     # new_model.summary()
 
     batch_size = 32
@@ -4503,18 +4504,24 @@ def image_classification(data):
     class_names = ['downtrend', 'ranging market', 'uptrend']
     path_to_image = os.path.join(os.getcwd(), 'snowAIWeb', 'candlestick_chart.png')
     # path_to_image = '/snowAIWeb/candlestick_chart.png'
+    print('Loading Image')
     img = tf.keras.utils.load_img(
         path_to_image, target_size=(img_height, img_width)
     )
     # print(img)
+    print(f'Image Loaded')
     img_array = tf.keras.utils.img_to_array(img)
     # print(img_array.shape)
+    print('1')
     img_array = tf.expand_dims(img_array, 0)
     # print(img_array)
+    print('2')
 
     predictions = new_model.predict(img_array)
     # print(predictions)
+    print('3')
     score = tf.nn.softmax(predictions[0])
+    print('4')
     # print('------')
     # print("This image most likely belongs to {} with a {:.2f}% confidence."
     #       .format(class_names[np.argmax(score)], 100 * np.max(score))
