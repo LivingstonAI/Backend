@@ -4494,7 +4494,11 @@ def image_classification(data):
     generate_trading_image(df=data)
     print(f'Loading Model')
     new_model_path = os.path.join(os.getcwd(), 'snowAIWeb', 'image_model.keras')
-    new_model = tf.keras.models.load_model(new_model_path)
+    # new_model = tf.keras.models.load_model(new_model_path)
+    try:
+        new_model = tf.keras.models.load_model(new_model_path)
+    except Exception as e:
+        print("Error loading the Keras model:", e)
     print(f'Model Loaded')
     # new_model.summary()
 
