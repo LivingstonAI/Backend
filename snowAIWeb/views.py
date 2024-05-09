@@ -4523,6 +4523,7 @@ def image_classification(data):
 
 def is_uptrend(data):
   image_class = image_classification(data=data)
+  print(f'Uptrend Function: {image_class}')
   if image_class == 'uptrend':
     return True
   else:
@@ -4531,6 +4532,7 @@ def is_uptrend(data):
 
 def is_downtrend(data):
   image_class = image_classification(data=data)
+  print(f'Downtrend Function: {image_class}')
   if image_class == 'downtrend':
     return True
   else:
@@ -4539,6 +4541,7 @@ def is_downtrend(data):
 
 def is_ranging_market(data):
   image_class = image_classification(data=data)
+  print(f'Ranging Market Function: {image_class}')
   if image_class == 'ranging market':
     return True
   else:
