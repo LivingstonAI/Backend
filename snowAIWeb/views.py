@@ -4500,7 +4500,7 @@ def image_classification(data):
     img_height = 180
     img_width = 180
     class_names = ['downtrend', 'ranging market', 'uptrend']
-    path_to_image = '/workspaces/Backend/snowAIWeb/candlestick_chart.png'
+    path_to_image = '/Backend/snowAIWeb/candlestick_chart.png'
     img = tf.keras.utils.load_img(
         path_to_image, target_size=(img_height, img_width)
     )
