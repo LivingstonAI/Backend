@@ -4483,7 +4483,7 @@ def generate_trading_image(df):
     style = mpf.make_mpf_style(base_mpf_style='classic')
 
     # Create the figure object without plotting
-    fig, axes = mpf.plot(df, type='candle', volume=True, returnfig=True, style=style)
+    fig, axes = mpf.plot(df, type='line', volume=True, returnfig=True, style=style)
     plt.close(fig)
     # Save the figure to a file
     fig.savefig('candlestick_chart.png')
