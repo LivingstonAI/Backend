@@ -51,6 +51,10 @@ from mplfinance.original_flavor import candlestick_ohlc
 import matplotlib.dates as mdates
 import numpy as np
 import mplfinance as mpf
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.models import Sequential
 
 # Comment
 # current_hour = datetime.datetime.now().time().hour
@@ -4483,6 +4487,62 @@ def generate_trading_image(df):
     plt.close(fig)
     # Save the figure to a file
     fig.savefig('candlestick_chart.png')
+
+
+def image_classification(data):
+
+    generate_trading_image(df=data)
+  
+    new_model = tf.keras.models.load_model('./image_model.keras')
+    # new_model.summary()
+
+    batch_size = 32
+    img_height = 180
+    img_width = 180
+    class_names = ['downtrend', 'ranging market', 'uptrend']
+    path_to_image = './candlestick_chart.png'
+    img = tf.keras.utils.load_img(
+        path_to_image, target_size=(img_height, img_width)
+    )
+    # print(img)
+    img_array = tf.keras.utils.img_to_array(img)
+    # print(img_array.shape)
+    img_array = tf.expand_dims(img_array, 0)
+    # print(img_array)
+
+    predictions = new_model.predict(img_array)
+    # print(predictions)
+    score = tf.nn.softmax(predictions[0])
+    # print('------')
+    # print("This image most likely belongs to {} with a {:.2f}% confidence."
+    #       .format(class_names[np.argmax(score)], 100 * np.max(score))
+    # )
+
+    return f'{class_names[np.argmax(score)]}'
+
+
+def is_uptrend(data):
+  image_class = image_classification(data=data)
+  if image_class == 'uptrend':
+    return True
+  else:
+    return False
+
+
+def is_downtrend(data):
+  image_class = image_classification(data=data)
+  if image_class == 'downtrend':
+    return True
+  else:
+    return False
+
+
+def is_ranging_market(data):
+  image_class = image_classification(data=data)
+  if image_class == 'ranging market':
+    return True
+  else:
+    return False
 
 
 @csrf_exempt
