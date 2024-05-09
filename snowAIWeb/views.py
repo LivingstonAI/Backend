@@ -45,6 +45,13 @@ from bokeh.embed import file_html
 from bokeh.resources import CDN
 from bokeh.embed import json_item
 from asgiref.sync import sync_to_async
+import cv2
+import matplotlib.pyplot as plt
+from mplfinance.original_flavor import candlestick_ohlc
+import matplotlib.dates as mdates
+import numpy as np
+import mplfinance as mpf
+
 # Comment
 # current_hour = datetime.datetime.now().time().hour
 
@@ -4454,7 +4461,7 @@ def set_init_capital(request):
 def obtain_dataset(asset, interval):
 
     # Calculate the date 30 days ago from the current day
-    start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=55)).strftime("%Y-%m-%d")
 
     # Get latest candle
     end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -4464,6 +4471,18 @@ def obtain_dataset(asset, interval):
     data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
 
     return data
+
+
+def generate_trading_image(df):
+    # Set the style of the plot
+    df.index = pd.to_datetime(df.index)
+    style = mpf.make_mpf_style(base_mpf_style='classic')
+
+    # Create the figure object without plotting
+    fig, axes = mpf.plot(df, type='candle', volume=True, returnfig=True, style=style)
+    plt.close(fig)
+    # Save the figure to a file
+    fig.savefig('candlestick_chart.png')
 
 
 @csrf_exempt
