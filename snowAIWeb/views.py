@@ -4493,14 +4493,14 @@ def image_classification(data):
 
     generate_trading_image(df=data)
   
-    new_model = tf.keras.models.load_model('./image_model.keras')
+    new_model = tf.keras.models.load_model('/Backend/snowAIWeb/image_model.keras')
     # new_model.summary()
 
     batch_size = 32
     img_height = 180
     img_width = 180
     class_names = ['downtrend', 'ranging market', 'uptrend']
-    path_to_image = './candlestick_chart.png'
+    path_to_image = '/workspaces/Backend/snowAIWeb/candlestick_chart.png'
     img = tf.keras.utils.load_img(
         path_to_image, target_size=(img_height, img_width)
     )
