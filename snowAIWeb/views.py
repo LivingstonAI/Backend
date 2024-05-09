@@ -4493,7 +4493,8 @@ def image_classification(data):
 
     generate_trading_image(df=data)
   
-    new_model = tf.keras.models.load_model('/snowAIWeb/image_model.keras')
+    new_model_path = os.path.join(os.getcwd(), 'snowAIWeb', 'image_model.keras')
+    new_model = tf.keras.models.load_model(new_model_path)
     # new_model.summary()
 
     batch_size = 32
