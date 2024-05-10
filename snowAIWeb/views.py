@@ -4661,7 +4661,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     except Exception as e:
         # Log and handle exceptions
         print(f"Error executing model code: {e}")
-        return JsonResponse({"error": "An error occurred while executing model code"})
+        return JsonResponse({"error": f"{e}"})
 
     # Check return_statement and handle accordingly
     if return_statement:
