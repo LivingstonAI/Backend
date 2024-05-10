@@ -4658,6 +4658,8 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
             'set_take_profit': set_take_profit,
             'set_stop_loss': set_stop_loss,
             'num_positions': num_positions,
+            'is_support_level': is_support_level,
+            'is_resistance_level': is_resistance_level,
         }
     
         exec(model_code, namespace)
