@@ -4492,9 +4492,11 @@ def image_classification(data):
     print('Loading Model')
     new_model_path = os.path.join(os.getcwd(), 'snowAIWeb', 'my_model.keras')
     try:
-        new_model = load_model(new_model_path)
+        from tensorflow.keras.layers import Input  # Import Input layer explicitly
+        new_model = load_model(new_model_path, custom_objects={'Input': Input})
     except Exception as e:
         print("Error loading the Keras model:", e)
+
     print('Model Loaded')
 
     batch_size = 32
@@ -4505,7 +4507,7 @@ def image_classification(data):
     print('Loading Image')
     img = image.load_img(path_to_image, target_size=(img_height, img_width))
     print('Image Loaded')
-    
+
     img_array = image.img_to_array(img)
     img_array = np.expand_dims(img_array, 0)
 
