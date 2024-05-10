@@ -51,10 +51,8 @@ from mplfinance.original_flavor import candlestick_ohlc
 import matplotlib.dates as mdates
 import numpy as np
 import mplfinance as mpf
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.models import Sequential
+from keras.models import load_model
+from keras.preprocessing import image
 
 # Comment
 # current_hour = datetime.datetime.now().time().hour
@@ -4490,48 +4488,29 @@ def generate_trading_image(df):
 
 
 def image_classification(data):
-
     generate_trading_image(df=data)
-    print(f'Loading Model')
+    print('Loading Model')
     new_model_path = os.path.join(os.getcwd(), 'snowAIWeb', 'my_model.keras')
-    # new_model = tf.keras.models.load_model(new_model_path)
     try:
-        new_model = tf.keras.models.load_model(new_model_path)
+        new_model = load_model(new_model_path)
     except Exception as e:
         print("Error loading the Keras model:", e)
-    print(f'Model Loaded')
-    # new_model.summary()
+    print('Model Loaded')
 
     batch_size = 32
     img_height = 180
     img_width = 180
     class_names = ['downtrend', 'ranging market', 'uptrend']
     path_to_image = os.path.join(os.getcwd(), 'snowAIWeb', 'candlestick_chart.png')
-    # path_to_image = '/snowAIWeb/candlestick_chart.png'
     print('Loading Image')
-    img = tf.keras.utils.load_img(
-        path_to_image, target_size=(img_height, img_width)
-    )
-    # print(img)
-    print(f'Image Loaded')
-    img_array = tf.keras.utils.img_to_array(img)
-    # print(img_array.shape)
-    print('1')
-    img_array = tf.expand_dims(img_array, 0)
-    # print(img_array)
-    print('2')
+    img = image.load_img(path_to_image, target_size=(img_height, img_width))
+    print('Image Loaded')
+    img_array = image.img_to_array(img)
+    img_array = np.expand_dims(img_array, 0)
 
     predictions = new_model.predict(img_array)
-    # print(predictions)
-    print('3')
-    score = tf.nn.softmax(predictions[0])
-    print('4')
-    # print('------')
-    # print("This image most likely belongs to {} with a {:.2f}% confidence."
-    #       .format(class_names[np.argmax(score)], 100 * np.max(score))
-    # )
-
-    return f'{class_names[np.argmax(score)]}'
+    score = np.argmax(predictions[0])
+    return class_names[score]
 
 
 def is_uptrend(data):
