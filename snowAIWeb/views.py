@@ -4650,9 +4650,25 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     model_code = model_query[0].model_code
     # test_model_id = 5505503
 
-    exec(model_code)
+    # Inside genesys_live function
+    try:
+        # Execute model_code within a namespace dictionary
+        namespace = {}
+        exec(model_code, namespace)
+        
+        # Retrieve return_statement from the namespace
+        return_statement = namespace.get('return_statement', None)
+    except Exception as e:
+        # Log and handle exceptions
+        print(f"Error executing model code: {e}")
+        return JsonResponse({"error": "An error occurred while executing model code"})
 
-    return JsonResponse({"message": f"{return_statement}"})
+    # Check return_statement and handle accordingly
+    if return_statement:
+        return JsonResponse({"message": return_statement})
+    else:
+        return JsonResponse({"message": "No action specified by model code"})
+
 
 
 @csrf_exempt
