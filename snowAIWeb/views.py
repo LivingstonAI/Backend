@@ -4505,6 +4505,7 @@ def image_classification(data):
     print('Loading Image')
     img = image.load_img(path_to_image, target_size=(img_height, img_width))
     print('Image Loaded')
+    
     img_array = image.img_to_array(img)
     img_array = np.expand_dims(img_array, 0)
 
