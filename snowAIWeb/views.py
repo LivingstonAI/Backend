@@ -4586,13 +4586,13 @@ def support_and_resistance(df):
 
 
 def is_support_level(data):
-    support_level = support_and_resistance(df)[0][0]
+    support_level = support_and_resistance(data)[0][0]
     latest_price = data.iloc[-1].Close
     return latest_price <= support_level
 
 
 def is_resistance_level(data):
-    resistance_level = support_and_resistance(df)[1][0]
+    resistance_level = support_and_resistance(data)[1][0]
     latest_price = data.iloc[-1].Close
     return latest_price >= resistance_level
 
