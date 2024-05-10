@@ -53,6 +53,8 @@ import numpy as np
 import mplfinance as mpf
 from keras.models import load_model
 from keras.preprocessing import image
+from scipy.signal import argrelextrema, find_peaks
+from sklearn.neighbors import KernelDensity
 
 # Comment
 # current_hour = datetime.datetime.now().time().hour
@@ -4541,6 +4543,58 @@ def is_ranging_market(data):
     return True
   else:
     return False
+
+
+def support_and_resistance(df):
+    peaks_range = [2, 3]
+    num_peaks = -999
+
+    sample_df = df
+    sample = sample_df['Close'].to_numpy().flatten()
+    sample_original = sample.copy()
+
+    maxima = argrelextrema(sample, np.greater)
+    minima = argrelextrema(sample, np.less)
+
+    extrema = np.concatenate((maxima, minima), axis=1)[0]
+    extrema_prices = np.concatenate((sample[maxima], sample[minima]))
+    interval = extrema_prices[0] / 10000
+
+    bandwidth = interval
+
+    while num_peaks < peaks_range[0] or num_peaks > peaks_range[1]:
+        initial_price = extrema_prices[0]
+        kde = KernelDensity(kernel='gaussian', bandwidth=bandwidth).fit(extrema_prices.reshape(-1, 1))
+
+        a, b = min(extrema_prices), max(extrema_prices)
+        price_range = np.linspace(a, b, 1000).reshape(-1, 1)
+
+        pdf = np.exp(kde.score_samples(price_range))
+        peaks = find_peaks(pdf)[0]
+        num_peaks = len(peaks)
+        bandwidth += interval
+
+        if bandwidth > 100 * interval:
+            print('Failed to converge, stopping...')
+            break
+
+    new_price_range = price_range[peaks]
+    new_price_range = np.delete(new_price_range, 1, axis=0)
+
+    # Return support and resistance levels
+    return new_price_range
+
+
+def is_support_level(data):
+    support_level = support_and_resistance(df)[0][0]
+    latest_price = data.iloc[-1].Close
+    return latest_price <= support_level
+
+
+def is_resistance_level(data):
+    resistance_level = support_and_resistance(df)[1][0]
+    latest_price = data.iloc[-1].Close
+    return latest_price >= resistance_level
 
 
 @csrf_exempt
