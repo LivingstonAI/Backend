@@ -4656,7 +4656,8 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
          # Initialize the namespace dictionary with functions
         namespace = {
             'set_take_profit': set_take_profit,
-            'set_stop_loss': set_stop_loss
+            'set_stop_loss': set_stop_loss,
+            'num_positions': num_positions,
         }
     
         exec(model_code, namespace)
