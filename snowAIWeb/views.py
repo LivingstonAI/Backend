@@ -4610,7 +4610,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
         # print(f'Current Equity: {current_equity}\n')
         type_of_setting = type_of_setting.upper()
         number = float(number)
-        nonlocal percentage_test, return_statement
+        # nonlocal percentage_test, return_statement
                 
         if type_of_setting == 'PERCENTAGE':
             percentage = ((current_equity - trade_equity) / initial_equity) * 100
@@ -4625,7 +4625,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
                 return_statement = "close_position"
         
     def set_stop_loss(number, type_of_setting):
-        nonlocal return_statement, percentage_test
+        # nonlocal return_statement, percentage_test
         type_of_setting = type_of_setting.upper()
         number = -(float(number))
         # Get 'equity' here from the 'GenesysLive' model.
@@ -4661,7 +4661,8 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
             'is_support_level': is_support_level,
             'is_resistance_level': is_resistance_level,
             'dataset': dataset,
-            'return_statement': return_statement
+            'return_statement': return_statement,
+            'percentage_test:': percentage_test
         }
     
         exec(model_code, namespace)
