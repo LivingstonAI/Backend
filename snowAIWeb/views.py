@@ -4678,7 +4678,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     if return_statement:
         return JsonResponse({"message": return_statement})
     else:
-        return JsonResponse({"message": "No action specified by model code"})
+        return JsonResponse({"message": f"No action specified by model code: {namespace}"})
 
 
 
