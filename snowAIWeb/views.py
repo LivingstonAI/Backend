@@ -4662,7 +4662,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
             'is_resistance_level': is_resistance_level,
             'dataset': dataset,
             'return_statement': return_statement,
-            'percentage_test:': percentage_test
+            'percentage_test': percentage_test
         }
     
         exec(model_code, namespace)
