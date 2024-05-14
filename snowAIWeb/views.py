@@ -4668,7 +4668,8 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
         exec(model_code, namespace)
         
         # Retrieve return_statement from the namespace
-        return_statement = namespace.get('return_statement', None)
+        if return_statement == None:
+            return_statement = namespace.get('return_statement', None)
     except Exception as e:
         # Log and handle exceptions
         print(f"Error executing model code: {e}")
