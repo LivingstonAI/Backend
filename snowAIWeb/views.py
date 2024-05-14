@@ -4679,7 +4679,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     if return_statement:
         return JsonResponse({"message": return_statement})
     else:
-        return JsonResponse({"message": f"{namespace.get('return_statement', None)}, {return_statement}"})
+        return JsonResponse({"message": f"No message to send order from backend"})
 
 
 
