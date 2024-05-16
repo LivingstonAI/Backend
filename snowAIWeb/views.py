@@ -4462,10 +4462,10 @@ def set_init_capital(request):
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
-def obtain_dataset(asset, interval):
+def obtain_dataset(asset, interval, num_days):
 
     # Calculate the date 30 days ago from the current day
-    start_date = (datetime.now() - timedelta(days=55)).strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=num_days)).strftime("%Y-%m-%d")
 
     # Get latest candle
     end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -4645,7 +4645,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     if len(model_query) == 0:
         return JsonResponse({"message": f"Model has no such identifier"})
 
-    dataset = obtain_dataset(asset=asset, interval=interval)
+    dataset = obtain_dataset(asset=asset, interval=interval, num_days=30)
 
     model_code = model_query[0].model_code
     # test_model_id = 5505503
