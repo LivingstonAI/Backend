@@ -4489,33 +4489,51 @@ def generate_trading_image(df):
     fig.savefig('candlestick_chart.png')
 
 
+@csrf_exempt
+def test_cnn(request):
+    dataset = obtain_dataset(asset='usdzar', interval='15m', num_days=1)
+    classification = image_classification(data=dataset)
+    return JsonResponse({'classification': classification})
+
 def image_classification(data):
     generate_trading_image(df=data)
     print('Loading Model')
-    new_model_path = os.path.join(os.getcwd(), 'snowAIWeb', 'my_model.keras')
-    try:
-        from tensorflow.keras.layers import Input  # Import Input layer explicitly
-        new_model = load_model(new_model_path, custom_objects={'Input': Input})
-    except Exception as e:
-        print("Error loading the Keras model:", e)
+    url = "https://us-central1-glowing-road-419608.cloudfunctions.net/function-1"
+    # path_to_image = '/candlestick_chart.png'
+    path_to_image = os.path.join(os.path.dirname(os.path.realpath(__file__)), './candlestick_chart.png')
 
-    print('Model Loaded')
+    with open(path_to_image, 'rb') as image_file:
+        # Read the image file and encode it as base64
+        image_data = base64.b64encode(image_file.read()).decode('utf-8')
 
-    batch_size = 32
-    img_height = 180
-    img_width = 180
-    class_names = ['downtrend', 'ranging market', 'uptrend']
-    path_to_image = os.path.join(os.getcwd(), 'snowAIWeb', 'candlestick_chart.png')
-    print('Loading Image')
-    img = image.load_img(path_to_image, target_size=(img_height, img_width))
-    print('Image Loaded')
+        headers = {'Content-Type': 'application/json'}
+        payload = {'data': image_data}
 
-    img_array = image.img_to_array(img)
-    img_array = np.expand_dims(img_array, 0)
+        try:
+            response = requests.post(url, json=payload, headers=headers)
+            response.raise_for_status()  # Check for HTTP errors
 
-    predictions = new_model.predict(img_array)
-    score = np.argmax(predictions[0])
-    return class_names[score]
+            # Extract the predictions from the response
+            response_data = response.json()
+            # predictions = response_data['predictions'][0]
+
+            # Find the index of the highest prediction
+            # highest_pred_index = predictions.index(max(predictions))
+
+            # Map the index to the corresponding class name
+            # predicted_class = class_names[highest_pred_index]
+
+            # print(f"Predictions: {predictions}")
+            
+            # print(f"Highest prediction index: {highest_pred_index}")
+            # print(f"Predicted class: {predicted_class}")
+            # print(response_data)
+            return response_data['response']
+
+        except requests.exceptions.RequestException as e:
+            return JsonResponse({'Error in image classification function: ': f"{e}"})
+
+
 
 
 def is_uptrend(data):
