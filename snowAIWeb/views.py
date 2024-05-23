@@ -4484,7 +4484,7 @@ def generate_trading_image(df):
     fig, axes = mpf.plot(df, type='line', volume=False, returnfig=True, style=style)
     plt.close(fig)
     # Save the figure to a file
-    fig.savefig('candlestick_chart.png')
+    fig.savefig('trading_chart.png')
 
 
 @csrf_exempt
@@ -4498,7 +4498,7 @@ def image_classification(data):
     print('Loading Model')
     url = "https://us-central1-glowing-road-419608.cloudfunctions.net/function-1"
     # path_to_image = '/candlestick_chart.png'
-    path_to_image = os.path.join(os.path.dirname(os.path.realpath(__file__)), './candlestick_chart.png')
+    path_to_image = os.path.join(os.path.dirname(os.path.realpath(__file__)), './trading_chart.png')
 
     with open(path_to_image, 'rb') as image_file:
         # Read the image file and encode it as base64
