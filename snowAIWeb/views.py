@@ -4663,7 +4663,12 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     if len(model_query) == 0:
         return JsonResponse({"message": f"Model has no such identifier"})
 
-    dataset = obtain_dataset(asset=asset, interval=interval, num_days=30)
+    if interval == '1d':
+        number_of_days = 365
+    else:
+        number_of_days = 30
+
+    dataset = obtain_dataset(asset=asset, interval=interval, num_days=number_of_days)
 
     model_code = model_query[0].model_code
     # test_model_id = 5505503
