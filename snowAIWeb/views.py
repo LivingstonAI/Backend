@@ -51,8 +51,6 @@ from mplfinance.original_flavor import candlestick_ohlc
 import matplotlib.dates as mdates
 import numpy as np
 import mplfinance as mpf
-from keras.models import load_model
-from keras.preprocessing import image
 from scipy.signal import argrelextrema, find_peaks
 from sklearn.neighbors import KernelDensity
 
