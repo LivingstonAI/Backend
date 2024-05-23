@@ -4491,12 +4491,12 @@ def test_cnn(request, asset, interval, num_days):
     up = is_uptrend(data=dataset)
     down = is_downtrend(data=dataset)
     ranger = is_ranging_market(data=dataset)
-    return JsonResponse({'classification': f'Uptrend: {up}\nDowntrend: {down}\nRanging Market: {ranger}'})
+    return JsonResponse({'classification': f'  Uptrend: {up}\nDowntrend: {down}\nRanging Market: {ranger}'})
 
 
 def image_classification(data):
     generate_trading_image(df=data)
-    print('Loading Model')
+    # print('Loading Model')
     url = "https://us-central1-glowing-road-419608.cloudfunctions.net/function-1"
     # path_to_image = '/candlestick_chart.png'
     path_to_image = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'trading_chart.png')
@@ -4538,7 +4538,7 @@ def image_classification(data):
 
 def is_uptrend(data):
   image_class = image_classification(data=data)
-  print(f'Uptrend Function: {image_class}')
+#   print(f'Uptrend Function: {image_class}')
   if image_class == 'uptrend':
     return True
   else:
@@ -4547,7 +4547,7 @@ def is_uptrend(data):
 
 def is_downtrend(data):
   image_class = image_classification(data=data)
-  print(f'Downtrend Function: {image_class}')
+#   print(f'Downtrend Function: {image_class}')
   if image_class == 'downtrend':
     return True
   else:
@@ -4556,7 +4556,7 @@ def is_downtrend(data):
 
 def is_ranging_market(data):
   image_class = image_classification(data=data)
-  print(f'Ranging Market Function: {image_class}')
+#   print(f'Ranging Market Function: {image_class}')
   if image_class == 'ranging market':
     return True
   else:
