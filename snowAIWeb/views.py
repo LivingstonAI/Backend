@@ -4476,15 +4476,12 @@ def obtain_dataset(asset, interval, num_days):
 
 
 def generate_trading_image(df):
-    # Set the style of the plot
     df.index = pd.to_datetime(df.index)
     style = mpf.make_mpf_style(base_mpf_style='classic')
-
-    # Create the figure object without plotting
     fig, axes = mpf.plot(df, type='line', volume=False, returnfig=True, style=style)
     plt.close(fig)
-    # Save the figure to a file
-    fig.savefig('trading_chart.png')
+    output_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'trading_chart.png')
+    fig.savefig(output_path)
 
 
 @csrf_exempt
@@ -4492,6 +4489,7 @@ def test_cnn(request):
     dataset = obtain_dataset(asset='usdzar', interval='1d', num_days=365)
     classification = image_classification(data=dataset)
     return JsonResponse({'classification': classification})
+
 
 def image_classification(data):
     generate_trading_image(df=data)
