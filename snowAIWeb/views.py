@@ -4486,7 +4486,7 @@ def generate_trading_image(df):
 
 @csrf_exempt
 def test_cnn(request):
-    dataset = obtain_dataset(asset='usdzar', interval='1d', num_days=365)
+    dataset = obtain_dataset(asset='usdzar', interval='15m', num_days=1)
     classification = image_classification(data=dataset)
     return JsonResponse({'classification': classification})
 
