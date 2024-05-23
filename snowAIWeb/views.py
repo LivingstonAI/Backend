@@ -4498,7 +4498,7 @@ def image_classification(data):
     print('Loading Model')
     url = "https://us-central1-glowing-road-419608.cloudfunctions.net/function-1"
     # path_to_image = '/candlestick_chart.png'
-    path_to_image = os.path.join(os.path.dirname(os.path.realpath(__file__)), './trading_chart.png')
+    path_to_image = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'trading_chart.png')
 
     with open(path_to_image, 'rb') as image_file:
         # Read the image file and encode it as base64
