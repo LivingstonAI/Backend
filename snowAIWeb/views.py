@@ -4498,6 +4498,7 @@ def image_classification(data):
     # path_to_image = '/candlestick_chart.png'
     path_to_image = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'trading_chart.png')
 
+
     with open(path_to_image, 'rb') as image_file:
         # Read the image file and encode it as base64
         image_data = base64.b64encode(image_file.read()).decode('utf-8')
