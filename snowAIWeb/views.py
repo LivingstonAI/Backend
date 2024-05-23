@@ -4487,8 +4487,11 @@ def generate_trading_image(df):
 @csrf_exempt
 def test_cnn(request, asset, interval, num_days):
     dataset = obtain_dataset(asset=asset, interval=interval, num_days=num_days)
-    classification = image_classification(data=dataset)
-    return JsonResponse({'classification': classification})
+    # classification = image_classification(data=dataset)
+    up = is_uptrend(data=dataset)
+    down = is_downtrend(data=dataset)
+    ranger = is_ranging_market(data=dataset)
+    return JsonResponse({'classification': f'Uptrend: {up}\nDowntrend: {down}\nRanging Market: {ranger}'})
 
 
 def image_classification(data):
