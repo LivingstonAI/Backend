@@ -27,9 +27,9 @@ SECRET_KEY = 'django-insecure-754g_4e%89qf6mj(&0q3oyk(6fz54h70*+@$jfr635n8$esjpn
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    "https://snowai.vercel.app",
     "http://localhost:5173",
     "backend-production-c0ab.up.railway.app",
+    "https://silencium-ascendio.vercel.app",
 ]
 
 REST_FRAMEWORK = {
@@ -44,14 +44,14 @@ REST_FRAMEWORK = {
 
 CORS_ORIGIN_WHITELIST = (
     'http://localhost:5173',
-    'https://snowai.vercel.app',
-    
+    'https://silencium-ascendio.vercel.app',
 )
+
 
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
-    'https://snowai.vercel.app',
     'https://backend-production-c0ab.up.railway.app',
+    'https://silencium-ascendio.vercel.app',
     # 'https://www.metatrader5.com/en/trading-platform/web-trading',
 ]
 
@@ -182,6 +182,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOWED_ORIGINS = [
     "https://snowai.vercel.app",
     "http://localhost:5173",
+    'https://silencium-ascendio.vercel.app',
     # "https://www.metatrader5.com/en/trading-platform/web-trading",
 ] # If this is used, then not need to use `CORS_ALLOW_ALL_ORIGINS = True`
 
