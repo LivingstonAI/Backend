@@ -4615,6 +4615,93 @@ def is_resistance_level(data):
     return latest_price >= resistance_level
 
 
+def is_asian_range_buy(asset):
+    try:
+        # Specify your local time zone
+        local_timezone = pytz.timezone('Africa/Johannesburg')
+
+        # Get the current time in the specified time zone
+        current_time_local = datetime.now(local_timezone)
+
+        # Extract the current hour
+        current_hour_local = current_time_local.hour
+
+        # Ensure that the algorithm runs after London Open in South African Time
+        if current_hour_local >= 9:
+            dataset = obtain_dataset(asset=asset, interval='1d', num_days=31)
+            uptrend = is_uptrend(data=dataset)
+
+            if uptrend:
+                df = obtain_dataset(asset=asset, interval='5m', num_days=1)
+                df.index = pd.to_datetime(df.index)
+                today = datetime.now(local_timezone).strftime("%Y-%m-%d")
+                df_today = df[df.index.strftime("%Y-%m-%d") == today]
+                asian_range = df_today.between_time('01:00', '05:00')
+                ranging_market = is_ranging_market(data=asian_range)
+
+                if ranging_market:
+                    levels = support_and_resistance(asian_range)
+                    support_level = levels[0][0]
+                    resistance_level = levels[1][0]
+                    last_close = df.iloc[-1].Close
+
+                    if uptrend and last_close >= resistance_level:
+                        return True
+
+            return False # no trade
+
+        return False # no trade
+
+    except Exception as e:
+        print(f'Exception occured in asian_range_buy: {e}')
+        return False # no trade
+
+
+
+def is_asian_range_sell(asset):
+    try:
+        # Specify your local time zone
+        local_timezone = pytz.timezone('Africa/Johannesburg')
+
+        # Get the current time in the specified time zone
+        current_time_local = datetime.now(local_timezone)
+
+        # Extract the current hour
+        current_hour_local = current_time_local.hour
+
+        # Ensure that the algorithm runs after London Open in South African Time
+        if current_hour_local >= 9:
+            dataset = obtain_dataset(asset=asset, interval='1d', num_days=31)
+            downtrend = is_downtrend(data=dataset)
+
+            if downtrend:
+                df = obtain_dataset(asset=asset, interval='5m', num_days=1)
+                df.index = pd.to_datetime(df.index)
+                today = datetime.now(local_timezone).strftime("%Y-%m-%d")
+                df_today = df[df.index.strftime("%Y-%m-%d") == today]
+                asian_range = df_today.between_time('01:00', '05:00')
+                ranging_market = is_ranging_market(data=asian_range)
+
+                if ranging_market:
+                    levels = support_and_resistance(asian_range)
+                    support_level = levels[0][0]
+                    resistance_level = levels[1][0]
+                    last_close = df.iloc[-1].Close
+                    
+                    if downtrend and last_close <= support_level:
+                        return True
+
+
+            return False # no trade
+
+        return False # no trade
+
+    except Exception as e:
+        print(f'Exception occured in asian_range_sell: {e}')
+        return False # no trade
+
+
+
 @csrf_exempt
 def genesys_live(request, identifier, initial_equity, trade_equity, current_equity, num_positions, asset, interval):
     
