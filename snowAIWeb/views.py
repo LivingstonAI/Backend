@@ -4298,7 +4298,7 @@ async def genesys_backest(code):
         df = pd.read_csv(df_path).drop_duplicates()
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
-
+        
         split_queryset = await sync_to_async(SplitDataset.objects.get)()
 
         start_year = int(split_queryset.start_year)
@@ -4708,6 +4708,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     return_statement = None
     percentage_test = 0
 
+    asset = asset
     # print(f'Identifier: {identifier}\nInitial Equity: {initial_equity}\nTrade Equity: {trade_equity}\nNum Positions: {num_positions}\n')
     
     def set_take_profit(number, type_of_setting):
@@ -4801,7 +4802,8 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
             'momentum': momentum,
             'rsi': rsi,
             'is_asian_range_buy': is_asian_range_buy,
-            'is_asian_range_sell': is_asian_range_sell
+            'is_asian_range_sell': is_asian_range_sell,
+            'asset': asset,
         }
     
         exec(model_code, namespace)
