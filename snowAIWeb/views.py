@@ -4800,6 +4800,8 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
             'bbands': bbands,
             'momentum': momentum,
             'rsi': rsi,
+            'is_asian_range_buy': is_asian_range_buy,
+            'is_asian_range_sell': is_asian_range_sell
         }
     
         exec(model_code, namespace)
