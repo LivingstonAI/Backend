@@ -4633,7 +4633,7 @@ def is_asian_range_buy(asset):
             uptrend = is_uptrend(data=dataset)
 
             if uptrend:
-                df = obtain_dataset(asset=asset, interval='5m', num_days=1)
+                df = obtain_dataset(asset=asset, interval='1m', num_days=1)
                 df.index = pd.to_datetime(df.index)
                 today = datetime.now(local_timezone).strftime("%Y-%m-%d")
                 df_today = df[df.index.strftime("%Y-%m-%d") == today]
@@ -4676,7 +4676,7 @@ def is_asian_range_sell(asset):
             downtrend = is_downtrend(data=dataset)
 
             if downtrend:
-                df = obtain_dataset(asset=asset, interval='5m', num_days=1)
+                df = obtain_dataset(asset=asset, interval='1m', num_days=1)
                 df.index = pd.to_datetime(df.index)
                 today = datetime.now(local_timezone).strftime("%Y-%m-%d")
                 df_today = df[df.index.strftime("%Y-%m-%d") == today]
