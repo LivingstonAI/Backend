@@ -149,6 +149,18 @@ class GenesysLive(models.Model):
 
 
 
+class tradeModel(models.Model):
+    model_id = models.IntegerField()
+    model_code = models.TextField()
+    initial_equity = models.FloatField()
+    order_ticket = models.IntegerField()
+    asset = models.CharField(max_length=20)
+    profit = models.FloatField()
+    volume = models.FloatField()
+    type_of_trade = models.CharField(max_length=10)
+
+
+
 
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
