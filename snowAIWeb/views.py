@@ -4704,7 +4704,7 @@ def is_asian_range_sell(asset):
 
 
 @csrf_exempt
-def genesys_live(request, identifier, initial_equity, trade_equity, current_equity, num_positions, asset, interval):
+def genesys_live(request, identifier, num_positions, asset, interval):
     
     return_statement = None
     percentage_test = 0
