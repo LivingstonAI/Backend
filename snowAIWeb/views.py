@@ -4755,7 +4755,7 @@ def genesys_live(request, identifier, initial_equity, trade_equity, current_equi
     if interval == '1d':
         number_of_days = 365
     else:
-        number_of_days = 5
+        number_of_days = 10
 
     dataset = obtain_dataset(asset=asset, interval=interval, num_days=number_of_days)
 
