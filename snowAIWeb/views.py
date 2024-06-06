@@ -4767,8 +4767,8 @@ def genesys_live(request, identifier, num_positions, asset, interval):
         # Execute model_code within a namespace dictionary
          # Initialize the namespace dictionary with functions
         namespace = {
-            'set_take_profit': set_take_profit,
-            'set_stop_loss': set_stop_loss,
+            # 'set_take_profit': set_take_profit,
+            # 'set_stop_loss': set_stop_loss,
             'num_positions': num_positions,
             'is_support_level': is_support_level,
             'is_resistance_level': is_resistance_level,
