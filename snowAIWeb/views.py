@@ -4712,39 +4712,39 @@ def genesys_live(request, identifier, num_positions, asset, interval):
     asset = asset
     # print(f'Identifier: {identifier}\nInitial Equity: {initial_equity}\nTrade Equity: {trade_equity}\nNum Positions: {num_positions}\n')
     
-    def set_take_profit(number, type_of_setting):
-        # current_equity = equity
-        # print(f'Current Equity: {current_equity}\n')
-        type_of_setting = type_of_setting.upper()
-        number = float(number)
-        nonlocal percentage_test, return_statement
+    # def set_take_profit(number, type_of_setting):
+    #     # current_equity = equity
+    #     # print(f'Current Equity: {current_equity}\n')
+    #     type_of_setting = type_of_setting.upper()
+    #     number = float(number)
+    #     nonlocal percentage_test, return_statement
             
-        if type_of_setting == 'PERCENTAGE':
-            percentage = ((current_equity - trade_equity) / initial_equity) * 100
+    #     if type_of_setting == 'PERCENTAGE':
+    #         percentage = ((current_equity - trade_equity) / initial_equity) * 100
 
-            # variable = f'Identifier: {identifier}\nInitial Equity: {initial_equity}\nTrade Equity: {trade_equity}\nNum Positions: {num_positions}\nPercentage is: {percentage}\n'
-            # percentage_test = variable
-            if percentage >= number:
-                return_statement = "close_position"
-        elif type_of_setting == 'NUMBER':
-            difference = current_equity - trade_equity
-            if difference >= number:
-                return_statement = "close_position"
+    #         # variable = f'Identifier: {identifier}\nInitial Equity: {initial_equity}\nTrade Equity: {trade_equity}\nNum Positions: {num_positions}\nPercentage is: {percentage}\n'
+    #         # percentage_test = variable
+    #         if percentage >= number:
+    #             return_statement = "close_position"
+    #     elif type_of_setting == 'NUMBER':
+    #         difference = current_equity - trade_equity
+    #         if difference >= number:
+    #             return_statement = "close_position"
         
-    def set_stop_loss(number, type_of_setting):
-        nonlocal return_statement, percentage_test
-        type_of_setting = type_of_setting.upper()
-        number = -(float(number))
-        # Get 'equity' here from the 'GenesysLive' model.
-        if type_of_setting == 'PERCENTAGE':
-            percentage = ((current_equity - trade_equity) / initial_equity) * 100
-            percentage_test = percentage
-            if percentage <= number:
-                return_statement = "close_position"
-        elif type_of_setting == 'NUMBER':
-            difference = current_equity - trade_equity
-            if difference <= number:
-                return_statement = "close_position"
+    # def set_stop_loss(number, type_of_setting):
+    #     nonlocal return_statement, percentage_test
+    #     type_of_setting = type_of_setting.upper()
+    #     number = -(float(number))
+    #     # Get 'equity' here from the 'GenesysLive' model.
+    #     if type_of_setting == 'PERCENTAGE':
+    #         percentage = ((current_equity - trade_equity) / initial_equity) * 100
+    #         percentage_test = percentage
+    #         if percentage <= number:
+    #             return_statement = "close_position"
+    #     elif type_of_setting == 'NUMBER':
+    #         difference = current_equity - trade_equity
+    #         if difference <= number:
+    #             return_statement = "close_position"
                     
     
     model_query = GenesysLive.objects.filter(model_id=identifier)
