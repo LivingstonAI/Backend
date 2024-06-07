@@ -4854,13 +4854,16 @@ def save_genesys_model(request):
 
 @csrf_exempt
 def save_new_trade_model(request, model_id, initial_equity, order_ticket, asset, volume, type_of_trade, timeframe):
-    model_query = GenesysLive.objects.filter(model_id=model_id)
-    if len(model_query) == 0:
-        return JsonResponse({"message": f"Model has no such identifier"})
-    model_code = model_query[0].model_code
-    new_trade_model = tradeModel(model_id=model_id, model_code=model_code, initial_equity=initial_equity, order_ticket=order_ticket, type_of_trade=type_of_trade, volume=volume, asset=asset, profit=-1.0)
-    new_trade_model.save()
-    return JsonResponse({'message': f'{model_code}'})
+    try:
+        model_query = GenesysLive.objects.filter(model_id=model_id)
+        if len(model_query) == 0:
+            return JsonResponse({"message": f"Model has no such identifier"})
+        model_code = model_query[0].model_code
+        new_trade_model = tradeModel(model_id=model_id, model_code=model_code, initial_equity=initial_equity, order_ticket=order_ticket, type_of_trade=type_of_trade, volume=volume, asset=asset, profit=-1.0)
+        new_trade_model.save()
+        return JsonResponse({'message': f'Saved New Model Successfully!'})
+    except Exception as e:
+        return JsonResponse({'message': f'Error Occured in Save New Trade Model Function: {e}'})
 
 
 
