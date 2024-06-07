@@ -4867,6 +4867,17 @@ def save_new_trade_model(request, model_id, initial_equity, order_ticket, asset,
         return JsonResponse({'message': f'Error Occured in Save New Trade Model Function: {e}'})
 
 
+@csrf_exempt
+def update_trade_model(request, model_id, order_ticket, profit):
+    try:
+        model_query = GenesysLive.objects.filter(model_id=model_id, order_ticket=order_ticket)
+        if len(model_query) == 0:
+            return JsonResponse({"message": f"Model has no such identifier"})
+        # Update Profit if Match is Found
+        model_query.update(profit=profit)
+    except Exception as e:
+        return JsonResponse({'message': f'Exception Occured In Update Trade Model Function: {e}'})
+
 
 
 # LEGODI BACKEND CODE
