@@ -45,7 +45,7 @@ from bokeh.embed import file_html
 from bokeh.resources import CDN
 from bokeh.embed import json_item
 from asgiref.sync import sync_to_async
-# import cv2
+import cv2
 import matplotlib.pyplot as plt
 from mplfinance.original_flavor import candlestick_ohlc
 import matplotlib.dates as mdates
