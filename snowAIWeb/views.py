@@ -45,7 +45,7 @@ from bokeh.embed import file_html
 from bokeh.resources import CDN
 from bokeh.embed import json_item
 from asgiref.sync import sync_to_async
-import cv2
+# import cv2
 import matplotlib.pyplot as plt
 from mplfinance.original_flavor import candlestick_ohlc
 import matplotlib.dates as mdates
@@ -4853,7 +4853,7 @@ def save_genesys_model(request):
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 @csrf_exempt
-def save_new_trade_model(request, model_id, initial_equity, order_ticket, asset, volume, type_of_trade):
+def save_new_trade_model(request, model_id, initial_equity, order_ticket, asset, volume, type_of_trade, timeframe):
     model_query = GenesysLive.objects.filter(model_id=model_id)
     if len(model_query) == 0:
         return JsonResponse({"message": f"Model has no such identifier"})

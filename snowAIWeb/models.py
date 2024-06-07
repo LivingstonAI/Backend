@@ -158,6 +158,7 @@ class tradeModel(models.Model):
     profit = models.FloatField(null=True)
     volume = models.FloatField(null=True)
     type_of_trade = models.CharField(max_length=10, null=True)
+    timeframe = models.CharField(max_length=10, null=True)
 
 
 
