@@ -4853,12 +4853,13 @@ def save_genesys_model(request):
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 @csrf_exempt
-def save_new_trade_model(request, model_id, initial_equity, order_ticket, type_of_trade):
+def save_new_trade_model(request, model_id, initial_equity, order_ticket, asset, volume, type_of_trade):
     model_query = GenesysLive.objects.filter(model_id=model_id)
     if len(model_query) == 0:
         return JsonResponse({"message": f"Model has no such identifier"})
     model_code = model_query[0].model_code
-    new_trade_model = tradeModel()
+    new_trade_model = tradeModel(model_id=model_id, model_code=model_code, initial_equity=initial_equity, order_ticket=order_ticket, type_of_trade=type_of_trade, volume=volume, asset=asset)
+    new_trade_model.save()
     return JsonResponse({'message': f'{model_code}'})
 
 
