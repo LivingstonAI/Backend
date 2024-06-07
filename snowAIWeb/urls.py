@@ -49,7 +49,7 @@ urlpatterns = [
     path('genesys-live/<int:identifier>/<int:num_positions>/<str:asset>/<str:interval>', views.genesys_live, name='genesys-live'),
     path('save-genesys-model', views.save_genesys_model, name='save-genesys-model'),
     path('test-cnn/<str:asset>/<str:interval>/<int:num_days>', views.test_cnn, name='test-cnn'),
-    path('save-new-trade-model/<int:model_id>/<str:initial_equity>/<int:order_ticket>', views.save_new_trade_model, name='save-new-trade-model'),
+    path('save-new-trade-model/<int:model_id>/<int:initial_equity>/<int:order_ticket>', views.save_new_trade_model, name='save-new-trade-model'),
 
     path('contact-us', views.contact_us, name='contact-us'),
     path('book-order', views.book_order, name='book-order'),
