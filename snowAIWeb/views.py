@@ -4852,9 +4852,7 @@ def save_genesys_model(request):
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
-
-
-
+@csrf_exempt
 def save_new_trade_model(request, model_id, initial_equity, order_ticket):
     model_query = GenesysLive.objects.filter(model_id=model_id)
     if len(model_query) == 0:
