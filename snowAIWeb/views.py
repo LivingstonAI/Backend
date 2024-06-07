@@ -4855,7 +4855,11 @@ def save_genesys_model(request):
 
 
 
-
+def save_new_trade_model(request, model_id, initial_equity, order_ticket):
+    model_query = GenesysLive.objects.filter(model_id=model_id)
+    if len(model_query) == 0:
+        return JsonResponse({"message": f"Model has no such identifier"})
+    return JsonResponse({'message': f'{model_query[0].model_code}'})
 
 
 
