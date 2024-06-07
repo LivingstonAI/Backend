@@ -4875,6 +4875,7 @@ def update_trade_model(request, model_id, order_ticket, profit):
             return JsonResponse({"message": f"Model has no such identifier"})
         # Update Profit if Match is Found
         model_query.update(profit=profit)
+        return JsonResponse({'message': 'Model Updated Successfully!'})
     except Exception as e:
         return JsonResponse({'message': f'Exception Occured In Update Trade Model Function: {e}'})
 
