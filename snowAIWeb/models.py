@@ -154,10 +154,10 @@ class tradeModel(models.Model):
     model_code = models.TextField()
     initial_equity = models.FloatField()
     order_ticket = models.IntegerField()
-    asset = models.CharField(max_length=20)
-    profit = models.FloatField()
-    volume = models.FloatField()
-    type_of_trade = models.CharField(max_length=10)
+    asset = models.CharField(max_length=20, null=True)
+    profit = models.FloatField(null=True)
+    volume = models.FloatField(null=True)
+    type_of_trade = models.CharField(max_length=10, null=True)
 
 
 
