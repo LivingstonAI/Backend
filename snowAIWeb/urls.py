@@ -51,6 +51,7 @@ urlpatterns = [
     path('test-cnn/<str:asset>/<str:interval>/<int:num_days>', views.test_cnn, name='test-cnn'),
     path('save-new-trade-model/<int:model_id>/<int:initial_equity>/<int:order_ticket>/<str:asset>/<str:volume>/<str:type_of_trade>/<str:timeframe>', views.save_new_trade_model, name='save-new-trade-model'),
     path('update-trade-model/<int:model_id>/<int:order_ticket>/<int:profit>', views.update_trade_model, name='update-trade-model'),
+    path('get-model-performance', views.get_model_performance, name='get-model-performance'),
 
 
     path('contact-us', views.contact_us, name='contact-us'),
