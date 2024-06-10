@@ -4871,6 +4871,7 @@ def genesys_live(request, identifier, num_positions, asset, interval):
             'is_asian_range_buy': is_asian_range_buy,
             'is_asian_range_sell': is_asian_range_sell,
             'asset': asset,
+            'is_fibonacci_level': is_fibonacci_level,
         }
     
         exec(model_code, namespace)
