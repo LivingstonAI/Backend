@@ -4702,65 +4702,68 @@ def is_asian_range_sell(asset):
         return False # no trade
 
 
-def get_fibonacci_level(data, trend, level):
+def is_fibonacci_level(data, trend, level):
     # Ensure trend is either 'uptrend' or 'downtrend'
-    trend = trend.lower()
-    if trend not in ['uptrend', 'downtrend']:
-        raise ValueError("Trend must be 'uptrend' or 'downtrend'")
-    
-    # Get the lowest close price and highest high price
-    Low = data['Close'].min()
-    High = data['High'].max()
-    latest_price = data.iloc[-1]['Close']
+    try:
+        trend = trend.lower()
+        if trend not in ['uptrend', 'downtrend']:
+            raise ValueError("Trend must be 'uptrend' or 'downtrend'")
+        
+        # Get the lowest close price and highest high price
+        Low = data['Close'].min()
+        High = data['High'].max()
+        latest_price = data.iloc[-1]['Close']
 
-    # Calculate the difference
-    Diff = High - Low
+        # Calculate the difference
+        Diff = High - Low
 
-    # Calculate Fibonacci levels based on the trend
-    if trend == 'downtrend':
-        Fib100 = High
-        Fib618 = High - (Diff * 0.618)
-        Fib50 = High - (Diff * 0.5)
-        Fib382 = High - (Diff * 0.382)
-        Fib236 = High - (Diff * 0.236)
-        Fib0 = Low
-    else:  # 'uptrend'
-        Fib100 = Low
-        Fib618 = Low + (Diff * 0.618)
-        Fib50 = Low + (Diff * 0.5)
-        Fib382 = Low + (Diff * 0.382)
-        Fib236 = Low + (Diff * 0.236)
-        Fib0 = High
+        # Calculate Fibonacci levels based on the trend
+        if trend == 'downtrend':
+            Fib100 = High
+            Fib618 = High - (Diff * 0.618)
+            Fib50 = High - (Diff * 0.5)
+            Fib382 = High - (Diff * 0.382)
+            Fib236 = High - (Diff * 0.236)
+            Fib0 = Low
+        else:  # 'uptrend'
+            Fib100 = Low
+            Fib618 = Low + (Diff * 0.618)
+            Fib50 = Low + (Diff * 0.5)
+            Fib382 = Low + (Diff * 0.382)
+            Fib236 = Low + (Diff * 0.236)
+            Fib0 = High
 
-    # Check if the latest price is below the specified Fibonacci level
-    if trend == 'downtrend':
-        if level == 0 and latest_price >= Fib0:
-            return True
-        elif level == 23.6 and latest_price >= Fib236:
-            return True
-        elif level == 38.2 and latest_price >= Fib382:
-            return True
-        elif level == 50 and latest_price >= Fib50:
-            return True
-        elif level == 61.8 and latest_price >= Fib618:
-            return True
-        elif level == 100 and latest_price >= Fib100:
-            return True
-    elif trend == 'uptrend':
-        if level == 0 and latest_price <= Fib0:
-            return True
-        elif level == 23.6 and latest_price <= Fib236:
-            return True
-        elif level == 38.2 and latest_price <= Fib382:
-            return True
-        elif level == 50 and latest_price <= Fib50:
-            return True
-        elif level == 61.8 and latest_price <= Fib618:
-            return True
-        elif level == 100 and latest_price <= Fib100:
-            return True
-    
-    return False
+        # Check if the latest price is below the specified Fibonacci level
+        if trend == 'downtrend':
+            if level == 0 and latest_price >= Fib0:
+                return True
+            elif level == 23.6 and latest_price >= Fib236:
+                return True
+            elif level == 38.2 and latest_price >= Fib382:
+                return True
+            elif level == 50 and latest_price >= Fib50:
+                return True
+            elif level == 61.8 and latest_price >= Fib618:
+                return True
+            elif level == 100 and latest_price >= Fib100:
+                return True
+        elif trend == 'uptrend':
+            if level == 0 and latest_price <= Fib0:
+                return True
+            elif level == 23.6 and latest_price <= Fib236:
+                return True
+            elif level == 38.2 and latest_price <= Fib382:
+                return True
+            elif level == 50 and latest_price <= Fib50:
+                return True
+            elif level == 61.8 and latest_price <= Fib618:
+                return True
+            elif level == 100 and latest_price <= Fib100:
+                return True
+        
+        return False
+    except Exception as e:
+        return JsonResponse({"error": f"Error occured in Fibonacci function: {e}"})
 
 
 
