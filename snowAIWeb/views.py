@@ -4702,6 +4702,41 @@ def is_asian_range_sell(asset):
         return False # no trade
 
 
+def get_fibonacci_level(df, trend, level):
+    trend = trend.lower()
+    Low = df['Close'].min()
+    High = df['High'].max()
+
+    Diff = High - Low
+    if trend == 'downtrend':
+        Fib100 = High
+        Fib618= Low + (Diff * 0.618)
+        Fib50 = Low + (Diff * 0.5)
+        Fib382 = Low + (Diff * 0.382)
+        Fib236 = Low + (Diff * 0.236)
+        Fib0 = Low
+    else:
+        Fib100 = Low
+        Fib618= High + (Diff * 0.618)
+        Fib50 = High + (Diff * 0.5)
+        Fib382 = High + (Diff * 0.382)
+        Fib236 = High + (Diff * 0.236)
+        Fib0 = High
+
+        
+    if level == 0:
+        return Fib0
+    elif level == 23.6:
+        return Fib236
+    elif level == 38.2:
+        return Fib382
+    elif level == 50:
+        return Fib50
+    elif level == 61.8:
+        return Fib618
+    elif level == 100:
+        return Fib100    
+    # return Fib0, Fib236, Fib382, Fib50, Fib618, Fib100
 
 
 @csrf_exempt
