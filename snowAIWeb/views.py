@@ -4702,41 +4702,66 @@ def is_asian_range_sell(asset):
         return False # no trade
 
 
-def get_fibonacci_level(df, trend, level):
+def get_fibonacci_level(data, trend, level):
+    # Ensure trend is either 'uptrend' or 'downtrend'
     trend = trend.lower()
-    Low = df['Close'].min()
-    High = df['High'].max()
+    if trend not in ['uptrend', 'downtrend']:
+        raise ValueError("Trend must be 'uptrend' or 'downtrend'")
+    
+    # Get the lowest close price and highest high price
+    Low = data['Close'].min()
+    High = data['High'].max()
+    latest_price = data.iloc[-1]['Close']
 
+    # Calculate the difference
     Diff = High - Low
+
+    # Calculate Fibonacci levels based on the trend
     if trend == 'downtrend':
         Fib100 = High
-        Fib618= Low + (Diff * 0.618)
+        Fib618 = High - (Diff * 0.618)
+        Fib50 = High - (Diff * 0.5)
+        Fib382 = High - (Diff * 0.382)
+        Fib236 = High - (Diff * 0.236)
+        Fib0 = Low
+    else:  # 'uptrend'
+        Fib100 = Low
+        Fib618 = Low + (Diff * 0.618)
         Fib50 = Low + (Diff * 0.5)
         Fib382 = Low + (Diff * 0.382)
         Fib236 = Low + (Diff * 0.236)
-        Fib0 = Low
-    else:
-        Fib100 = Low
-        Fib618= High + (Diff * 0.618)
-        Fib50 = High + (Diff * 0.5)
-        Fib382 = High + (Diff * 0.382)
-        Fib236 = High + (Diff * 0.236)
         Fib0 = High
 
-        
-    if level == 0:
-        return Fib0
-    elif level == 23.6:
-        return Fib236
-    elif level == 38.2:
-        return Fib382
-    elif level == 50:
-        return Fib50
-    elif level == 61.8:
-        return Fib618
-    elif level == 100:
-        return Fib100    
-    # return Fib0, Fib236, Fib382, Fib50, Fib618, Fib100
+    # Check if the latest price is below the specified Fibonacci level
+    if trend == 'downtrend':
+        if level == 0 and latest_price >= Fib0:
+            return True
+        elif level == 23.6 and latest_price >= Fib236:
+            return True
+        elif level == 38.2 and latest_price >= Fib382:
+            return True
+        elif level == 50 and latest_price >= Fib50:
+            return True
+        elif level == 61.8 and latest_price >= Fib618:
+            return True
+        elif level == 100 and latest_price >= Fib100:
+            return True
+    elif trend == 'uptrend':
+        if level == 0 and latest_price <= Fib0:
+            return True
+        elif level == 23.6 and latest_price <= Fib236:
+            return True
+        elif level == 38.2 and latest_price <= Fib382:
+            return True
+        elif level == 50 and latest_price <= Fib50:
+            return True
+        elif level == 61.8 and latest_price <= Fib618:
+            return True
+        elif level == 100 and latest_price <= Fib100:
+            return True
+    
+    return False
+
 
 
 @csrf_exempt
