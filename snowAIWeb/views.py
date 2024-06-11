@@ -4821,10 +4821,10 @@ def genesys_live(request, identifier, num_positions, asset, interval):
     elif interval == '15m' or interval == '5m':
         number_of_days = 3
     else:
-        number_of_days = 21
+        number_of_days = 14
 
     dataset = obtain_dataset(asset=asset, interval=interval, num_days=number_of_days)
-
+    
     model_code = model_query[0].model_code
     # test_model_id = 5505503
 
