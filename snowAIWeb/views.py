@@ -4819,7 +4819,7 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
     # This is just to ensure that one trade is always taken at a time.
     model_query_two = tradeModel.objects.filter(model_id=identifier, order_ticket=order_ticket)
 
-    if len(model_query_two) == 0:
+    if len(model_query_two) != 0:
         return JsonResponse({"message": f"Model already has an ongoing position"})
 
     if interval == '1d':
