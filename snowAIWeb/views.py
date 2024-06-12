@@ -4767,7 +4767,7 @@ def is_fibonacci_level(data, trend, level):
 
 
 @csrf_exempt
-def genesys_live(request, identifier, num_positions, asset, interval):
+def genesys_live(request, identifier, num_positions, asset, interval, order_ticket):
     
     return_statement = None
     percentage_test = 0
@@ -4814,6 +4814,13 @@ def genesys_live(request, identifier, num_positions, asset, interval):
 
     if len(model_query) == 0:
         return JsonResponse({"message": f"Model has no such identifier"})
+    
+
+    # This is just to ensure that one trade is always taken at a time.
+    model_query_two = tradeModel.objects.filter(model_id=identifier, order_ticket=order_ticket)
+
+    if len(model_query_two) == 0:
+        return JsonResponse({"message": f"Model already has an ongoing position"})
 
     if interval == '1d':
         number_of_days = 365
