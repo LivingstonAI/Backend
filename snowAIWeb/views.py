@@ -4658,7 +4658,6 @@ def is_asian_range_buy(asset):
         return False # no trade
 
 
-
 def is_asian_range_sell(asset):
     try:
         # Specify your local time zone
