@@ -161,6 +161,14 @@ class tradeModel(models.Model):
     timeframe = models.CharField(max_length=10, null=True)
 
 
+class uniqueBot(models.Model):
+    model_id = models.IntegerField()
+    order_ticket = models.TextField()
+    asset = models.CharField(max_length=20, null=True)
+    bot_id = models.TextField()
+
+
+
 
 
 class ContactUs(models.Model):
