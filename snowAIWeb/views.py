@@ -4908,6 +4908,14 @@ def delete_unique_bot(request, bot_id):
 
 
 @csrf_exempt
+def clear_stuff(request):
+    unique.objects.all().delete()
+    tradeModel.objects.all().delete()
+
+    return JsonResponse({"message": f"All models deleted!"})
+
+
+@csrf_exempt
 def save_genesys_model(request):
     
     if request.method == 'POST':
