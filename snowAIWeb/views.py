@@ -4815,12 +4815,12 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
     if len(model_query) == 0:
         return JsonResponse({"message": f"Model has no such identifier"})
     
+    # Check if there is any trade with the given model_id and order_ticket
+    model_exists = tradeModel.objects.filter(model_id=identifier, order_ticket=order_ticket).exists()
 
-    # This is just to ensure that one trade is always taken at a time.
-    model_query_two = tradeModel.objects.filter(model_id=identifier, order_ticket=order_ticket)
-
-    if len(model_query_two) != 0:
-        return JsonResponse({"message": f"Model already has an ongoing position"})
+    # Return the appropriate response based on whether the model exists or not
+    if model_exists:
+        return JsonResponse({"message": "Model already has an ongoing position"})
 
     if interval == '1d':
         number_of_days = 365
