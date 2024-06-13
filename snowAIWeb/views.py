@@ -4816,7 +4816,7 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
         return JsonResponse({"message": f"Model has no such identifier"})
     
     # Check if there is any trade with the given model_id and order_ticket
-    model_exists = uniqueBot.objects.filter(model_id=identifier, bot_id=bot_id).exists()
+    model_exists = uniqueBot.objects.filter(bot_id=bot_id).exists()
 
     # Return the appropriate response based on whether the model exists or not
     # if model_exists:
