@@ -4819,82 +4819,82 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
     model_exists = uniqueBot.objects.filter(model_id=identifier, bot_id=bot_id).exists()
 
     # Return the appropriate response based on whether the model exists or not
-    if model_exists:
-        return JsonResponse({"message": "Model already has an ongoing position"})
+    # if model_exists:
+    return JsonResponse({"message": f"Model exists: {model_exists}"})
 
-    if interval == '1d':
-        number_of_days = 365
-    elif interval == '15m' or interval == '5m':
-        number_of_days = 4
-    else:
-        number_of_days = 14
+    # if interval == '1d':
+    #     number_of_days = 365
+    # elif interval == '15m' or interval == '5m':
+    #     number_of_days = 4
+    # else:
+    #     number_of_days = 14
 
-    dataset = obtain_dataset(asset=asset, interval=interval, num_days=number_of_days)
+    # dataset = obtain_dataset(asset=asset, interval=interval, num_days=number_of_days)
     
-    model_code = model_query[0].model_code
-    # test_model_id = 5505503
+    # model_code = model_query[0].model_code
+    # # test_model_id = 5505503
 
-    # Inside genesys_live function
-    try:
-        # Execute model_code within a namespace dictionary
-         # Initialize the namespace dictionary with functions
-        namespace = {
-            # 'set_take_profit': set_take_profit,
-            # 'set_stop_loss': set_stop_loss,
-            'num_positions': num_positions,
-            'is_support_level': is_support_level,
-            'is_resistance_level': is_resistance_level,
-            'dataset': dataset,
-            'is_uptrend': is_uptrend,
-            'is_downtrend': is_downtrend,
-            'is_ranging_market': is_ranging_market,
-            'is_bullish_candle': is_bullish_candle,
-            'is_bearish_candle': is_bearish_candle,
-            'is_bullish_engulfing': is_bullish_engulfing,
-            'is_bearish_engulfing': is_bearish_engulfing,
-            'is_morning_star': is_morning_star,
-            'is_evening_star': is_evening_star,
-            'is_three_white_soldiers': is_three_white_soldiers,
-            'is_three_black_crows': is_three_black_crows,
-            'is_morning_doji_star': is_morning_doji_star,
-            'is_evening_doji_star': is_evening_doji_star,
-            'is_rising_three_methods': is_rising_three_methods,
-            'is_falling_three_methods': is_falling_three_methods,
-            'is_hammer': is_hammer,
-            'is_hanging_man': is_hanging_man,
-            'is_inverted_hammer': is_inverted_hammer,
-            'is_shooting_star': is_shooting_star,
-            'is_bullish_kicker': is_bullish_kicker,
-            'is_bearish_kicker': is_bearish_kicker,
-            'is_bullish_harami': is_bullish_harami,
-            'is_bearish_harami': is_bearish_harami,
-            'is_bullish_three_line_strike': is_bullish_three_line_strike,
-            'is_bearish_three_line_strike': is_bearish_three_line_strike,
-            'moving_average': moving_average,
-            'bbands': bbands,
-            'momentum': momentum,
-            'rsi': rsi,
-            'is_asian_range_buy': is_asian_range_buy,
-            'is_asian_range_sell': is_asian_range_sell,
-            'asset': asset,
-            'is_fibonacci_level': is_fibonacci_level,
-        }
+    # # Inside genesys_live function
+    # try:
+    #     # Execute model_code within a namespace dictionary
+    #      # Initialize the namespace dictionary with functions
+    #     namespace = {
+    #         # 'set_take_profit': set_take_profit,
+    #         # 'set_stop_loss': set_stop_loss,
+    #         'num_positions': num_positions,
+    #         'is_support_level': is_support_level,
+    #         'is_resistance_level': is_resistance_level,
+    #         'dataset': dataset,
+    #         'is_uptrend': is_uptrend,
+    #         'is_downtrend': is_downtrend,
+    #         'is_ranging_market': is_ranging_market,
+    #         'is_bullish_candle': is_bullish_candle,
+    #         'is_bearish_candle': is_bearish_candle,
+    #         'is_bullish_engulfing': is_bullish_engulfing,
+    #         'is_bearish_engulfing': is_bearish_engulfing,
+    #         'is_morning_star': is_morning_star,
+    #         'is_evening_star': is_evening_star,
+    #         'is_three_white_soldiers': is_three_white_soldiers,
+    #         'is_three_black_crows': is_three_black_crows,
+    #         'is_morning_doji_star': is_morning_doji_star,
+    #         'is_evening_doji_star': is_evening_doji_star,
+    #         'is_rising_three_methods': is_rising_three_methods,
+    #         'is_falling_three_methods': is_falling_three_methods,
+    #         'is_hammer': is_hammer,
+    #         'is_hanging_man': is_hanging_man,
+    #         'is_inverted_hammer': is_inverted_hammer,
+    #         'is_shooting_star': is_shooting_star,
+    #         'is_bullish_kicker': is_bullish_kicker,
+    #         'is_bearish_kicker': is_bearish_kicker,
+    #         'is_bullish_harami': is_bullish_harami,
+    #         'is_bearish_harami': is_bearish_harami,
+    #         'is_bullish_three_line_strike': is_bullish_three_line_strike,
+    #         'is_bearish_three_line_strike': is_bearish_three_line_strike,
+    #         'moving_average': moving_average,
+    #         'bbands': bbands,
+    #         'momentum': momentum,
+    #         'rsi': rsi,
+    #         'is_asian_range_buy': is_asian_range_buy,
+    #         'is_asian_range_sell': is_asian_range_sell,
+    #         'asset': asset,
+    #         'is_fibonacci_level': is_fibonacci_level,
+    #     }
     
-        exec(model_code, namespace)
+    #     exec(model_code, namespace)
         
-        # Retrieve return_statement from the namespace
-        if return_statement == None:
-            return_statement = namespace.get('return_statement', None)
-    except Exception as e:
-        # Log and handle exceptions
-        print(f"Error executing model code: {e}")
-        return JsonResponse({"error": f"{e}"})
+    #     # Retrieve return_statement from the namespace
+    #     if return_statement == None:
+    #         return_statement = namespace.get('return_statement', None)
+    # except Exception as e:
+    #     # Log and handle exceptions
+    #     print(f"Error executing model code: {e}")
+    #     return JsonResponse({"error": f"{e}"})
 
-    # Check return_statement and handle accordingly
-    if return_statement:
-        return JsonResponse({"message": return_statement})
-    else:
-        return JsonResponse({"message": f"No message to send order from backend"})
+    # # Check return_statement and handle accordingly
+    # if return_statement:
+    #     return JsonResponse({"message": return_statement})
+    # else:
+    #     return JsonResponse({"message": f"No message to send order from backend"})
 
 
 @csrf_exempt
