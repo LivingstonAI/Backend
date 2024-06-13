@@ -53,6 +53,7 @@ urlpatterns = [
     path('update-trade-model/<int:model_id>/<str:order_ticket>/<int:profit>', views.update_trade_model, name='update-trade-model'),
     path('get-model-performance', views.get_model_performance, name='get-model-performance'),
     path('delete-bot/<str:bot_id>', views.delete_unique_bot, name='delete-bot'),
+    path('clear-bots', views.clear_stuff, name='clear-bots'),
 
 
     path('contact-us', views.contact_us, name='contact-us'),
