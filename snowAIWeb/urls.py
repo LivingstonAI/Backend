@@ -46,12 +46,13 @@ urlpatterns = [
     path('save-dataset/<str:dataset>', views.save_dataset, name='save-dataset'),
     path('split-dataset', views.split_dataset, name='split-dataset'),
     path('set-init-capital', views.set_init_capital, name='set-init-capital'),
-    path('genesys-live/<int:identifier>/<int:num_positions>/<str:asset>/<str:interval>/<str:order_ticket>', views.genesys_live, name='genesys-live'),
+    path('genesys-live/<int:identifier>/<int:num_positions>/<str:asset>/<str:interval>/<str:order_ticket>/<str:bot_id>', views.genesys_live, name='genesys-live'),
     path('save-genesys-model', views.save_genesys_model, name='save-genesys-model'),
     path('test-cnn/<str:asset>/<str:interval>/<int:num_days>', views.test_cnn, name='test-cnn'),
     path('save-new-trade-model/<int:model_id>/<int:initial_equity>/<str:order_ticket>/<str:asset>/<str:volume>/<str:type_of_trade>/<str:timeframe>/<str:bot_id>', views.save_new_trade_model, name='save-new-trade-model'),
     path('update-trade-model/<int:model_id>/<str:order_ticket>/<int:profit>', views.update_trade_model, name='update-trade-model'),
     path('get-model-performance', views.get_model_performance, name='get-model-performance'),
+    path('delete-bot/<str:bot_id>', views.delete_unique_bot, name='delete-bot'),
 
 
     path('contact-us', views.contact_us, name='contact-us'),

@@ -4767,7 +4767,7 @@ def is_fibonacci_level(data, trend, level):
 
 
 @csrf_exempt
-def genesys_live(request, identifier, num_positions, asset, interval, order_ticket):
+def genesys_live(request, identifier, num_positions, asset, interval, order_ticket, bot_id):
     
     return_statement = None
     percentage_test = 0
@@ -4815,12 +4815,12 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
     if len(model_query) == 0:
         return JsonResponse({"message": f"Model has no such identifier"})
     
-    # # Check if there is any trade with the given model_id and order_ticket
-    # model_exists = tradeModel.objects.filter(model_id=identifier, order_ticket=order_ticket).exists()
+    # Check if there is any trade with the given model_id and order_ticket
+    model_exists = uniqueBot.objects.filter(model_id=identifier, bot_id=bot_id).exists()
 
-    # # Return the appropriate response based on whether the model exists or not
-    # if model_exists:
-    #     return JsonResponse({"message": "Model already has an ongoing position"})
+    # Return the appropriate response based on whether the model exists or not
+    if model_exists:
+        return JsonResponse({"message": "Model already has an ongoing position"})
 
     if interval == '1d':
         number_of_days = 365
@@ -4896,6 +4896,15 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
     else:
         return JsonResponse({"message": f"No message to send order from backend"})
 
+
+@csrf_exempt
+def delete_unique_bot(request, bot_id):
+    try:
+        bot = uniqueBot.objects.objects.filter(bot_id=bot_id)
+        bot.delete()
+        return JsonResponse({"message": f"Bot deleted Successfully!"})
+    except Exception as e:
+        return JsonResponse({"message": f"Error occured in Delete Bot Function: {e}"})
 
 
 @csrf_exempt
