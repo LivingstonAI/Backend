@@ -4900,7 +4900,7 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
 @csrf_exempt
 def delete_unique_bot(request, bot_id):
     try:
-        bot = uniqueBot.objects.objects.filter(bot_id=bot_id)
+        bot = uniqueBot.objects.filter(bot_id=bot_id)
         bot.delete()
         return JsonResponse({"message": f"Bot deleted Successfully!"})
     except Exception as e:
