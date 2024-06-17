@@ -4823,7 +4823,7 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
         return JsonResponse({"message": "Model already has an ongoing position"})
 
     if interval == '1d':
-        number_of_days = 365
+        number_of_days = 182
     elif interval == '15m' or interval == '5m':
         number_of_days = 4
     else:
