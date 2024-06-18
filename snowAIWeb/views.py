@@ -4961,7 +4961,9 @@ def save_new_trade_model(request, model_id, initial_equity, order_ticket, asset,
 
 @csrf_exempt
 def update_trade_model(request, model_id, order_ticket, profit):
+    
     try:
+        profit = float(profit)
         model_query = tradeModel.objects.filter(model_id=model_id, order_ticket=order_ticket)
         if len(model_query) == 0:
             return JsonResponse({"message": f"Model has no such identifier"})
