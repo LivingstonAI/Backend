@@ -148,7 +148,6 @@ class GenesysLive(models.Model):
     # stop_loss_type = models.CharField(max_length=20)
 
 
-
 class tradeModel(models.Model):
     model_id = models.IntegerField()
     model_code = models.TextField()
