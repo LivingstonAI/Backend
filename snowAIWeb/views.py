@@ -4825,7 +4825,7 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
     if interval == '1d':
         number_of_days = 213
     elif interval == '15m' or interval == '5m':
-        number_of_days = 4
+        number_of_days = 3
     else:
         number_of_days = 14
 
