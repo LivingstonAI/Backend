@@ -4654,7 +4654,7 @@ def is_asian_range_buy(asset):
         return False # no trade
 
     except Exception as e:
-        print(f'Exception occured in asian_range_buy: {e}')
+        print(f'Exception occured in asian_range_buy: {e} with asset: {asset}')
         return False # no trade
 
 
@@ -4697,7 +4697,7 @@ def is_asian_range_sell(asset):
         return False # no trade
 
     except Exception as e:
-        print(f'Exception occured in asian_range_sell: {e}')
+        print(f'Exception occured in asian_range_sell: {e} with asset: {asset}')
         return False # no trade
 
 
