@@ -4990,7 +4990,8 @@ def get_model_performance(request):
                 'profit': model.profit,
                 'volume': model.volume,
                 'type_of_trade': model.type_of_trade,
-                'timeframe': model.timeframe
+                'timeframe': model.timeframe,
+                'date_taken': model.date_taken
             }
             for model in models
         ]
