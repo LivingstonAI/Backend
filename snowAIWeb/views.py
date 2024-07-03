@@ -4953,6 +4953,18 @@ def save_genesys_model(request):
 
 
 @csrf_exempt
+def test_date(request, asset):
+    
+    today = datetime.now()  # Get the current date and time
+    model_traded = tradeModel.objects.filter(asset=asset, date_taken=today)
+    if model_traded:
+        return JsonResponse({"message": f"Model Has Already Taken a trade for today: {model_traded}"})
+    else:
+        return JsonResponse({"message": f"Model Has Taken No trade for the day: {model_traded}"})
+
+
+
+@csrf_exempt
 def save_new_trade_model(request, model_id, initial_equity, order_ticket, asset, volume, type_of_trade, timeframe, bot_id):
     try:
         model_query = GenesysLive.objects.filter(model_id=model_id)
