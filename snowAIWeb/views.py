@@ -4920,7 +4920,7 @@ def delete_unique_bot(request, bot_id):
 def clear_stuff(request):
     uniqueBot.objects.all().delete()
     tradeModel.objects.all().delete()
-    Trade.objects.all().delete()
+    # Trade.objects.all().delete()
 
     return JsonResponse({"message": f"All models deleted!"})
 
