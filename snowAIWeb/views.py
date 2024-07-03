@@ -4822,6 +4822,12 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
     if model_exists:
         return JsonResponse({"message": "Model already has an ongoing position"})
 
+    today = datetime.now()  # Get the current date and time
+    model_traded = tradeModel.objects.filter(asset=asset, date_taken=today).exists()
+    if model_traded:
+        return JsonResponse({"message": "Model Has Already Taken a trade for today."})
+
+
     if interval == '1d':
         number_of_days = 213
     elif interval == '15m' or interval == '5m':
@@ -4832,6 +4838,8 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
     dataset = obtain_dataset(asset=asset, interval=interval, num_days=number_of_days)
     
     model_code = model_query[0].model_code
+
+    
     # test_model_id = 5505503
 
     # Inside genesys_live function
