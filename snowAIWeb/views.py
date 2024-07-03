@@ -4962,7 +4962,6 @@ def test_date(request, asset):
         return JsonResponse({"message": f"Model Has Taken No trade for the day: {model_traded}"})
 
 
-
 @csrf_exempt
 def save_new_trade_model(request, model_id, initial_equity, order_ticket, asset, volume, type_of_trade, timeframe, bot_id):
     try:
@@ -4994,6 +4993,7 @@ def save_new_trade_model(request, model_id, initial_equity, order_ticket, asset,
         return JsonResponse({'message': f'Saved New Model Successfully!'})
     except Exception as e:
         return JsonResponse({'message': f'Error Occurred in Save New Trade Model Function: {e}'})
+
 
 
 @csrf_exempt
