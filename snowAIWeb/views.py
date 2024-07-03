@@ -4954,9 +4954,8 @@ def save_genesys_model(request):
 
 @csrf_exempt
 def test_date(request, asset):
-    
-    today = datetime.now()  # Get the current date and time
-    model_traded = tradeModel.objects.filter(asset=asset, date_taken=today)
+    today = datetime.now().date()  # Get the current date
+    model_traded = tradeModel.objects.filter(asset=asset, date_taken__date=today)  # Filter by date only
     if model_traded:
         return JsonResponse({"message": f"Model Has Already Taken a trade for today: {model_traded}"})
     else:
@@ -4971,14 +4970,30 @@ def save_new_trade_model(request, model_id, initial_equity, order_ticket, asset,
         if len(model_query) == 0:
             return JsonResponse({"message": f"Model has no such identifier"})
         model_code = model_query[0].model_code
-        today = datetime.now()  # Get the current date and time
-        new_trade_model = tradeModel(model_id=model_id, model_code=model_code, initial_equity=initial_equity, order_ticket=order_ticket, type_of_trade=type_of_trade, volume=volume, asset=asset, profit=-1.0, timeframe=timeframe, date_taken=today)
+        today = datetime.now().date()  # Get the current date
+        new_trade_model = tradeModel(
+            model_id=model_id, 
+            model_code=model_code, 
+            initial_equity=initial_equity, 
+            order_ticket=order_ticket, 
+            type_of_trade=type_of_trade, 
+            volume=volume, 
+            asset=asset, 
+            profit=-1.0, 
+            timeframe=timeframe, 
+            date_taken=today
+        )
         new_trade_model.save()
-        unique_bot = uniqueBot(model_id=model_id, order_ticket=order_ticket, asset=asset, bot_id=bot_id)
+        unique_bot = uniqueBot(
+            model_id=model_id, 
+            order_ticket=order_ticket, 
+            asset=asset, 
+            bot_id=bot_id
+        )
         unique_bot.save()
         return JsonResponse({'message': f'Saved New Model Successfully!'})
     except Exception as e:
-        return JsonResponse({'message': f'Error Occured in Save New Trade Model Function: {e}'})
+        return JsonResponse({'message': f'Error Occurred in Save New Trade Model Function: {e}'})
 
 
 @csrf_exempt
