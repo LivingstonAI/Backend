@@ -4956,7 +4956,7 @@ def save_genesys_model(request):
 @csrf_exempt
 def test_date(request, asset):
     today = datetime.now().date()  # Get the current date
-    model_traded = tradeModel.objects.filter(asset=asset, date_taken__date=today)  # Filter by date only
+    model_traded = tradeModel.objects.filter(asset=asset, date_taken__date=today).exists()  # Filter by date only
     if model_traded:
         return JsonResponse({"message": f"Model Has Already Taken a trade for today: {model_traded}"})
     else:
