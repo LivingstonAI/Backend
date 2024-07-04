@@ -4896,7 +4896,7 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
             return_statement = namespace.get('return_statement', None)
     except Exception as e:
         # Log and handle exceptions
-        print(f"Error executing model code: {e}")
+        print(f"Error executing model code: {e} with interval: {interval}")
         return JsonResponse({"error": f"{e} with interval: {interval}"})
 
     # Check return_statement and handle accordingly
