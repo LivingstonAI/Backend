@@ -4829,7 +4829,7 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
         return JsonResponse({"message": f"Model Has Already Taken a trade for today"})
 
 
-    if interval == '1d':
+    if interval == '1d' or interval == '1wk':
         number_of_days = 213
     elif interval == '15m' or interval == '5m':
         number_of_days = 3
