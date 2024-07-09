@@ -4770,7 +4770,7 @@ def is_ote_buy(asset):
         dataset = obtain_dataset(asset=asset, interval='1d', num_days=213)
         ranging_market = is_ranging_market(data=dataset)
         if ranging_market:
-            latest_price = data.iloc[-1].Close
+            latest_price = dataset.iloc[-1].Close
             support_level = support_and_resistance(dataset)[0][0]
             resistance_level = support_and_resistance(dataset)[1][0]
             if latest_price >= support_level and latest_price <= resistance_level:
@@ -4790,7 +4790,7 @@ def is_ote_sell(asset):
         dataset = obtain_dataset(asset=asset, interval='1d', num_days=213)
         ranging_market = is_ranging_market(data=dataset)
         if ranging_market:
-            latest_price = data.iloc[-1].Close
+            latest_price = dataset.iloc[-1].Close
             support_level = support_and_resistance(dataset)[0][0]
             resistance_level = support_and_resistance(dataset)[1][0]
             if latest_price >= support_level and latest_price <= resistance_level:
