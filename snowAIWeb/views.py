@@ -4801,8 +4801,8 @@ def is_ote_sell(asset):
                     if is_fibonacci_level(data=prev_2_days_data, trend='downtrend', level=50):
                         return True
     except Exception as e:
-        print(f'Error occured in ote_buy_function: {e}')
-        return JsonResponse({'message': f'Error occured in ote_buy_function: {e}'})
+        print(f'Error occured in ote_sell_function: {e}')
+        return JsonResponse({'message': f'Error occured in ote_sell_function: {e}'})
 
 
 @csrf_exempt
