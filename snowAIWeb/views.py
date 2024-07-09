@@ -4765,6 +4765,45 @@ def is_fibonacci_level(data, trend, level):
         return JsonResponse({"error": f"Error occured in Fibonacci function: {e}"})
 
 
+def is_ote_buy(asset):
+    try:
+        dataset = obtain_dataset(asset=asset, interval='1d', num_days=213)
+        ranging_market = is_ranging_market(data=dataset)
+        if ranging_market:
+            latest_price = data.iloc[-1].Close
+            support_level = support_and_resistance(dataset)[0][0]
+            resistance_level = support_and_resistance(dataset)[1][0]
+            if latest_price >= support_level and latest_price <= resistance_level:
+                prev_4_days_data = obtain_dataset(asset=asset, interval='1h', num_days=4)
+                uptrend = is_uptrend(data=prev_4_days_data)
+                if uptrend:
+                    prev_2_days_data = obtain_dataset(asset=asset, interval='1h', num_days=2)
+                    if is_fibonacci_level(data=prev_2_days_data, trend='uptrend', level=50):
+                        return True
+    except Exception as e:
+        print(f'Error occured in ote_buy_function: {e}')
+        return JsonResponse({'message': f'Error occured in ote_buy_function: {e}'})
+
+
+def is_ote_sell(asset):
+    try:
+        dataset = obtain_dataset(asset=asset, interval='1d', num_days=213)
+        ranging_market = is_ranging_market(data=dataset)
+        if ranging_market:
+            latest_price = data.iloc[-1].Close
+            support_level = support_and_resistance(dataset)[0][0]
+            resistance_level = support_and_resistance(dataset)[1][0]
+            if latest_price >= support_level and latest_price <= resistance_level:
+                prev_4_days_data = obtain_dataset(asset=asset, interval='1h', num_days=4)
+                downtrend = is_downtrend(data=prev_4_days_data)
+                if downtrend:
+                    prev_2_days_data = obtain_dataset(asset=asset, interval='1h', num_days=2)
+                    if is_fibonacci_level(data=prev_2_days_data, trend='downtrend', level=50):
+                        return True
+    except Exception as e:
+        print(f'Error occured in ote_buy_function: {e}')
+        return JsonResponse({'message': f'Error occured in ote_buy_function: {e}'})
+
 
 @csrf_exempt
 def genesys_live(request, identifier, num_positions, asset, interval, order_ticket, bot_id):
@@ -4840,7 +4879,6 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
     
     model_code = model_query[0].model_code
 
-    
     # test_model_id = 5505503
 
     # Inside genesys_live function
@@ -4887,6 +4925,8 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
             'is_asian_range_sell': is_asian_range_sell,
             'asset': asset,
             'is_fibonacci_level': is_fibonacci_level,
+            'is_ote_buy': is_ote_buy,
+            'is_ote_sell': is_ote_sell,
         }
     
         exec(model_code, namespace)
