@@ -4992,6 +4992,8 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
             'is_fibonacci_level': is_fibonacci_level,
             'is_ote_buy': is_ote_buy,
             'is_ote_sell': is_ote_sell,
+            'is_bullish_orderblock': is_bullish_orderblock,
+            'is_bearish_orderblock': is_bearish_orderblock
         }
     
         exec(model_code, namespace)
