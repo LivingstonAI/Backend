@@ -4824,7 +4824,7 @@ def is_bearish_orderblock(asset, tolerance=0.01):
             return False
         
         # Loop through the dataset in reverse order to find the most recent candle where the resistance level is between the low and high
-        for index, row in df[::-1].iterrows():
+        for index, row in dataset[::-1].iterrows():
             if row['Low'] <= resistance_level <= row['High']:
                 orderblock_open = row['High']
                 orderblock_close = row['Low']
@@ -4846,17 +4846,17 @@ def is_bullish_orderblock(asset, tolerance=0.01):
         if not ranging_market:
             return False
         
-        levels = support_and_resistance(df)
+        levels = support_and_resistance(dataset)
         support_level = levels[0][0]
         resistance_level = levels[1][0]
         
-        last_close = df.iloc[-1].Close
+        last_close = dataset.iloc[-1].Close
         
         if last_close >= resistance_level:
             return False
         
         # Loop through the dataset in reverse order to find the most recent candle where the resistance level is between the low and high
-        for index, row in df[::-1].iterrows():
+        for index, row in dataset[::-1].iterrows():
             if row['Low'] <= support_level <= row['High']:
                 orderblock_open = row['High']
                 orderblock_close = row['Low']
