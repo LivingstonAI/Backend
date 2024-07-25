@@ -650,7 +650,8 @@ def update_user_assets(request, user_email):
 def update_daily_brief(request, user_email):
     try:
         user_assets = TellUsMore.objects.filter(user_email=user_email)[0].main_assets
-        return JsonResponse({'message': f'{user_assets}'})
+        currency_list = user_assets.split(", ")
+        return JsonResponse({'message': f'{currency_list}'})
     except Exception as e:
         return JsonResponse({'message': f'Error occured in Daily Bried Function: {e}'})
 
