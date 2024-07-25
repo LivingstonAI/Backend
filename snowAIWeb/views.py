@@ -57,9 +57,14 @@ import pytz
 import openai
 from openai import OpenAI
 from django.utils import timezone
-
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 # Comment
 # current_hour = datetime.datetime.now().time().hour
+
+
+scheduler = BackgroundScheduler()
+scheduler.start()
 
 
 def is_bullish_run(candle1, candle2, candle3, candle4):
@@ -743,6 +748,15 @@ def chat_gpt(prompt):
     )
     return response.choices[0].message.content.strip()
 
+
+# Schedule the update_daily_brief function to run every hour
+scheduler.add_job(
+    update_daily_brief,
+    trigger=IntervalTrigger(hours=1),
+    id='update_daily_brief_job',
+    name='Update daily brief every hour',
+    replace_existing=True
+)
 
 def save_news_data(assets, user_email):
     try:
