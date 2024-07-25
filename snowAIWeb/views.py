@@ -54,6 +54,7 @@ import mplfinance as mpf
 from scipy.signal import argrelextrema, find_peaks
 from sklearn.neighbors import KernelDensity
 import pytz
+import openai
 
 # Comment
 # current_hour = datetime.datetime.now().time().hour
@@ -651,6 +652,7 @@ def update_daily_brief(request, user_email):
     try:
         user_assets = TellUsMore.objects.filter(user_email=user_email)[0].main_assets
         news_data_list = []
+        model_replies_list = []
         currency_list = user_assets.split(", ")
          # Establish a connection to the API
         conn = http.client.HTTPSConnection('api.marketaux.com')
@@ -700,7 +702,28 @@ def update_daily_brief(request, user_email):
                     'highlights': highlights,
                 }
                 news_data_list.append(news_entry_data)
-        return JsonResponse({'message': f'{news_data_list} with length of {len(news_data_list)}'})
+            # Set your API key
+            api_key = os.environ['OPENAI_API_KEY']
+
+            # Define your prompt
+            prompt = f"Please give me a summary of these assets based on the data you see: {news_data_list} for this asset: {asset}"
+
+            # Make the API call
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are an intelligent investment assistant called Livingston."},
+                    {"role": "user", "content": prompt},
+                ],
+                api_key=api_key,
+            )
+
+            # Extract the model's reply
+            model_reply = response.choices[0].message["content"]
+            model_replies_list.append(model_reply)
+            news_data_list = []
+            # Over here, make an api call to gpt
+        return JsonResponse({'message': f'{model_replies_list} with length of {len(model_replies_list)}'})
     except Exception as e:
         return JsonResponse({'message': f'Error occured in Daily Bried Function: {e}'})
 
