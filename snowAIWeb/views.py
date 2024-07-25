@@ -683,23 +683,23 @@ def update_daily_brief(request, user_email):
             # Parse the JSON data
             news_data = json.loads(data_str)
 
-            # Iterate through the news articles and save specific fields to the database
-            for article in news_data['data']:
-                title = article['title']
-                description = article['description']
-                source = article['source']
-                url = article['url']
-                highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
+            # # Iterate through the news articles and save specific fields to the database
+            # for article in news_data['data']:
+            #     title = article['title']
+            #     description = article['description']
+            #     source = article['source']
+            #     url = article['url']
+            #     highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
 
-                # Create a dictionary with the specific fields
-                news_entry_data = {
-                    'title': title,
-                    'description': description,
-                    'source': source,
-                    'url': url,
-                    'highlights': highlights,
-                }
-                news_data_list.append(news_entry_data)
+            #     # Create a dictionary with the specific fields
+            #     news_entry_data = {
+            #         'title': title,
+            #         'description': description,
+            #         'source': source,
+            #         'url': url,
+            #         'highlights': highlights,
+            #     }
+            news_data_list.append(news_entry_data)
             return JsonResponse({'message': f'{news_data_list} with length of {len(news_data_list)}'})
     except Exception as e:
         return JsonResponse({'message': f'Error occured in Daily Bried Function: {e}'})
