@@ -168,6 +168,11 @@ class uniqueBot(models.Model):
     bot_id = models.TextField()
 
 
+class dailyBrief(models.Model):
+    asset = models.TextField()
+    summary = models.TextField()
+    last_update = models.DateTimeField(null=True)
+
 
 
 
