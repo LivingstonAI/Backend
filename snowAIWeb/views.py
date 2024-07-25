@@ -4806,9 +4806,9 @@ def is_ote_sell(asset):
 
 
 
-def is_bearish_orderblock(asset, tolerance=0.01):
+def is_bearish_orderblock(asset, tolerance=0.01, timeframe):
     try:
-        dataset = obtain_dataset(asset=asset, interval='1d', num_days=214)
+        dataset = obtain_dataset(asset=asset, interval=timeframe, num_days=214)
         ranging_market = is_ranging_market(data=dataset)
         
         if not ranging_market:
@@ -4838,9 +4838,9 @@ def is_bearish_orderblock(asset, tolerance=0.01):
         return JsonResponse({'message': f'Error occured in bearish orderblock function: {e}'})
 
 
-def is_bullish_orderblock(asset, tolerance=0.01):
+def is_bullish_orderblock(asset, tolerance=0.01, timeframe):
     try:
-        dataset = obtain_dataset(asset=asset, interval='1d', num_days=214)
+        dataset = obtain_dataset(asset=asset, interval=timeframe, num_days=214)
         ranging_market = is_ranging_market(data=dataset)
         
         if not ranging_market:
@@ -4953,6 +4953,7 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
         namespace = {
             # 'set_take_profit': set_take_profit,
             # 'set_stop_loss': set_stop_loss,
+            'interval': interval,
             'num_positions': num_positions,
             'is_support_level': is_support_level,
             'is_resistance_level': is_resistance_level,
