@@ -55,7 +55,7 @@ urlpatterns = [
     path('delete-bot/<str:bot_id>', views.delete_unique_bot, name='delete-bot'),
     path('clear-bots', views.clear_stuff, name='clear-bots'),
     path('test-date/<str:asset>', views.test_date, name='test-date'),
-    path('daily-brief/<str:user_email>', views.update_daily_brief, name='daily-brief'),
+    path('daily-brief', views.daily_brief, name='daily-brief'),
 
 
     path('contact-us', views.contact_us, name='contact-us'),

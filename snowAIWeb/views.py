@@ -650,7 +650,16 @@ def update_user_assets(request, user_email):
         return JsonResponse({'error': 'Invalid request method'}, status=405)  
 
 @csrf_exempt
-def update_daily_brief(request, user_email='butterrobot83@gmail.com'):
+def daily_brief(request):
+    try:
+        update_daily_brief()
+        return JsonResponse({'message': f'Daily Brief Updated Successfully!'})
+    except Exception as e:
+        return JsonResponse({'message': f'Error Occured in Daily Brief Function: {e}'})
+
+
+def update_daily_brief(user_email='butterrobot83@gmail.com'):
+    # The user email is to be able to filter out the assets I trade in the TellUsMore object.
     try:
         dailyBrief.objects.all().delete()
         user_assets = TellUsMore.objects.filter(user_email=user_email)[0].main_assets
@@ -715,9 +724,8 @@ def update_daily_brief(request, user_email='butterrobot83@gmail.com'):
             daily_brief = dailyBrief(asset=asset, summary=livingston_response, last_update=now)
             daily_brief.save()
             # Over here, make an api call to gpt
-        return JsonResponse({'message': f'{model_replies_list} with length of {len(model_replies_list)}'})
     except Exception as e:
-        return JsonResponse({'message': f'Error occured in Daily Bried Function: {e}'})
+        print(f'Execption occured in update daily brief function: {e}')
 
 
 def get_openai_key(request):
