@@ -95,8 +95,8 @@ def is_bullish_candle(candle):
     return False
 
 
-def get_openai_key(request):
-    return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
+# def get_openai_key(request):
+#     return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
 
 
 def get_news_data():
@@ -646,8 +646,18 @@ def update_user_assets(request, user_email):
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)  
 
+@csrf_exempt
+def update_daily_brief(request, user_email):
+    try:
+        user_assets = TellUsMore.objects.filter(user_email=user_email)[0].main_assets
+        return JsonResponse({'message': f'{user_assets}'})
+    except Exception as e:
+        return JsonResponse({'message': f'Error occured in Daily Bried Function: {e}'})
 
-# @csrf_exempt
+
+def get_openai_key(request):
+    return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
+
 def save_news_data(assets, user_email):
     try:
         news = News.objects.filter(user_email=user_email).delete()
