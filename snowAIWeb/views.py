@@ -56,6 +56,7 @@ from sklearn.neighbors import KernelDensity
 import pytz
 import openai
 from openai import OpenAI
+from django.utils import timezone
 
 # Comment
 # current_hour = datetime.datetime.now().time().hour
@@ -708,11 +709,10 @@ def update_daily_brief(request, user_email='butterrobot83@gmail.com'):
             livingston_response = chat_gpt(f'Provide me a fundamental data summary of the news data for this asset as if you were a professional trader and analyst: {asset}\nWith this news data for the asset: {news_data_list}')
             model_replies_list.append(livingston_response)
             # Get the current date and time
-            now = datetime.now()
+            now = timezone.now()
 
             # Extract the hour and minute
-            current_time = now.strftime("%H:%M")
-            daily_brief = dailyBrief(asset=asset, summary=livingston_response, last_update=current_time)
+            daily_brief = dailyBrief(asset=asset, summary=livingston_response, last_update=now)
             daily_brief.save()
             # Over here, make an api call to gpt
         return JsonResponse({'message': f'{model_replies_list} with length of {len(model_replies_list)}'})
