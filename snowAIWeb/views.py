@@ -649,8 +649,9 @@ def update_user_assets(request, user_email):
         return JsonResponse({'error': 'Invalid request method'}, status=405)  
 
 @csrf_exempt
-def update_daily_brief(request, user_email):
+def update_daily_brief(request, user_email='butterrobot83@gmail.com'):
     try:
+        dailyBrief.objects.all().delete()
         user_assets = TellUsMore.objects.filter(user_email=user_email)[0].main_assets
         news_data_list = []
         model_replies_list = []
@@ -704,9 +705,15 @@ def update_daily_brief(request, user_email):
                 }
                 news_data_list.append(news_entry_data)
 
-            livingston_response = chat_gpt(f'Provide me a summary of this asset: {asset}\nWith these news assets: {news_data_list}')
+            livingston_response = chat_gpt(f'Provide me a fundamental data summary of the news data for this asset as if you were a professional trader and analyst: {asset}\nWith this news data for the asset: {news_data_list}')
             model_replies_list.append(livingston_response)
+            # Get the current date and time
+            now = datetime.now()
 
+            # Extract the hour and minute
+            current_time = now.strftime("%H:%M")
+            daily_brief = dailyBrief(asset=asset, summary=livingston_response, last_update=current_time)
+            daily_brief.save()
             # Over here, make an api call to gpt
         return JsonResponse({'message': f'{model_replies_list} with length of {len(model_replies_list)}'})
     except Exception as e:
