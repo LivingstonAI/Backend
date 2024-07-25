@@ -650,8 +650,57 @@ def update_user_assets(request, user_email):
 def update_daily_brief(request, user_email):
     try:
         user_assets = TellUsMore.objects.filter(user_email=user_email)[0].main_assets
+        news_data_list = []
         currency_list = user_assets.split(", ")
-        return JsonResponse({'message': f'{currency_list}'})
+         # Establish a connection to the API
+        conn = http.client.HTTPSConnection('api.marketaux.com')
+
+        # Define query parameters
+        params_template = {
+            'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
+            'langauge': 'en',
+            'limit': 50,
+        }
+
+        # Iterate through the assets and make API requests
+        for asset in currency_list:
+            # Update the symbol in the query parameters
+            params = params_template.copy()
+            params['symbols'] = asset
+
+            # Send a GET request
+            conn.request('GET', '/v1/news/all?{}'.format(urllib.parse.urlencode(params)))
+
+            # Get the response
+            res = conn.getresponse()
+
+            # Read the response data
+            data = res.read()
+
+            # Decode the data from bytes to a string
+            data_str = data.decode('utf-8')
+
+            # Parse the JSON data
+            news_data = json.loads(data_str)
+
+            # Iterate through the news articles and save specific fields to the database
+            for article in news_data['data']:
+                title = article['title']
+                description = article['description']
+                source = article['source']
+                url = article['url']
+                highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
+
+                # Create a dictionary with the specific fields
+                news_entry_data = {
+                    'title': title,
+                    'description': description,
+                    'source': source,
+                    'url': url,
+                    'highlights': highlights,
+                }
+                news_data_list.append(news_entry_data)
+            return JsonResponse({'message': f'{news_data_list}'})
     except Exception as e:
         return JsonResponse({'message': f'Error occured in Daily Bried Function: {e}'})
 
