@@ -706,7 +706,7 @@ def update_daily_brief(request, user_email='butterrobot83@gmail.com'):
                 }
                 news_data_list.append(news_entry_data)
 
-            livingston_response = chat_gpt(f'Provide me a fundamental data summary of the news data for this asset as if you were a professional trader and analyst: {asset}\nWith this news data for the asset: {news_data_list}')
+            livingston_response = chat_gpt(f'Provide me a fundamental data summary of the news data (in paragraph format) for this asset as if you were a professional trader and analyst: {asset}\nWith this news data for the asset: {news_data_list}')
             model_replies_list.append(livingston_response)
             # Get the current date and time
             now = timezone.now()
