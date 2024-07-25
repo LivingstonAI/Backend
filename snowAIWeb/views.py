@@ -55,6 +55,7 @@ from scipy.signal import argrelextrema, find_peaks
 from sklearn.neighbors import KernelDensity
 import pytz
 import openai
+from openai import OpenAI
 
 # Comment
 # current_hour = datetime.datetime.now().time().hour
@@ -702,26 +703,10 @@ def update_daily_brief(request, user_email):
                     'highlights': highlights,
                 }
                 news_data_list.append(news_entry_data)
-            # Set your API key
-            api_key = os.environ['OPENAI_API_KEY']
 
-            # Define your prompt
-            prompt = f"Please give me a summary of these assets based on the data you see: {news_data_list} for this asset: {asset}"
+            livingston_response = chat_gpt(f'Provide me a summary of this asset: {asset}\nWith these news assets: {news_data_list}')
+            model_replies_list.append(livingston_response)
 
-            # Make the API call
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are an intelligent investment assistant called Livingston."},
-                    {"role": "user", "content": prompt},
-                ],
-                api_key=api_key,
-            )
-
-            # Extract the model's reply
-            model_reply = response.choices[0].message["content"]
-            model_replies_list.append(model_reply)
-            news_data_list = []
             # Over here, make an api call to gpt
         return JsonResponse({'message': f'{model_replies_list} with length of {len(model_replies_list)}'})
     except Exception as e:
@@ -730,6 +715,19 @@ def update_daily_brief(request, user_email):
 
 def get_openai_key(request):
     return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
+
+
+def chat_gpt(prompt):
+    client = OpenAI(
+    # defaults to os.environ.get("OPENAI_API_KEY")
+    api_key=os.environ['OPENAI_API_KEY'],
+    )
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content.strip()
+
 
 def save_news_data(assets, user_email):
     try:
