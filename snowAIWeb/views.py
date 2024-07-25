@@ -699,7 +699,7 @@ def update_daily_brief(request, user_email):
             #         'url': url,
             #         'highlights': highlights,
             #     }
-            news_data_list.append(news_entry_data)
+            news_data_list.append(news_data)
             return JsonResponse({'message': f'{news_data_list} with length of {len(news_data_list)}'})
     except Exception as e:
         return JsonResponse({'message': f'Error occured in Daily Bried Function: {e}'})
