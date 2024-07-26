@@ -5237,26 +5237,37 @@ def update_trade_model(request, model_id, order_ticket, profit):
 @csrf_exempt
 def get_model_performance(request):
     if request.method == 'GET':
-        models = tradeModel.objects.all()
+        models = tradeModel.objects.values(
+            'model_id', 
+            'model_code', 
+            'initial_equity', 
+            'order_ticket', 
+            'asset', 
+            'profit', 
+            'volume', 
+            'type_of_trade', 
+            'timeframe', 
+            'date_taken'
+        ).distinct()
+        
         data = [
             {
-                'model_id': model.model_id,
-                'model_code': model.model_code,
-                'initial_equity': model.initial_equity,
-                'order_ticket': model.order_ticket,
-                'asset': model.asset,
-                'profit': model.profit,
-                'volume': model.volume,
-                'type_of_trade': model.type_of_trade,
-                'timeframe': model.timeframe,
-                'date_taken': model.date_taken
+                'model_id': model['model_id'],
+                'model_code': model['model_code'],
+                'initial_equity': model['initial_equity'],
+                'order_ticket': model['order_ticket'],
+                'asset': model['asset'],
+                'profit': model['profit'],
+                'volume': model['volume'],
+                'type_of_trade': model['type_of_trade'],
+                'timeframe': model['timeframe'],
+                'date_taken': model['date_taken']
             }
             for model in models
         ]
         return JsonResponse(data, safe=False)
     else:
         return JsonResponse({'error': 'Invalid HTTP method'}, status=405)
-
 
 
 
