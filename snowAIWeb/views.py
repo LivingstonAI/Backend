@@ -654,13 +654,17 @@ def update_user_assets(request, user_email):
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)  
 
+
 @csrf_exempt
 def daily_brief(request):
-    try:
-        update_daily_brief()
-        return JsonResponse({'message': f'Daily Brief Updated Successfully!'})
-    except Exception as e:
-        return JsonResponse({'message': f'Error Occured in Daily Brief Function: {e}'})
+    if request.method == 'POST':
+        try:
+            update_daily_brief()
+            return JsonResponse({'message': 'Daily Brief Updated Successfully!'})
+        except Exception as e:
+            return JsonResponse({'message': f'Error Occurred in Daily Brief Function: {e}'})
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
 
 
 def update_daily_brief(user_email='butterrobot83@gmail.com'):
