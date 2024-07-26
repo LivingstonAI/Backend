@@ -5248,27 +5248,19 @@ def get_model_performance(request):
             'type_of_trade', 
             'timeframe', 
             'date_taken'
-        ).distinct()
+        )
+
+        # Remove duplicates by using a dictionary to track unique order_tickets
+        unique_models = {}
+        for model in models:
+            if model['order_ticket'] not in unique_models:
+                unique_models[model['order_ticket']] = model
         
-        data = [
-            {
-                'model_id': model['model_id'],
-                'model_code': model['model_code'],
-                'initial_equity': model['initial_equity'],
-                'order_ticket': model['order_ticket'],
-                'asset': model['asset'],
-                'profit': model['profit'],
-                'volume': model['volume'],
-                'type_of_trade': model['type_of_trade'],
-                'timeframe': model['timeframe'],
-                'date_taken': model['date_taken']
-            }
-            for model in models
-        ]
+        data = list(unique_models.values())
+        
         return JsonResponse(data, safe=False)
     else:
         return JsonResponse({'error': 'Invalid HTTP method'}, status=405)
-
 
 
 
