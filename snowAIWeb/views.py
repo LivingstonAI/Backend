@@ -762,18 +762,16 @@ scheduler.add_job(
 @csrf_exempt
 def fetch_daily_brief_data(request):
     if request.method == 'GET':
-        try:
-            # Fetch the most recent daily brief
-            daily_brief = dailyBrief.objects.latest('last_update')
-            data = {
-                'asset': daily_brief.asset,
-                'summary': daily_brief.summary,
-                'last_update': daily_brief.last_update,
-            }
-            return JsonResponse(data, status=200)
-        except dailyBrief.DoesNotExist:
-            return JsonResponse({'error': 'No data available'}, status=404)
-            
+        daily_briefs = dailyBrief.objects.all().order_by('-last_update')
+        data = [
+            {
+                'asset': brief.asset,
+                'summary': brief.summary,
+                'last_update': brief.last_update,
+            } for brief in daily_briefs
+        ]
+        return JsonResponse(data, status=200, safe=False)
+
 
 def save_news_data(assets, user_email):
     try:
