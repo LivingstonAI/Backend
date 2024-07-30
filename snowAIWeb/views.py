@@ -5262,7 +5262,7 @@ def get_model_performance(request):
 def get_user_assets(request, email='butterrobot83@gmail.com'):
     try:
         user_assets = TellUsMore.objects.filter(user_email=email)[0].main_assets
-        return JsonResponse({'message': f'Test Request Works!'})
+        return JsonResponse({'message': f'User Assets: {user_assets}'})
     except Exception as e:
         print(f'Error occured in get_user_assets: {e}')
         return JsonResponse({'error': f'Error occured in get_user_assets: {e}'})
