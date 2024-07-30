@@ -4664,8 +4664,6 @@ def image_classification(data):
             return JsonResponse({'Error in image classification function: ': f"{e}"})
 
 
-
-
 def is_uptrend(data):
   image_class = image_classification(data=data)
 #   print(f'Uptrend Function: {image_class}')
@@ -4934,7 +4932,6 @@ def is_ote_sell(asset):
         return JsonResponse({'message': f'Error occured in ote_sell_function: {e}'})
 
 
-
 def is_bearish_orderblock(asset, tolerance=0.01, timeframe='1d'):
     try:
         dataset = obtain_dataset(asset=asset, interval=timeframe, num_days=214)
@@ -5158,8 +5155,6 @@ def clear_stuff(request):
     # uniqueBot.objects.all().delete()
     # tradeModel.objects.all().delete()
     # Trade.objects.all().delete()
-
-
     return JsonResponse({"message": f"All models deleted!"})
 
 
@@ -5263,7 +5258,14 @@ def get_model_performance(request):
         return JsonResponse({'error': 'Invalid HTTP method'}, status=405)
 
 
-
+@csrf_exempt
+def get_user_assets(request, email='butterrobot83@gmail.com'):
+    try:
+        user_assets = TellUsMore.objects.filter(user_email=email)[0].main_assets
+        return JsonResponse({'message': f'Test Request Works!'})
+    except Exception as e:
+        print(f'Error occured in get_user_assets: {e}')
+        return JsonResponse({'error': f'Error occured in get_user_assets: {e}'})
 
 
 
