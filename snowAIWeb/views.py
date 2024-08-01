@@ -5261,9 +5261,10 @@ def get_model_performance(request):
 @csrf_exempt
 def get_user_assets(request, email='butterrobot83@gmail.com'):
     try:
+        # Returns My assets as a list
         user_assets = TellUsMore.objects.filter(user_email=email)[0].main_assets.split(", ")
-        # Convert string to list
-        return JsonResponse({'message': f'{user_assets} type: {type(user_assets)}'})
+        
+        return JsonResponse({'message': f'{user_assets}'})
     except Exception as e:
         print(f'Error occured in get_user_assets: {e}')
         return JsonResponse({'error': f'Error occured in get_user_assets: {e}'})
