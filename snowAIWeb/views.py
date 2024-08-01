@@ -5275,8 +5275,10 @@ def fetch_asset_data(request, asset):
     try:
         asset = asset.upper()
         email='butterrobot83@gmail.com'
-        trade_data = Trade.objects.filter(email=email, asset=asset)
-        return JsonResponse(({'message': f'{trade_data}'}))
+        trade_data = Trade.objects.filter(email=email, asset=asset)[0]
+
+        
+        return JsonResponse(({'message': f'{trade_data} type: {type(trade_data)}'}))
     except Exception as e:
         print(f'Error occured in fetch_asset_data: {e}')
         return JsonResponse({'error': f'Error occured in fetch_asset_data: {e}'})
