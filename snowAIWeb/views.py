@@ -5274,14 +5274,39 @@ def get_user_assets(request, email='butterrobot83@gmail.com'):
 def fetch_asset_data(request, asset):
     try:
         asset = asset.upper()
-        email='butterrobot83@gmail.com'
+        email = 'butterrobot83@gmail.com'
         trade_data = Trade.objects.filter(email=email, asset=asset)
 
-        
-        return JsonResponse(({'message': f'{trade_data} type: {type(trade_data)} and len: {len(trade_data)}'}))
+        # Initialize variables
+        profit_list = []
+        win_count = 0
+        loss_count = 0
+        overall_return = 0
+
+        # Iterate over trade data to calculate the required values
+        for trade in trade_data:
+            amount = trade.amount  # Assuming 'amount' is the profit/loss attribute in Trade model
+            profit_list.append(amount)
+            overall_return += amount
+            if amount > 0:
+                win_count += 1
+            elif amount < 0:
+                loss_count += 1
+
+        total_trades = len(trade_data)
+        win_rate = (win_count / total_trades) * 100 if total_trades > 0 else 0
+        loss_rate = 100 - win_rate
+
+        return JsonResponse({
+            'profit_list': profit_list,
+            'win_rate': win_rate,
+            'loss_rate': loss_rate,
+            'overall_return': overall_return
+        })
+
     except Exception as e:
-        print(f'Error occured in fetch_asset_data: {e}')
-        return JsonResponse({'error': f'Error occured in fetch_asset_data: {e}'})
+        print(f'Error occurred in fetch_asset_data: {e}')
+        return JsonResponse({'error': f'Error occurred in fetch_asset_data: {e}'})
 
 
 
