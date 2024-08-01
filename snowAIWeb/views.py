@@ -5273,6 +5273,7 @@ def get_user_assets(request, email='butterrobot83@gmail.com'):
 @csrf_exempt
 def fetch_asset_data(request, asset):
     try:
+        asset = asset.upper()
         email='butterrobot83@gmail.com'
         trade_data = Trade.objects.filter(email=email, asset=asset)
         return JsonResponse(({'message': f'{trade_data}'}))
