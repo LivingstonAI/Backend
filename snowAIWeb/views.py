@@ -5288,7 +5288,7 @@ def fetch_asset_data(request, asset):
             amount = trade.amount  # Assuming 'amount' is the profit/loss attribute in Trade model
             profit_list.append(amount)
             overall_return += amount
-            if amount > 0:
+            if amount >= 0:
                 win_count += 1
             elif amount < 0:
                 loss_count += 1
