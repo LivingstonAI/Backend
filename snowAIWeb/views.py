@@ -5264,7 +5264,7 @@ def get_user_assets(request, email='butterrobot83@gmail.com'):
         # Returns My assets as a list
         user_assets = TellUsMore.objects.filter(user_email=email)[0].main_assets.split(", ")
         
-        return JsonResponse({'message': f'{user_assets}'})
+        return JsonResponse({'message': user_assets})
     except Exception as e:
         print(f'Error occured in get_user_assets: {e}')
         return JsonResponse({'error': f'Error occured in get_user_assets: {e}'})
