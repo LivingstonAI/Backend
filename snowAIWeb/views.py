@@ -5271,9 +5271,10 @@ def get_user_assets(request, email='butterrobot83@gmail.com'):
 
 
 @csrf_exempt
-def fetch_asset_data(request, email='butterrobot83@gmail.com'):
+def fetch_asset_data(request, asset):
     try:
-        trade_data = Trade.objects.filter(email=email)
+        email='butterrobot83@gmail.com'
+        trade_data = Trade.objects.filter(email=email, asset=asset)
         return JsonResponse(({'message': f'{trade_data}'}))
     except Exception as e:
         print(f'Error occured in fetch_asset_data: {e}')
