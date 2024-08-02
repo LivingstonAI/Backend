@@ -5314,10 +5314,52 @@ def fetch_asset_data_from_models(request, asset):
     try:
         asset = asset.upper()
         model_data = tradeModel.objects.filter(asset=asset)
-        return JsonResponse({'message': f'{model_data}'})
+        
+        # Get distinct model IDs for the given asset
+        model_ids = model_data.values_list('model_id', flat=True).distinct()
+        response_data = []
+
+        for model_id in model_ids:
+            model_trades = model_data.filter(model_id=model_id)
+            profits = [trade.profit for trade in model_trades]
+            equity_curve = calculate_equity_curve(profits)
+            win_rate, loss_rate, overall_return = calculate_performance_metrics(profits)
+            
+            response_data.append({
+                'model_id': model_id,
+                'equity_curve': equity_curve,
+                'win_rate': win_rate,
+                'loss_rate': loss_rate,
+                'overall_return': overall_return,
+            })
+
+        return JsonResponse({'data': response_data})
+
     except Exception as e:
         print(f'Error occurred in fetch_asset_data_from_models: {e}')
-        return JsonResponse({'error': f'Error occurred in fetch_asset_data_from_models: {e}'})    
+        return JsonResponse({'error': f'Error occurred in fetch_asset_data_from_models: {e}'})
+
+
+def calculate_equity_curve(profits):
+    initial_equity = 10000
+    equity = initial_equity
+    equity_curve = [equity]
+    for profit in profits:
+        equity += profit
+        equity_curve.append(equity)
+    return equity_curve
+
+
+def calculate_performance_metrics(profits):
+    total_trades = len(profits)
+    winning_trades = len([profit for profit in profits if profit > 0])
+    losing_trades = len([profit for profit in profits if profit < 0])
+    
+    win_rate = (winning_trades / total_trades) * 100 if total_trades > 0 else 0
+    loss_rate = (losing_trades / total_trades) * 100 if total_trades > 0 else 0
+    overall_return = sum(profits)
+    
+    return win_rate, loss_rate, overall_return
 
 
 
