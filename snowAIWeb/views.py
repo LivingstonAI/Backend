@@ -5363,8 +5363,9 @@ def calculate_performance_metrics(profits):
 
 
 @csrf_exempt
-def get_asset_daily_brief_data(request, asset):
+def get_asset_summary(request, asset):
     try:
+        asset = asset.upper()
         asset_news_summary = dailyBrief.objects.filter(asset=asset)[0].summary
         return JsonResponse({'message': f'{asset_news_summary}'})
     except Exception as e:

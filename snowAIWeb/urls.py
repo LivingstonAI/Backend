@@ -60,7 +60,7 @@ urlpatterns = [
     path('get-user-assets', views.get_user_assets, name='get-user-assets'),
     path('fetch-asset-data/<str:asset>', views.fetch_asset_data, name='fetch-asset-data'),
     path('fetch-asset-data-from-models/<str:asset>', views.fetch_asset_data_from_models, name='fetch-asset-data-from-models'),
-
+    path('get-asset-summary/<str:asset>', views.get_asset_summary, name='get-asset-summary'),
 
     path('contact-us', views.contact_us, name='contact-us'),
     path('book-order', views.book_order, name='book-order'),
