@@ -5362,6 +5362,14 @@ def calculate_performance_metrics(profits):
     return win_rate, loss_rate, overall_return
 
 
+@csrf_exempt
+def get_asset_daily_brief_data(request, asset):
+    try:
+        asset_news_summary = dailyBrief.objects.filter(asset=asset)[0].summary
+        return JsonResponse({'message': f'{asset_news_summary}'})
+    except Exception as e:
+        print(f'Error occurred in get_asset_daily_brief_data: {e}')
+        return JsonResponse({'error': f'Error occurred in get_asset_daily_brief_data: {e}'})
 
 
 
