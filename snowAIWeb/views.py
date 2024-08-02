@@ -5309,7 +5309,15 @@ def fetch_asset_data(request, asset):
         return JsonResponse({'error': f'Error occurred in fetch_asset_data: {e}'})
 
 
-
+@csrf_exempt
+def fetch_asset_data_from_models(request, asset):
+    try:
+        asset = asset.upper()
+        model_data = tradeModel.objects.filter(asset=asset)
+        return JsonResponse({'message': model_data})
+    except Exception as e:
+        print(f'Error occurred in fetch_asset_data_from_models: {e}')
+        return JsonResponse({'error': f'Error occurred in fetch_asset_data_from_models: {e}'})    
 
 
 

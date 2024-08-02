@@ -59,6 +59,7 @@ urlpatterns = [
     path('fetch-daily-brief-data', views.fetch_daily_brief_data, name='fetch-daily-brief-data'),
     path('get-user-assets', views.get_user_assets, name='get-user-assets'),
     path('fetch-asset-data/<str:asset>', views.fetch_asset_data, name='fetch-asset-data'),
+    path('fetch-asset-data-from-models/<str:asset>', views.fetch_asset_data_from_models, name='fetch-asset-data-from-models'),
 
 
     path('contact-us', views.contact_us, name='contact-us'),
