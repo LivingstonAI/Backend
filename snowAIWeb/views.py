@@ -5316,16 +5316,30 @@ def fetch_asset_data(request, asset):
         email = 'butterrobot83@gmail.com'
         trade_data = Trade.objects.filter(email=email, asset=asset)
 
+        # Initialize variables for overall stats
+        profit_list = []
+        win_count = 0
+        loss_count = 0
+        overall_return = 0
+
         # Initialize dictionaries to store strategy-based metrics
         strategy_profit_list = {}
         strategy_win_count = {}
         strategy_loss_count = {}
         strategy_overall_return = {}
 
+        # Iterate over trade data to calculate the required values
         for trade in trade_data:
-            strategy = trade.strategy
             amount = trade.amount  # Assuming 'amount' is the profit/loss attribute in Trade model
+            profit_list.append(amount)
+            overall_return += amount
 
+            if amount >= 0:
+                win_count += 1
+            else:
+                loss_count += 1
+
+            strategy = trade.strategy
             if strategy not in strategy_profit_list:
                 strategy_profit_list[strategy] = []
                 strategy_win_count[strategy] = 0
@@ -5340,21 +5354,34 @@ def fetch_asset_data(request, asset):
             else:
                 strategy_loss_count[strategy] += 1
 
+        # Calculate overall win rate and loss rate
+        total_trades = len(trade_data)
+        win_rate = (win_count / total_trades) * 100 if total_trades > 0 else 0
+        loss_rate = 100 - win_rate
+
         # Calculate win rate, loss rate, and overall return for each strategy
         strategy_metrics = {}
         for strategy in strategy_profit_list:
-            total_trades = len(strategy_profit_list[strategy])
-            win_rate = (strategy_win_count[strategy] / total_trades) * 100 if total_trades > 0 else 0
-            loss_rate = 100 - win_rate
+            total_trades_strategy = len(strategy_profit_list[strategy])
+            strategy_win_rate = (strategy_win_count[strategy] / total_trades_strategy) * 100 if total_trades_strategy > 0 else 0
+            strategy_loss_rate = 100 - strategy_win_rate
 
             strategy_metrics[strategy] = {
                 'profit_list': strategy_profit_list[strategy],
-                'win_rate': win_rate,
-                'loss_rate': loss_rate,
+                'win_rate': strategy_win_rate,
+                'loss_rate': strategy_loss_rate,
                 'overall_return': strategy_overall_return[strategy]
             }
 
-        return JsonResponse(strategy_metrics)
+        return JsonResponse({
+            'overall': {
+                'profit_list': profit_list,
+                'win_rate': win_rate,
+                'loss_rate': loss_rate,
+                'overall_return': overall_return
+            },
+            'strategy_metrics': strategy_metrics
+        })
 
     except Exception as e:
         print(f'Error occurred in fetch_asset_data: {e}')
