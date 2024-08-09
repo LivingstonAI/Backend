@@ -753,6 +753,21 @@ def chat_gpt(prompt):
     return response.choices[0].message.content.strip()
 
 
+@csrf_exempt
+def reflections_summary(request, asset):
+    try:
+        asset = asset.upper()
+        reflections_list = []
+        asset_reflections = Trade.objects.filter(asset=asset)
+        for entry in asset_reflections:
+            reflections_list.append(entry.reflection)
+        return JsonResponse({'message': f'{reflections_list}'})
+    except Exception as e:
+        print(f'Error occured in reflections_summary function: {e}')
+        return JsonResponse({'message': f'Error occured in reflections_summary function: {e}'})
+        
+
+
 # Schedule the update_daily_brief function to run every hour
 scheduler.add_job(
     update_daily_brief,
