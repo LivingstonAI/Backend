@@ -761,7 +761,8 @@ def reflections_summary(request, asset):
         asset_reflections = Trade.objects.filter(asset=asset)
         for entry in asset_reflections:
             reflections_list.append(entry.reflection)
-        return JsonResponse({'message': f'{reflections_list}'})
+        livingston_reflections_summary = chat_gpt(f'Provide me a summary of my reflections for {asset}. Here is the data: {reflections_list}')
+        return JsonResponse({'message': f'{livingston_reflections_summary}'})
     except Exception as e:
         print(f'Error occured in reflections_summary function: {e}')
         return JsonResponse({'message': f'Error occured in reflections_summary function: {e}'})
