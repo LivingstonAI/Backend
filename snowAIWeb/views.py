@@ -4948,7 +4948,7 @@ def is_ote_sell(asset):
         return JsonResponse({'message': f'Error occured in ote_sell_function: {e}'})
 
 
-def is_bearish_orderblock(asset, tolerance=0.01, timeframe='1d'):
+def is_bearish_orderblock(asset, tolerance=0.005, timeframe='1d'):
     try:
         dataset = obtain_dataset(asset=asset, interval=timeframe, num_days=214)
         ranging_market = is_ranging_market(data=dataset)
@@ -4980,7 +4980,7 @@ def is_bearish_orderblock(asset, tolerance=0.01, timeframe='1d'):
         return JsonResponse({'message': f'Error occured in bearish orderblock function: {e}'})
 
 
-def is_bullish_orderblock(asset, tolerance=0.01, timeframe='1d'):
+def is_bullish_orderblock(asset, tolerance=0.005, timeframe='1d'):
     try:
         dataset = obtain_dataset(asset=asset, interval=timeframe, num_days=214)
         ranging_market = is_ranging_market(data=dataset)
