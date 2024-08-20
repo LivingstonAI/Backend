@@ -5470,7 +5470,7 @@ def get_asset_summary(request, asset):
 
 
 @csrf_exempt
-def generate_cot_data():
+def generate_cot_data(request):
     
     # Example: cot_hist()
     df = cot.cot_hist(cot_report_type='traders_in_financial_futures_futopt')
