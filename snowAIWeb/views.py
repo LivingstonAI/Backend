@@ -5542,6 +5542,8 @@ def generate_cot_data(request):
         # Extract data for each specific asset
         assets = ['EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE', 'USD INDEX - ICE FUTURES U.S.']
         data = {}
+
+        round_off_number = 2
         
         for asset in assets:
             asset_df = df[df['Market and Exchange Names'] == asset]
@@ -5550,10 +5552,10 @@ def generate_cot_data(request):
                 latest_data = asset_df.iloc[0]
                 data[asset] = {
                     'Date': latest_data['As of Date in Form YYYY-MM-DD'].strftime('%Y-%m-%d'),
-                    'Percentage Noncommercial Long': round(latest_data['Percentage Noncommercial Long'], 3),
-                    'Percentage Noncommercial Short': round(latest_data['Percentage Noncommercial Short'], 3),
-                    'Percentage Commercial Long': round(latest_data['Percentage Commercial Long'], 3),
-                    'Percentage Commercial Short': round(latest_data['Percentage Commercial Short'], 3)
+                    'Percentage Noncommercial Long': round(latest_data['Percentage Noncommercial Long'], round_off_number),
+                    'Percentage Noncommercial Short': round(latest_data['Percentage Noncommercial Short'], round_off_number),
+                    'Percentage Commercial Long': round(latest_data['Percentage Commercial Long'], round_off_number),
+                    'Percentage Commercial Short': round(latest_data['Percentage Commercial Short'], round_off_number)
                 }
 
         return JsonResponse(data)
