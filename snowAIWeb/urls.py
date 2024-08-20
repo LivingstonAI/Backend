@@ -62,6 +62,7 @@ urlpatterns = [
     path('fetch-asset-data-from-models/<str:asset>', views.fetch_asset_data_from_models, name='fetch-asset-data-from-models'),
     path('get-asset-summary/<str:asset>', views.get_asset_summary, name='get-asset-summary'),
     path('reflections-summary/<str:asset>', views.reflections_summary, name='reflections-summary'),
+    path('generate-cot-data', views.generate_cot_data, name='generate-cot-data'),
 
     path('contact-us', views.contact_us, name='contact-us'),
     path('book-order', views.book_order, name='book-order'),
