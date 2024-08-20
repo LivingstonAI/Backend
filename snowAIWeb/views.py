@@ -5473,51 +5473,71 @@ def get_asset_summary(request, asset):
 def generate_cot_data(request):
     try:
         # Fetch the historical data
+                # Example: cot_hist()
         df = cot.cot_hist(cot_report_type='traders_in_financial_futures_futopt')
+        # cot_hist() downloads the historical bulk file for the specified report type, in this example the Traders in Financial Futures Futures-and-Options Combined report. Returns the data as dataframe.
 
-        current_year = pd.Timestamp.now().year
+        # Filter for the current year
+        current_year = pd.Timestamp.now().year  # Get the current year
         previous_year = current_year - 1
-
-        # Fetch the previous year data
+        # Example: cot_year()
         df = cot.cot_year(year=previous_year, cot_report_type='traders_in_financial_futures_fut')
+        # cot_year() downloads the single year file of the specified report type and year. Returns the data as dataframe.
 
-        # Collect data from the previous year to the current year
-        df_list = []
+        # Example for collecting data of a few years, here from 2017 to 2020, of a specified report:
+        df_list = []  # Create an empty list to hold DataFrames
         begin_year = previous_year
         end_year = current_year
 
         for i in range(begin_year, end_year + 1):
-            single_year = cot.cot_year(i, cot_report_type='legacy_futopt')
-            df_list.append(single_year)
+            single_year = cot.cot_year(i, cot_report_type='legacy_futopt') 
+            df_list.append(single_year)  # Append each DataFrame to the list
 
-        df = pd.concat(df_list, ignore_index=True)
+        df = pd.concat(df_list, ignore_index=True)  # Concatenate all DataFrames in the list
 
-        # Further filter and process the DataFrame
+        # Example: cot_all()
+        df = cot.cot_all(cot_report_type='legacy_fut')
+        # cot_all() downloads the historical bulk file and all remaining single year files of the specified report type.  Returns the data as dataframe.
+
+
+        # Ensure 'As of Date in Form YYYY-MM-DD' is in datetime format
         df['As of Date in Form YYYY-MM-DD'] = pd.to_datetime(df['As of Date in Form YYYY-MM-DD'])
+
         currency_df = df[df['As of Date in Form YYYY-MM-DD'].dt.year == current_year]
+
+        # Define your currency keywords
         currency_keywords = ['USD INDEX', 'EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE']
+
+        # Further filter the DataFrame for rows that match any of the currency keywords
         currency_df = currency_df[currency_df['Market and Exchange Names'].str.contains('|'.join(currency_keywords), case=False, na=False)]
 
         # Group by 'Market and Exchange Names' and get the index of the maximum open interest
         idx = currency_df.groupby('Market and Exchange Names')['Open Interest (All)'].idxmax()
+
+        # Filter the DataFrame to include only the rows with the highest open interest for each market
         currency_df = currency_df.loc[idx]
 
-        # Ensure numeric columns are properly formatted
+        # print(currency_df.head())
+        # currency_df['Market and Exchange Names'].unique()
+        df = currency_df
+        # Ensure there are no missing values and the columns are numeric
         df[['Noncommercial Positions-Long (All)', 'Noncommercial Positions-Short (All)',
             'Commercial Positions-Long (All)', 'Commercial Positions-Short (All)']] = df[[
                 'Noncommercial Positions-Long (All)', 'Noncommercial Positions-Short (All)',
                 'Commercial Positions-Long (All)', 'Commercial Positions-Short (All)'
             ]].fillna(0).astype(float)
 
-        # Calculate total positions and percentages
+        # Calculate total positions for each row
         df['Total Noncommercial Positions'] = df['Noncommercial Positions-Long (All)'] + df['Noncommercial Positions-Short (All)']
         df['Total Commercial Positions'] = df['Commercial Positions-Long (All)'] + df['Commercial Positions-Short (All)']
         df['Total Positions'] = df['Total Noncommercial Positions'] + df['Total Commercial Positions']
 
+        # Calculate percentages
         df['Percentage Noncommercial Long'] = (df['Noncommercial Positions-Long (All)'] / df['Total Noncommercial Positions']) * 100
         df['Percentage Noncommercial Short'] = (df['Noncommercial Positions-Short (All)'] / df['Total Noncommercial Positions']) * 100
         df['Percentage Commercial Long'] = (df['Commercial Positions-Long (All)'] / df['Total Commercial Positions']) * 100
         df['Percentage Commercial Short'] = (df['Commercial Positions-Short (All)'] / df['Total Commercial Positions']) * 100
+
 
         # Extract data for each specific asset
         assets = ['EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE', 'USD INDEX - ICE FUTURES U.S.']
