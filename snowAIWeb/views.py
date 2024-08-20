@@ -5550,10 +5550,10 @@ def generate_cot_data(request):
                 latest_data = asset_df.iloc[0]
                 data[asset] = {
                     'Date': latest_data['As of Date in Form YYYY-MM-DD'].strftime('%Y-%m-%d'),
-                    'Percentage Noncommercial Long': latest_data['Percentage Noncommercial Long'],
-                    'Percentage Noncommercial Short': latest_data['Percentage Noncommercial Short'],
-                    'Percentage Commercial Long': latest_data['Percentage Commercial Long'],
-                    'Percentage Commercial Short': latest_data['Percentage Commercial Short']
+                    'Percentage Noncommercial Long': round(latest_data['Percentage Noncommercial Long'], 3),
+                    'Percentage Noncommercial Short': round(latest_data['Percentage Noncommercial Short'], 3),
+                    'Percentage Commercial Long': round(latest_data['Percentage Commercial Long'], 3),
+                    'Percentage Commercial Short': round(latest_data['Percentage Commercial Short'], 3)
                 }
 
         return JsonResponse(data)
