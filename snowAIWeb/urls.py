@@ -64,6 +64,7 @@ urlpatterns = [
     path('reflections-summary/<str:asset>', views.reflections_summary, name='reflections-summary'),
     path('generate-cot-data', views.generate_cot_data, name='generate-cot-data'),
 
+
     path('contact-us', views.contact_us, name='contact-us'),
     path('book-order', views.book_order, name='book-order'),
     path('api/register/', UserRegistrationView.as_view(), name='user-register'),
