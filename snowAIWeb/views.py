@@ -5605,10 +5605,18 @@ def plot_net_positions(df):
         # Filter DataFrame for the current currency
         currency_data = df[df['Market and Exchange Names'] == currency]
 
+        # Calculate min, max, and midpoint for Net Commercial Positions
+        min_commercial = currency_data['Net Commercial Positions'].min()
+        max_commercial = currency_data['Net Commercial Positions'].max()
+        midpoint_commercial = (min_commercial + max_commercial) / 2
+
         # Plot net noncommercial and net commercial positions
         plt.figure(figsize=(10, 6))
         plt.plot(currency_data['As of Date in Form YYYY-MM-DD'], currency_data['Net Noncommercial Positions'], label='Net Noncommercial Positions', color='blue')
         plt.plot(currency_data['As of Date in Form YYYY-MM-DD'], currency_data['Net Commercial Positions'], label='Net Commercial Positions', color='red')
+
+        # Plot the midpoint line for Net Commercial Positions
+        plt.axhline(y=midpoint_commercial, color='green', linestyle='--', label=f'Midpoint of Net Commercial Positions ({midpoint_commercial:.2f})')
 
         # Customize the plot
         plt.title(f'Net Positions Over Time for {currency}')
@@ -5628,7 +5636,6 @@ def plot_net_positions(df):
         plt.close()
 
     return plot_urls
-
 # new code
 # def generate_cot_data():
 #     import cot_reports as cot
