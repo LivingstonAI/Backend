@@ -36,6 +36,7 @@ scipy>=1.6.0
 selenium==4.12.0
 six==1.16.0
 sniffio==1.3.0
+sns==0.13.2
 sortedcontainers==2.4.0
 sqlparse==0.4.4
 tornado==6.3.3

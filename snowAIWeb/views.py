@@ -60,6 +60,7 @@ from django.utils import timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import cot_reports as cot
+import seaborn as sns
 # Comment
 # current_hour = datetime.datetime.now().time().hour
 
