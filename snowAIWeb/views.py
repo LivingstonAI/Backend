@@ -2359,7 +2359,7 @@ def download_mq4_file(request, bot):
     if bot == 'trading-model':
         location = './trading-model.ex5'
     elif bot == 'risk-bot':
-        location = './risk-bot.ex5'
+        location = './Risk-Bot-V2.ex5'
     file_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), location)
 
     try:
