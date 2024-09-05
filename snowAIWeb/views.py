@@ -5610,23 +5610,45 @@ def plot_net_positions(df):
         max_commercial = currency_data['Net Commercial Positions'].max()
         midpoint_commercial = (min_commercial + max_commercial) / 2
 
-        # Plot net noncommercial and net commercial positions
-        plt.figure(figsize=(10, 6))
-        plt.plot(currency_data['As of Date in Form YYYY-MM-DD'], currency_data['Net Noncommercial Positions'], label='Net Noncommercial Positions', color='blue')
-        plt.plot(currency_data['As of Date in Form YYYY-MM-DD'], currency_data['Net Commercial Positions'], label='Net Commercial Positions', color='red')
+        # Create a figure with two subplots: one for net positions and one for Open Interest
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
 
-        # Plot the midpoint line for Net Commercial Positions
-        plt.axhline(y=midpoint_commercial, color='green', linestyle='--', label=f'Midpoint of Net Commercial Positions ({midpoint_commercial:.2f})')
+        # Plot net noncommercial and net commercial positions on the first subplot (ax1)
+        ax1.plot(currency_data['As of Date in Form YYYY-MM-DD'], 
+                 currency_data['Net Noncommercial Positions'], 
+                 label='Net Noncommercial Positions', color='blue')
+        ax1.plot(currency_data['As of Date in Form YYYY-MM-DD'], 
+                 currency_data['Net Commercial Positions'], 
+                 label='Net Commercial Positions', color='red')
+        ax1.axhline(y=midpoint_commercial, color='green', linestyle='--', 
+                    label=f'Midpoint of Net Commercial Positions ({midpoint_commercial:.2f})')
 
-        # Customize the plot
-        plt.title(f'Net Positions Over Time for {currency}')
-        plt.xlabel('Date')
-        plt.ylabel('Net Positions')
-        plt.legend()
-        plt.xticks(rotation=45)
+        # Customize the first subplot (Net Positions)
+        ax1.set_ylabel('Net Positions')
+        ax1.legend(loc='upper left')
+        ax1.set_title(f'Net Positions and Open Interest for {currency}')
+        ax1.grid(True)
+
+        # Plot Open Interest on the second subplot (ax2)
+        ax2.plot(currency_data['As of Date in Form YYYY-MM-DD'], 
+                 currency_data['Open Interest (All)'], 
+                 label='Open Interest', color='purple', linestyle='-')
+
+        # Customize the second subplot (Open Interest)
+        ax2.set_xlabel('Date')
+        ax2.set_ylabel('Open Interest')
+        ax2.legend(loc='upper left')
+        ax2.grid(True)
+
+        # Rotate the x-axis labels for better readability
+        for label in ax2.get_xticklabels():
+            label.set_rotation(45)
+            label.set_horizontalalignment('right')
+
+        # Adjust layout to prevent overlap
         plt.tight_layout()
 
-        # Save plot to a bytes buffer
+        # Save the plot to a bytes buffer
         buffer = io.BytesIO()
         plt.savefig(buffer, format='png')
         buffer.seek(0)
@@ -5636,6 +5658,9 @@ def plot_net_positions(df):
         plt.close()
 
     return plot_urls
+
+
+
 # new code
 # def generate_cot_data():
 #     import cot_reports as cot
