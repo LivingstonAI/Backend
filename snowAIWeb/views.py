@@ -5016,6 +5016,34 @@ def is_bullish_orderblock(asset, tolerance=0.005, timeframe='1d'):
         return JsonResponse({'message': f'Error occured in bullish orderblock function: {e}'})
 
 
+def is_weekly_bullish_profile(asset):
+    try:
+        dataframe = obtain_dataset(asset=asset, interval='1wk', num_days=1)
+        weekly_opening_price = dataframe.iloc[0]['Open']
+        current_price = dataframe.iloc[-1]['Close']
+        if current_price > weekly_opening_price:
+            return True
+        else:
+            return False
+    except Exception as e:
+        print(f'Error occured in weekly bullish profile function: {e}')
+        return JsonResponse({'message': f'Error occured in weekly bullish function: {e}'})
+
+
+def is_weekly_bearish_profile(asset):
+    try:
+        dataframe = obtain_dataset(asset=asset, interval='1wk', num_days=1)
+        weekly_opening_price = dataframe.iloc[0]['Open']
+        current_price = dataframe.iloc[-1]['Close']
+        if current_price < weekly_opening_price:
+            return True
+        else:
+            return False
+    except Exception as e:
+        print(f'Error occured in weekly bearish profile function: {e}')
+        return JsonResponse({'message': f'Error occured in weekly bearish function: {e}'})
+
+
 @csrf_exempt
 def genesys_live(request, identifier, num_positions, asset, interval, order_ticket, bot_id):
     
@@ -5660,134 +5688,6 @@ def plot_net_positions(df):
     return plot_urls
 
 
-
-# new code
-# def generate_cot_data():
-#     import cot_reports as cot
-#     import pandas as pd
-#     import matplotlib.pyplot as plt
-
-#     # Example: cot_hist()
-#     df = cot.cot_hist(cot_report_type='traders_in_financial_futures_futopt')
-#     # cot_hist() downloads the historical bulk file for the specified report type, in this example the Traders in Financial Futures Futures-and-Options Combined report. Returns the data as dataframe.
-
-#     # Filter for the current year
-#     current_year = pd.Timestamp.now().year  # Get the current year
-#     previous_year = current_year - 1
-
-#     # Example: cot_year()
-#     df = cot.cot_year(year=previous_year, cot_report_type='traders_in_financial_futures_fut')
-#     # cot_year() downloads the single year file of the specified report type and year. Returns the data as dataframe.
-
-#     # Example for collecting data of a few years, here from 2017 to 2020, of a specified report:
-#     df_list = []  # Create an empty list to hold DataFrames
-#     begin_year = previous_year
-#     end_year = current_year
-
-#     for i in range(begin_year, end_year + 1):
-#         single_year = cot.cot_year(i, cot_report_type='legacy_futopt')
-#         df_list.append(single_year)  # Append each DataFrame to the list
-
-#     df = pd.concat(df_list, ignore_index=True)  # Concatenate all DataFrames in the list
-
-#     # Example: cot_all()
-#     df = cot.cot_all(cot_report_type='legacy_fut')
-#     # cot_all() downloads the historical bulk file and all remaining single year files of the specified report type.  Returns the data as dataframe.
-
-#     # Ensure 'As of Date in Form YYYY-MM-DD' is in datetime format
-#     df['As of Date in Form YYYY-MM-DD'] = pd.to_datetime(df['As of Date in Form YYYY-MM-DD'])
-
-#     # Filter the data for the current year
-#     currency_df = df[df['As of Date in Form YYYY-MM-DD'].dt.year == current_year]
-
-#     # Define your currency keywords
-#     currency_keywords = ['USD INDEX', 'EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE']
-
-#     # Filter the DataFrame for the current year and specific currencies
-#     unfiltered_currency_df = df[df['As of Date in Form YYYY-MM-DD'].dt.year == current_year]
-#     unfiltered_currency_df = unfiltered_currency_df[unfiltered_currency_df['Market and Exchange Names'].str.contains('|'.join(currency_keywords), case=False, na=False)]
-
-#     # Group by 'Market and Exchange Names' and get the index of the maximum open interest
-#     # idx = currency_df.groupby('Market and Exchange Names')['Open Interest (All)'].idxmax()
-#     # currency_df = currency_df.loc[idx]
-
-#     # Fill missing values and ensure columns are numeric
-#     unfiltered_currency_df[['Noncommercial Positions-Long (All)', 'Noncommercial Positions-Short (All)',
-#                  'Commercial Positions-Long (All)', 'Commercial Positions-Short (All)']] = unfiltered_currency_df[[
-#         'Noncommercial Positions-Long (All)', 'Noncommercial Positions-Short (All)',
-#         'Commercial Positions-Long (All)', 'Commercial Positions-Short (All)'
-#     ]].fillna(0).astype(float)
-
-#     # Calculate net positions
-#     unfiltered_currency_df['Net Noncommercial Positions'] = unfiltered_currency_df['Noncommercial Positions-Long (All)'] - unfiltered_currency_df['Noncommercial Positions-Short (All)']
-#     unfiltered_currency_df['Net Commercial Positions'] = unfiltered_currency_df['Commercial Positions-Long (All)'] - unfiltered_currency_df['Commercial Positions-Short (All)']
-
-#     # Further filter the DataFrame for rows that match any of the currency keywords
-#     currency_df = currency_df[currency_df['Market and Exchange Names'].str.contains('|'.join(currency_keywords), case=False, na=False)]
-
-#     # Group by 'Market and Exchange Names' and get the index of the maximum open interest
-#     idx = currency_df.groupby('Market and Exchange Names')['Open Interest (All)'].idxmax()
-
-#     # Filter the DataFrame to include only the rows with the highest open interest for each market
-#     currency_df = currency_df.loc[idx]
-
-#     # df = currency_df
-
-#     # Ensure there are no missing values and the columns are numeric
-#     currency_df[['Noncommercial Positions-Long (All)', 'Noncommercial Positions-Short (All)',
-#         'Commercial Positions-Long (All)', 'Commercial Positions-Short (All)']] = currency_df[[
-#             'Noncommercial Positions-Long (All)', 'Noncommercial Positions-Short (All)',
-#             'Commercial Positions-Long (All)', 'Commercial Positions-Short (All)'
-#         ]].fillna(0).astype(float)
-
-#     # Calculate total positions for each row
-#     currency_df['Total Noncommercial Positions'] = currency_df['Noncommercial Positions-Long (All)'] + currency_df['Noncommercial Positions-Short (All)']
-#     currency_df['Total Commercial Positions'] = currency_df['Commercial Positions-Long (All)'] + currency_df['Commercial Positions-Short (All)']
-#     currency_df['Total Positions'] = currency_df['Total Noncommercial Positions'] + currency_df['Total Commercial Positions']
-
-#     # Calculate net positions
-#     currency_df['Net Noncommercial Positions'] = currency_df['Noncommercial Positions-Long (All)'] - currency_df['Noncommercial Positions-Short (All)']
-#     currency_df['Net Commercial Positions'] = currency_df['Commercial Positions-Long (All)'] - currency_df['Commercial Positions-Short (All)']
-
-#     # Calculate percentages
-#     currency_df['Percentage Noncommercial Long'] = (currency_df['Noncommercial Positions-Long (All)'] / currency_df['Total Noncommercial Positions']) * 100
-#     currency_df['Percentage Noncommercial Short'] = (currency_df['Noncommercial Positions-Short (All)'] / currency_df['Total Noncommercial Positions']) * 100
-#     currency_df['Percentage Commercial Long'] = (currency_df['Commercial Positions-Long (All)'] / currency_df['Total Commercial Positions']) * 100
-#     currency_df['Percentage Commercial Short'] = (currency_df['Commercial Positions-Short (All)'] / currency_df['Total Commercial Positions']) * 100
-
-#     plot_net_positions(unfiltered_currency_df)
-
-
-#     return currency_df
-
-
-# def plot_net_positions(df):
-#     # Get the unique currencies
-#     unique_currencies = df['Market and Exchange Names'].unique()
-    
-#     # Set the plot style
-#     sns.set(style="whitegrid")
-
-#     # Loop through each unique currency to plot separately
-#     for currency in unique_currencies:
-#         # Filter DataFrame for the current currency
-#         currency_data = df[df['Market and Exchange Names'] == currency]
-
-#         # Plot net noncommercial and net commercial positions
-#         plt.figure(figsize=(10, 6))
-#         plt.plot(currency_data['As of Date in Form YYYY-MM-DD'], currency_data['Net Noncommercial Positions'], label='Net Noncommercial Positions', color='blue')
-#         plt.plot(currency_data['As of Date in Form YYYY-MM-DD'], currency_data['Net Commercial Positions'], label='Net Commercial Positions', color='red')
-
-#         # Customize the plot
-#         plt.title(f'Net Positions Over Time for {currency}')
-#         plt.xlabel('Date')
-#         plt.ylabel('Net Positions')
-#         plt.legend()
-#         plt.xticks(rotation=45)
-#         plt.tight_layout()
-
-#         # Show the plot
-#         plt.show()
 
 
 
