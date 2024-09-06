@@ -5016,7 +5016,7 @@ def is_bullish_orderblock(asset, tolerance=0.005, timeframe='1d'):
         return JsonResponse({'message': f'Error occured in bullish orderblock function: {e}'})
 
 
-def is_weekly_bullish_profile(asset):
+def is_bullish_weekly_profile(asset):
     try:
         dataframe = obtain_dataset(asset=asset, interval='1wk', num_days=1)
         weekly_opening_price = dataframe.iloc[0]['Open']
@@ -5030,7 +5030,7 @@ def is_weekly_bullish_profile(asset):
         return JsonResponse({'message': f'Error occured in weekly bullish function: {e}'})
 
 
-def is_weekly_bearish_profile(asset):
+def is_bearish_weekly_profile(asset):
     try:
         dataframe = obtain_dataset(asset=asset, interval='1wk', num_days=1)
         weekly_opening_price = dataframe.iloc[0]['Open']
@@ -5168,7 +5168,9 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
             'is_ote_buy': is_ote_buy,
             'is_ote_sell': is_ote_sell,
             'is_bullish_orderblock': is_bullish_orderblock,
-            'is_bearish_orderblock': is_bearish_orderblock
+            'is_bearish_orderblock': is_bearish_orderblock,
+            'is_bullish_weekly_profile': is_bullish_weekly_profile,
+            'is_bearish_weekly_profile': is_bearish_weekly_profile
         }
     
         exec(model_code, namespace)
