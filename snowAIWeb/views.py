@@ -5200,7 +5200,7 @@ def delete_unique_bot(request, bot_id):
 
 @csrf_exempt
 def clear_stuff(request):
-    # uniqueBot.objects.all().delete()
+    uniqueBot.objects.all().delete()
     # tradeModel.objects.all().delete()
     # Trade.objects.all().delete()
     return JsonResponse({"message": f"All models deleted!"})
