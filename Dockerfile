@@ -1,7 +1,7 @@
 FROM python:3
 
-# Install distutils and other necessary packages
-RUN apt-get update && apt-get install -y setuptools ffmpeg libsm6 libxext6 && apt-get clean
+# Update package list and install necessary system packages
+RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6 && apt-get clean
 
 # Copy application files
 COPY . /usr/src/app
@@ -9,8 +9,10 @@ COPY . /usr/src/app
 # Set the working directory
 WORKDIR /usr/src/app
 
-# Install required Python packages
-RUN pip install --upgrade pip
+# Upgrade pip and install setuptools using pip
+RUN pip install --upgrade pip setuptools
+
+# Install required Python packages from requirements.txt
 RUN pip install -r requirements.txt
 
 # Command to run the application
