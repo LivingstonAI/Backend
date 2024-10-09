@@ -78,7 +78,7 @@ nbformat==5.10.4
 nest-asyncio==1.6.0
 networkx==3.3
 notebook_shim==0.2.4
-numpy==2.1.2
+numpy==1.24.4
 opencv-python==4.9.0.80
 outcome==1.2.0
 overrides==7.7.0
