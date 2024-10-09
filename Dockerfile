@@ -1,7 +1,7 @@
 FROM python:3
 
 # Install distutils and other necessary packages
-RUN apt-get update && apt-get install -y python3-distutils ffmpeg libsm6 libxext6 && apt-get clean
+RUN apt-get update && apt-get install -y setuptools ffmpeg libsm6 libxext6 && apt-get clean
 
 # Copy application files
 COPY . /usr/src/app
