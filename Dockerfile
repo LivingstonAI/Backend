@@ -1,4 +1,4 @@
-FROM python:3
+FROM python:3.9
 
 # Update package list and install necessary system packages
 RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6 && apt-get clean
