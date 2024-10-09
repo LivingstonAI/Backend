@@ -1,22 +1,17 @@
 FROM python:3
 
-# Update package list and install necessary system packages
-RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6 && apt-get clean
-
-# Set working directory
-WORKDIR /usr/src/app
+# Install distutils and other necessary packages
+RUN apt-get update && apt-get install -y setuptools ffmpeg libsm6 libxext6 && apt-get clean
 
 # Copy application files
 COPY . /usr/src/app
 
-# Upgrade pip and install virtualenv
-RUN pip install --upgrade pip
-RUN pip install virtualenv
+# Set the working directory
+WORKDIR /usr/src/app
 
-# Create a virtual environment
-RUN virtualenv venv
-# Activate the virtual environment and install dependencies
-RUN . venv/bin/activate && pip install -r requirements.txt
+# Install required Python packages
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
 # Command to run the application
-CMD ["venv/bin/python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["python3", "manage.py", "runserver", "0.0.0.0:8000"]
