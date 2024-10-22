@@ -174,6 +174,19 @@ class dailyBrief(models.Model):
     last_update = models.DateTimeField(null=True)
 
 
+class Chill(models.Model):
+    section = models.TextField()
+    text = models.TextField()
+
+
+
+
+
+
+
+
+
+
 
 
 
