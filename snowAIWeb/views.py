@@ -5696,103 +5696,196 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''ICT Mentorship Core Content - Month 04 - Interest Rate Effects on Currency Trades'''
+        section = '''ICT Core Content Month 05'''
         text = '''
-        ## Interest Rate Effects on Currency Trades 
-        ### A. Smart Money Accumulation and Distribution [Fundamentally Speaking]
-        ### 1) Interest Rates are the single most influential driving force behind market moves.
-        ### 2) Understanding Interest Rate Shifts and changes can assist you in selecting trades.
-        ### 3) Technical Analysis of Key Interest Rates can unlock professional money movement.
-        ### 4) Interest Rate Triads provide a visual depiction of Smart Money Accumulation and Distribution.
+        ## The Quarterly Market Shift:
+        ### A. IPDA Data Ranges:
+        -> 3 - 4 Month Major Market Shifts.
+        -> Smart Money Accumulation For Buy Programs.
+        ### 1) Manipulation in underlying vs benchmark.
+        ### 2) Benchmark makes lower low - underlying makes higher low (USDX makes lower low - USDCHF makes higher low).
+        ### 3) Underlying makes lower low - Benchmark makes lower high (EURUSD makes lower low - USDX makes lower high).
+        ### 4) Benchmark makes higher high - Underlying makes higher low (USDX makes higher high - EURUSD makes higher low).
 
-        ### B. Interest Rate Triads
-        ### 1) 30 Year Bond - Key Long Term Interest Rate.
-        ### 2) 10 Year Note - Intermediate Term Interest Rate. 
-        ### 3) 5 Year Note - Short Term Interest Rate.
-        ### 4) Overlaying or Comparative Analysis on these 3 Interest Rates unlocks Price Action.
-        ### 5) Failure Swings at opportunistic times can validate Institutional Order Flow.
+        ### and vice versa for Smart Money Distribution for Sell Programs 
 
-        ## Interest Rate Triad 
-        ### 30 Year T Bond Market 
-        ### 10 Year Note Market 
-        ### 5 Year Note Market
+        ## The Quarterly Shift:
+        ### A. The Look Back: 
+        ### 1) 60 - 40 - 20 Trading Days 
+        ### 2) Identify Institutional Order Flow 
+        ### 3) Refer to Recent Institutional Reference Points 
 
-        ### Overlaying these 3 markets will highlight when Accumulation and Distribution in the Interest Rate Market takes place - from a "Smart Money" perspective. 
+        ### B. The Cast Forward:
+        ### 1) Anticipate Market Shift in 20 to 60 Trading Days.
+        ### 2) Cast Forward 20 Days when last shift was 40 days ago.
+        ### 3) Cast Forward 40 days when last shift was 20 days ago.
+        ### 4) Projectedd 3 Month Shift. 
 
-        ### These 3 interest rates should confirm each higher high or lower low - at moments when the USDX is at a significant price point.
+        ## Open Float 
+        ## The Quarterly Shift:
+        ### A. Open Float:
+        -> The Current "Open Interest" Above and Below Market Price.
+        -> Shorts Protective [Buy Stops] Above last bearish shift:
+        ### 1) Buy Stops above short term highs.
+        ### 2) Buy Stops above highest high in last 3 months.
+        ### 3) Buy Stops above the current 6 Month High.
+        ### 4) Buy Stops above the current 12 Month High.
 
-        ### Failure swings highlight Smart Money participation in the markets and trading opportunities are validated.
+        -> Longs Protective [Sell Stops] Under Last Bullish Shift
+        ### 1) Sell stops below short term low.
+        ### 2) Sell stops below lowest low in last 3 months. 
+        ### 3) Sell stops below the current 6 month low.
+        ### 4) Sell Stops below the current 12 month low. 
 
-        ## ICT Action Plan 
-        ### Use the points of Focus taught in the first month of the Mentorship.
+        ## Defining Institutional Swing Points: 
+        ### 1) The market trades to a key level or just short of it - but fails to immediately react - indicating another run deeper before a reversal.
+        ### 2) After the reversal - the opportunity is best taken when the short Term Market Structure breaking point is retested. 
+        ### 3) First run on stops in a Market in an intermediate term price swing is ideal - smart money will look to unseat the aggressive trailing stops.
 
-        ### When Price Action trades to a focus point like a:
-        -> OrderBlock
-        -> Liquidity Pool
-        -> Liquidity Void or Fair Value Gap 
+        ## Defining Institutional Swing Points: 
+        ### 1) The Market trades through a key level initially but fails to immediately continue - after rejecting the new Price Level - the market retraces only to attempt to stage another drive to retest or overtake the new Price level.
+        ### 2) After the reversal the opportunity is best taken when the initial key level is retested. Or after a Market Structure breaking point is retested.
 
-        ### Refer to the Interest Rate Triad and USDX to confirm Smart Money is behind your trade idea. If there is no obvious indication they are moving large funds - pass on the trade idea and look for new ones that do.
+        ## 10 Year Notes in HTF Analysis:
+        ### 1) Charting 10 Year Treasury Prices.
+            -> A www.barchart.com 
+        ### 2) Charting 10 Year Yield Treasury Yields.
+            -> A. www.investing.com 
 
-        ## Reinforcing Liquidity Concepts and Price Delivery
-        ### A. External Range Liquidity
-        ### 1) The current trading range will have Buy Side Liquidity above the range or high.
-        ### 2) The current trading range will have Sell Side Liquidity below the range or Low.
-        ### 3) Runs on Liquidity - seek to pair orders with the pending order liquidity - Liquidity Pools. 
-        ### 4) External Range Liquidity Runs can be Low Resistance or High Resistance in nature.
+        ## Treasury Prices are inverted to it's Yield 
+        -> As Treasury Prices drop - Treasury Yields Increase.
+        -> As Treasury Prices rise - Treasury Yields Decline. 
 
-        ### B. Internal Range Liquidity
-        ### 1) When current trading range is likely to remain - Liquidity Voids will fill in - Gap Risk.
-        ### 2) When current trading range is likely to remain - Fair Value Gaps will fill in - Gap Risk.
-        ### 3) Orderblocks inside the trading range will be populated with new Buy and Sell Side Orders. 
-        ### 4) Market Maker Buy and Sell Models will form inside trading ranges. 
+        ## Long Term Funds Seek Yield: 
+        -> US Dollar can rise when yields increase - treasury prices drop.
+        -> US Dollar can decline when yields decrease - treasury prices rise. 
 
-        ## Orderblocks
-        ## Reinforcing Orderblock Theory 
+        ## Central Bank Interest Rates:
+        ### The macro perspective has to begin with Central Bank Interest Rates. These rates are set to stimulate or instigate inflation in a country's economy.
 
-        ### Bullish Orderblock:
-        ### Definition - The Lowest Candle or Price Bar with a Down Close that has the most range between Open to Close and is near a "Support" level.
+        ### The Long Term Macro concept is to look for a high interest rate country and pair that country with a low interest rate country. The respective currencies - when coupled as a Forex pair - is "fundamentally" poised for strength in relative terms against all others. 
 
-        ### Validation - When the High of the Lowest Down Close Candle or Price Bar is traded through by a later formed Candle or Price Bar.
+        ### The reverse is said for Low paired countries with High Interest Rates coupled with a High Interest Rate country. These pairs would be viewed as "fundamentally" poised for weakness in relative terms against all others.
 
-        ### Entry Techniques - When Price trades Higher away from the Bullish Orderblock and then Returns to the Bullish Orderblock Candle or Price Bar High - This is Bullish.
+        ### Selecting Pairs for Trading:
+        ### 1) Select a country with a High Interest Rate.
+        ### 2) Select a country with a Low Interest Rate.
+        ### 3) Determine the Forex Pair coupling for trades.
+        ### 4) For example: AUS 1.5% vs US .75% [AUDUSD].
+        ### 5) Look for stong support on HTF charts.
+        ### 6) Wait for Smart Money clues it is being bought.
+        ### 7) Seasonal tendency and/or Open Interest confirm. 
+        ### 8) USDX directional confirmation qualifies.
 
-        ### Defining Risk - The low of the Bullish Orderblock is the location of a relatively safe Stop Loss placement. Just below the 50% of the Orderblock total range is also considered to be a good location to raise the Stop Loss after Price runs away from the Bullish Orderblock to reduce Risk when applicable.
+        ## Intermarket Analysis:
+        ### 1) World Markets are directly linked to one another. 
+        ### 2) Understanding them all collectively aids in analysis. 
 
-        ## Liquidity Based Bias
-        ### Monthly Chart = Bearish 
-        ### Weekly Chart = Bearish
-        ### Daily Chart = Bearish
+        ### The Four Major Major Groups of Intermarket Analysis:
+        ### 1) Bonds and Interest Rates
+        ### 2) Commodities
+        ### 3) Stock Market 
+        ### 4) Currencies
 
-        ### Intraday Charts 4 hour and less will be correcting or retracing higher. This is where you anticipate the market to enter a Premium and seek Buy Side Liquidity to Sell to.
+        ### Economist Theory - No need to study CPI or employment trends. 
 
-        ### Protective Buy Stop Raids or Returns to Bearish Orderblocks or Fair Value Gaps and or filling of a Liquidity Void. Each offering a potential Low Resistance Liquidity Run - Shorting for a target under a recent Low. 
+        ## Intermarket Analysis Overview:
+        ## The four major groups Intermarket Analysis:
+        ### 1) Bonds and Interest Rates
+        -> Bonds and Stocks move together
+        ### 2) Commodities
+        -> Commodities move opposite to Bond Prices.
+        ### 3) Stock Market
+        -> Stocks move together in Bond Prices.
+        ### 4) Currencies
+        -> Currencies are influenced by Commodities
 
-        ## Propulsion Block 
-        ### Ideal Set Up:
-        ### In Major to Intermediate Term Uptrends 
+        ## Key Intermarket Relationships:
+        ### 1) USDX Up = Gold Down
+        ### 2) Gold Up = AUS and NZD Up [Gold Exports]
+        ### 3) Oil Up = USDCAD Down [Canada Export Leader]
+        ### 4) Dow Up = Nikkei Index Up 
+        ### 5) Nikkei Index Down = USDJPY Down
+        ### 6) Yields Down = Currency Down [Money seeks yield]
+        ### 7) Gold Down = USDCAD Up 
 
-        ### Bullish Propulsion Block is a candle or bar that has previously traded down into a down candle or "Bullish Orderblock" and takes over the role of Price Support or higher Price Movement.
+        ## Bullish Seasonals in HTF Analysis:
+        ### 1) Seasonal tendencies are merely a proverbial "roadmap" of past performance.
+        ### 2) They are not to be viewed as a panacea or be all end all concept. 
 
-        ## Vacuum Block 
-        ### Bullish Vacuum Block is a "gap" created in Price Action as a result of a volatility event. The gap forms by a "vacuum" of liquidity directly related to an event. NFP [Nonfarm Payroll] can create a Vacuum Block or in futures a session opening can.
+        ## Bearish Seasonals in HTF Analysis:
+        ### 1) Futures or Commodity markets are not the same as Forex. The underlying currency market may move in tandem in a Forex Pair or it may be inverted - based on the pairing with another currency.
+        ### 2) New Zealand Dollar for instance can be tracked in Forex with the NZDUSD pair. It is the first currency in the pair's name - thus is expected to move in tandem with the New Zealand Dollar Futures movement.
+        ### 3) Seasonals can provide trade conditions that may align your trading direction of the next Quarterly Shift or it may not.
 
-        ## Liquidity Void 
-        ### Liquidity Void is a range in Price Delivery where one side of the Market Liquidity is shown in long one sided ranges or candles. Price typically will want to revisit this "range" or void of contrarian liquidity.
+        ### View the mrci.com website for information on seasonal tendencies. 
 
-        ## Liquidity
-        ### Liquidity is the "open interest" of buyers and sellers in the market and can be further defined by those entities at or near specific price levels.
+        ## Money Management
+        ### Money Management and HTF Analysis:
+        ### 1) Account Balance not important.
+        ### 2) Not required to use majority of the equity.
+        ### 3) Limit allocation to only 30% of equity.
+        ### 4) Determine Max Risk % on 30% of equity.
+        ### 5) Ideally set 1% as the most RISK per trade.
+        ### 6) Target 3:1 Reward to Risk or higher setups. 
+        ### 7) Low Risk High Reward permits low accuracy. 
+        ### 8) Low Risk allows equity for more setups.
 
-        ### Runs on Bullish Liquidity Pool: 
-        ### Definition - The Low that is Under the current market price action will typically have Trailed Sell Stops under it on Long Trades. Or Sell Stops for Traders who wish to Trade a Breakout Lower in Price for a Short Position.
+        ### Money Management and Expectations:
+        ### 1) Focus on a handsome annual % return.
+        ### 2) Remember few long term setups form annually.
+        ### 3) Learn to allow short term duration in profits. 
+        ### 4) Stop loss orders are not a measure of ability.
+        ### 5) 200 pips risked for 600 pips is still 3:1 ratio.
+        ### 6) Do not look to move Stop loss too soon.
+        ### 7) Learn to exit at logical targets and reenter later.
+        ### 8) Long Term is not to get rich quick but steady.
 
-        ### Validation - When the Low is Violated or Price moves below the recent Low - the Sell Stops become Market Orders to Sell at Market. This injects Sell Side Liquidity into the Market - typically paired with Smart Money Buyers.
+        ## Defining HTF PD Arrays
+        ## Weekly Premium:
+        -> Old High\Low (Resistance Level)
+        -> Rejection Block
+        -> Bearish Orderblock 
+        -> Fair Value Gap 
+        -> Liquidity Void 
+        -> Bearish Breaker 
+        -> Mitigation Block 
 
-        ### Entry Techniques - When underlying is Bullish. Before Price trades under the recent Low - place a Buy Limit Order just below or at the recent Low. You are buying the Sell Stops like a Bank Trader or any other "Smart Money" entity would.
+        ## Weekly Discount: 
+        -> Mitigation Block
+        -> Bullish Breaker 
+        -> Liquidity Void 
+        -> Fair Value Gap 
+        -> Bullish Orderblock
+        -> Rejection Block 
+        -> Old Low\High (Support Level)
 
-        ### Defining Risk - The Low you are Buying Under - can see a swing of 10 to 20 pips in most cases. A 30 to 50 pip stop is ideal if your entry is Under the Low and not above it - fearing a missed entry.
+        ### Buying with stop orders:
+        ### The Monthly and or Weekly should suggest Institutional Order Flow will be seeking a PD Array above Daily Market price.
 
-        ## Fair Value Gap 
-        ### Fair Value Gap is a range in Price Delivery where one side of the Market Liquidity is offered and typically confirmed with a Liquidity Void on the Lower Time Frame Charts in the same range of Price. Price can actually "gap" to create a literal vacuum of Trading, thus posting an actual Price Gap.
+        ### The Daily should post a Bearish candle. The Daily Chart must close the candle with a Down close - it is not valid while the Daily chart candle is trading or forming.
+
+        ### Buy Stop is placed at Bearish Candle Open.
+
+        ### Selling with stop orders:
+        ### The Monthly and or Weekly should suggest Institutional Order Flow will be seeking a PD array below Daily market price.
+
+        ### The Daily should post a Bullish candle. The Daily chart must close the candle with with an UP close - it is not valid while the Daily chart candle is trading or forming.
+
+        ### Sell Stop is placed at Bullish Candle Open.
+
+        ## Position Trade Management
+        ### Bullish Market Conditions:
+        ### 1) Anticipate potential bullish seasonal tendency.
+        ### 2) Look for intermarket analysis confirmations.
+        ### 3) Refer to interest rate yields direction to confirm. 
+        ### 4) Consult HTF Monthly and Weekly charts for PDA.
+        ### 5) Expect a Quarterly Shift and intermediate swing.
+        ### 6) Use Daily PDA to frame your Bullish setup.
+        ### 7) Determine if you will enter by Stop or Limit.
+        ### 8) Trail stop loss below the lowest low in last 40 trading days.
+
+        ### and vice versa for Bearish Market Conditions.
 
         '''
         
