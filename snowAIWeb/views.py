@@ -29,7 +29,7 @@ from backtesting.lib import crossover, resample_apply
 import asyncio
 from backtesting.test import SMA, GOOG, EURUSD
 import pandas as pd
-import patch_pandas_ta
+# import patch_pandas_ta
 import numpy as np
 
 import pandas_ta as ta
