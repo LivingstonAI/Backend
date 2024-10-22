@@ -29,11 +29,13 @@ from backtesting.lib import crossover, resample_apply
 import asyncio
 from backtesting.test import SMA, GOOG, EURUSD
 import pandas as pd
+import patch_pandas_ta
+import numpy as np
+
 import pandas_ta as ta
 # import MetaTrader5 as mt
 from datetime import datetime
 # from matplotlib import pyplot as plt
-import pandas_ta as ta
 import yfinance as yf
 import base64
 import requests
@@ -49,7 +51,6 @@ from asgiref.sync import sync_to_async
 import matplotlib.pyplot as plt
 from mplfinance.original_flavor import candlestick_ohlc
 import matplotlib.dates as mdates
-import numpy as np
 import mplfinance as mpf
 from scipy.signal import argrelextrema, find_peaks
 from sklearn.neighbors import KernelDensity
