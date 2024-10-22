@@ -5696,138 +5696,229 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''2017 ICT Mentorship Core Content Month 08 - Day Trading'''
+        section = '''2017 ICT Mentorship Core Content Month 09 - Amplified Daytrading and Scalping'''
         text = '''
-        ## The Opportunities Inside The Daily Range 
-        ### The aim is to capitalize on the movement existing in a single day.
-        ### Not all days are ideal for Daytrading.
-        ### Generally there are two setups per trading on average.
-        ### The Daily Range is the goal for the Daytrader.
-        ### Typically the Daily Range will be close to the 5 day ADR. 
-        ### Directional Bias frames a large portion of all Daytrade setups. 
-        ### The ideal scenario is to Daytrade in the direction of the Weekly TF. 
-        ### More HTF idea you can find to support the Daytrade the better.
-        ### Daytrades permit the Trader to limit the Stoploss on all Trades.
-        ### It is important not to take many Daytrades in a single 24 hour day.
-        ### IPDA Data Ranges combined with PD Arrays are the foundation.
-        ### FOMC and NFP days keep us on the sidelines - no Live Setups.
+        ## When are buying or selling probabilities highest?
+        ### For Day Trades - The use of the Asian Range and Opening Price are key. 
+        -> Bearish Short Days: Ideally above the opening price and or Asian Range high. 
+        -> Bullish Long Days: Ideally Below the Opening Price and or Asian Range low. 
 
-        ## What Frames the Daily Setups 
-        ### HTF Institutional Order Flow 
-        ### IPDA seeking new levels in Price for liquidity
-        ### Weekly Chart current candle direction 
-        ### Day of Week 
-        ### Time of Day 
-        ### Volatility Expansion or "Large Daily Ranges"
+        ### The Market will have a short term shift in "Sentiment" and less informed Traders chase price on the impulse or initial swing intraday. 
 
-        ## Time of Day 
-        ### London Session Open 
-        ### New York Session Open 
-        ### London Close 
-        ### New York Close 
-        ### Asian Session Open 
-        ### London Lunch
+        ### Focusing on strict conditions like Daily or 4h direction based on Institutional Orderflow and combining the PD Array Matrix for next level objectives, will provide you the highest probability setups.
 
-        ## Day of Week 
-        ### Sunday - Opt out Daily Range too small
-        ### Monday - Can create a small range typically
-        ### Tuesday - Usually good day to Daytrade
-        ### Wednesday - Generally ideal Daytrade day
-        ### Thursday - Generally ideal - can reverse
-        ### Friday - Typically small range closing a week
+        ### We wait to enter on opposing Market Direction - for High Odds Setups.
 
-        ## The Weekly Range Framework 
-        ### Sunday - We determine new Trading Week Opening Price. This will aid us intra - week with Daytrade directional bias to work with. 
-        ### Note this Sunday Open through your 60 minute chart up to Thursday.
+        ## Buy Conditions: Proper Setup for long entries 
+        ### IPDA suggests a Daily or minimum 4h Discount Array is in play. 
+        ### There is a sufficient range in pips between market price and opposing Premium Array found on the Daily or minimum 4h chart.
+        ### Price declines under the "Opening Price" and the Asian Range Low. 
+        ### Ideally the decline under the Asian Range Low will be to a logical Discount Array on the 15min timeframe. 
+        ### Typically Price will not spend much time at the Discount Array on the 15min. 
+        ### Expect Price to sharply trade Higher away from the 15min Discount Array. 
+        ### The longer Price stays or hovers near the 15min Discount Array - odds drop. 
+        ### Short Term Sentiment will be most Bearish at the time we enter Long trades. 
 
-        ## The Weekly Range Framework 
-        ### Sunday Opening Price Filter - We look for Price to trade above this level early in the week during Bearish Weekly directional bias.
-        ### As long as Price is lower than this Sunday Opening Price each day of the week - we look to Sell Short in our Daytrades. 
-        ### Until a HTF PD Array is traded to. (and vice versa)
+        ### Use a 10 period W%r for Sentiment 
+        ### (and vice versa for short entries)
 
-        ## Key Point Large Range Expansion 
-        ### Weekly range candles that are large have the opening price and closing price at opposing ends of the candlestick range.
+        ## Targeting 20 Pips Per Day:
+        ### You will not make 20pips everyday...period.
+        ### Ideally you will want to bank 20 pips in any Day Trade you take.
+        ### However, there are a few tehcniques one can use to ferret out a 20 pip scalp almost everyday. [emphasis..."almost"]
+        ### The Trader still needs to do their homework and determine what the current market enivronment is. Consolidating, Reversing, Expanding.
 
-        ## When is the London Session not ideal?
-        ### After a large range day greater than 2 times the 5 day ADR. 
-        ### After a series of 3 consecutive Up Closes (Daily Timeframe) - avoid Longs. 
-        ### After a series of 3 consecutive Down Closes - avoid Shorts.
-        ### After a FOMC event that produces extreme whipsaw.
-        ### Ahead of Non-Farm Payroll numbers. 
-        ### The same day trading is heading into a long-weekend holiday. 
-        ### Multiple High to Medium Impact News Drivers for that particular Market.
-        ### An absence of any News during London can be a "wildcard" day.
+        ## Trading the 15 min NY Session Stops:
+        ### Yen, Aus, Kiwi Crosses
 
-        ## What characteristics do I look for?
-        ### The CBDR is greater than 50 pips. [Possible Pass on London]
-        ### The Asian Range is greater than 40 pips. [Consider Delayed Protraction]
-        ### The Market starts a sustained rally or decline from 8:00pm NY. [Poor]
-        ### If CBDR and or Asian Range is not visually consolidating...avoid London.
-        ### We aim for days when the bank will "hold" the market to build Open Float.
-        ### If the Market is trending from 8:00 NY - London becomes sloppy.
-        ### When the Market is conditioned for London Slop - sleep in and trade NYO. 
-        ### Accumulation - Manipulation - Distribution is the business intraday. 
+        ### Buy Setup: During Asian Session up to 12:00am NY time scout short term lows formed in the New York Session - trading long after Asia probes the lows.
 
-        ## When is London Open Killzone Ideal?
-        ### The Daily chart is clearly respecting PD Arrays 
-        ### The Market has recently responded off a HTF PD Arry and not met an opposing PD Array. 
-        ### When the Market is poised to trade higher on the Daily to Premium Arrays - London Longs are ideal. 
-        ### When the Market is poised trade Lower on the Daily to Discount Arrays - London Shorts are ideal. 
-        ### When the daily range has not recently exceeded its 5 day ADR - Expansion Day is due to form.
+        ### Sell Setup: During Asian Session up to 12:00am NY time scout short term highs formed in the New York Session - trading short after Asia probes the highs.
 
-        ## What makes Daytrades High Probability?
-        ### The Highest Importance is placed on the HFT Daily or 4h direction. 
-        ### When Daily and or 4h direction is Bullish: 
-        -> Use Previous Day's Low to High for Retracement Entries. 
-        -> Use Previous Day's NY Session Low to High for Retracement Entries.
-        -> Use Previous Day's Low for Sell Stop Raid to accumulation longs. 
-        -> Focusing on the anticipated move from HFT Discount to Premium PD Arrays. 
-        ### When Daily and or 4h direction is Bearish:
-        -> Use Previous Day's High to Low for Retracement Entries.
-        -> Use Previous Day's NY Session High to Low for Retracement Entries.
-        -> Use Previous Day's High for Buy Stop Raid to accumulate shorts.
-        -> Focusing on the anticipated move from HTF Premium to Discount PD Arrays. 
+        ### Timing by way of 5 minute chart. Target is 20 pips fixed. Stop 20 pips. 
 
-        ## When do I look to buy Trades? 
-        ### Ideally in seasonally Bullish periods of the year. *Not required.
-        ### When the current Quarter or new Quarter is expected Bullish. 
-        ### After the Daily Chart has reacted positively on a Discount PD Array.
-        ### When Price has a clear unobstructed path to an opposing Premium Array. 
-        ### The Ideal Days of the week buying Monday, Tuesday, and Wednesday.
-        ### Refer to the CBDR and determine if it is less than 40 pips ideally.
-        ### Demand the Asian Range be in a 20 pip range ahead of Frankfurt Open.
-        ### Buying between 2:00am to 4:00am NY Time seeking LOD (Low of day). 
-        ### Buy 1 - 2 STD of CBDR and or Asian Range coupled with Discount PDA. 
-        ### Timeframe to execute on 15 or minute chart. 
+        ## Trading the new york expansion:
+        ### All Pairs
 
-        ## Where do I look to buy daytrades?
-        ### Under Asian Range plus 5 pips.
-        ### FVG below a Short Term low from Previous Day's NY Session.
-        ### Bullish Orderblock below a Short Term low either Pre-Day or today.
-        ### If I am very Bullish - 1 STD with any Discount PD Array in London Open Killzone.
-        ### Inside the Protraction lower post 12:00am to 2:00am with PDA. 
-        ### Filling of a Liquidity Void that completes under a Short Term low. 
-        ### If after rally post 12:00am - Buy the 1st retrace into 15 or 5 minute + Orderblock (OB). 
-        ### 1 - 2 STD in Asian Range coupled with Discount PA Array. 
-        ### If Short Term low is taken out twice with no upside...buy Turtle Soup.
+        ### Buy Setup: During NY Session up to 10:00am NY time scout short term lows formed in the New York Open - trading long after NY probes the lows while London Session posted Daily Low and 5 day ADR pending. 
 
-        ## Where do I look to short daytrades?
-        ### Above Asian Range plus 5 pips.
-        ### FVG above a Short Term high from Previous Day's NY Session.
-        ### Bearish Orderblock above a Short Term high either Pre-Day or today.
-        ### If I am very Bearish - 1 STD with any Premium PD Array in London Open Killzone.
-        ### Inside the Protraction higher post 12:00am to 2:00am with PDA. 
-        ### Filling of a Liquidity Void that completes above a Short Term high. 
-        ### If after drop post 12:00am - Sell the 1st retrace into 15 or 5 minute - Orderblock (OB). 
-        ### 1 - 2 STD in Asian Range coupled with Premium PD Array. 
-        ### If Short Term high is taken out twice with no downside...sell Turtle Soup.
+        ### Sell Setup: During NY Session up to 10:00am NY time scout short term highs formed in the NY Open - trading short after NY probes the highs while London Session posted the Daily High and 5 day ADR pending.
 
-        ## Daytrades Entries in HTF Setups 
-        ### We can use Daytrading Entries to position our Longer Term HTF trades.
-        ### There is a method that employs very little time and analysis. 
-        ### We do not need to use the London Killzone if you are unable to trade it. 
-        ### There are two essential times of the day IPDA refers to "Reset.
-        ### The Daily Candle can point the ideal entry points for all styles of Trade.
+        ### Timing by way of 5 minute chart. Target is 20 pips fixed. Stop 20 pips.
+
+        ## The Secret behinf Consolidations:
+        ### Retail Traders: Will look for breakouts to establish a directional "bias".
+        ### Smart Money: Will engineer or fade breakouts of a consolidation. 
+
+        ### Retail Traders: Buys the previous low and Sells the previous high.
+        ### Smart Money: Buys under old low and Sells above old high.
+
+        ### Retail Traders: Chase expansions that originate from the Equilibrium.
+        ### Smart Money: Fade the expansions that originate from the Equilibrium.
+
+        ## Trading Market Reversals
+        ## Eight Reversals that can be effectively traded:
+        ### 1. Previous Day's High - Raid Buy Stops and Reverse.
+        ### 2. Previous Day's Low - Raid Sell Stops and Reverse. 
+        ### 3. Intra-Week High - Raid Buy Stops and Reverse. 
+        ### 4. Intra-Week Low - Raid Sell Stops and Reverse. 
+        ### 5. Intermediate Term High - Raid Buy Stops and Reverse. 
+        ### 6. Intermediate Term Low - Raid Sell Stops and Reverse.
+        ### 7. New York Session Reversals.
+        ### 8. London Close Reversals.
+
+        ## Trading Previous Day's Highs and Lows:
+        ### There are two circumstances when fading the move in Price beyond a Previous Day's range:
+        ### During Expansion Swings there are smaller retracements that typically create opportunities where the Previous Day's Low is raided then Price Ralies Higher. In opposing Expansion Swings there are retracements that create opportunities where the Previous Day's High is raided then Price Declines. 
+
+        ## Trading Previous Day's Lows:
+        ### In this example we Price was moving Higher as part of a larger Expansion Swing. During a normal retracement lower - into a Fair Value Gap - Price finds Buyers under the Previous Daily Low. 
+
+        ### Using the Previous Daily low and anticipating a Market Reversal afyer the PDL is raided - one can be a Buyer intraday.
+
+        ### We look for confluences of PD Arrays to support the idea of buying under a PDL (Previous Daily Low). We do not simply buy under a PDL on the sole basis Price moves beyond the Previous Day's Low.
+
+        ## Trading Previous Day's Highs:
+        ### In this example we see Price was moving Lowe as part of a larger Expansion Swing. Durnig a normal retracement higher - after a Fair Value Gap was filled - Price finds Sellers above the Previous Daily High.
+
+        ### Using the Previous Daily High and anticipating a Market Reversal after the PDH is raided - one can be a Seller Intraday.
+
+        ### We look for confluences of PD Arrays to support the idea of selling above a PDH. We do simply sell above a PDH on sole basis Price moves beyond the Previous Day's High.
+
+        ## Trading Intra-Week Highs:
+        ### In this example we Price was trading above the Equal Highs on Thursday of this particular week. Price raided the Buy Stop Liquidity Pool as a Premium Array.
+
+        ### Using the Intra - Week High and anticipating a Market Reversal after the Buy Stops are raided - one can be a Seller Intraday.
+
+        ### We look for confluences of PD Arrays to support the idea of selling above an Intra-Week High. We do not simply sell above a High on sole basis Price moves beyond the Previous Intra-Week High.
+
+        ## Trading Intra-Week Lows:
+        ### In this example we see Price was trading below the Equal lows on Tuesday of this particular week. Price raided the Sell Stop Liquidity Pool as a Discount Array.
+
+        ### Using the Intra-Week Low and anticipating a Market Reversal after the Sell Stops are raided - one can be a Buyer intraday.
+
+        ### We look for confluences of PD Arrays to support the idea of Buying below an Intra-Week Low. We do not simply Buy below a low on sole basis Price moves beyond the Previous Intra-Week Low.
+
+        ## Trading Intermediate Term Highs and Lows:
+        ### In this example we see Price was trading in a large consolidation. The periods when the Market is not trending one direction offer ideal conditions - for Shorting above an old High and Buying below an Old Low - from a Previous Week or longer in time.
+
+        ### Studying Old Highs and Old Lows and incorporating the PD Array Matrix can assist you in finding higher odds day - trades. These setups tend to present the most dynamic reactions and that is always a bonus in trading intraday.
+
+        ### The lack of directional trend environments occurs more often than not. Traders that identify this range based condition will have little to fear when fading the moves beyond Old Range extremes.
+
+        ## London Close Reversals:
+        ### London Close can be used for intraday reversals on Large Range Days for scalps. The large range day that exceeds its 5 ADR to retrace about 20% of its total daily range at 10:00am to Noon NY time.
+
+        ### In longer term conditions, the London Close can time a Market Reversal that can lead to a series of days of one sided direction. This is best determined with the use of the Weekly Templates and study of the current Market Structure.
+
+        ## How to Study These Reversals:
+        ### The best practice is to first scour Price Charts for examples of them all. Experience seeing how they form is crucial. They will have many things that are similiar and something's will differ...these nuances are only learned with study on an individual basis.
+
+        ### In August we are going to go over specific templates that lead one to using Reversals as a operative plan or action in your analysis. Until those lessons are provided to you, your best teacher is your charts and your personal note taking.
+
+        ### Those apt pupils that enjoy the study of price action will build a collection of each reversal concept discussed here. Seeing how every lesson prior to these concepts fit together will aid you in your analysis. We never know for certain what Price will do next, but we can anticipate generic behaviour that repeats. 
+
+        ## Daily Opportunities in Scalping
+        ### In Buy Programs IPDA will perform one or two price engine models:
+        ### 1. Accumulate Sell Side Liquidity by repricing under an Old Low. 
+        -> Sell Stops will be triggered inducing counter party Sellers to pair Long Entries with.
+        -> Price will seek a higher short term Premium Array to Offset positions.
+        ### 2. Reaccumulate Fair Value in retracements lower at Discount Arrays.
+        -> Weak long holders will be squeezed in the retracement lower.
+        -> Price will seek to expand higher to a short term Premium Array to Offset positions.
+
+        ## Offset Accumulation [Buy Program]
+        ### IPDA will reprice the market below an Old Low to promote Sell Stops that would be residing there for current Long Holders. This in essence "engineers" Sellers at Deep Discount Prices. The Open Float below that Old Low may also have Sell Stops for breakout systems that wish to sell on weakness.
+
+        ### This model is called Offset Accumulation. Its primary purpose is to "Offset" current long holders and or induce more Sellers at discount pricing. The model is seen frequently in Bullish Market conditions and while HTF Institutional Order Flow is suggesting higher prices. 
+
+        ### Typically, Offset Accumulation models unfold quickly and you must learn to anticipate them at key lows intraday.
+
+        ## Reaccumulation [Buy Programs]
+        ### IPDA will reprice the market lower to a Fair Value price array to provide Smart Money discount pricing for long entries. The Market will be Bullish from an Institutional Perspective and many times unfolds after a recent Sell Stop raid. The retracement lower in price will place pain on current long holders and tends to induce selling thus providing Sell Side Liquidity to pair Smart Money Long entries with. 
+
+        ### This model is called Reaccumulation. Its primary purpose is to "Reaccumulate" new long entries and or induce more Sellers at discount pricing. The model is seen frequently in Bullish Market conditions and while HTF Institutional Order Flow is suggesting higher prices. 
+
+        ### Typically, Reaccumulation models unfold quickly and you must learn to anticipate them at key Discount Arrays intraday.
+
+        ## Reversing The Daily Range 
+        ### When the market is poised to trade higher based on HTF Institutional Order Flow - in essence we expect the Open to be at or near the Low of the Daily Range.
+
+        ### There can be a small decline below the Open Price. 
+
+        ### London Open posts the initial leg higher intraday then waits for NYO. 
+
+        ### New York Open sees a continuation higher in price to 10:00am NY time. 
+
+        ### Between 10:00am and Noon in New York Time we expect the High of the Daily Range to form and at 5 day ADR Projected High.
+
+        ### Price will normally retrace lower and Close off the high of the day.
+
+        ## The London Open
+        ### 1. When HTF Institutional Order Flow is Bullish we anticipate London Session Low of Day Formation.
+        ### 2. The Open at 0 GMT or 12am in New York can see a protraction phase lower in price. This can be scalped from the Open or just above it - prior to 1:00am New York Time.
+        ### 3. The classic London Judas Swing Lower can be scalped even easier.
+        ### 4. The market retraces between 5:00am and 7:00am NY time - and this can provide a long scalp entry - once a Discount Array is hit.
+        ### 5. Even after the ideal Judas entry point has passed - a 5 minute retracement can be entered long on to scalp the remainder of London Open to 5:00am New York time.
+
+        ## The New York Session 
+        ### 1. When London Open confirms Institutional Sponsorship on the Long side and posts the Daily Low - we expect to see New York Open to continue higher - unless a HTF Premium Array has been hit intraday and or ADR is reached.
+        ### 2. We look for the intraday swings higher to determine Discount range arrays to go long at in the NYO killzone.
+        ### 3. Using the 8:20am New York time for CME Open to anticipate the NY Judas Swing to fade.
+        ### 4. Targets will be the 5 day ADR High and the next HTF Premium Array found on a 4H, 60min basis.
+        ### 5. If ADR High is reached prior to 10:00am - take 80% off and leave a small portion on to capture any range expansion that might fill. 
+
+        ## The London Close 
+        ### 1. When the New York and London Sessions have moved in tandem and the 5 day ADR High has been reached and it is at least 10:30am NY time expect a retracement off the day's High. 10:30am to 1:00pm 
+        ### 2. Ideally price should exceed the 5 day ADR range. 
+        ### 3. Look for a 5 minute failure swing at the high and a Bearish Orderblock to enter on.
+        ### 4. Risking 10 pips above the Day's High and target 20 - 30% of the total daily range in a retracement lower.
+        ### 5. Keep in mind this trade can be very difficult to see pan out some days as the range can and could expand far more than ADR high.
+
+        ## The Asian Open 
+        ### 1. When the market is Bullish - we can enter long at or just under the 0 GMT Open price and expect an expansion 15-20pips higher as the Asian Range is established.
+        ### 2. Asian Sessions can be traditionally very narrow and while this trade has proven profitable in the past - like London Close trades - we are looking at the lowest volatile periods of the Daily Range Formation. 
+        ### 3. Always aim for 15-20pips in this session as the range can be limited on the basis it be the Asian Range formation.
+        ### 4. Take full exit on scalps in this time of day.
+        ### 5. It's not optimal to expect a second leg in price. Avoid greed here and if you are fortunate to get 20pips - be content and exit.
+
+        ### [and vice versa for Sell Programs]
+
+        ## The Average Daily Range 
+        ### 1. The ADR does not have to fill for the day.
+        ### 2. ADR can be expected to act as 1/2 of the actual ADR in some conditions:
+        -> 1. When a Long Term trend is underway and a intermediate term swing has begun - a large impulse swing can surge the daily range twwice the ADR especially when the ADR is under 60pips.
+        -> 2. When an intermediate term swing is completing at a HTF Array and on the strength if High Impact News - capitulation.
+        ### 3. ADR not filled at NY Open but during London Close are ideal.
+        ### 4. If ADR fills at or before NY Open - ADR will likely be exceeded - if High Impact News is due out after equities open.
+
+        ## The Scalping Model 
+        ### Essentially the setups are micro-setups on the 5 minute charts we outline on the HTF charts. 
+        ### The elements of Time of Day are essential to framing the intraday price swings in every daily range. 
+        ### The HTF PD Arrays will draw price and intraday the LTF PD Arrays will provide the timing and price levels to enter on.
+        ### Ideally we use scalps to fill in slow periods or enter trades that may have already started and the lowest risk entry has long passed.
+        ### If you spend your time studying whether the HTF is moving higher or lower and wait for small range days to form - the market will reward your patience and supply you with daily ranges that expand and form clear intraday swings perfect for scalping. 
+
+        ## ICT Day Trading Daily Routine 
+        ### Determine the Economic Calendar Impact for Today. 
+        ### Narrow focus to killzone News Releases High or Medium.
+        ### Determine Daily Institutional Order Flow of USDX. 
+        ### Locate the USDX Daily PD Arrays in IPDA Data Ranges.
+        ### Consider if USDX is moving from premium or Discount.
+        ### Using the news due out - focus on that pair intraday.
+        ### Determine the daily Institutional order flow of pair. 
+        ### Locate the Pair's daily PD Arrays in IPDA Ranges.
+        ### Confirm the pair is moving from an opposing PD Array.
+        ### Locate the Pair's 4H PD Arrays. 
+        ### Note the 0 GMT Opening Price and Consider the Daily Range. 
+        ### At Midnight in New York - Calculate the STDV levels.
+        -> CBDR Standard Deviations.
+        -> Asian Range Standard Deviations
+        -> Flout Standard Deviations
+        ### Note the midnight New York opening price.
+        ### Look for 15/5 min PD Arrays to Converge with STDV.
+        ### Consider Intraday Scenarios that would unfold.
+        ### ADR High and Low can Assist in converging STDV levels.
 
         '''
         
