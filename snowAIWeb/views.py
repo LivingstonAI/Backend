@@ -5715,7 +5715,7 @@ def create_chill_data(request):
 
         '''
         chill_data = Chill(
-            section=section
+            section=section,
             text=text
         )
         chill_data.save()
