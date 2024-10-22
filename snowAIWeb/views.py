@@ -31,6 +31,7 @@ from backtesting.test import SMA, GOOG, EURUSD
 import pandas as pd
 # import patch_pandas_ta
 import numpy as np
+np.NaN = np.nan
 
 import pandas_ta as ta
 # import MetaTrader5 as mt
