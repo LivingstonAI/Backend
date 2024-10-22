@@ -5696,229 +5696,239 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''2017 ICT Mentorship Core Content Month 09 - Amplified Daytrading and Scalping'''
+        section = '''2017 ICT Core Content Month 10'''
         text = '''
-        ## When are buying or selling probabilities highest?
-        ### For Day Trades - The use of the Asian Range and Opening Price are key. 
-        -> Bearish Short Days: Ideally above the opening price and or Asian Range high. 
-        -> Bullish Long Days: Ideally Below the Opening Price and or Asian Range low. 
+        ## Commitment of Traders Report
+        ## The Raw Data 
+        ### Found on www.cftc.gov
+        ### Futures Contract Only Short Format 
+        ### CME - Chicago Mercentile Exchange 
 
-        ### The Market will have a short term shift in "Sentiment" and less informed Traders chase price on the impulse or initial swing intraday. 
+        ### For example:
+        ### Japanese Yen Futures Contract:
+        ### Commercial Long Positions = 143450 contracts
+        ### Commercial Short Positions = 76426 contracts 
+        ### Commercial Net Position = 67024 contracts Long 
 
-        ### Focusing on strict conditions like Daily or 4h direction based on Institutional Orderflow and combining the PD Array Matrix for next level objectives, will provide you the highest probability setups.
+        ### This tells us nothing about their current hedging program... let's look deeper! 
 
-        ### We wait to enter on opposing Market Direction - for High Odds Setups.
+        ## The Commercial Hedging Programs 
+        ### If Commercials are above the Net Zero Line both sides of the market can be used to Trade. 
+        ### The current "range" of the Commercials Net Position is referred to.
+        ### If Institutional Order Flow is Bullish - blend Discount PD Arrays and 12/6 month Net Long Commercial readings for Long Trades.
+        ### If Institutional Order Flow is Bearish - blend Premium PD Arrays and 12/6 month Net Short Commercial readings for Short Trades.
+        ### The best conditions are seen when both Net Zero basis agree with Institutional Order Flow and PD Array Matrix confluences.
 
-        ## Buy Conditions: Proper Setup for long entries 
-        ### IPDA suggests a Daily or minimum 4h Discount Array is in play. 
-        ### There is a sufficient range in pips between market price and opposing Premium Array found on the Daily or minimum 4h chart.
-        ### Price declines under the "Opening Price" and the Asian Range Low. 
-        ### Ideally the decline under the Asian Range Low will be to a logical Discount Array on the 15min timeframe. 
-        ### Typically Price will not spend much time at the Discount Array on the 15min. 
-        ### Expect Price to sharply trade Higher away from the 15min Discount Array. 
-        ### The longer Price stays or hovers near the 15min Discount Array - odds drop. 
-        ### Short Term Sentiment will be most Bearish at the time we enter Long trades. 
+        ## The Long Term Commerical Activity
+        ### The Net Zero Line delineates the Net Buying and or Net Selling.
+        ### Retail Traders that know about the Net Traders Position Chart only look at whether Commercials are Net Long for Bullishness or Net Short for Bearishness on a market.
+        ### The Smart Money can be tracked by focusing on the 12 month and 6 month range of the Commercials Net Position. 
+        ### If Commercials are above Net Zero Line = focus on 12/6 month net long.
+        ### If Commercials are below Net Zero Line = focus on 12/6 month net short.
+        ### Blend these conditions with PD Array Matrix and Institutional Order Flow for optimal results in directional analysis.
 
-        ### Use a 10 period W%r for Sentiment 
-        ### (and vice versa for short entries)
+        ## Relative Strength Analysis - Professional Accumulation and Distribution 
+        ## Agricultural 
+        ### Grains - Corn, Wheat, Soybeans
+        ### Livestock - Feeder Cattle, Lean Hogs, Live Cattle 
+        ### Foods - Cocoa, Orange Juice, Coffee, Sugar
+        ### Fibers - Cotton 
 
-        ## Targeting 20 Pips Per Day:
-        ### You will not make 20pips everyday...period.
-        ### Ideally you will want to bank 20 pips in any Day Trade you take.
-        ### However, there are a few tehcniques one can use to ferret out a 20 pip scalp almost everyday. [emphasis..."almost"]
-        ### The Trader still needs to do their homework and determine what the current market enivronment is. Consolidating, Reversing, Expanding.
+        ## Financial
+        ### Debt - T Bonds, 10 Yr.Note, 5 Yr.Note 
+        ### Currencies - Aus $, Can $, Yen, Pound, Franc, Euro, NZ $
+        ### Metals - Gold, Silver, Copper 
+        ### Energies - Crude Oil 
 
-        ## Trading the 15 min NY Session Stops:
-        ### Yen, Aus, Kiwi Crosses
+        ## Institutionally Sponsored Rally 
+        ### The Market tends to trade higher energetically as a Leader Market and establishes the underlying direction opposite to DX. 
 
-        ### Buy Setup: During Asian Session up to 12:00am NY time scout short term lows formed in the New York Session - trading long after Asia probes the lows.
+        ### These markets are extremely profitable - our aim is to focus on these markets as they'll be the strongest upisde movers.
 
-        ### Sell Setup: During Asian Session up to 12:00am NY time scout short term highs formed in the New York Session - trading short after Asia probes the highs.
+        ### Short Term Highs are seen broken and declines are shallow in nature. The upswings and up closing candles are typically much larger than those that close lower or move lower.
 
-        ### Timing by way of 5 minute chart. Target is 20 pips fixed. Stop 20 pips. 
+        ### Key Focal Point is a failure to trade lower - Divergence.
 
-        ## Trading the new york expansion:
-        ### All Pairs
+        ## Sympathetic Rally 
+        ### The Market tends to trade higher in sympathy to the Leader Market that establishes the underlying direction.
 
-        ### Buy Setup: During NY Session up to 10:00am NY time scout short term lows formed in the New York Open - trading long after NY probes the lows while London Session posted Daily Low and 5 day ADR pending. 
+        ### While these markets are potentially profitable - our aim is to focus on the Leadership Markets for the strongest possible rallies. 
 
-        ### Sell Setup: During NY Session up to 10:00am NY time scout short term highs formed in the NY Open - trading short after NY probes the highs while London Session posted the Daily High and 5 day ADR pending.
+        ### Short Term Highs are seen broken and declines are shallow in nature. The upswings and up closing candles are typically much larger than those that close lower or more lower. 
 
-        ### Timing by way of 5 minute chart. Target is 20 pips fixed. Stop 20 pips.
+        ## Institutionally Sponsored Decline 
+        ### The Market tends to trade lower energetically as a Leader Market and establishes the underlying direction opposite to DX.
 
-        ## The Secret behinf Consolidations:
-        ### Retail Traders: Will look for breakouts to establish a directional "bias".
-        ### Smart Money: Will engineer or fade breakouts of a consolidation. 
+        ### These markets are extremely profitable - our aim is to focus on these markets as they'll be the strongest downside movers. 
 
-        ### Retail Traders: Buys the previous low and Sells the previous high.
-        ### Smart Money: Buys under old low and Sells above old high.
+        ### Short Term Lows are seen broken and rallies are shallow in nature. The downswings and down closing candles are typically much larger than those that close higher or move higher.
 
-        ### Retail Traders: Chase expansions that originate from the Equilibrium.
-        ### Smart Money: Fade the expansions that originate from the Equilibrium.
+        ### Key Focal Point is a failure to trade higher - Divergence.
 
-        ## Trading Market Reversals
-        ## Eight Reversals that can be effectively traded:
-        ### 1. Previous Day's High - Raid Buy Stops and Reverse.
-        ### 2. Previous Day's Low - Raid Sell Stops and Reverse. 
-        ### 3. Intra-Week High - Raid Buy Stops and Reverse. 
-        ### 4. Intra-Week Low - Raid Sell Stops and Reverse. 
-        ### 5. Intermediate Term High - Raid Buy Stops and Reverse. 
-        ### 6. Intermediate Term Low - Raid Sell Stops and Reverse.
-        ### 7. New York Session Reversals.
-        ### 8. London Close Reversals.
+        ### Sympathetic Decline 
+        ### The Market tends to trade lower in sympathy to the Leader Market that establishes the underlying downside direction.
 
-        ## Trading Previous Day's Highs and Lows:
-        ### There are two circumstances when fading the move in Price beyond a Previous Day's range:
-        ### During Expansion Swings there are smaller retracements that typically create opportunities where the Previous Day's Low is raided then Price Ralies Higher. In opposing Expansion Swings there are retracements that create opportunities where the Previous Day's High is raided then Price Declines. 
+        ### While those markets are potentially profitable - our aim is to focus on the Leadership Market for the weakest declines.
 
-        ## Trading Previous Day's Lows:
-        ### In this example we Price was moving Higher as part of a larger Expansion Swing. During a normal retracement lower - into a Fair Value Gap - Price finds Buyers under the Previous Daily Low. 
+        ### Short Term Lows are seen broken and rallies are shallow in nature. The downswings and down closing candles are typically much larger than those that close higher or move higher.
 
-        ### Using the Previous Daily low and anticipating a Market Reversal afyer the PDL is raided - one can be a Buyer intraday.
+        ### Personal Side Note: Make a list of all the seasonal tendency influences you should be experiencing for the month at the beginning of every month.
 
-        ### We look for confluences of PD Arrays to support the idea of buying under a PDL (Previous Daily Low). We do not simply buy under a PDL on the sole basis Price moves beyond the Previous Day's Low.
+        ## Open Interest and Smart Money Footprints 
+        ### Open Interest is the total number of outstanding contracts that are held by market participants at the end of each trading day. Where volume measures the pressure or intensity behind a price trend, open interest measures the flow of money into the futures market.
 
-        ## Trading Previous Day's Highs:
-        ### In this example we see Price was moving Lowe as part of a larger Expansion Swing. Durnig a normal retracement higher - after a Fair Value Gap was filled - Price finds Sellers above the Previous Daily High.
+        ### For each seller of a futures contract there must be a buyer of that contract. Thus a seller and a buyer combine to create only one contract. Therefore, to determine the total Open Interest for any given market, we need only to know the totals from one side or the other, buyers or sellers, not the sum of both.
 
-        ### Using the Previous Daily High and anticipating a Market Reversal after the PDH is raided - one can be a Seller Intraday.
+        ### The Commodity markets have a built in advantage or "additional insight" shared by way of Open Interest. The study of Open Interest can provide a Trader a very important perspective in a Commodity.
 
-        ### We look for confluences of PD Arrays to support the idea of selling above a PDH. We do simply sell above a PDH on sole basis Price moves beyond the Previous Day's High.
+        ### There are two ways to view Open Interest as a Trading tool:
+        ### 1. Measuring the strength of a trend or Price move. 
+        ### 2. Tracking the footprints of the Large Commerical Hedgers. 
 
-        ## Trading Intra-Week Highs:
-        ### In this example we Price was trading above the Equal Highs on Thursday of this particular week. Price raided the Buy Stop Liquidity Pool as a Premium Array.
+        ## Using Open Interest in Trends and Swings 
+        ### If prices are in an uptrend, and Open Interest is rising, this is a bullish sign. There are shorts who are being stopped out, but new sellers are taking their place. As the market continues to rise, the longs get stronger and the shorts get weaker.
 
-        ### Using the Intra - Week High and anticipating a Market Reversal after the Buy Stops are raided - one can be a Seller Intraday.
+        ### If prices are in a downtrend, and Open Interest is rising, this a bearish sign. Weak longs are bing stopped, but new buyers are taking their place. As the market continues to fall, the shorts get stronger and the longs get weaker. Put another way - as long as the Open Interest is increasing in a major trend, it will have the neccessary sponsorship to continue.
 
-        ### We look for confluences of PD Arrays to support the idea of selling above an Intra-Week High. We do not simply sell above a High on sole basis Price moves beyond the Previous Intra-Week High.
+        ### If prices are in an uptrend and Open Interest is falling, this is a bearish sign. The old longs, the "smart money" are banking gains as they're liquidating. They are replaced by new buyers, who will not be as strong on balance, but the declining open interest is an indication the weak shorts are also exiting. They will be replaced by new shorts who are stronger than the old shorts were.
 
-        ## Trading Intra-Week Lows:
-        ### In this example we see Price was trading below the Equal lows on Tuesday of this particular week. Price raided the Sell Stop Liquidity Pool as a Discount Array.
+        ### If prices are in a downtrend and Open Interest is falling, this is bullish sign. Smart Money, the shorts, are covering or liquidating profitable shorts. They will be replaced by new shorts not as strong as they were, but the declining Open Interest Indicates the squeezed longs are bailing. They will be replaced by new longs who were not as weakened by the lower prices as the old longs were. Put another way - when the supply of losers is exhausted, the downtrend ends.
 
-        ### Using the Intra-Week Low and anticipating a Market Reversal after the Sell Stops are raided - one can be a Buyer intraday.
+        ## Using Open Interest in Consolidations 
+        ### If prices are in a consolidation, and Open Interest is rising, this is a bearish sign. The reason is the "street money" plays the long side. Rising Open Interest in a trading range suggests the Commercial Hedgers and Professionals are taking the short side, and the uninformed speculators will likely  fall victim to the downside break in price. 
 
-        ### We look for confluences of PD Arrays to support the idea of Buying below an Intra-Week Low. We do not simply Buy below a low on sole basis Price moves beyond the Previous Intra-Week Low.
+        ### If prices are in a consolidation and Open Interest is falling, this is a bullish sign. The reason is the Commercials Hedgers who are mostly likely shorting - are covering. The "street money" will be shorting and or expecting a breakout lower in price. 
 
-        ## Trading Intermediate Term Highs and Lows:
-        ### In this example we see Price was trading in a large consolidation. The periods when the Market is not trending one direction offer ideal conditions - for Shorting above an old High and Buying below an Old Low - from a Previous Week or longer in time.
+        ### Ideally, we want to look for Long Term or Higher Time Frame levels in Price to anticipate this Open Interest concept. In times where Price is trading at a key Support level on a HTF basis - Open Interest will drop while Price is consolidating at or near the HTF "Support" or Discount Array as  we outline in Institutional Reference Points. This will be Bullish and anticipate an upswing in Price. 
 
-        ### Studying Old Highs and Old Lows and incorporating the PD Array Matrix can assist you in finding higher odds day - trades. These setups tend to present the most dynamic reactions and that is always a bonus in trading intraday.
+        ### Conversely, we want to look for Long Term or Higher Time Frame Resistance levels in Price to anticipate this Open Interest concept. In times where Price is trading at a Key Resistance level on a HTF basis -  Open Interest will rise while Price is consolidating at or near the HTF "Resistance" or Premium Array as we outline in Institutional Reference Points. This will be bearish and anticipate a down swing in Price.
 
-        ### The lack of directional trend environments occurs more often than not. Traders that identify this range based condition will have little to fear when fading the moves beyond Old Range extremes.
+        ## Bond Trading
+        ### T Bond Trading Basics
 
-        ## London Close Reversals:
-        ### London Close can be used for intraday reversals on Large Range Days for scalps. The large range day that exceeds its 5 ADR to retrace about 20% of its total daily range at 10:00am to Noon NY time.
+        ### Trade Symbol: [ZB] 30 Year Treasury Bond 
+        ### Trading Session: New York Session 8:20am to 3:00pm.
+        ### Contract Delivery Months:
+        -> March - Code [H]
+        -> June - Code [M]
+        -> September - Code [U]
+        -> December - Code [Z]
+        -> Format: ZB\Code\Year or ie ZBU17 [September 2017 contract]
 
-        ### In longer term conditions, the London Close can time a Market Reversal that can lead to a series of days of one sided direction. This is best determined with the use of the Weekly Templates and study of the current Market Structure.
+        ### Amount Per Tick: $31.25
+        ### Full Handle or Figure Move = 32 ticks [32 seconds]
+        ### 32 Ticks Movement = $1000,00 per contract.
 
-        ## How to Study These Reversals:
-        ### The best practice is to first scour Price Charts for examples of them all. Experience seeing how they form is crucial. They will have many things that are similiar and something's will differ...these nuances are only learned with study on an individual basis.
+        ## Bond Opening Range Concept 
+        ### Highest Volume: Between 8:00am and 9:30am NY time. 
+        ### True Day: 8:00am to 3:00pm NY Time.
+        ### Opening Range: 
+        -> Begins 8:00am NY Time 
+        -> Ends 9:00am NY Time 
 
-        ### In August we are going to go over specific templates that lead one to using Reversals as a operative plan or action in your analysis. Until those lessons are provided to you, your best teacher is your charts and your personal note taking.
+        ## Narrow Your Focus:
+        ### The Opening Range between 8:00am to 9:00am tends to create the Bond Market High or Low of the Day. It can be a run on stops or a Fair Value setup. It is the location Liquidity Pools build around for Stock Market Open Raids.
 
-        ### Those apt pupils that enjoy the study of price action will build a collection of each reversal concept discussed here. Seeing how every lesson prior to these concepts fit together will aid you in your analysis. We never know for certain what Price will do next, but we can anticipate generic behaviour that repeats. 
+        ## T Bond Split Session Rules
+        ### Traditional Overnight Session: London 
+        ### New York am Session: 8:00am to Noon.
+        ### New York Pm Session: Noon to 3:00pm. 
 
-        ## Daily Opportunities in Scalping
-        ### In Buy Programs IPDA will perform one or two price engine models:
-        ### 1. Accumulate Sell Side Liquidity by repricing under an Old Low. 
-        -> Sell Stops will be triggered inducing counter party Sellers to pair Long Entries with.
-        -> Price will seek a higher short term Premium Array to Offset positions.
-        ### 2. Reaccumulate Fair Value in retracements lower at Discount Arrays.
-        -> Weak long holders will be squeezed in the retracement lower.
-        -> Price will seek to expand higher to a short term Premium Array to Offset positions.
+        ### Trending Days can see the complete trading day be one-sided in both Am and Pm Sessions. 
 
-        ## Offset Accumulation [Buy Program]
-        ### IPDA will reprice the market below an Old Low to promote Sell Stops that would be residing there for current Long Holders. This in essence "engineers" Sellers at Deep Discount Prices. The Open Float below that Old Low may also have Sell Stops for breakout systems that wish to sell on weakness.
+        ### Consolidation Days can see opposing directions in the Am and Pm Sessions. Or it can see one Session produce a swing and the other be quite or consolidate.
 
-        ### This model is called Offset Accumulation. Its primary purpose is to "Offset" current long holders and or induce more Sellers at discount pricing. The model is seen frequently in Bullish Market conditions and while HTF Institutional Order Flow is suggesting higher prices. 
+        ## Consolidation Days 
+        ### Overnight Price Action: Can be trending or Rangebound.
+        ### New York Session News: Lack of Noteworthy Reports Due. 
+        ### Economic Calendar: High to Medium Impact US Reports Due to release on another trading day later in the week.
 
-        ### Typically, Offset Accumulation models unfold quickly and you must learn to anticipate them at key lows intraday.
+        ### Formation Characteristics:
+        ### After a HTF Premium or Discount Array is met. 
+        ### At Equilibrium of a HTF Price Swing - Mid-Point Pause.
+        ### Bank Holidays in the United States. 
+        ### Ahead of holidays in the US.
+        ### Bond Auction day before and Am Session Day of. 
 
-        ## Reaccumulation [Buy Programs]
-        ### IPDA will reprice the market lower to a Fair Value price array to provide Smart Money discount pricing for long entries. The Market will be Bullish from an Institutional Perspective and many times unfolds after a recent Sell Stop raid. The retracement lower in price will place pain on current long holders and tends to induce selling thus providing Sell Side Liquidity to pair Smart Money Long entries with. 
+        ## Consolidation Brings Expansion 
+        ### When we identify the market is likely to trade in a small range or "consolidation day" - we should immediately note the next trading day or a day not long after it - will produce a "long range day" or Trending Day.
 
-        ### This model is called Reaccumulation. Its primary purpose is to "Reaccumulate" new long entries and or induce more Sellers at discount pricing. The model is seen frequently in Bullish Market conditions and while HTF Institutional Order Flow is suggesting higher prices. 
+        ### While the Bond is held in a narrow range - this will create a stranglehold on volatility for the other asset classes - on average.
 
-        ### Typically, Reaccumulation models unfold quickly and you must learn to anticipate them at key Discount Arrays intraday.
+        ### The use of this observation serves us well as Fore Traders - in that we can reduce or limit our expectations on the Fx Pairs movement and operate in a more reserved fashion. Sticking to low hanging fruit and small gains.
 
-        ## Reversing The Daily Range 
-        ### When the market is poised to trade higher based on HTF Institutional Order Flow - in essence we expect the Open to be at or near the Low of the Daily Range.
+        ## Trending Days 
+        ### Overnight Price Action: Can be trending or Rangebound.
+        ### New York Session News: Volatility Injection.
+        ### Economic Calendar: High to Medium Impact US Reports Due to Release at 8:30am NY time.
 
-        ### There can be a small decline below the Open Price. 
+        ### Formation Characteristics:
+        ### After a small range day or a series of small range day's.
+        ### Directionally driven by Daily PD Array Matrix. 
+        ### Liquidity Seeking Movement PD Array and Order Flow.
 
-        ### London Open posts the initial leg higher intraday then waits for NYO. 
+        ## Index Trading 
+        ## Index Trading Basics 
 
-        ### New York Open sees a continuation higher in price to 10:00am NY time. 
+        ### Trade Symbol: [ES] E-mini S&P 500
+        ### Trading Session: New York Session 9:30am to 4:00pm
+        ### Contract Delivery Months:
+        -> March - Code [H]
+        -> June - Code [M]
+        -> September - Code [U]
+        -> December - Code [Z]
+        -> Format: ES\Code\Year or i.e. ESU17 [Sept 2017 contract]
 
-        ### Between 10:00am and Noon in New York Time we expect the High of the Daily Range to form and at 5 day ADR Projected High.
+        ### Amount Per Tick: $12.50 [0.25] or $50.00 per one point.
+        ### $50.00 x S&P 500 Index.
 
-        ### Price will normally retrace lower and Close off the high of the day.
+        ## Spooz Opening Range Concept
+        ### Highest Volume: Between 9:30am and 10:00am NY Time.
+        ### True Day: 9:30am to 4:00pm NY Time.
+        ### Opening Range: 
+        -> Begins 9:30am NY Time
+        -> Begins 10:30am NY Time 
 
-        ## The London Open
-        ### 1. When HTF Institutional Order Flow is Bullish we anticipate London Session Low of Day Formation.
-        ### 2. The Open at 0 GMT or 12am in New York can see a protraction phase lower in price. This can be scalped from the Open or just above it - prior to 1:00am New York Time.
-        ### 3. The classic London Judas Swing Lower can be scalped even easier.
-        ### 4. The market retraces between 5:00am and 7:00am NY time - and this can provide a long scalp entry - once a Discount Array is hit.
-        ### 5. Even after the ideal Judas entry point has passed - a 5 minute retracement can be entered long on to scalp the remainder of London Open to 5:00am New York time.
+        ## Narrow Your Focus:
+        ### The Opening Range between 9:30am to 10:30am tends to create the Spooz Market High or Low of the Day. It can be a run on Stops or Fair Value Gap.
 
-        ## The New York Session 
-        ### 1. When London Open confirms Institutional Sponsorship on the Long side and posts the Daily Low - we expect to see New York Open to continue higher - unless a HTF Premium Array has been hit intraday and or ADR is reached.
-        ### 2. We look for the intraday swings higher to determine Discount range arrays to go long at in the NYO killzone.
-        ### 3. Using the 8:20am New York time for CME Open to anticipate the NY Judas Swing to fade.
-        ### 4. Targets will be the 5 day ADR High and the next HTF Premium Array found on a 4H, 60min basis.
-        ### 5. If ADR High is reached prior to 10:00am - take 80% off and leave a small portion on to capture any range expansion that might fill. 
+        ## The Am Trend
+        ### Trading Overnight Session: London 
+        ### New York Am Session: 9:30am to Noon
+        ### The True Day High or Low will tend to from in between the hours of 9:30am and 10:30am New York time.
+        ### Between the Open at 9:30am and Noon New York time - there is typically a trend or price swing daily. [Am Trend]
+        ### The Am Trend can be a continuation of overnight direction or an outright reversal of direction right from the Open.
+        ### You want to study many days of intraday Price Action to learn how consistent this morning price swing is.
+        ### The Am Trend can end at 10:30am to 11:00am but anticipate it continuing up to Noon or "New York Lunch Hour."
 
-        ## The London Close 
-        ### 1. When the New York and London Sessions have moved in tandem and the 5 day ADR High has been reached and it is at least 10:30am NY time expect a retracement off the day's High. 10:30am to 1:00pm 
-        ### 2. Ideally price should exceed the 5 day ADR range. 
-        ### 3. Look for a 5 minute failure swing at the high and a Bearish Orderblock to enter on.
-        ### 4. Risking 10 pips above the Day's High and target 20 - 30% of the total daily range in a retracement lower.
-        ### 5. Keep in mind this trade can be very difficult to see pan out some days as the range can and could expand far more than ADR high.
+        ## The Index SMT 
+        ### Between 5:00am and 9:30am New York time relative High and Lows should be compared.
 
-        ## The Asian Open 
-        ### 1. When the market is Bullish - we can enter long at or just under the 0 GMT Open price and expect an expansion 15-20pips higher as the Asian Range is established.
-        ### 2. Asian Sessions can be traditionally very narrow and while this trade has proven profitable in the past - like London Close trades - we are looking at the lowest volatile periods of the Daily Range Formation. 
-        ### 3. Always aim for 15-20pips in this session as the range can be limited on the basis it be the Asian Range formation.
-        ### 4. Take full exit on scalps in this time of day.
-        ### 5. It's not optimal to expect a second leg in price. Avoid greed here and if you are fortunate to get 20pips - be content and exit.
+        ### When Institutional Order Flow is Bullish = Compare Lows.
+        -> One Index will fail to confirm Lower Lows in all three.
 
-        ### [and vice versa for Sell Programs]
+        ### When Institutional Order Flow is Bearish = Compare Highs. 
+        -> One Index will fail to confirm Higher Highs in all three.
 
-        ## The Average Daily Range 
-        ### 1. The ADR does not have to fill for the day.
-        ### 2. ADR can be expected to act as 1/2 of the actual ADR in some conditions:
-        -> 1. When a Long Term trend is underway and a intermediate term swing has begun - a large impulse swing can surge the daily range twwice the ADR especially when the ADR is under 60pips.
-        -> 2. When an intermediate term swing is completing at a HTF Array and on the strength if High Impact News - capitulation.
-        ### 3. ADR not filled at NY Open but during London Close are ideal.
-        ### 4. If ADR fills at or before NY Open - ADR will likely be exceeded - if High Impact News is due out after equities open.
+        ### Typically there will be an Index SMT divergence to qualify the Am Trend setups a few times per week. When it is not obvious - assume it's not there.
 
-        ## The Scalping Model 
-        ### Essentially the setups are micro-setups on the 5 minute charts we outline on the HTF charts. 
-        ### The elements of Time of Day are essential to framing the intraday price swings in every daily range. 
-        ### The HTF PD Arrays will draw price and intraday the LTF PD Arrays will provide the timing and price levels to enter on.
-        ### Ideally we use scalps to fill in slow periods or enter trades that may have already started and the lowest risk entry has long passed.
-        ### If you spend your time studying whether the HTF is moving higher or lower and wait for small range days to form - the market will reward your patience and supply you with daily ranges that expand and form clear intraday swings perfect for scalping. 
+        ## The Pm Trend 
+        ### After the New York Lunch Hour 
+        ### New York Pm Session: 1:00pm to 4:00pm
+        ### The True Day High or Low will tend to form in between the hours of 3:00pm and 4:00pm New York time. 
+        ### Between 1:00pm ad 4:00pm New York time - there is typically a trend or price swing daily. [Pm Trend]
+        ### The Pm Trend can be a continuation of the Am Trend direction or an intraday reversal into the Close.
+        ### Measured Moves in the Afternoon tend to be faster than Am.
+        ### Typically 2:00pm New York time sees the move begin.
 
-        ## ICT Day Trading Daily Routine 
-        ### Determine the Economic Calendar Impact for Today. 
-        ### Narrow focus to killzone News Releases High or Medium.
-        ### Determine Daily Institutional Order Flow of USDX. 
-        ### Locate the USDX Daily PD Arrays in IPDA Data Ranges.
-        ### Consider if USDX is moving from premium or Discount.
-        ### Using the news due out - focus on that pair intraday.
-        ### Determine the daily Institutional order flow of pair. 
-        ### Locate the Pair's daily PD Arrays in IPDA Ranges.
-        ### Confirm the pair is moving from an opposing PD Array.
-        ### Locate the Pair's 4H PD Arrays. 
-        ### Note the 0 GMT Opening Price and Consider the Daily Range. 
-        ### At Midnight in New York - Calculate the STDV levels.
-        -> CBDR Standard Deviations.
-        -> Asian Range Standard Deviations
-        -> Flout Standard Deviations
-        ### Note the midnight New York opening price.
-        ### Look for 15/5 min PD Arrays to Converge with STDV.
-        ### Consider Intraday Scenarios that would unfold.
-        ### ADR High and Low can Assist in converging STDV levels.
+        ## The Index SMT 
+        ### Between Noon and 3:00pm New York time relative Highs and Lows should be compared.
+
+        ### When Institutional Order Flow is Bullish = Compare Lows.
+        -> One Index will fail to confirm Lower Lows in all three.
+
+        ### When Institutional Order Flow is Bearish = Compare Highs.
+        -> One Index will fail to confirm High Highs in all three.
 
         '''
         
