@@ -5696,196 +5696,173 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''ICT Core Content Month 05'''
+        section = '''ICT Core Content Month 06'''
         text = '''
-        ## The Quarterly Market Shift:
-        ### A. IPDA Data Ranges:
-        -> 3 - 4 Month Major Market Shifts.
-        -> Smart Money Accumulation For Buy Programs.
-        ### 1) Manipulation in underlying vs benchmark.
-        ### 2) Benchmark makes lower low - underlying makes higher low (USDX makes lower low - USDCHF makes higher low).
-        ### 3) Underlying makes lower low - Benchmark makes lower high (EURUSD makes lower low - USDX makes lower high).
-        ### 4) Benchmark makes higher high - Underlying makes higher low (USDX makes higher high - EURUSD makes higher low).
+        ## Ideal Swing Conditions for any Market
+        ### What is Swing Trading?
+        ### The discipline of Trading predictable price movements in the maret with a high degree of consistency.
 
-        ### and vice versa for Smart Money Distribution for Sell Programs 
+        ### Buying in Bullish Conditions in the market.
+        ### Selling in Bearish Conditions in the market.
 
-        ## The Quarterly Shift:
-        ### A. The Look Back: 
-        ### 1) 60 - 40 - 20 Trading Days 
-        ### 2) Identify Institutional Order Flow 
-        ### 3) Refer to Recent Institutional Reference Points 
+        ### Swing Trading is a form intermediate term trading with trade durations of 2 weeks or longer in time.
 
-        ### B. The Cast Forward:
-        ### 1) Anticipate Market Shift in 20 to 60 Trading Days.
-        ### 2) Cast Forward 20 Days when last shift was 40 days ago.
-        ### 3) Cast Forward 40 days when last shift was 20 days ago.
-        ### 4) Projectedd 3 Month Shift. 
+        ### What is the goal of Swing Trading?
+        ### Capitalize on the effects of larger entities moving into a market and causing a significant displacement in Price.
 
-        ## Open Float 
-        ## The Quarterly Shift:
-        ### A. Open Float:
-        -> The Current "Open Interest" Above and Below Market Price.
-        -> Shorts Protective [Buy Stops] Above last bearish shift:
-        ### 1) Buy Stops above short term highs.
-        ### 2) Buy Stops above highest high in last 3 months.
-        ### 3) Buy Stops above the current 6 Month High.
-        ### 4) Buy Stops above the current 12 Month High.
+        ### Since trade durations can be 2 weeks or longer, potential rewards are considerable.
 
-        -> Longs Protective [Sell Stops] Under Last Bullish Shift
-        ### 1) Sell stops below short term low.
-        ### 2) Sell stops below lowest low in last 3 months. 
-        ### 3) Sell stops below the current 6 month low.
-        ### 4) Sell Stops below the current 12 month low. 
+        ### Trade objectives of 200 pips to 500 pips in magnitude are possible rewards for such setups.
 
-        ## Defining Institutional Swing Points: 
-        ### 1) The market trades to a key level or just short of it - but fails to immediately react - indicating another run deeper before a reversal.
-        ### 2) After the reversal - the opportunity is best taken when the short Term Market Structure breaking point is retested. 
-        ### 3) First run on stops in a Market in an intermediate term price swing is ideal - smart money will look to unseat the aggressive trailing stops.
+        ### Every Market isn't ideal for setups:
+        ### Avoid favourite markets in general for Swing Trading purposes.
+        ### Large moves every year rotate in and out of different markets.
+        ### There is no "standard" Swing Trading market or pair.
+        ### Every 3 months there is a new opportunity forming for Swing Trading.
+        ### What once was a big mover will not always be the next big mover this time... investigate.
 
-        ## Defining Institutional Swing Points: 
-        ### 1) The Market trades through a key level initially but fails to immediately continue - after rejecting the new Price Level - the market retraces only to attempt to stage another drive to retest or overtake the new Price level.
-        ### 2) After the reversal the opportunity is best taken when the initial key level is retested. Or after a Market Structure breaking point is retested.
+        ## Market Profile Matters:
+        ### Markets move from one profile to the next - in all timeframes.
+        ### On Monthly and Weekly charts look for the current Market Profile for your markets of study.
+        ### Avoid lackluster or lethargic markets that have little to no movement in the last 3 months.
 
-        ## 10 Year Notes in HTF Analysis:
-        ### 1) Charting 10 Year Treasury Prices.
-            -> A www.barchart.com 
-        ### 2) Charting 10 Year Yield Treasury Yields.
-            -> A. www.investing.com 
+        ## Trending Markets = Large Flows:
+        ### If the aim in Swing Trading is to position ourselves in moves that are likely to move a large distance - we should be looking for markets that are Trending.
+        ### If a market is confined to an obvious Trading Range - this does not indicate it has high odds for a directional setup.
+        ### Building your watch list of markets with Trending Market Profiles on the Monthly and or Weekly - puts high probability behind your setups.
 
-        ## Treasury Prices are inverted to it's Yield 
-        -> As Treasury Prices drop - Treasury Yields Increase.
-        -> As Treasury Prices rise - Treasury Yields Decline. 
+        ## Be Willing to Err on the Direction:
+        ### Avoid the temptation to pick market Tops and Bottoms in Price Action.
+        ### It is for more likely to see the trend continue than a long-term reversal. 
+        ### Focus on the long term trend and the "market tide" will carry your trade to the winner's circle more often than not.
 
-        ## Long Term Funds Seek Yield: 
-        -> US Dollar can rise when yields increase - treasury prices drop.
-        -> US Dollar can decline when yields decrease - treasury prices rise. 
+        ## Successful Swing Trading Hallmarks?
+        ### Obvious Trend in HTF Charts.
+        ### Institutional Order Flow on HTF Clear.
+        ### Interest Rate Markets Supports the Trade.
+        ### COT Data Confirms [Enhances Probability].
+        ### Opposing PDA Obvious in Charts.
+        ### Seasonal Tendency [Enhances Probability].
+        ### Supporting Intermarket Analysis.
 
-        ## Central Bank Interest Rates:
-        ### The macro perspective has to begin with Central Bank Interest Rates. These rates are set to stimulate or instigate inflation in a country's economy.
+        ## Institutional Sponsorship?
+        ### When buying are there signs in Relative Strength Analysis to support the trade?
+        -> Example: Buy EURUSD on lower low - USDX lower high.
+        ### When shorting are there signs in Relative Strength Analysis to support the trade?
+        -> Example: Short USDCHF on lower high - USDX higher high.
 
-        ### The Long Term Macro concept is to look for a high interest rate country and pair that country with a low interest rate country. The respective currencies - when coupled as a Forex pair - is "fundamentally" poised for strength in relative terms against all others. 
+        ## Bank Accumulation Distribution:
+        ### Are the Down candles becoming "Support" and seeing higher prices?
+        ### Are the Swing Highs breaking and seeing higher highs?
 
-        ### The reverse is said for Low paired countries with High Interest Rates coupled with a High Interest Rate country. These pairs would be viewed as "fundamentally" poised for weakness in relative terms against all others.
+        ### Are the UP candles becoming "Resistance" and seeing lower prices?
+        ### Are the Swing Lows breaking and seeing lower lows?
 
-        ### Selecting Pairs for Trading:
-        ### 1) Select a country with a High Interest Rate.
-        ### 2) Select a country with a Low Interest Rate.
-        ### 3) Determine the Forex Pair coupling for trades.
-        ### 4) For example: AUS 1.5% vs US .75% [AUDUSD].
-        ### 5) Look for stong support on HTF charts.
-        ### 6) Wait for Smart Money clues it is being bought.
-        ### 7) Seasonal tendency and/or Open Interest confirm. 
-        ### 8) USDX directional confirmation qualifies.
+        ## Clear Price Action and Levels:
+        ### Above or below the Market Price the PDA are obvious and easy to identify? 
+        ### Price not traded at in recent weeks or months left in imbalance basis Monthly and Weekly?
+        ### The cleanest Price Action are the most favourable markets to trade in. Less chance for erroneus Price Action to distract or fool you.
+        ### Price respecting Institutional Levels?
 
-        ## Intermarket Analysis:
-        ### 1) World Markets are directly linked to one another. 
-        ### 2) Understanding them all collectively aids in analysis. 
+        ## Rule Based Conceptual Methods:
+        ### Every trade is passed through a rules based filtering process.
+        ### The rules are standardized and static... not changing each trade setup.
+        ### When trade setups fail the filtering process - the trade is passon on. Period - no exceptions.
+        ### When the trade setups pass the filtering process - the trade is executed on. Risk and Equity Management permitting.
 
-        ### The Four Major Major Groups of Intermarket Analysis:
-        ### 1) Bonds and Interest Rates
-        ### 2) Commodities
-        ### 3) Stock Market 
-        ### 4) Currencies
+        ## Probabilities Reward Diligence:
+        ### Limiting setups to 3:1 Reward to Risk permits as low as 34% accuracy to be net profitable.
+        ### That's making money when you're wrong 66% of the time!
+        ### If we can frame our setups with rewards of 5 times our risk - we have higher odds of probability and we endure losses much easier.
+        ### The setups that have the most movement potential offer the better R:R ratio.
 
-        ### Economist Theory - No need to study CPI or employment trends. 
+        ## The PDA (Premium Discount Array) Matrix:
+        ### When defining the marekt conditions we think in terms of where the Price can reach for. Both in a rally and in a decline. This is the foundation to determining likely market direction.
 
-        ## Intermarket Analysis Overview:
-        ## The four major groups Intermarket Analysis:
-        ### 1) Bonds and Interest Rates
-        -> Bonds and Stocks move together
-        ### 2) Commodities
-        -> Commodities move opposite to Bond Prices.
-        ### 3) Stock Market
-        -> Stocks move together in Bond Prices.
-        ### 4) Currencies
-        -> Currencies are influenced by Commodities
+        ### The PD Arrays that have been traded to or executed on most recently indicate the opposite PD Array Spectrum will be reached for.
 
-        ## Key Intermarket Relationships:
-        ### 1) USDX Up = Gold Down
-        ### 2) Gold Up = AUS and NZD Up [Gold Exports]
-        ### 3) Oil Up = USDCAD Down [Canada Export Leader]
-        ### 4) Dow Up = Nikkei Index Up 
-        ### 5) Nikkei Index Down = USDJPY Down
-        ### 6) Yields Down = Currency Down [Money seeks yield]
-        ### 7) Gold Down = USDCAD Up 
+        ### If Discount Arrays have provided Support for Price - probabilities increase that the Premium Arrays will be sought above the market price.
 
-        ## Bullish Seasonals in HTF Analysis:
-        ### 1) Seasonal tendencies are merely a proverbial "roadmap" of past performance.
-        ### 2) They are not to be viewed as a panacea or be all end all concept. 
+        ### If Premium Arrays have provided Resistance for Price - probabilities increase that Discount Arrays will be sought below the market price.
 
-        ## Bearish Seasonals in HTF Analysis:
-        ### 1) Futures or Commodity markets are not the same as Forex. The underlying currency market may move in tandem in a Forex Pair or it may be inverted - based on the pairing with another currency.
-        ### 2) New Zealand Dollar for instance can be tracked in Forex with the NZDUSD pair. It is the first currency in the pair's name - thus is expected to move in tandem with the New Zealand Dollar Futures movement.
-        ### 3) Seasonals can provide trade conditions that may align your trading direction of the next Quarterly Shift or it may not.
+        ## HTF Sequence:
+        ### Shorting Opportunities - 
+        -> Monthly Chart Sell Program 
+        -> Weekly Chart Sell Program 
+        -> Daily Chart Sell Program 
+        -> 4 Hour Chart Sell Program 
 
-        ### View the mrci.com website for information on seasonal tendencies. 
+        ### Buying Opportunities - 
+        -> Monthly Chart Buy Program 
+        -> Weekly Chart Buy Program 
+        -> Daily Chart Buy Program 
+        -> 4 Hour Chart Buy Program
 
-        ## Money Management
-        ### Money Management and HTF Analysis:
-        ### 1) Account Balance not important.
-        ### 2) Not required to use majority of the equity.
-        ### 3) Limit allocation to only 30% of equity.
-        ### 4) Determine Max Risk % on 30% of equity.
-        ### 5) Ideally set 1% as the most RISK per trade.
-        ### 6) Target 3:1 Reward to Risk or higher setups. 
-        ### 7) Low Risk High Reward permits low accuracy. 
-        ### 8) Low Risk allows equity for more setups.
+        ## The General Concept:
+        ### Market is poised to Trade Higher on HTF
+        -> 1. Seasonal Tendency 
+        -> 2. Interest Rate Driven 
+        -> 3. Commitment of Traders 
+        -> 4. Intermarket Analysis Supports Bullishness
 
-        ### Money Management and Expectations:
-        ### 1) Focus on a handsome annual % return.
-        ### 2) Remember few long term setups form annually.
-        ### 3) Learn to allow short term duration in profits. 
-        ### 4) Stop loss orders are not a measure of ability.
-        ### 5) 200 pips risked for 600 pips is still 3:1 ratio.
-        ### 6) Do not look to move Stop loss too soon.
-        ### 7) Learn to exit at logical targets and reenter later.
-        ### 8) Long Term is not to get rich quick but steady.
+        ### Market Rallies Higher then retraces. 
+        ### Market Exapnds up to higher highs. 
 
-        ## Defining HTF PD Arrays
-        ## Weekly Premium:
-        -> Old High\Low (Resistance Level)
-        -> Rejection Block
-        -> Bearish Orderblock 
-        -> Fair Value Gap 
-        -> Liquidity Void 
-        -> Bearish Breaker 
-        -> Mitigation Block 
+        ## The Swing Trade Procedure:
+        ### 1) Determine the 9 - 18 month Market Profile on the Monthly and Weekly Charts.
+        ### 2) Determine the Monthly PD Arrays - refer to the active Discount Arrays.
+        ### 3) If Monthly Discount Array is Supporting Price Determine Premium Arrays.
+        ### 4) When Monthly Discount Array is active - Move to Weekly Chart. 
+        ### 5) Determine Weekly PD Arrays - refer to the acitve Discount Arrays.
+        ## 6) If Weekly Discount Array is Supporting Price Determine Premium Arrays.
+        ### 7) When Weekly Discount Array is active - Move to Daily Chart.
+        ### 8) Determine the Daily Discount Arrays - refer to active Discount Arrays.
+        ### 9) When Daily Discount Array is active - Move to 4 Hour Chart.
+        ### 10) Determine 4 Hour Discount Arrays - refer to acitve Disscount Arrays.
+        ### 11) Buy all 4 Hour Discount Arrays and scale out at Daily, Weekly, and Monthly Premium Arrays.
+        ### 12) Look to trade setups that offer at least 3 times the range between your entry and the closest Premium Array on all timeframes.
 
-        ## Weekly Discount: 
-        -> Mitigation Block
-        -> Bullish Breaker 
-        -> Liquidity Void 
-        -> Fair Value Gap 
-        -> Bullish Orderblock
-        -> Rejection Block 
-        -> Old Low\High (Support Level)
+        ## Setup Failure Protocol:
+        ### 1) If the Buy Setup on the 4 Hour Discount Array fails and the trade results in a loss - look for a lower priced 4 Hour Discount Array to Buy at.
+        ### 2) If the 4 Hour chart has no more Discount Arrays to Buy at - refer to the Daily - Weekly - Monthly Discount Arrays to Buy at below price.
+        ### 3) At the lower Discount Array - Buy with 50% of the position size the intial or previous failed trade utilized.
+        ### 4) Do not try to win all the equity back in the subsequent trade.
+        ### 5) Always confirm Lower Time Frame 4 Hour Premium Arrays give way or fail as price moves in your favour - and new Discount Arrays Support price as it moves towards the Premium Arrays on the HTF charts.
 
-        ### Buying with stop orders:
-        ### The Monthly and or Weekly should suggest Institutional Order Flow will be seeking a PD Array above Daily Market price.
+        ## Bullish MWD Sequential:
+        ### Monthly - Discount Array has shown to induce buying as evidenced by Price moving higher.
+        ### Weekly - Discount Array has shown to induce buying as evidenced by Price moving higher.
+        ### Daily - Discount Array has shown to induce buying as evidenced by Price moving higher.
 
-        ### The Daily should post a Bearish candle. The Daily Chart must close the candle with a Down close - it is not valid while the Daily chart candle is trading or forming.
+        ### In all timeframes - down candles provide new support to Price and little to no weakness seen.
 
-        ### Buy Stop is placed at Bearish Candle Open.
+        ## Buy Daily Bullish Discount Array 
+        ### 1) Bullish Mitigation Block 
+        ### 2) Bullish Breaker 
+        ### 3) Liquidity Void 
+        ### 4) Fair Value Gap 
+        ### 5) Bullish Orderblock 
+        ### 6) Rejection Block 
+        ### 7) Old low or high
 
-        ### Selling with stop orders:
-        ### The Monthly and or Weekly should suggest Institutional Order Flow will be seeking a PD array below Daily market price.
+        ### and vice versa for Bearish conditions.
 
-        ### The Daily should post a Bullish candle. The Daily chart must close the candle with with an UP close - it is not valid while the Daily chart candle is trading or forming.
+        ## Reducing Risk:
+        ### 1) Begins with knowing your maximum RISK per setup or Trade. 
+        ### 2) You should not allow High Risk % per trade - Gambling.
+        ### 3) Professionals look to frame setups with Low - Risk High Reward.
+        ### 4) With Swing Trades Only frame on Monthly or Weekly levels ideally.
+        ### 5) HTF PD Arrays and 4 Hour entries permit your setups tighter stops.
 
-        ### Sell Stop is placed at Bullish Candle Open.
-
-        ## Position Trade Management
-        ### Bullish Market Conditions:
-        ### 1) Anticipate potential bullish seasonal tendency.
-        ### 2) Look for intermarket analysis confirmations.
-        ### 3) Refer to interest rate yields direction to confirm. 
-        ### 4) Consult HTF Monthly and Weekly charts for PDA.
-        ### 5) Expect a Quarterly Shift and intermediate swing.
-        ### 6) Use Daily PDA to frame your Bullish setup.
-        ### 7) Determine if you will enter by Stop or Limit.
-        ### 8) Trail stop loss below the lowest low in last 40 trading days.
-
-        ### and vice versa for Bearish Market Conditions.
+        ## Maximising Reward:
+        ### 1) Key is only Trade on HTF - Monthly and Weekly Levels.
+        ### 2) Timing 4 Hour entries on HTF levels offer the maximum R multiples.
+        ### 3) HTF levels that offer ranges of 200 - 500 pips can yield up to 10R wins.
+        ### 4) Remember there are typically 1 - 2 Swing Trades per 4 - 6 weeks.
+        ### 5) Removing High Leverage and coupling HTF setups with High R is key. 
+        ### 6) Consider leverage of 3:1 and 10R setups can yield up to 15%.
+        ### 7) Managed funds with 1.5% Risk and 3:1 leverage using 50 pips stops! 
+        ### 8) Focusing on 6 Swings per year alone that offer 10R can double equity.
 
         '''
         
