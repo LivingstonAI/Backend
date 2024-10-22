@@ -5696,95 +5696,212 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''2016 ICT Private Mentorship Core Content Month 01'''
+        section = '''2016 ICT Private Mentorship Core Content Month 02'''
         text = '''
-        ## ICT Mentorship Core Content - Month 1 - Elements of a Trade Setup
-        ## Elements to a trade setup
+        ## Growing Small Accounts Without High Risk
+        ### A. What you need to avoid:
+        ### 1) Do not try to make massive gains in either pips or % returns.
+        ### 2) Do not open yourself to large Risk in hopes of equally large returns or profits.
+        ### 3) Do not assume taking small Risk defined trades will not grow your account.
+        ### 4) Do not sacrifice trading equity for poor planning or lack thereof.
 
-        ### A. Context or Framewrok surrounding the idea (Price Delivery)
-        ### 1) Expansion 
-        ### 2) Retracement 
-        ### 3) Reversal 
-        ### 4) Consolidations 
+        ### B. What you need to aim for:
+        ### 1) Determine how to realistically anticipate a favourable Reward to Risk Model. 
+        ### 2) Learn to respect the Risk side of the trade setups more over the reward. 
+        ### 3) Identify Trade Setups that permit three Reward multiples to one Risk or higher.
+        ### 4) Frame good Reward to Risk setups that have little impace if unprofitable.
 
-        ## Elements to a trade setup 
-        ### What is Expansion?
-        ###  Expansion is when Price moves quickly from a level of Equilibrium.
+        ## How to Frame Low Risk Trade Setups 
+        ### A. What makes the setup worth taking?
+        ### 1) Selecting Trade Setups on Higher Time Frame Charts is ideal.
+        ### 2) Large Institutions and Banks analyze markets on Daily - Weekly - Monthly bias.
+        ### 3) Locating Price Levels that align with Institutional Order Flow is key.
+        ### 4) Higher Timeframe setups form slow and provide ample time to plan accordingly.
 
-        ### What is the importance?
-        ### When Price leaves a level quickly this indicates a willingness on the part of the Market Makers to reveal their intended repricing model.
+        ### B. What can we do to lower the Risk in the trade?
+        ### 1) The Higher Timeframe has more influence in Price so we focus there.
+        ### 2) The conditions that lend to a Trade Setup on a HTF can be refined to LTF.
+        ### 3) Transpose the Higher Timeframe leels to Lower Timeframe charts.
+        ### 4) Refining HTF levels to LTF charts allows smaller stop loss placement and risk.
 
-        ### What do we look for in Price?
-        ### The OrderBlock the Market Makers leave at or near the Equilibrium.
+        ### ICT Interbank Insight: Smart Money Buys Under Old Lows and Sells Above Old Highs. 
 
-        ### What is Retracement?
-        ### Retracement is when Price moves back inside the recently created Price Range.
+        ## Why Losing on Trades Won't Affect Your Probabilty
+        ### A. What Trading with fear of taking losses actually does to your trading:
+        ### 1) Staying concerned about taking a loss promotes Fear Based Decision Making.
+        ### 2) Equity that is managed by Traders that cannot take a loss - can't profit long term.
+        ### 3) Losing is inevitable - Fear Based Decision Making keeps focus on the adverse.
+        ### 4) Fear Based Decision making fosters Trade Paralysis or inablilty to execute efficiently.
 
-        ### What is the importance?
-        ### When Price returns a recent Price Range this indicates a willingness on the part of the Market Makers to reprice to levels not efficiently traded for Fair Value.
+        ### B. Why Profits are Achievable Despite Taking Reasonable Losses:
+        ### 1) The Professional Equity Manager understands "Losses are costs of doing bussiness."
+        ### 2) Using Sound Equity Management and High Probability Setups yield handsome % returns.
+        ### 3) Trading scenarios that encourage potential 3:1 Reward Ratios, provide initial foundation.
+        ### 4) Defining Trade Setups that frame 5:1 Reward to Risk or more-efficiently cover losses.
 
-        ### What do we look for in Price?
-        ### The Fair Value Gaps and Liquidity Voids.
+        ## The Secrets to High Reward Trading Setups
+        ### 1) Patience 
+        ### 2) Define Trade Environments
+        ### 3) Determine Trade Parameters
+        ### 4) Executable Criteria
+        ### 5) Understand Why it should pan out
+        ### 6) Experience For future reference
 
-        ### What is Reversal?
-        ### Reversal is when Price moves the opposite direction that the current direction has taken it.
+        ## Focal Point 
+        ### It is crucial to understand that efficiency in Trading comes by way of Process Orientated Thinking - not by way of Reactionary or Impulsive thinking - or rushing ahead to Trade Signals prematurely.
 
-        ### What is the importance?
-        ### When Price reverses direction it indicates the Market Makers have ran a level of Stops and a significant move should unfold in the new direction.
+        ## Big Picture Perspective:
+        ### 1. Macro Market Analysis
+        ### a) Inflationary Market
+        ### b) Deflationary Market
+        ### 2. Interest Rate Analysis
+        ### a) Higher Rates 
+        ### b) Lower Rates 
+        ### c) Unexpected Change
+        ### 3. Intermarket Analysis
+        ### a) CRB Index - Commodities
+        ### b) USDX - US Dollar Index 
+        ### 4. Seasonal Influences
+        ### a) Bullish Seasonal Tendencies
+        ### b) Bearish Seasonal Tendencies
 
-        ### What do we look for in Price?
-        ### The Liquidity Pools just above an old Price High and just below an old Price Low.
+        ## Intermediate Perspective:
+        ### 1) Top Down Analysis
+        -> Monthly Chart Analysis
+        -> Weekly Chart Analysis
+        -> Daily Chart Analysis
+        ### 2) COT Data 
+        -> Bullish Hedging by Smart Money
+        -> Bearish Hedging by Smart Money
+        -> Extreme Levels Historically
+        ### 3) Market Sentiment 
+        -> Extreme Market Bullishness
+        -> Extreme Market Bearishness
 
-        ### What is Consolidation?
-        ### Consolidation is when Price moves inside a clear trading range and shows no willingness to move significantly higher or lower.
+        ## Short Term Perspective:
+        ### 1) Correlation Analysis
+        -> USDX SMT Analysis
+        -> Correlated Pair SMT Analysis
+        ### 2) Time and Price Theory
+        -> Quarterly Effect 
+        -> Monthly Effect 
+        -> Weekly Range 
+        -> Daily Range 
+        -> Time of Day 
+        ### 3) IPDA - Interbank Price Delivery Algorithm
+        -> Institutional Order Flow 
+        -> Liquidity Seeking
+        -> Market Efficiency Paradigm
 
-        ### What is the importance?
-        ### When Price consolidates it indicates the Market Makers are allowing orders to build on both sides of the Market. Expect a new Expansion near term.
+        ## Market Maker Trap: False Breakouts
+        ### A. False Breakouts Above Price Consolidations:
+        ### 1) This condition generally manifests in Primary Bearish Markets.
+        ### 2) At some measure of Equilibrium in Price, the market will move into a trading range.
+        ### 3) Neophyte Traders or Breakout Traders will bracket the trading range in price with orders.
+        ### 4) Market Makers will typically send price above the range to neutralize Buy Stops.
 
-        ### What do we look for in Price?
-        ### The Impulse Swing in Price away from the Equilibrium price level that is formed exactly in the halfway point of the consolidation range.
+        ### B. False Breakouts Below Price Consolidations
+        ### 1) This condition generally manifests in Primary Bullish Markets.
+        ### 2) At some measure of Equilibrium in Price, the market will move into a trading range.
+        ### 3) Neophyte Traders or Breakout Traders will bracket the trading range in price with orders.
+        ### 4) Market Makers will typically send price below the range to neutralize Sell Stops.
 
-        # Lesson 2 - How Market Makers Condition the Market
+        ## Timeframe Selection and Defining Setups for your Model
+        ### A. Timeframe Selection
+        ### 1) Monthly Charts - Position Trading 
+        ### 2) Weekly Charts - Swing Trading 
+        ### 3) Daily Charts - Short Term Trading 
+        ### 4) 4 Hour or Less - Day Trading
 
-        ### Smart Money doesn't draw too much attention to itself. Smart Money actually drives price.
+        ### B. Defining Setups for your model
+        ### 1) Trend Trader: Trading only in the direction of the Monthly and Weekly Chart direction.
+        ### 2) Swing Trader: Trading the Daily Chart intermediate term price action.
+        ### 3) Contrarian Trader: Trading reversal patterns at market extremes.
+        ### 4) Short Term Trader: Trading the weekly ranges for 1 - 5 days in duration.
+        ### 5) Day Trader: Intraday swing trading with exits by 2:00pm New York time.
 
-        ## Elements to a trade setup
-        ### A. Context or Framework surrounding the idea.
-        ### 1) Expansion = Judas Swing
-        ### 2) Retracement = New York Session
-        ### 3) Reversal = London Swing (London Close)
-        ### 4) Consolidation = Asian Range
+        ## Monthly Chart
+        ### The Long term Price Action reference for the largest Price Action Swings in trading.
 
-        ## The Interbank Price Delivery Algorithm 
-        ## Daily Range Structure
-        ### Price Equilibrium
-        ## Manipulation
-        ### 1 - Consolidation
-        ### 2 - Expansion
-        ### 3 - Reversal
-        ### 4 - Retracement
+        ### Trading setups take a great eal of time to form on this timeframe but when they unfold - they tend to unfold over many months.
 
-        # Lesson 3 - What to Focus on Right Now
-        ### Uninformed Money Perspective - Price moves by Indicators Influence.
+        ### Due to the length of time this chart requires to present a setup, trading in the direction of the most recent setup can yield low risk and high reward conditions.
 
-        ## What you should be focused on right now
-        ### A. Creating Daily Price Action Logs with Price Charts.
-        ### 1) Daily Chart - 12 Months no less than 9 months view.
-        ### 2) 4 hour Chart - 3 months view
-        ### 3) 60 minute Chart - 3 weeks view
-        ### 4) 15 minute Chart - 3 to 4 days view
+        ### Swings can be several hundreds of pips. Over a long time period.
 
-        ### B. Resist the urge to forecast price movements right now.
-        ### 1) Do- Note where Price has shown a quick movement from a specific level.
-        ### 2) Do - Note recent Highs and recent Lows that haven't been retested.
-        ### 3) Do - Note areas on the charts where Price has left "clean" highs or lows.
-        ### 4) Do - Note what days weekly Highs and Lows form and what killzone it formed in.
-        ### 5) Do - Note the daily High and daily Low every trading day and what killzone it formed in.
+        ## Weekly Chart 
+        ### The Intermediate term Price Action reference for the intermediate Price Action Swings in trading.
 
-        ## Liquidity Run 
-        ### What is Liquidity?
+        ### Trading Setups take some time to form on this timeframe but when they unfold - they tend to unfold over many weeks.
 
-        ### Liquidity: Liquidity refers to the degree to which a market [asset or security] can be quickly bought or sold in the market without affecting the asset's price.
+        ### Due to the length of time this chart requires to present a setup, trading in the direction of the most recent setup can yield low risk and high reward conditions.
+
+        ### Swings can be several hundreds of pips. Over an intermediate term period.
+
+        ## Daily Chart
+        ### The short term Price Action reference for the short term Price Action Swings in trading.
+
+        ### Traing setups take a little time to form on this timeframe but when they unfold - they tend to unfold over 1 - 3 weeks.
+
+        ### Due to the length of time this chart requires to present a setup, trading in the direction of the most recent setup can yield low risk and high reward conditions.
+
+        ## Institutional Sponsorship: How to Identify it in Setups
+        ### A. Institutional Sponsorship in Long Setups:
+        ### 1) Higher Timeframe Price Displacement - Reversals, Expansion or Return to Fair Value.
+        ### 2) Intermediate Term Imbalance in Price - Move to Discount or Sell Side Liquidity Run.
+        ### 3) Short Term Buy Liquidity Above The Market - Ideal for Pairing Long Exits to sell to.
+        ### 4) Time of Day Influence i.e London Open Low of Day or New York Low Formation.
+
+        ### B. Institutional Sponsorship in Short Setups:
+        ### 1) Higher Timeframe Price Displacement - Reversals, Expansions or Return to Fair Value.
+        ### 2) Intermediate Term Imbalance in Price - Move to Premium or Buy Side Liquidity Run.
+        ### 3) Short Term Sell Side Liquidity Below the Market - Ideal for Pairing Short Exits to Buy From.
+        ### 4) Time of Day Influence ie. London Open High of Day or New Yrok High Formation
+
+        ## Institutional Market Structure
+        ### A. What is Institutional Market Structure?
+        ### 1) The analysis of correlated assets or the relationship to inversely correlated assets.
+        ### 2) The purpose is to determine what the "Smart Money" is accumulating or distributing.
+        ### 3) Currencies are easy to analyse with Institutional Market Structure with the USDX. 
+        ### 4) Every price swing should be studied to determine if Market Symmetry confirms it.
+
+        ### B. How Do we Identify Institutional Market Structure in Forex?
+        ### 1) Compare every price swing in the USDX with the Foreign CUrrency you trade.
+        ### 2) As USDX trades higher, expect a lower price swing in Foreign Currency pairs.
+        ### 3) If USDX or a Foreign Currency fails to move symetrically  - Smart Money is actively trading.
+        ### 4) As USDX trades Lower, expect a Higher price swing in Foreign Currency Pairs.
+        ### 5) If USDX or a Foreign Currency fails to move symetrically - Smart Money is actively trading. 
+
+        ## IMS - USDX SMT Divergence
+
+        ### In Symmetrical Market conditions:
+        ### When the USDX makes a lower low; Foreign Currencies make a higher high.
+
+        ### This confirms current price action and the underlying "trend" is likely to continue.
+
+        ### The idea of stalking reversal patterns in this condition is not high probability and should be avoided. (and vice versa for when the USDX makes a higher high.)
+
+        ### In Non-Symmetrical Market Conditions:
+        ### When the USDX makes a lower low; Foreign Currencies fail to trade higher than a previous high - this is USDX SMT.
+
+        ### This does not confirm current price action and the underlying "trend" is likely not to continue.
+
+        ### The idea of stalking reversal reversal patterns in this condition is high probability and could reasonably be considered. (and vice versa for when the USDX makes a higher high.)
+
+        ## Market Maker Trap Trendline Phantoms
+        ## Trendline Phantoms: False Trendlines
+
+        ### A. Diagonal Trendline Support:
+        ### 1) The market begins to make higher highs and higher lows.
+        ### 2) The market appears to have an imaginary diagonal line it seems to repel price higher from.
+        ### 3) Retail Traders will extend these imaginary lines into the future and attribute support theories to it.
+        ### 4) When price hits the extended imaginary diagonal line connecting higher lows - Retail Buys then.
+
+        ### B. Diagonal Trendline Resistance:
+        ### 1) The market begins to make lower highs and lower lows.
+        ### 2) The market appears to have an imaginary diagonal line it seems to repel price lower from.
+        ### 3) Retail Traders will extend these imaginary lines into the future and attribute resistance theories to it.
+        ### 4) When price hits the extended imaginary diagonal line connecting lower highs - Retail Shorts then.
 
         '''
         
