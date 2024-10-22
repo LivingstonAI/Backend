@@ -5790,8 +5790,16 @@ def create_chill_data(request):
         return JsonResponse({'message': f'error in Chill Data Function: {e}'}, status=500)
 
 
-
-
+@csrf_exempt
+def fetch_chill_sections(request):
+    try:
+        # Fetch all Chill sections
+        sections = Chill.objects.values('section')  # Use values to get a list of dictionaries
+        section_list = [section['section'] for section in sections]  # Extract the section names
+        return JsonResponse({'sections': section_list}, status=200)
+    except Exception as e:
+        print(f'Error fetching Chill sections: {e}')
+        return JsonResponse({'message': f'Error fetching Chill sections: {e}'}, status=500)
 
 
 
