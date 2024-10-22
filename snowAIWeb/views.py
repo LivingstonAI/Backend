@@ -5802,7 +5802,23 @@ def fetch_chill_sections(request):
         return JsonResponse({'message': f'Error fetching Chill sections: {e}'}, status=500)
 
 
-
+@csrf_exempt
+def fetch_chill_data(request):
+    try:
+        if request.method == 'GET':
+            section = request.GET.get('section')
+            if section:
+                chill_data = Chill.objects.filter(section=section).first()  # Fetch the Chill data based on the section
+                if chill_data:
+                    return JsonResponse({'section': chill_data.section, 'text': chill_data.text})
+                else:
+                    return JsonResponse({'message': 'Section not found'}, status=404)
+            else:
+                return JsonResponse({'message': 'No section provided'}, status=400)
+        else:
+            return JsonResponse({'message': 'Invalid request method'}, status=405)
+    except Exception as e:
+        return JsonResponse({'message': f'Error fetching Chill data: {e}'})
 
 
 
