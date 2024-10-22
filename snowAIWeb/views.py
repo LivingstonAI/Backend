@@ -5696,212 +5696,103 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''2016 ICT Private Mentorship Core Content Month 02'''
+        section = '''ICT Mentorship Core Content - Month 04 - Interest Rate Effects on Currency Trades'''
         text = '''
-        ## Growing Small Accounts Without High Risk
-        ### A. What you need to avoid:
-        ### 1) Do not try to make massive gains in either pips or % returns.
-        ### 2) Do not open yourself to large Risk in hopes of equally large returns or profits.
-        ### 3) Do not assume taking small Risk defined trades will not grow your account.
-        ### 4) Do not sacrifice trading equity for poor planning or lack thereof.
+        ## Interest Rate Effects on Currency Trades 
+        ### A. Smart Money Accumulation and Distribution [Fundamentally Speaking]
+        ### 1) Interest Rates are the single most influential driving force behind market moves.
+        ### 2) Understanding Interest Rate Shifts and changes can assist you in selecting trades.
+        ### 3) Technical Analysis of Key Interest Rates can unlock professional money movement.
+        ### 4) Interest Rate Triads provide a visual depiction of Smart Money Accumulation and Distribution.
 
-        ### B. What you need to aim for:
-        ### 1) Determine how to realistically anticipate a favourable Reward to Risk Model. 
-        ### 2) Learn to respect the Risk side of the trade setups more over the reward. 
-        ### 3) Identify Trade Setups that permit three Reward multiples to one Risk or higher.
-        ### 4) Frame good Reward to Risk setups that have little impace if unprofitable.
+        ### B. Interest Rate Triads
+        ### 1) 30 Year Bond - Key Long Term Interest Rate.
+        ### 2) 10 Year Note - Intermediate Term Interest Rate. 
+        ### 3) 5 Year Note - Short Term Interest Rate.
+        ### 4) Overlaying or Comparative Analysis on these 3 Interest Rates unlocks Price Action.
+        ### 5) Failure Swings at opportunistic times can validate Institutional Order Flow.
 
-        ## How to Frame Low Risk Trade Setups 
-        ### A. What makes the setup worth taking?
-        ### 1) Selecting Trade Setups on Higher Time Frame Charts is ideal.
-        ### 2) Large Institutions and Banks analyze markets on Daily - Weekly - Monthly bias.
-        ### 3) Locating Price Levels that align with Institutional Order Flow is key.
-        ### 4) Higher Timeframe setups form slow and provide ample time to plan accordingly.
+        ## Interest Rate Triad 
+        ### 30 Year T Bond Market 
+        ### 10 Year Note Market 
+        ### 5 Year Note Market
 
-        ### B. What can we do to lower the Risk in the trade?
-        ### 1) The Higher Timeframe has more influence in Price so we focus there.
-        ### 2) The conditions that lend to a Trade Setup on a HTF can be refined to LTF.
-        ### 3) Transpose the Higher Timeframe leels to Lower Timeframe charts.
-        ### 4) Refining HTF levels to LTF charts allows smaller stop loss placement and risk.
+        ### Overlaying these 3 markets will highlight when Accumulation and Distribution in the Interest Rate Market takes place - from a "Smart Money" perspective. 
 
-        ### ICT Interbank Insight: Smart Money Buys Under Old Lows and Sells Above Old Highs. 
+        ### These 3 interest rates should confirm each higher high or lower low - at moments when the USDX is at a significant price point.
 
-        ## Why Losing on Trades Won't Affect Your Probabilty
-        ### A. What Trading with fear of taking losses actually does to your trading:
-        ### 1) Staying concerned about taking a loss promotes Fear Based Decision Making.
-        ### 2) Equity that is managed by Traders that cannot take a loss - can't profit long term.
-        ### 3) Losing is inevitable - Fear Based Decision Making keeps focus on the adverse.
-        ### 4) Fear Based Decision making fosters Trade Paralysis or inablilty to execute efficiently.
+        ### Failure swings highlight Smart Money participation in the markets and trading opportunities are validated.
 
-        ### B. Why Profits are Achievable Despite Taking Reasonable Losses:
-        ### 1) The Professional Equity Manager understands "Losses are costs of doing bussiness."
-        ### 2) Using Sound Equity Management and High Probability Setups yield handsome % returns.
-        ### 3) Trading scenarios that encourage potential 3:1 Reward Ratios, provide initial foundation.
-        ### 4) Defining Trade Setups that frame 5:1 Reward to Risk or more-efficiently cover losses.
+        ## ICT Action Plan 
+        ### Use the points of Focus taught in the first month of the Mentorship.
 
-        ## The Secrets to High Reward Trading Setups
-        ### 1) Patience 
-        ### 2) Define Trade Environments
-        ### 3) Determine Trade Parameters
-        ### 4) Executable Criteria
-        ### 5) Understand Why it should pan out
-        ### 6) Experience For future reference
+        ### When Price Action trades to a focus point like a:
+        -> OrderBlock
+        -> Liquidity Pool
+        -> Liquidity Void or Fair Value Gap 
 
-        ## Focal Point 
-        ### It is crucial to understand that efficiency in Trading comes by way of Process Orientated Thinking - not by way of Reactionary or Impulsive thinking - or rushing ahead to Trade Signals prematurely.
+        ### Refer to the Interest Rate Triad and USDX to confirm Smart Money is behind your trade idea. If there is no obvious indication they are moving large funds - pass on the trade idea and look for new ones that do.
 
-        ## Big Picture Perspective:
-        ### 1. Macro Market Analysis
-        ### a) Inflationary Market
-        ### b) Deflationary Market
-        ### 2. Interest Rate Analysis
-        ### a) Higher Rates 
-        ### b) Lower Rates 
-        ### c) Unexpected Change
-        ### 3. Intermarket Analysis
-        ### a) CRB Index - Commodities
-        ### b) USDX - US Dollar Index 
-        ### 4. Seasonal Influences
-        ### a) Bullish Seasonal Tendencies
-        ### b) Bearish Seasonal Tendencies
+        ## Reinforcing Liquidity Concepts and Price Delivery
+        ### A. External Range Liquidity
+        ### 1) The current trading range will have Buy Side Liquidity above the range or high.
+        ### 2) The current trading range will have Sell Side Liquidity below the range or Low.
+        ### 3) Runs on Liquidity - seek to pair orders with the pending order liquidity - Liquidity Pools. 
+        ### 4) External Range Liquidity Runs can be Low Resistance or High Resistance in nature.
 
-        ## Intermediate Perspective:
-        ### 1) Top Down Analysis
-        -> Monthly Chart Analysis
-        -> Weekly Chart Analysis
-        -> Daily Chart Analysis
-        ### 2) COT Data 
-        -> Bullish Hedging by Smart Money
-        -> Bearish Hedging by Smart Money
-        -> Extreme Levels Historically
-        ### 3) Market Sentiment 
-        -> Extreme Market Bullishness
-        -> Extreme Market Bearishness
+        ### B. Internal Range Liquidity
+        ### 1) When current trading range is likely to remain - Liquidity Voids will fill in - Gap Risk.
+        ### 2) When current trading range is likely to remain - Fair Value Gaps will fill in - Gap Risk.
+        ### 3) Orderblocks inside the trading range will be populated with new Buy and Sell Side Orders. 
+        ### 4) Market Maker Buy and Sell Models will form inside trading ranges. 
 
-        ## Short Term Perspective:
-        ### 1) Correlation Analysis
-        -> USDX SMT Analysis
-        -> Correlated Pair SMT Analysis
-        ### 2) Time and Price Theory
-        -> Quarterly Effect 
-        -> Monthly Effect 
-        -> Weekly Range 
-        -> Daily Range 
-        -> Time of Day 
-        ### 3) IPDA - Interbank Price Delivery Algorithm
-        -> Institutional Order Flow 
-        -> Liquidity Seeking
-        -> Market Efficiency Paradigm
+        ## Orderblocks
+        ## Reinforcing Orderblock Theory 
 
-        ## Market Maker Trap: False Breakouts
-        ### A. False Breakouts Above Price Consolidations:
-        ### 1) This condition generally manifests in Primary Bearish Markets.
-        ### 2) At some measure of Equilibrium in Price, the market will move into a trading range.
-        ### 3) Neophyte Traders or Breakout Traders will bracket the trading range in price with orders.
-        ### 4) Market Makers will typically send price above the range to neutralize Buy Stops.
+        ### Bullish Orderblock:
+        ### Definition - The Lowest Candle or Price Bar with a Down Close that has the most range between Open to Close and is near a "Support" level.
 
-        ### B. False Breakouts Below Price Consolidations
-        ### 1) This condition generally manifests in Primary Bullish Markets.
-        ### 2) At some measure of Equilibrium in Price, the market will move into a trading range.
-        ### 3) Neophyte Traders or Breakout Traders will bracket the trading range in price with orders.
-        ### 4) Market Makers will typically send price below the range to neutralize Sell Stops.
+        ### Validation - When the High of the Lowest Down Close Candle or Price Bar is traded through by a later formed Candle or Price Bar.
 
-        ## Timeframe Selection and Defining Setups for your Model
-        ### A. Timeframe Selection
-        ### 1) Monthly Charts - Position Trading 
-        ### 2) Weekly Charts - Swing Trading 
-        ### 3) Daily Charts - Short Term Trading 
-        ### 4) 4 Hour or Less - Day Trading
+        ### Entry Techniques - When Price trades Higher away from the Bullish Orderblock and then Returns to the Bullish Orderblock Candle or Price Bar High - This is Bullish.
 
-        ### B. Defining Setups for your model
-        ### 1) Trend Trader: Trading only in the direction of the Monthly and Weekly Chart direction.
-        ### 2) Swing Trader: Trading the Daily Chart intermediate term price action.
-        ### 3) Contrarian Trader: Trading reversal patterns at market extremes.
-        ### 4) Short Term Trader: Trading the weekly ranges for 1 - 5 days in duration.
-        ### 5) Day Trader: Intraday swing trading with exits by 2:00pm New York time.
+        ### Defining Risk - The low of the Bullish Orderblock is the location of a relatively safe Stop Loss placement. Just below the 50% of the Orderblock total range is also considered to be a good location to raise the Stop Loss after Price runs away from the Bullish Orderblock to reduce Risk when applicable.
 
-        ## Monthly Chart
-        ### The Long term Price Action reference for the largest Price Action Swings in trading.
+        ## Liquidity Based Bias
+        ### Monthly Chart = Bearish 
+        ### Weekly Chart = Bearish
+        ### Daily Chart = Bearish
 
-        ### Trading setups take a great eal of time to form on this timeframe but when they unfold - they tend to unfold over many months.
+        ### Intraday Charts 4 hour and less will be correcting or retracing higher. This is where you anticipate the market to enter a Premium and seek Buy Side Liquidity to Sell to.
 
-        ### Due to the length of time this chart requires to present a setup, trading in the direction of the most recent setup can yield low risk and high reward conditions.
+        ### Protective Buy Stop Raids or Returns to Bearish Orderblocks or Fair Value Gaps and or filling of a Liquidity Void. Each offering a potential Low Resistance Liquidity Run - Shorting for a target under a recent Low. 
 
-        ### Swings can be several hundreds of pips. Over a long time period.
+        ## Propulsion Block 
+        ### Ideal Set Up:
+        ### In Major to Intermediate Term Uptrends 
 
-        ## Weekly Chart 
-        ### The Intermediate term Price Action reference for the intermediate Price Action Swings in trading.
+        ### Bullish Propulsion Block is a candle or bar that has previously traded down into a down candle or "Bullish Orderblock" and takes over the role of Price Support or higher Price Movement.
 
-        ### Trading Setups take some time to form on this timeframe but when they unfold - they tend to unfold over many weeks.
+        ## Vacuum Block 
+        ### Bullish Vacuum Block is a "gap" created in Price Action as a result of a volatility event. The gap forms by a "vacuum" of liquidity directly related to an event. NFP [Nonfarm Payroll] can create a Vacuum Block or in futures a session opening can.
 
-        ### Due to the length of time this chart requires to present a setup, trading in the direction of the most recent setup can yield low risk and high reward conditions.
+        ## Liquidity Void 
+        ### Liquidity Void is a range in Price Delivery where one side of the Market Liquidity is shown in long one sided ranges or candles. Price typically will want to revisit this "range" or void of contrarian liquidity.
 
-        ### Swings can be several hundreds of pips. Over an intermediate term period.
+        ## Liquidity
+        ### Liquidity is the "open interest" of buyers and sellers in the market and can be further defined by those entities at or near specific price levels.
 
-        ## Daily Chart
-        ### The short term Price Action reference for the short term Price Action Swings in trading.
+        ### Runs on Bullish Liquidity Pool: 
+        ### Definition - The Low that is Under the current market price action will typically have Trailed Sell Stops under it on Long Trades. Or Sell Stops for Traders who wish to Trade a Breakout Lower in Price for a Short Position.
 
-        ### Traing setups take a little time to form on this timeframe but when they unfold - they tend to unfold over 1 - 3 weeks.
+        ### Validation - When the Low is Violated or Price moves below the recent Low - the Sell Stops become Market Orders to Sell at Market. This injects Sell Side Liquidity into the Market - typically paired with Smart Money Buyers.
 
-        ### Due to the length of time this chart requires to present a setup, trading in the direction of the most recent setup can yield low risk and high reward conditions.
+        ### Entry Techniques - When underlying is Bullish. Before Price trades under the recent Low - place a Buy Limit Order just below or at the recent Low. You are buying the Sell Stops like a Bank Trader or any other "Smart Money" entity would.
 
-        ## Institutional Sponsorship: How to Identify it in Setups
-        ### A. Institutional Sponsorship in Long Setups:
-        ### 1) Higher Timeframe Price Displacement - Reversals, Expansion or Return to Fair Value.
-        ### 2) Intermediate Term Imbalance in Price - Move to Discount or Sell Side Liquidity Run.
-        ### 3) Short Term Buy Liquidity Above The Market - Ideal for Pairing Long Exits to sell to.
-        ### 4) Time of Day Influence i.e London Open Low of Day or New York Low Formation.
+        ### Defining Risk - The Low you are Buying Under - can see a swing of 10 to 20 pips in most cases. A 30 to 50 pip stop is ideal if your entry is Under the Low and not above it - fearing a missed entry.
 
-        ### B. Institutional Sponsorship in Short Setups:
-        ### 1) Higher Timeframe Price Displacement - Reversals, Expansions or Return to Fair Value.
-        ### 2) Intermediate Term Imbalance in Price - Move to Premium or Buy Side Liquidity Run.
-        ### 3) Short Term Sell Side Liquidity Below the Market - Ideal for Pairing Short Exits to Buy From.
-        ### 4) Time of Day Influence ie. London Open High of Day or New Yrok High Formation
-
-        ## Institutional Market Structure
-        ### A. What is Institutional Market Structure?
-        ### 1) The analysis of correlated assets or the relationship to inversely correlated assets.
-        ### 2) The purpose is to determine what the "Smart Money" is accumulating or distributing.
-        ### 3) Currencies are easy to analyse with Institutional Market Structure with the USDX. 
-        ### 4) Every price swing should be studied to determine if Market Symmetry confirms it.
-
-        ### B. How Do we Identify Institutional Market Structure in Forex?
-        ### 1) Compare every price swing in the USDX with the Foreign CUrrency you trade.
-        ### 2) As USDX trades higher, expect a lower price swing in Foreign Currency pairs.
-        ### 3) If USDX or a Foreign Currency fails to move symetrically  - Smart Money is actively trading.
-        ### 4) As USDX trades Lower, expect a Higher price swing in Foreign Currency Pairs.
-        ### 5) If USDX or a Foreign Currency fails to move symetrically - Smart Money is actively trading. 
-
-        ## IMS - USDX SMT Divergence
-
-        ### In Symmetrical Market conditions:
-        ### When the USDX makes a lower low; Foreign Currencies make a higher high.
-
-        ### This confirms current price action and the underlying "trend" is likely to continue.
-
-        ### The idea of stalking reversal patterns in this condition is not high probability and should be avoided. (and vice versa for when the USDX makes a higher high.)
-
-        ### In Non-Symmetrical Market Conditions:
-        ### When the USDX makes a lower low; Foreign Currencies fail to trade higher than a previous high - this is USDX SMT.
-
-        ### This does not confirm current price action and the underlying "trend" is likely not to continue.
-
-        ### The idea of stalking reversal reversal patterns in this condition is high probability and could reasonably be considered. (and vice versa for when the USDX makes a higher high.)
-
-        ## Market Maker Trap Trendline Phantoms
-        ## Trendline Phantoms: False Trendlines
-
-        ### A. Diagonal Trendline Support:
-        ### 1) The market begins to make higher highs and higher lows.
-        ### 2) The market appears to have an imaginary diagonal line it seems to repel price higher from.
-        ### 3) Retail Traders will extend these imaginary lines into the future and attribute support theories to it.
-        ### 4) When price hits the extended imaginary diagonal line connecting higher lows - Retail Buys then.
-
-        ### B. Diagonal Trendline Resistance:
-        ### 1) The market begins to make lower highs and lower lows.
-        ### 2) The market appears to have an imaginary diagonal line it seems to repel price lower from.
-        ### 3) Retail Traders will extend these imaginary lines into the future and attribute resistance theories to it.
-        ### 4) When price hits the extended imaginary diagonal line connecting lower highs - Retail Shorts then.
+        ## Fair Value Gap 
+        ### Fair Value Gap is a range in Price Delivery where one side of the Market Liquidity is offered and typically confirmed with a Liquidity Void on the Lower Time Frame Charts in the same range of Price. Price can actually "gap" to create a literal vacuum of Trading, thus posting an actual Price Gap.
 
         '''
         
