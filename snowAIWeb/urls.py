@@ -63,6 +63,7 @@ urlpatterns = [
     path('get-asset-summary/<str:asset>', views.get_asset_summary, name='get-asset-summary'),
     path('reflections-summary/<str:asset>', views.reflections_summary, name='reflections-summary'),
     path('generate-cot-data', views.generate_cot_data, name='generate-cot-data'),
+    path('create-chill-data', views.create_chill_data, name='create-chill-data'),
 
 
     path('contact-us', views.contact_us, name='contact-us'),
