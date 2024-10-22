@@ -5696,116 +5696,138 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''ICT Core Content Month 07 - Short Term Trading'''
+        section = '''2017 ICT Mentorship Core Content Month 08 - Day Trading'''
         text = '''
-        ## Short Term Trading
-        ### The practice of Trading a duration of a few days to a week. Using both the Monthly and Weekly charts to frame the setups. We trade in the direction of the present or next week's range. Understanding of the Weekly Rnage is essential. The Short Term Model can be both Trend or Range based. Trades that are clear to see forming are the goal - not forced. Short Term Trading is the highest probability discipline. Frequent setups and consistency provides a plethora of trades.
+        ## The Opportunities Inside The Daily Range 
+        ### The aim is to capitalize on the movement existing in a single day.
+        ### Not all days are ideal for Daytrading.
+        ### Generally there are two setups per trading on average.
+        ### The Daily Range is the goal for the Daytrader.
+        ### Typically the Daily Range will be close to the 5 day ADR. 
+        ### Directional Bias frames a large portion of all Daytrade setups. 
+        ### The ideal scenario is to Daytrade in the direction of the Weekly TF. 
+        ### More HTF idea you can find to support the Daytrade the better.
+        ### Daytrades permit the Trader to limit the Stoploss on all Trades.
+        ### It is important not to take many Daytrades in a single 24 hour day.
+        ### IPDA Data Ranges combined with PD Arrays are the foundation.
+        ### FOMC and NFP days keep us on the sidelines - no Live Setups.
 
-        ## HTF Sequence:
-        ### Shorting Opportunities - 
-        -> Monthly Chart Sell Program 
-        -> Weekly Chart Sell Program 
-        -> Daily Chart Sell Program 
-        -> 4 Hour Chart Sell Program 
-        -> 1 Hour Chart Sell Program 
+        ## What Frames the Daily Setups 
+        ### HTF Institutional Order Flow 
+        ### IPDA seeking new levels in Price for liquidity
+        ### Weekly Chart current candle direction 
+        ### Day of Week 
+        ### Time of Day 
+        ### Volatility Expansion or "Large Daily Ranges"
 
-        ### Buying Opportunities - 
-        -> Monthly Chart Buy Program 
-        -> Weekly Chart Buy Program 
-        -> Daily Chart Buy Program 
-        -> 4 Hour Chart Buy Program 
-        -> 1 Hour Chart Buy Program 
+        ## Time of Day 
+        ### London Session Open 
+        ### New York Session Open 
+        ### London Close 
+        ### New York Close 
+        ### Asian Session Open 
+        ### London Lunch
 
-        ## The General Concept Revisited:
-        ### Market is poised to trade higher on HTF.
-        ### 1) Seasonal Tendency 
-        ### 2) Interest Rate Driven
-        ### 3) COT 
-        ### 4) Intermarket Analysis Supports Bullishness
+        ## Day of Week 
+        ### Sunday - Opt out Daily Range too small
+        ### Monday - Can create a small range typically
+        ### Tuesday - Usually good day to Daytrade
+        ### Wednesday - Generally ideal Daytrade day
+        ### Thursday - Generally ideal - can reverse
+        ### Friday - Typically small range closing a week
 
-        ### Market Rallies Higher Then Retraces Mon - Wed.
-        ### Market Expands Up to Higher Highs.
+        ## The Weekly Range Framework 
+        ### Sunday - We determine new Trading Week Opening Price. This will aid us intra - week with Daytrade directional bias to work with. 
+        ### Note this Sunday Open through your 60 minute chart up to Thursday.
 
-        ## Monthly Ranges
-        ### Price is Fractal and HTF Analysis benefits us as a result. We note the High and Low on every Monthly Candle. Note the present Range in terms of premium or discount. Consider where Price on the Monthly will or could draw to. There is generally 4 Weekly Candles in every Monthly Candle. Each week we study where the Monthly will likely trade to next. Using monthly Ranges we frame trades on the Weekly Range.
+        ## The Weekly Range Framework 
+        ### Sunday Opening Price Filter - We look for Price to trade above this level early in the week during Bearish Weekly directional bias.
+        ### As long as Price is lower than this Sunday Opening Price each day of the week - we look to Sell Short in our Daytrades. 
+        ### Until a HTF PD Array is traded to. (and vice versa)
 
-        ## Weekly Ranges 
-        ### Price is Fractal and Monthly Analysis builds on the Weekly. We note the High and Low on every Weekly Candle. Note the present Range in Terms of Premium or Discount. Consider where Price on the Weekly will or could draw to. There is generally 5 Daily Candles in every Weekly Candle. Each Week we study how the Weekly trades in Monthly Range. Using Weekly Ranges, we frame trades on the Daily Chart.
+        ## Key Point Large Range Expansion 
+        ### Weekly range candles that are large have the opening price and closing price at opposing ends of the candlestick range.
 
-        ### Note when the Mon - Wed High is traded through - Price tends to expand aggressively towards the Monthly and or Weekly Premium Array.
+        ## When is the London Session not ideal?
+        ### After a large range day greater than 2 times the 5 day ADR. 
+        ### After a series of 3 consecutive Up Closes (Daily Timeframe) - avoid Longs. 
+        ### After a series of 3 consecutive Down Closes - avoid Shorts.
+        ### After a FOMC event that produces extreme whipsaw.
+        ### Ahead of Non-Farm Payroll numbers. 
+        ### The same day trading is heading into a long-weekend holiday. 
+        ### Multiple High to Medium Impact News Drivers for that particular Market.
+        ### An absence of any News during London can be a "wildcard" day.
 
-        ## Classic Tuesday Low of the Week 
-        ### The Profile: Bullish 
+        ## What characteristics do I look for?
+        ### The CBDR is greater than 50 pips. [Possible Pass on London]
+        ### The Asian Range is greater than 40 pips. [Consider Delayed Protraction]
+        ### The Market starts a sustained rally or decline from 8:00pm NY. [Poor]
+        ### If CBDR and or Asian Range is not visually consolidating...avoid London.
+        ### We aim for days when the bank will "hold" the market to build Open Float.
+        ### If the Market is trending from 8:00 NY - London becomes sloppy.
+        ### When the Market is conditioned for London Slop - sleep in and trade NYO. 
+        ### Accumulation - Manipulation - Distribution is the business intraday. 
 
-        ### Manipulation: Hovers above a HTF Discount Array Monday then drops into the HTF Discount Array on Tuesday to form the Low of the Week. 
+        ## When is London Open Killzone Ideal?
+        ### The Daily chart is clearly respecting PD Arrays 
+        ### The Market has recently responded off a HTF PD Arry and not met an opposing PD Array. 
+        ### When the Market is poised to trade higher on the Daily to Premium Arrays - London Longs are ideal. 
+        ### When the Market is poised trade Lower on the Daily to Discount Arrays - London Shorts are ideal. 
+        ### When the daily range has not recently exceeded its 5 day ADR - Expansion Day is due to form.
 
-        ### How to Anticipate: Know the HTF Discount Arrays and when the market fails to drop into that Array - odds are Tuesday will likely see the drive lower Tue London or NY Session. (and vice versa for classic Tuesday High of Week)
+        ## What makes Daytrades High Probability?
+        ### The Highest Importance is placed on the HFT Daily or 4h direction. 
+        ### When Daily and or 4h direction is Bullish: 
+        -> Use Previous Day's Low to High for Retracement Entries. 
+        -> Use Previous Day's NY Session Low to High for Retracement Entries.
+        -> Use Previous Day's Low for Sell Stop Raid to accumulation longs. 
+        -> Focusing on the anticipated move from HFT Discount to Premium PD Arrays. 
+        ### When Daily and or 4h direction is Bearish:
+        -> Use Previous Day's High to Low for Retracement Entries.
+        -> Use Previous Day's NY Session High to Low for Retracement Entries.
+        -> Use Previous Day's High for Buy Stop Raid to accumulate shorts.
+        -> Focusing on the anticipated move from HTF Premium to Discount PD Arrays. 
 
-        ## Wednesday High of Week
-        ### The Profile: Bearish
+        ## When do I look to buy Trades? 
+        ### Ideally in seasonally Bullish periods of the year. *Not required.
+        ### When the current Quarter or new Quarter is expected Bullish. 
+        ### After the Daily Chart has reacted positively on a Discount PD Array.
+        ### When Price has a clear unobstructed path to an opposing Premium Array. 
+        ### The Ideal Days of the week buying Monday, Tuesday, and Wednesday.
+        ### Refer to the CBDR and determine if it is less than 40 pips ideally.
+        ### Demand the Asian Range be in a 20 pip range ahead of Frankfurt Open.
+        ### Buying between 2:00am to 4:00am NY Time seeking LOD (Low of day). 
+        ### Buy 1 - 2 STD of CBDR and or Asian Range coupled with Discount PDA. 
+        ### Timeframe to execute on 15 or minute chart. 
 
-        ### Manipulation: Hovers below a HTF Premium Array Monday and Tuesday then rises into the HTF Premium Array on Wed to form the High of the Week.
+        ## Where do I look to buy daytrades?
+        ### Under Asian Range plus 5 pips.
+        ### FVG below a Short Term low from Previous Day's NY Session.
+        ### Bullish Orderblock below a Short Term low either Pre-Day or today.
+        ### If I am very Bullish - 1 STD with any Discount PD Array in London Open Killzone.
+        ### Inside the Protraction lower post 12:00am to 2:00am with PDA. 
+        ### Filling of a Liquidity Void that completes under a Short Term low. 
+        ### If after rally post 12:00am - Buy the 1st retrace into 15 or 5 minute + Orderblock (OB). 
+        ### 1 - 2 STD in Asian Range coupled with Discount PA Array. 
+        ### If Short Term low is taken out twice with no upside...buy Turtle Soup.
 
-        ### How to Anticipate: Know the HTF Premium Arrays and when the market fails to rise into that Array - odds are Wed will likely see the drive higher Wed London or NY Session. Monday and Tuesday can be up days as well and form this Profile. (and vice versa for Wednesday Low of Week)
+        ## Where do I look to short daytrades?
+        ### Above Asian Range plus 5 pips.
+        ### FVG above a Short Term high from Previous Day's NY Session.
+        ### Bearish Orderblock above a Short Term high either Pre-Day or today.
+        ### If I am very Bearish - 1 STD with any Premium PD Array in London Open Killzone.
+        ### Inside the Protraction higher post 12:00am to 2:00am with PDA. 
+        ### Filling of a Liquidity Void that completes above a Short Term high. 
+        ### If after drop post 12:00am - Sell the 1st retrace into 15 or 5 minute - Orderblock (OB). 
+        ### 1 - 2 STD in Asian Range coupled with Premium PD Array. 
+        ### If Short Term high is taken out twice with no downside...sell Turtle Soup.
 
-        ## Consolidation Thursday Reversal
-        ### The Profile: Bullish 
-
-        ### Manipulation: Consolidates Monday through Wednesday then runs the intra-week Low and rejects it forming a market reversal.
-
-        ### How to Anticipate: Know the HTF Discount Arrays and when the market fails to drop into that Array - odds are Thursday will likely see the drive lower Thursday on a Market Driver News or Rate release late New York Session around 2:00pm EST.
-
-        ## Consolidation Midweek Rally 
-        ### The Profile: Bullish 
-
-        ### Manipulation: Consolidates Monday through Wednesday then runs the intra-week High and expands higher into Friday.
-
-        ### How to Anticipate: When the market is Bullish and has yet to run to the Premium Array on the HTF timeframes and it has recently rallied drom a Discount Array and simply paused without any Bearish Reversal Price Action. Indicating Price is about to expand higher for the Premium Array. 
-
-        ## Seek and Destory Bullish Friday
-        ### The Profile: Neutral-Low Probability
-
-        ### Manipulation: Consolidates Monday through Thursday - running shallow stops under and above the intra-week highs - then runs the intra-week High and expands higher into Friday.
-
-        ### How to Anticipate: When the market is awaiting Interest Rate Announcements or Non-Farm Payroll can create this Profile in the Summer months of July and August. Better to avoid trading these conditions.
-
-        ## Wednesday Weekly Reversal 
-        ### The Profile: Bullish 
-
-        ### Manipulation: Consolidates Monday through Tuesday - drives lower into a HTF Discount array to induce Sell Stops then strongly reverses.
-
-        ### How to Anticipate: When the market is Trading at a long term or intermediate term Low - price will pair Institutional Buying with pending Sell Side Liquidity [Sell Stops Raid]
-
-        ### Each Week the Market will seek to Trade from one PD Array to another. It will trade from one quadrant to another with the least resistance, premium to discount or discount to premium market valuation.
-
-        ## One Shot one kill setups require:
-        ### Knowing Macro conditons and all the January content lessons.
-        ### IPDA Data Ranges and PD Array Matrix concept.
-        ### The understanding of Position Trading Model concepts.
-        ### The understanding of Swing Trading Model concepts.
-        ### The Short Term Trading tutorials on the ICT website.
-        ### The Power of 3 Concept applied to Weekly Candles or Ranges.
-        ### The Intraday concept from ICT Day Trading Model. 
-        ### Day of Week Concept - High or Low Forms Mon - Wed 70% of the time.
-        ### Using Fib's for targeting and understanding the correct Price points. 
-        ### Time of Day or ICT Killzones for entries on OSOK setups.
-        ### Seasonal Tendencies that may impact or frame directional setups.
-        ### COT Analysis and Commercial Hedging Programs.
-
-        ## One Shot One Kill Trade Procedure:
-        ### Determine the current or potential next Quarterly Shift. 
-        ### Identify the HTF PD Arrays in the IPDA Data Ranges. 
-        ### Refer to Interest Rate Differentials and Market Profile of Rates.
-        ### Scout Seasonals throughout the calendar year that offer odds.
-        ### Swing Analysis on the Price Action on HTF down to 60min.
-        ### Anticipate specific Weekly Profiles that may unfold.
-        ### Prepare for Market Makers Manipulation respective to the Profile. 
-        ### Determine Premium and Discount ranges for Price Action.
-        ### Wait for Volatility to signal a high odds of large ranges.
-        ### Refer to COT and Open Interest to confirm Smart Money action.
-        ### Frame a Low Resistance Liquidity Run with opposing PD Arrays.
-        ### Use Fib's to converge with opposing PD Arrays and Time and Price.
-        ### Confirm Trade Setups with Intermarket Analysis.
+        ## Daytrades Entries in HTF Setups 
+        ### We can use Daytrading Entries to position our Longer Term HTF trades.
+        ### There is a method that employs very little time and analysis. 
+        ### We do not need to use the London Killzone if you are unable to trade it. 
+        ### There are two essential times of the day IPDA refers to "Reset.
+        ### The Daily Candle can point the ideal entry points for all styles of Trade.
 
         '''
         
