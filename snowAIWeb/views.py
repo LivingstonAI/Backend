@@ -5696,80 +5696,95 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''ICT - How To Find Explosive Price Moves Before They Happen'''
+        section = '''2016 ICT Private Mentorship Core Content Month 01'''
         text = '''
-        ### On Barchart.com, by following the red line on higher timeframes, it'll help give warning signs of an impending reversal, which can be explosive in nature.
+        ## ICT Mentorship Core Content - Month 1 - Elements of a Trade Setup
+        ## Elements to a trade setup
 
-        ## ICT - Higher Time Frame Concepts
-        ### Key Levels:
-        -> Yearly Highs and Lows
-        -> Monthly Highs and Lows
-        -> Weekly Highs and Lows
+        ### A. Context or Framewrok surrounding the idea (Price Delivery)
+        ### 1) Expansion 
+        ### 2) Retracement 
+        ### 3) Reversal 
+        ### 4) Consolidations 
 
-        ### Price Rejections:
-        -> Double Top Sweeps 
-        -> Double Bottom Sweeps
-        -> Runs on Old Lows
-        -> Runs on Old Highs
+        ## Elements to a trade setup 
+        ### What is Expansion?
+        ###  Expansion is when Price moves quickly from a level of Equilibrium.
 
-        ## ICT - The Weekly Bias - Excellence in Short Term Trading
-        ### Bullish conditions
-        ### The Weekly Smart Money View:
+        ### What is the importance?
+        ### When Price leaves a level quickly this indicates a willingness on the part of the Market Makers to reveal their intended repricing model.
 
-        ### Weekly Lows Form Between Sun - Wed
-        -> High Odds Before Wednesday NY Open 7:00am.
+        ### What do we look for in Price?
+        ### The OrderBlock the Market Makers leave at or near the Equilibrium.
 
-        ### The Odds Increase Between Tue-Wed
-        -> Focus on Tuesday London to Wednesday NY Open. (and vice versa for Bearish Conditions)
+        ### What is Retracement?
+        ### Retracement is when Price moves back inside the recently created Price Range.
 
-        ## ICT Power of 3 - Monthly Open:
-        ### Price Action is Fractal in Nature
+        ### What is the importance?
+        ### When Price returns a recent Price Range this indicates a willingness on the part of the Market Makers to reprice to levels not efficiently traded for Fair Value.
 
-        ### The Monthly Charts Provide Macro Institutional Bias
+        ### What do we look for in Price?
+        ### The Fair Value Gaps and Liquidity Voids.
 
-        ### If Price Action is Bullish:
-        -> We focus on Buying at or below the Monthly Opening Price.
+        ### What is Reversal?
+        ### Reversal is when Price moves the opposite direction that the current direction has taken it.
 
-        ### If Price Action is Bearish:
-        -> We focus on Selling at or above the Monthly Opening Price.
+        ### What is the importance?
+        ### When Price reverses direction it indicates the Market Makers have ran a level of Stops and a significant move should unfold in the new direction.
 
-        ### Large Institutions Use Algorithmic Systems that key off the Monthly and Weekly Opening Prices. Since there are massive amounts of volume in these entities actions... We would do well to attempt to mimic their actions in direction.
+        ### What do we look for in Price?
+        ### The Liquidity Pools just above an old Price High and just below an old Price Low.
 
-        ## ICT Power of 3 - Weekly Open:
-        ### Price Action is Fractal in Nature.
-        ### The Weekly Chart Provide Intermediate Institutional Bias.
+        ### What is Consolidation?
+        ### Consolidation is when Price moves inside a clear trading range and shows no willingness to move significantly higher or lower.
 
-        ### If Pirce Action is Bullish:
-        -> We focus on Buying at or Below The Weekly Opening Price.
+        ### What is the importance?
+        ### When Price consolidates it indicates the Market Makers are allowing orders to build on both sides of the Market. Expect a new Expansion near term.
 
-        ### If Price Action is Bearish:
-        -> We focus on Selling at or Above the Weekly Opening Price.
+        ### What do we look for in Price?
+        ### The Impulse Swing in Price away from the Equilibrium price level that is formed exactly in the halfway point of the consolidation range.
 
-        ### Large Shifts in Price that originate from the macro monthly bias will provide the framework to weekly opening price setups. Not every week will move in the macro directional bias. There will be some weeks that move violently in agreement with the macro monthly bias.
+        # Lesson 2 - How Market Makers Condition the Market
 
-        ## ICT Power of 3 - Daily Open:
-        ### Price Action is Fractal in Nature:
-        ### The Daily Charts provide short term institutional bias.
+        ### Smart Money doesn't draw too much attention to itself. Smart Money actually drives price.
 
-        ### If Price Action is Bullish:
-        -> We focus on Buying at or below the Daily Opening Price.
+        ## Elements to a trade setup
+        ### A. Context or Framework surrounding the idea.
+        ### 1) Expansion = Judas Swing
+        ### 2) Retracement = New York Session
+        ### 3) Reversal = London Swing (London Close)
+        ### 4) Consolidation = Asian Range
 
-        ### If Price Action is Bearish:
-        -> We focys on selling at or above the daily opening price.
+        ## The Interbank Price Delivery Algorithm 
+        ## Daily Range Structure
+        ### Price Equilibrium
+        ## Manipulation
+        ### 1 - Consolidation
+        ### 2 - Expansion
+        ### 3 - Reversal
+        ### 4 - Retracement
 
-        ### The Market will gyrate Higher and Lower - relative to the Monthly and or Weekly perspectives. The Highest Probabilties in Trading the Daily Chart is when both the monthly and weekly support the trade isea. Focusing on the elements of time and price will greatly assist your analysis and overall development as a technical analyst.
+        # Lesson 3 - What to Focus on Right Now
+        ### Uninformed Money Perspective - Price moves by Indicators Influence.
 
-        ## Introducing The Asian Range
-        ### The Price Action prior to the Frankfurt or London Opening can be very indicative of he Intraday Price Movement.
+        ## What you should be focused on right now
+        ### A. Creating Daily Price Action Logs with Price Charts.
+        ### 1) Daily Chart - 12 Months no less than 9 months view.
+        ### 2) 4 hour Chart - 3 months view
+        ### 3) 60 minute Chart - 3 weeks view
+        ### 4) 15 minute Chart - 3 to 4 days view
 
-        ### When we have a Directional Bias we can use the Asian Range to build or frame "context" to the Market's likely intentions.
+        ### B. Resist the urge to forecast price movements right now.
+        ### 1) Do- Note where Price has shown a quick movement from a specific level.
+        ### 2) Do - Note recent Highs and recent Lows that haven't been retested.
+        ### 3) Do - Note areas on the charts where Price has left "clean" highs or lows.
+        ### 4) Do - Note what days weekly Highs and Lows form and what killzone it formed in.
+        ### 5) Do - Note the daily High and daily Low every trading day and what killzone it formed in.
 
-        ### There is a stillness in Price - many times right before the Intraday Directional Impulse Swing.
+        ## Liquidity Run 
+        ### What is Liquidity?
 
-        ## Utilization in Bullish Conditions
-        ### The periods when Price is Bullish - we can extend the Asian Range High and Low into the future.
-
-        ### When Price returns back to the Asian Range - we can anticipate Institutional Buying (and vice versa for Bearish Conditions).
+        ### Liquidity: Liquidity refers to the degree to which a market [asset or security] can be quickly bought or sold in the market without affecting the asset's price.
 
         '''
         
