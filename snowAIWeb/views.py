@@ -5696,22 +5696,139 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''ICT Market Maker Series'''
+        section = '''ICT Market Primer Series'''
         text = '''
-        ## Who is the market maker?
-        ### The Central Banks are the producer of Currency Prices and are the "Market Maker." Currency prices are 100% controlled and manipulated by the Central Banks. Investment Bank Dealers and or Brokers are not Market Makers. Dealers and Brokers do business with the Price Feeds set and delivered by Central Banks.
+        ## ICT Concepts Used in this module:
+        -> The Theory of Liquidity Raids or Stop Hunts
+        -> Introduction to Liquidity Pools
+        -> How to Locate High Probabilty Liquidity Pools
+        -> Introduction of the ICT Order Block
+        -> High Accuracy Entry Points
+        -> Low Drawdown Entry Tactics
+        -> High Probabilty Targeting
+        -> Benefits of Scaling Profits
+        -> How to Make More When You Are Wrong
 
-        ## What should the market be experiencing at the present?
-        ### Bullish or Bearish
+        ### Pick one or two pairs and watch them for a month and view how the support and resistance structs play out.
 
-        ## Where do you find the information?
-        ### Global Interest Rates - https://www.global-rates.com/en/interest-rates/central-banks/central-banks.aspx
-        ### Commitment of Traders (On Platform)
 
-        ### Global Interest Rates are the "fundamental driver" that sets the tone for long-term macro price movement.
-        ### COT shows a visual representation of how smart money positions itself.
+        ## ICT Forex - Considerations in Risk Management
+        ### You have to be able to absorb losses (risk 1%).
 
-        ### Traders don't move markets, Central Banks do (currency prices).
+        ## Essentials to ICT Market Structure
+        ## Finding your way in Price:
+        ### Primary Objective:
+        ### Know your timeframe for trading
+
+        ### Professional Perspective:
+        ### Frame Trades on at least 3 time frames.
+
+        ### Position Trades:
+        ### Monthly-Weekly-Daily
+
+        ### Swing Trades:
+        ### Daily-4 Hour-1 Hour
+
+        ### Short Term Trades:
+        ### 4 Hour-1 Hour-15 Minute
+
+        ### Day Trades and Scalps:
+        ### 1 Hour-15 Minute-5 Minute
+
+        ## The Keys to Multiple Time Frame Market Structure
+        ### Where your focus should be:
+        ->
+        The Highest of the 3 timeframes.
+        -> Trades will be managed by the Highest or Middle Time Frames.
+        -> The Shortest Time Frame will be used to enter and signal potential reversal clues.
+        -> The Highest Probabilty Trades are made in the Higher Time Frame Direction.
+        -> All trades are framed over key S and R levels.
+        -> Market Profiles will assist in Market Structure Analysis Concepts.
+
+        ### If you look on higher level charts, it's gonna give you the highest probability in terms of success.
+
+        ## ICT Asian Killzone
+        ### The AUD, NZD, JPY pairs are ideal fot this time of day.
+
+        ### The Asian Open can sometimes setup an Optimal Trade Entry Pattern that can offer a 15-20 pip scalp.
+
+        ### The Higher Timeframe bias is helpful here - but Short Term retracements in either Bull or Bear Markets can offer similiar OTE setups.
+
+        ## The Asian Session
+        ### The periods when the market is not willing to run in the Asian Session - it will consolidate until Midnight NY time.
+
+        ### The Asian Trading Session actually extends beyond the Midnight hour in New York time.
+
+        ### The importance of the consolidation holds many clues to how the Daily Range will develop over the remainder of the 24h Trading Day.
+
+        ## The Asian Session Characteristics
+        ### The pairs that are not coupled with the USD or Crosses are the most active during this time of day.
+
+        ### The USD tends to consolidate until Midnight New York time. Which frees Crosses like: AudJpy, GbpAud, or many other paris that cross with the busy currencies of this time of day.
+
+        ### There will be much more OTE setups in the Crosses in this time of day over any other time or Trading Session. If you are Cross Trader, this will be a rich time of day for setups.
+
+        ## ICT London Killzone
+        ### The EUR and GBP pairs are ideal for this time of day.
+
+        ### The London Open frequently setup an OTE Pattern that can offer a 25 - 50 pip scalp.
+
+        ### The key times to monitor are 2:00am to 5:00am NY time. This is the ideal ICT London Killzone.
+
+        ## The London Session
+        ### The Price Action during the London Session sees the highest probability of a large directional move in the 24 hour day.
+
+        ### The London Trading Session actually extends beyond extends beyond the 5:00am to 7:00am in NY time.
+
+        ### The London Session sees the highest volume of order execution than any other Trading Session.
+
+        ## The London Session Characteristics
+        ### The London Session typically creates the Low of the day when the market is primarily Bullish and the High of the day when Bearish.
+
+        ### When the Market is poised to trade Higher on the Daily Timeframe - we can focus on the London Session to post the Low of the Trading Day. If the Daily is poised to trade Lower - we can focus on the London Session to post the High of the Trading Day.
+
+        ## ICT New York Killzone 
+        ### The NY Open
+        ### The Major pairs are ideal for this time of day.
+
+        ### The NY Open frequently setup an Optimal Trade Entry Pattern that can offer a 20 - 30 pip scalp.
+
+        ### The Key times to monitor are 7:00am to 9:00am NY time. This is the ICT NY Killzone.
+
+        ## The NY Session
+        ### The Price Action during the New York Session sees a consistent round of Economic News Releases.
+
+        ### The NY Trading Session actually extends beyond the 9:00am hour to 2:00pm in NY time.
+
+        ## The NY Session Characteristics
+        ### The NY Session typically has two potential scenarios - Continuation of London's Move or complete Reversal on the daily direction.
+
+        ### When the daily is in a clear one sided momentum - it is easiest to look for confirmation of that direction in the London Price Action. If London agress with the Daily Bias - we can anticipate NY to post a continuation setup. Reversals require more insights.
+
+        ## The London Close
+        ### The Major Pairs are ideal for this time of day.
+
+        ### The London Close frequently setup an OTE Pattern that can offer a 10 - 20 pip scalp.
+
+        ### The Key Times to monitor are 10:00am to Noon NY time. This is the ICT London Close Killzone.
+
+        ## The London Close Killzone
+        ### The Price Action seen at London Close typically sees a retracement of the High of the day on Bullish days - and off the Low of the day on Bearish days.
+
+        ### There is typically a 5 minute OTE Setup in these conditions. They are very short term moves.
+
+        ## Characteristics of Lodnon Close
+        ### London Close can create continuation points for swings that trade well into the NY afternooon hours.
+
+        ### Other times - The London Close can also be a Reversal Point for Price and what had been the direction of the day or week - can change during London Close.
+
+        ## ICT - Trading the Key Swing Points
+        ### Asia is a consolidation. London creates the high or low of the daily range. New York is part of the expansion. In some instances the Asian Open or London Close will be the reverse.
+
+        ### London Open can be part of the retracement when the Asian session creates the H/L of the day.
+
+        ## ICT - Money Management That Works
+        ### If you need to be right, you're not gonna trade profitably.
         '''
         
         # Check if a Chill instance with the same section already exists
