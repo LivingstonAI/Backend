@@ -5696,139 +5696,81 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''ICT Market Primer Series'''
+        section = '''ICT - How To Find Explosive Price Moves Before They Happen'''
         text = '''
-        ## ICT Concepts Used in this module:
-        -> The Theory of Liquidity Raids or Stop Hunts
-        -> Introduction to Liquidity Pools
-        -> How to Locate High Probabilty Liquidity Pools
-        -> Introduction of the ICT Order Block
-        -> High Accuracy Entry Points
-        -> Low Drawdown Entry Tactics
-        -> High Probabilty Targeting
-        -> Benefits of Scaling Profits
-        -> How to Make More When You Are Wrong
+        ### On Barchart.com, by following the red line on higher timeframes, it'll help give warning signs of an impending reversal, which can be explosive in nature.
 
-        ### Pick one or two pairs and watch them for a month and view how the support and resistance structs play out.
+        ## ICT - Higher Time Frame Concepts
+        ### Key Levels:
+        -> Yearly Highs and Lows
+        -> Monthly Highs and Lows
+        -> Weekly Highs and Lows
 
+        ### Price Rejections:
+        -> Double Top Sweeps 
+        -> Double Bottom Sweeps
+        -> Runs on Old Lows
+        -> Runs on Old Highs
 
-        ## ICT Forex - Considerations in Risk Management
-        ### You have to be able to absorb losses (risk 1%).
+        ## ICT - The Weekly Bias - Excellence in Short Term Trading
+        ### Bullish conditions
+        ### The Weekly Smart Money View:
 
-        ## Essentials to ICT Market Structure
-        ## Finding your way in Price:
-        ### Primary Objective:
-        ### Know your timeframe for trading
+        ### Weekly Lows Form Between Sun - Wed
+        -> High Odds Before Wednesday NY Open 7:00am.
 
-        ### Professional Perspective:
-        ### Frame Trades on at least 3 time frames.
+        ### The Odds Increase Between Tue-Wed
+        -> Focus on Tuesday London to Wednesday NY Open. (and vice versa for Bearish Conditions)
 
-        ### Position Trades:
-        ### Monthly-Weekly-Daily
+        ## ICT Power of 3 - Monthly Open:
+        ### Price Action is Fractal in Nature
 
-        ### Swing Trades:
-        ### Daily-4 Hour-1 Hour
+        ### The Monthly Charts Provide Macro Institutional Bias
 
-        ### Short Term Trades:
-        ### 4 Hour-1 Hour-15 Minute
+        ### If Price Action is Bullish:
+        -> We focus on Buying at or below the Monthly Opening Price.
 
-        ### Day Trades and Scalps:
-        ### 1 Hour-15 Minute-5 Minute
+        ### If Price Action is Bearish:
+        -> We focus on Selling at or above the Monthly Opening Price.
 
-        ## The Keys to Multiple Time Frame Market Structure
-        ### Where your focus should be:
-        ->
-        The Highest of the 3 timeframes.
-        -> Trades will be managed by the Highest or Middle Time Frames.
-        -> The Shortest Time Frame will be used to enter and signal potential reversal clues.
-        -> The Highest Probabilty Trades are made in the Higher Time Frame Direction.
-        -> All trades are framed over key S and R levels.
-        -> Market Profiles will assist in Market Structure Analysis Concepts.
+        ### Large Institutions Use Algorithmic Systems that key off the Monthly and Weekly Opening Prices. Since there are massive amounts of volume in these entities actions... We would do well to attempt to mimic their actions in direction.
 
-        ### If you look on higher level charts, it's gonna give you the highest probability in terms of success.
+        ## ICT Power of 3 - Weekly Open:
+        ### Price Action is Fractal in Nature.
+        ### The Weekly Chart Provide Intermediate Institutional Bias.
 
-        ## ICT Asian Killzone
-        ### The AUD, NZD, JPY pairs are ideal fot this time of day.
+        ### If Pirce Action is Bullish:
+        -> We focus on Buying at or Below The Weekly Opening Price.
 
-        ### The Asian Open can sometimes setup an Optimal Trade Entry Pattern that can offer a 15-20 pip scalp.
+        ### If Price Action is Bearish:
+        -> We focus on Selling at or Above the Weekly Opening Price.
 
-        ### The Higher Timeframe bias is helpful here - but Short Term retracements in either Bull or Bear Markets can offer similiar OTE setups.
+        ### Large Shifts in Price that originate from the macro monthly bias will provide the framework to weekly opening price setups. Not every week will move in the macro directional bias. There will be some weeks that move violently in agreement with the macro monthly bias.
 
-        ## The Asian Session
-        ### The periods when the market is not willing to run in the Asian Session - it will consolidate until Midnight NY time.
+        ## ICT Power of 3 - Daily Open:
+        ### Price Action is Fractal in Nature:
+        ### The Daily Charts provide short term institutional bias.
 
-        ### The Asian Trading Session actually extends beyond the Midnight hour in New York time.
+        ### If Price Action is Bullish:
+        -> We focus on Buying at or below the Daily Opening Price.
 
-        ### The importance of the consolidation holds many clues to how the Daily Range will develop over the remainder of the 24h Trading Day.
+        ### If Price Action is Bearish:
+        -> We focys on selling at or above the daily opening price.
 
-        ## The Asian Session Characteristics
-        ### The pairs that are not coupled with the USD or Crosses are the most active during this time of day.
+        ### The Market will gyrate Higher and Lower - relative to the Monthly and or Weekly perspectives. The Highest Probabilties in Trading the Daily Chart is when both the monthly and weekly support the trade isea. Focusing on the elements of time and price will greatly assist your analysis and overall development as a technical analyst.
 
-        ### The USD tends to consolidate until Midnight New York time. Which frees Crosses like: AudJpy, GbpAud, or many other paris that cross with the busy currencies of this time of day.
+        ## Introducing The Asian Range
+        ### The Price Action prior to the Frankfurt or London Opening can be very indicative of he Intraday Price Movement.
 
-        ### There will be much more OTE setups in the Crosses in this time of day over any other time or Trading Session. If you are Cross Trader, this will be a rich time of day for setups.
+        ### When we have a Directional Bias we can use the Asian Range to build or frame "context" to the Market's likely intentions.
 
-        ## ICT London Killzone
-        ### The EUR and GBP pairs are ideal for this time of day.
+        ### There is a stillness in Price - many times right before the Intraday Directional Impulse Swing.
 
-        ### The London Open frequently setup an OTE Pattern that can offer a 25 - 50 pip scalp.
+        ## Utilization in Bullish Conditions
+        ### The periods when Price is Bullish - we can extend the Asian Range High and Low into the future.
 
-        ### The key times to monitor are 2:00am to 5:00am NY time. This is the ideal ICT London Killzone.
+        ### When Price returns back to the Asian Range - we can anticipate Institutional Buying (and vice versa for Bearish Conditions).
 
-        ## The London Session
-        ### The Price Action during the London Session sees the highest probability of a large directional move in the 24 hour day.
-
-        ### The London Trading Session actually extends beyond extends beyond the 5:00am to 7:00am in NY time.
-
-        ### The London Session sees the highest volume of order execution than any other Trading Session.
-
-        ## The London Session Characteristics
-        ### The London Session typically creates the Low of the day when the market is primarily Bullish and the High of the day when Bearish.
-
-        ### When the Market is poised to trade Higher on the Daily Timeframe - we can focus on the London Session to post the Low of the Trading Day. If the Daily is poised to trade Lower - we can focus on the London Session to post the High of the Trading Day.
-
-        ## ICT New York Killzone 
-        ### The NY Open
-        ### The Major pairs are ideal for this time of day.
-
-        ### The NY Open frequently setup an Optimal Trade Entry Pattern that can offer a 20 - 30 pip scalp.
-
-        ### The Key times to monitor are 7:00am to 9:00am NY time. This is the ICT NY Killzone.
-
-        ## The NY Session
-        ### The Price Action during the New York Session sees a consistent round of Economic News Releases.
-
-        ### The NY Trading Session actually extends beyond the 9:00am hour to 2:00pm in NY time.
-
-        ## The NY Session Characteristics
-        ### The NY Session typically has two potential scenarios - Continuation of London's Move or complete Reversal on the daily direction.
-
-        ### When the daily is in a clear one sided momentum - it is easiest to look for confirmation of that direction in the London Price Action. If London agress with the Daily Bias - we can anticipate NY to post a continuation setup. Reversals require more insights.
-
-        ## The London Close
-        ### The Major Pairs are ideal for this time of day.
-
-        ### The London Close frequently setup an OTE Pattern that can offer a 10 - 20 pip scalp.
-
-        ### The Key Times to monitor are 10:00am to Noon NY time. This is the ICT London Close Killzone.
-
-        ## The London Close Killzone
-        ### The Price Action seen at London Close typically sees a retracement of the High of the day on Bullish days - and off the Low of the day on Bearish days.
-
-        ### There is typically a 5 minute OTE Setup in these conditions. They are very short term moves.
-
-        ## Characteristics of Lodnon Close
-        ### London Close can create continuation points for swings that trade well into the NY afternooon hours.
-
-        ### Other times - The London Close can also be a Reversal Point for Price and what had been the direction of the day or week - can change during London Close.
-
-        ## ICT - Trading the Key Swing Points
-        ### Asia is a consolidation. London creates the high or low of the daily range. New York is part of the expansion. In some instances the Asian Open or London Close will be the reverse.
-
-        ### London Open can be part of the retracement when the Asian session creates the H/L of the day.
-
-        ## ICT - Money Management That Works
-        ### If you need to be right, you're not gonna trade profitably.
         '''
         
         # Check if a Chill instance with the same section already exists
