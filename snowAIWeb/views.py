@@ -5693,7 +5693,36 @@ def plot_net_positions(df):
     return plot_urls
 
 
+@csrf_exempt
+def create_chill_data(request):
+    try:
+        section = '''ICT Market Maker Series'''
+        text = '''
+            ## Who is the market maker?
+            ### The Central Banks are the producer of Currency Prices and are the "Market Maker." Currency prices are 100% controlled and manipulated by the Central Banks. Investment Bank Dealers and or Brokers are not Market Makers. Dealers and Brokers do business with the Price Feeds set and delivered by Central Banks.
 
+            ## What should the maret be experiencing at the present?
+            ### Bullish or Bearish
+
+            ## Where do you find the information?
+            ### Global Interest Rates - https://www.global-rates.com/en/interest-rates/central-banks/central-banks.aspx
+            ### Commitment of Traders (On Platform)
+
+            ### Global Interest Rates are the "fundamental driver" that sets the tone for long-term macro price movement.
+            ### COT shows a visual representation of how smart money positions itself.
+
+            ### Traders don't move markets, Central Banks do (currency prices).
+
+        '''
+        chill_data = Chill(
+            section=section
+            text=text
+        )
+        chill_data.save()
+        return JsonResponse({'message': f'Chill Data Saved Successfully!'})
+    except Exception as e:
+        print(f'error in Chill Data Function: {e}')
+        return JsonResponse({'message': f'error in Chill Data Function: {e}'})
 
 
 
