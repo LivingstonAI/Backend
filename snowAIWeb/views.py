@@ -5696,94 +5696,10 @@ def plot_net_positions(df):
 @csrf_exempt
 def create_chill_data(request):
     try:
-        section = '''ICT Core Content Month 06'''
+        section = '''ICT Core Content Month 07 - Short Term Trading'''
         text = '''
-        ## Ideal Swing Conditions for any Market
-        ### What is Swing Trading?
-        ### The discipline of Trading predictable price movements in the maret with a high degree of consistency.
-
-        ### Buying in Bullish Conditions in the market.
-        ### Selling in Bearish Conditions in the market.
-
-        ### Swing Trading is a form intermediate term trading with trade durations of 2 weeks or longer in time.
-
-        ### What is the goal of Swing Trading?
-        ### Capitalize on the effects of larger entities moving into a market and causing a significant displacement in Price.
-
-        ### Since trade durations can be 2 weeks or longer, potential rewards are considerable.
-
-        ### Trade objectives of 200 pips to 500 pips in magnitude are possible rewards for such setups.
-
-        ### Every Market isn't ideal for setups:
-        ### Avoid favourite markets in general for Swing Trading purposes.
-        ### Large moves every year rotate in and out of different markets.
-        ### There is no "standard" Swing Trading market or pair.
-        ### Every 3 months there is a new opportunity forming for Swing Trading.
-        ### What once was a big mover will not always be the next big mover this time... investigate.
-
-        ## Market Profile Matters:
-        ### Markets move from one profile to the next - in all timeframes.
-        ### On Monthly and Weekly charts look for the current Market Profile for your markets of study.
-        ### Avoid lackluster or lethargic markets that have little to no movement in the last 3 months.
-
-        ## Trending Markets = Large Flows:
-        ### If the aim in Swing Trading is to position ourselves in moves that are likely to move a large distance - we should be looking for markets that are Trending.
-        ### If a market is confined to an obvious Trading Range - this does not indicate it has high odds for a directional setup.
-        ### Building your watch list of markets with Trending Market Profiles on the Monthly and or Weekly - puts high probability behind your setups.
-
-        ## Be Willing to Err on the Direction:
-        ### Avoid the temptation to pick market Tops and Bottoms in Price Action.
-        ### It is for more likely to see the trend continue than a long-term reversal. 
-        ### Focus on the long term trend and the "market tide" will carry your trade to the winner's circle more often than not.
-
-        ## Successful Swing Trading Hallmarks?
-        ### Obvious Trend in HTF Charts.
-        ### Institutional Order Flow on HTF Clear.
-        ### Interest Rate Markets Supports the Trade.
-        ### COT Data Confirms [Enhances Probability].
-        ### Opposing PDA Obvious in Charts.
-        ### Seasonal Tendency [Enhances Probability].
-        ### Supporting Intermarket Analysis.
-
-        ## Institutional Sponsorship?
-        ### When buying are there signs in Relative Strength Analysis to support the trade?
-        -> Example: Buy EURUSD on lower low - USDX lower high.
-        ### When shorting are there signs in Relative Strength Analysis to support the trade?
-        -> Example: Short USDCHF on lower high - USDX higher high.
-
-        ## Bank Accumulation Distribution:
-        ### Are the Down candles becoming "Support" and seeing higher prices?
-        ### Are the Swing Highs breaking and seeing higher highs?
-
-        ### Are the UP candles becoming "Resistance" and seeing lower prices?
-        ### Are the Swing Lows breaking and seeing lower lows?
-
-        ## Clear Price Action and Levels:
-        ### Above or below the Market Price the PDA are obvious and easy to identify? 
-        ### Price not traded at in recent weeks or months left in imbalance basis Monthly and Weekly?
-        ### The cleanest Price Action are the most favourable markets to trade in. Less chance for erroneus Price Action to distract or fool you.
-        ### Price respecting Institutional Levels?
-
-        ## Rule Based Conceptual Methods:
-        ### Every trade is passed through a rules based filtering process.
-        ### The rules are standardized and static... not changing each trade setup.
-        ### When trade setups fail the filtering process - the trade is passon on. Period - no exceptions.
-        ### When the trade setups pass the filtering process - the trade is executed on. Risk and Equity Management permitting.
-
-        ## Probabilities Reward Diligence:
-        ### Limiting setups to 3:1 Reward to Risk permits as low as 34% accuracy to be net profitable.
-        ### That's making money when you're wrong 66% of the time!
-        ### If we can frame our setups with rewards of 5 times our risk - we have higher odds of probability and we endure losses much easier.
-        ### The setups that have the most movement potential offer the better R:R ratio.
-
-        ## The PDA (Premium Discount Array) Matrix:
-        ### When defining the marekt conditions we think in terms of where the Price can reach for. Both in a rally and in a decline. This is the foundation to determining likely market direction.
-
-        ### The PD Arrays that have been traded to or executed on most recently indicate the opposite PD Array Spectrum will be reached for.
-
-        ### If Discount Arrays have provided Support for Price - probabilities increase that the Premium Arrays will be sought above the market price.
-
-        ### If Premium Arrays have provided Resistance for Price - probabilities increase that Discount Arrays will be sought below the market price.
+        ## Short Term Trading
+        ### The practice of Trading a duration of a few days to a week. Using both the Monthly and Weekly charts to frame the setups. We trade in the direction of the present or next week's range. Understanding of the Weekly Rnage is essential. The Short Term Model can be both Trend or Range based. Trades that are clear to see forming are the goal - not forced. Short Term Trading is the highest probability discipline. Frequent setups and consistency provides a plethora of trades.
 
         ## HTF Sequence:
         ### Shorting Opportunities - 
@@ -5791,78 +5707,105 @@ def create_chill_data(request):
         -> Weekly Chart Sell Program 
         -> Daily Chart Sell Program 
         -> 4 Hour Chart Sell Program 
+        -> 1 Hour Chart Sell Program 
 
         ### Buying Opportunities - 
         -> Monthly Chart Buy Program 
         -> Weekly Chart Buy Program 
         -> Daily Chart Buy Program 
-        -> 4 Hour Chart Buy Program
+        -> 4 Hour Chart Buy Program 
+        -> 1 Hour Chart Buy Program 
 
-        ## The General Concept:
-        ### Market is poised to Trade Higher on HTF
-        -> 1. Seasonal Tendency 
-        -> 2. Interest Rate Driven 
-        -> 3. Commitment of Traders 
-        -> 4. Intermarket Analysis Supports Bullishness
+        ## The General Concept Revisited:
+        ### Market is poised to trade higher on HTF.
+        ### 1) Seasonal Tendency 
+        ### 2) Interest Rate Driven
+        ### 3) COT 
+        ### 4) Intermarket Analysis Supports Bullishness
 
-        ### Market Rallies Higher then retraces. 
-        ### Market Exapnds up to higher highs. 
+        ### Market Rallies Higher Then Retraces Mon - Wed.
+        ### Market Expands Up to Higher Highs.
 
-        ## The Swing Trade Procedure:
-        ### 1) Determine the 9 - 18 month Market Profile on the Monthly and Weekly Charts.
-        ### 2) Determine the Monthly PD Arrays - refer to the active Discount Arrays.
-        ### 3) If Monthly Discount Array is Supporting Price Determine Premium Arrays.
-        ### 4) When Monthly Discount Array is active - Move to Weekly Chart. 
-        ### 5) Determine Weekly PD Arrays - refer to the acitve Discount Arrays.
-        ## 6) If Weekly Discount Array is Supporting Price Determine Premium Arrays.
-        ### 7) When Weekly Discount Array is active - Move to Daily Chart.
-        ### 8) Determine the Daily Discount Arrays - refer to active Discount Arrays.
-        ### 9) When Daily Discount Array is active - Move to 4 Hour Chart.
-        ### 10) Determine 4 Hour Discount Arrays - refer to acitve Disscount Arrays.
-        ### 11) Buy all 4 Hour Discount Arrays and scale out at Daily, Weekly, and Monthly Premium Arrays.
-        ### 12) Look to trade setups that offer at least 3 times the range between your entry and the closest Premium Array on all timeframes.
+        ## Monthly Ranges
+        ### Price is Fractal and HTF Analysis benefits us as a result. We note the High and Low on every Monthly Candle. Note the present Range in terms of premium or discount. Consider where Price on the Monthly will or could draw to. There is generally 4 Weekly Candles in every Monthly Candle. Each week we study where the Monthly will likely trade to next. Using monthly Ranges we frame trades on the Weekly Range.
 
-        ## Setup Failure Protocol:
-        ### 1) If the Buy Setup on the 4 Hour Discount Array fails and the trade results in a loss - look for a lower priced 4 Hour Discount Array to Buy at.
-        ### 2) If the 4 Hour chart has no more Discount Arrays to Buy at - refer to the Daily - Weekly - Monthly Discount Arrays to Buy at below price.
-        ### 3) At the lower Discount Array - Buy with 50% of the position size the intial or previous failed trade utilized.
-        ### 4) Do not try to win all the equity back in the subsequent trade.
-        ### 5) Always confirm Lower Time Frame 4 Hour Premium Arrays give way or fail as price moves in your favour - and new Discount Arrays Support price as it moves towards the Premium Arrays on the HTF charts.
+        ## Weekly Ranges 
+        ### Price is Fractal and Monthly Analysis builds on the Weekly. We note the High and Low on every Weekly Candle. Note the present Range in Terms of Premium or Discount. Consider where Price on the Weekly will or could draw to. There is generally 5 Daily Candles in every Weekly Candle. Each Week we study how the Weekly trades in Monthly Range. Using Weekly Ranges, we frame trades on the Daily Chart.
 
-        ## Bullish MWD Sequential:
-        ### Monthly - Discount Array has shown to induce buying as evidenced by Price moving higher.
-        ### Weekly - Discount Array has shown to induce buying as evidenced by Price moving higher.
-        ### Daily - Discount Array has shown to induce buying as evidenced by Price moving higher.
+        ### Note when the Mon - Wed High is traded through - Price tends to expand aggressively towards the Monthly and or Weekly Premium Array.
 
-        ### In all timeframes - down candles provide new support to Price and little to no weakness seen.
+        ## Classic Tuesday Low of the Week 
+        ### The Profile: Bullish 
 
-        ## Buy Daily Bullish Discount Array 
-        ### 1) Bullish Mitigation Block 
-        ### 2) Bullish Breaker 
-        ### 3) Liquidity Void 
-        ### 4) Fair Value Gap 
-        ### 5) Bullish Orderblock 
-        ### 6) Rejection Block 
-        ### 7) Old low or high
+        ### Manipulation: Hovers above a HTF Discount Array Monday then drops into the HTF Discount Array on Tuesday to form the Low of the Week. 
 
-        ### and vice versa for Bearish conditions.
+        ### How to Anticipate: Know the HTF Discount Arrays and when the market fails to drop into that Array - odds are Tuesday will likely see the drive lower Tue London or NY Session. (and vice versa for classic Tuesday High of Week)
 
-        ## Reducing Risk:
-        ### 1) Begins with knowing your maximum RISK per setup or Trade. 
-        ### 2) You should not allow High Risk % per trade - Gambling.
-        ### 3) Professionals look to frame setups with Low - Risk High Reward.
-        ### 4) With Swing Trades Only frame on Monthly or Weekly levels ideally.
-        ### 5) HTF PD Arrays and 4 Hour entries permit your setups tighter stops.
+        ## Wednesday High of Week
+        ### The Profile: Bearish
 
-        ## Maximising Reward:
-        ### 1) Key is only Trade on HTF - Monthly and Weekly Levels.
-        ### 2) Timing 4 Hour entries on HTF levels offer the maximum R multiples.
-        ### 3) HTF levels that offer ranges of 200 - 500 pips can yield up to 10R wins.
-        ### 4) Remember there are typically 1 - 2 Swing Trades per 4 - 6 weeks.
-        ### 5) Removing High Leverage and coupling HTF setups with High R is key. 
-        ### 6) Consider leverage of 3:1 and 10R setups can yield up to 15%.
-        ### 7) Managed funds with 1.5% Risk and 3:1 leverage using 50 pips stops! 
-        ### 8) Focusing on 6 Swings per year alone that offer 10R can double equity.
+        ### Manipulation: Hovers below a HTF Premium Array Monday and Tuesday then rises into the HTF Premium Array on Wed to form the High of the Week.
+
+        ### How to Anticipate: Know the HTF Premium Arrays and when the market fails to rise into that Array - odds are Wed will likely see the drive higher Wed London or NY Session. Monday and Tuesday can be up days as well and form this Profile. (and vice versa for Wednesday Low of Week)
+
+        ## Consolidation Thursday Reversal
+        ### The Profile: Bullish 
+
+        ### Manipulation: Consolidates Monday through Wednesday then runs the intra-week Low and rejects it forming a market reversal.
+
+        ### How to Anticipate: Know the HTF Discount Arrays and when the market fails to drop into that Array - odds are Thursday will likely see the drive lower Thursday on a Market Driver News or Rate release late New York Session around 2:00pm EST.
+
+        ## Consolidation Midweek Rally 
+        ### The Profile: Bullish 
+
+        ### Manipulation: Consolidates Monday through Wednesday then runs the intra-week High and expands higher into Friday.
+
+        ### How to Anticipate: When the market is Bullish and has yet to run to the Premium Array on the HTF timeframes and it has recently rallied drom a Discount Array and simply paused without any Bearish Reversal Price Action. Indicating Price is about to expand higher for the Premium Array. 
+
+        ## Seek and Destory Bullish Friday
+        ### The Profile: Neutral-Low Probability
+
+        ### Manipulation: Consolidates Monday through Thursday - running shallow stops under and above the intra-week highs - then runs the intra-week High and expands higher into Friday.
+
+        ### How to Anticipate: When the market is awaiting Interest Rate Announcements or Non-Farm Payroll can create this Profile in the Summer months of July and August. Better to avoid trading these conditions.
+
+        ## Wednesday Weekly Reversal 
+        ### The Profile: Bullish 
+
+        ### Manipulation: Consolidates Monday through Tuesday - drives lower into a HTF Discount array to induce Sell Stops then strongly reverses.
+
+        ### How to Anticipate: When the market is Trading at a long term or intermediate term Low - price will pair Institutional Buying with pending Sell Side Liquidity [Sell Stops Raid]
+
+        ### Each Week the Market will seek to Trade from one PD Array to another. It will trade from one quadrant to another with the least resistance, premium to discount or discount to premium market valuation.
+
+        ## One Shot one kill setups require:
+        ### Knowing Macro conditons and all the January content lessons.
+        ### IPDA Data Ranges and PD Array Matrix concept.
+        ### The understanding of Position Trading Model concepts.
+        ### The understanding of Swing Trading Model concepts.
+        ### The Short Term Trading tutorials on the ICT website.
+        ### The Power of 3 Concept applied to Weekly Candles or Ranges.
+        ### The Intraday concept from ICT Day Trading Model. 
+        ### Day of Week Concept - High or Low Forms Mon - Wed 70% of the time.
+        ### Using Fib's for targeting and understanding the correct Price points. 
+        ### Time of Day or ICT Killzones for entries on OSOK setups.
+        ### Seasonal Tendencies that may impact or frame directional setups.
+        ### COT Analysis and Commercial Hedging Programs.
+
+        ## One Shot One Kill Trade Procedure:
+        ### Determine the current or potential next Quarterly Shift. 
+        ### Identify the HTF PD Arrays in the IPDA Data Ranges. 
+        ### Refer to Interest Rate Differentials and Market Profile of Rates.
+        ### Scout Seasonals throughout the calendar year that offer odds.
+        ### Swing Analysis on the Price Action on HTF down to 60min.
+        ### Anticipate specific Weekly Profiles that may unfold.
+        ### Prepare for Market Makers Manipulation respective to the Profile. 
+        ### Determine Premium and Discount ranges for Price Action.
+        ### Wait for Volatility to signal a high odds of large ranges.
+        ### Refer to COT and Open Interest to confirm Smart Money action.
+        ### Frame a Low Resistance Liquidity Run with opposing PD Arrays.
+        ### Use Fib's to converge with opposing PD Arrays and Time and Price.
+        ### Confirm Trade Setups with Intermarket Analysis.
 
         '''
         
