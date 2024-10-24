@@ -5993,7 +5993,7 @@ def edit_chill_data(request):
 
             # Fetch the section data from the database (mocking this step)
             # For example:
-            chill_section = ChillSection.objects.get(section=section)
+            chill_section = Chill.objects.get(section=section)
             chill_section.text = text
             chill_section.save()
 
