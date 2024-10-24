@@ -5991,23 +5991,19 @@ def edit_chill_data(request):
             if not section or not text:
                 return JsonResponse({'message': 'Invalid data'}, status=400)
 
-            # Fetch the section data from the database (mocking this step)
-            # For example:
-            chill_section = Chill.objects.get(section=section)
-            chill_section.text = text
-            chill_section.save()
+            # Use update() to update the record
+            updated_count = Chill.objects.filter(section=section).update(text=text)
 
-            # Simulate saving the data
-            # Here, you should replace this with your DB save logic
-            print(f"Updated Section: {section}")
-            print(f"Updated Text: {text}")
+            if updated_count == 0:
+                return JsonResponse({'message': 'Section not found'}, status=404)
 
             return JsonResponse({'message': 'Section updated successfully'}, status=200)
         else:
             return JsonResponse({'message': 'Invalid request method'}, status=405)
+    except Chill.DoesNotExist:
+        return JsonResponse({'message': 'Section not found'}, status=404)
     except Exception as e:
         return JsonResponse({'message': str(e)}, status=500)
-
 
 
 
