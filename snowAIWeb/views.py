@@ -5781,7 +5781,7 @@ def delete_chill_entry(request):
             data = json.loads(request.body)
             section = data.get('section')
             if section:
-                ChillEntry.objects.filter(section=section).delete()  # Deletes entry with the specified section name
+                Chill.objects.filter(section=section).delete()  # Deletes entry with the specified section name
                 return JsonResponse({'message': 'Entry deleted successfully'}, status=200)
             return JsonResponse({'message': 'Section name not provided'}, status=400)
         except ChillEntry.DoesNotExist:
