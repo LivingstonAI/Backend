@@ -5774,11 +5774,21 @@ def edit_chill_data(request):
     except Exception as e:
         return JsonResponse({'message': str(e)}, status=500)
 
-
-
-
-
-
+@csrf_exempt
+def delete_chill_entry(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            section = data.get('section')
+            if section:
+                ChillEntry.objects.filter(section=section).delete()  # Deletes entry with the specified section name
+                return JsonResponse({'message': 'Entry deleted successfully'}, status=200)
+            return JsonResponse({'message': 'Section name not provided'}, status=400)
+        except ChillEntry.DoesNotExist:
+            return JsonResponse({'message': 'Entry does not exist'}, status=404)
+        except Exception as e:
+            return JsonResponse({'message': str(e)}, status=500)
+    return JsonResponse({'message': 'Invalid request method'}, status=405)
 
 
 
