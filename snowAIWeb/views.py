@@ -5695,258 +5695,29 @@ def plot_net_positions(df):
 
 @csrf_exempt
 def create_chill_data(request):
-    try:
-        section = '''2017 ICT Core Content Month 10'''
-        text = '''
-        ## Commitment of Traders Report
-        ## The Raw Data 
-        ### Found on www.cftc.gov
-        ### Futures Contract Only Short Format 
-        ### CME - Chicago Mercentile Exchange 
-
-        ### For example:
-        ### Japanese Yen Futures Contract:
-        ### Commercial Long Positions = 143450 contracts
-        ### Commercial Short Positions = 76426 contracts 
-        ### Commercial Net Position = 67024 contracts Long 
-
-        ### This tells us nothing about their current hedging program... let's look deeper! 
-
-        ## The Commercial Hedging Programs 
-        ### If Commercials are above the Net Zero Line both sides of the market can be used to Trade. 
-        ### The current "range" of the Commercials Net Position is referred to.
-        ### If Institutional Order Flow is Bullish - blend Discount PD Arrays and 12/6 month Net Long Commercial readings for Long Trades.
-        ### If Institutional Order Flow is Bearish - blend Premium PD Arrays and 12/6 month Net Short Commercial readings for Short Trades.
-        ### The best conditions are seen when both Net Zero basis agree with Institutional Order Flow and PD Array Matrix confluences.
-
-        ## The Long Term Commerical Activity
-        ### The Net Zero Line delineates the Net Buying and or Net Selling.
-        ### Retail Traders that know about the Net Traders Position Chart only look at whether Commercials are Net Long for Bullishness or Net Short for Bearishness on a market.
-        ### The Smart Money can be tracked by focusing on the 12 month and 6 month range of the Commercials Net Position. 
-        ### If Commercials are above Net Zero Line = focus on 12/6 month net long.
-        ### If Commercials are below Net Zero Line = focus on 12/6 month net short.
-        ### Blend these conditions with PD Array Matrix and Institutional Order Flow for optimal results in directional analysis.
-
-        ## Relative Strength Analysis - Professional Accumulation and Distribution 
-        ## Agricultural 
-        ### Grains - Corn, Wheat, Soybeans
-        ### Livestock - Feeder Cattle, Lean Hogs, Live Cattle 
-        ### Foods - Cocoa, Orange Juice, Coffee, Sugar
-        ### Fibers - Cotton 
-
-        ## Financial
-        ### Debt - T Bonds, 10 Yr.Note, 5 Yr.Note 
-        ### Currencies - Aus $, Can $, Yen, Pound, Franc, Euro, NZ $
-        ### Metals - Gold, Silver, Copper 
-        ### Energies - Crude Oil 
-
-        ## Institutionally Sponsored Rally 
-        ### The Market tends to trade higher energetically as a Leader Market and establishes the underlying direction opposite to DX. 
-
-        ### These markets are extremely profitable - our aim is to focus on these markets as they'll be the strongest upisde movers.
-
-        ### Short Term Highs are seen broken and declines are shallow in nature. The upswings and up closing candles are typically much larger than those that close lower or move lower.
-
-        ### Key Focal Point is a failure to trade lower - Divergence.
-
-        ## Sympathetic Rally 
-        ### The Market tends to trade higher in sympathy to the Leader Market that establishes the underlying direction.
-
-        ### While these markets are potentially profitable - our aim is to focus on the Leadership Markets for the strongest possible rallies. 
-
-        ### Short Term Highs are seen broken and declines are shallow in nature. The upswings and up closing candles are typically much larger than those that close lower or more lower. 
-
-        ## Institutionally Sponsored Decline 
-        ### The Market tends to trade lower energetically as a Leader Market and establishes the underlying direction opposite to DX.
-
-        ### These markets are extremely profitable - our aim is to focus on these markets as they'll be the strongest downside movers. 
-
-        ### Short Term Lows are seen broken and rallies are shallow in nature. The downswings and down closing candles are typically much larger than those that close higher or move higher.
-
-        ### Key Focal Point is a failure to trade higher - Divergence.
-
-        ### Sympathetic Decline 
-        ### The Market tends to trade lower in sympathy to the Leader Market that establishes the underlying downside direction.
-
-        ### While those markets are potentially profitable - our aim is to focus on the Leadership Market for the weakest declines.
-
-        ### Short Term Lows are seen broken and rallies are shallow in nature. The downswings and down closing candles are typically much larger than those that close higher or move higher.
-
-        ### Personal Side Note: Make a list of all the seasonal tendency influences you should be experiencing for the month at the beginning of every month.
-
-        ## Open Interest and Smart Money Footprints 
-        ### Open Interest is the total number of outstanding contracts that are held by market participants at the end of each trading day. Where volume measures the pressure or intensity behind a price trend, open interest measures the flow of money into the futures market.
-
-        ### For each seller of a futures contract there must be a buyer of that contract. Thus a seller and a buyer combine to create only one contract. Therefore, to determine the total Open Interest for any given market, we need only to know the totals from one side or the other, buyers or sellers, not the sum of both.
-
-        ### The Commodity markets have a built in advantage or "additional insight" shared by way of Open Interest. The study of Open Interest can provide a Trader a very important perspective in a Commodity.
-
-        ### There are two ways to view Open Interest as a Trading tool:
-        ### 1. Measuring the strength of a trend or Price move. 
-        ### 2. Tracking the footprints of the Large Commerical Hedgers. 
-
-        ## Using Open Interest in Trends and Swings 
-        ### If prices are in an uptrend, and Open Interest is rising, this is a bullish sign. There are shorts who are being stopped out, but new sellers are taking their place. As the market continues to rise, the longs get stronger and the shorts get weaker.
-
-        ### If prices are in a downtrend, and Open Interest is rising, this a bearish sign. Weak longs are bing stopped, but new buyers are taking their place. As the market continues to fall, the shorts get stronger and the longs get weaker. Put another way - as long as the Open Interest is increasing in a major trend, it will have the neccessary sponsorship to continue.
-
-        ### If prices are in an uptrend and Open Interest is falling, this is a bearish sign. The old longs, the "smart money" are banking gains as they're liquidating. They are replaced by new buyers, who will not be as strong on balance, but the declining open interest is an indication the weak shorts are also exiting. They will be replaced by new shorts who are stronger than the old shorts were.
-
-        ### If prices are in a downtrend and Open Interest is falling, this is bullish sign. Smart Money, the shorts, are covering or liquidating profitable shorts. They will be replaced by new shorts not as strong as they were, but the declining Open Interest Indicates the squeezed longs are bailing. They will be replaced by new longs who were not as weakened by the lower prices as the old longs were. Put another way - when the supply of losers is exhausted, the downtrend ends.
-
-        ## Using Open Interest in Consolidations 
-        ### If prices are in a consolidation, and Open Interest is rising, this is a bearish sign. The reason is the "street money" plays the long side. Rising Open Interest in a trading range suggests the Commercial Hedgers and Professionals are taking the short side, and the uninformed speculators will likely  fall victim to the downside break in price. 
-
-        ### If prices are in a consolidation and Open Interest is falling, this is a bullish sign. The reason is the Commercials Hedgers who are mostly likely shorting - are covering. The "street money" will be shorting and or expecting a breakout lower in price. 
-
-        ### Ideally, we want to look for Long Term or Higher Time Frame levels in Price to anticipate this Open Interest concept. In times where Price is trading at a key Support level on a HTF basis - Open Interest will drop while Price is consolidating at or near the HTF "Support" or Discount Array as  we outline in Institutional Reference Points. This will be Bullish and anticipate an upswing in Price. 
-
-        ### Conversely, we want to look for Long Term or Higher Time Frame Resistance levels in Price to anticipate this Open Interest concept. In times where Price is trading at a Key Resistance level on a HTF basis -  Open Interest will rise while Price is consolidating at or near the HTF "Resistance" or Premium Array as we outline in Institutional Reference Points. This will be bearish and anticipate a down swing in Price.
-
-        ## Bond Trading
-        ### T Bond Trading Basics
-
-        ### Trade Symbol: [ZB] 30 Year Treasury Bond 
-        ### Trading Session: New York Session 8:20am to 3:00pm.
-        ### Contract Delivery Months:
-        -> March - Code [H]
-        -> June - Code [M]
-        -> September - Code [U]
-        -> December - Code [Z]
-        -> Format: ZB\Code\Year or ie ZBU17 [September 2017 contract]
-
-        ### Amount Per Tick: $31.25
-        ### Full Handle or Figure Move = 32 ticks [32 seconds]
-        ### 32 Ticks Movement = $1000,00 per contract.
-
-        ## Bond Opening Range Concept 
-        ### Highest Volume: Between 8:00am and 9:30am NY time. 
-        ### True Day: 8:00am to 3:00pm NY Time.
-        ### Opening Range: 
-        -> Begins 8:00am NY Time 
-        -> Ends 9:00am NY Time 
-
-        ## Narrow Your Focus:
-        ### The Opening Range between 8:00am to 9:00am tends to create the Bond Market High or Low of the Day. It can be a run on stops or a Fair Value setup. It is the location Liquidity Pools build around for Stock Market Open Raids.
-
-        ## T Bond Split Session Rules
-        ### Traditional Overnight Session: London 
-        ### New York am Session: 8:00am to Noon.
-        ### New York Pm Session: Noon to 3:00pm. 
-
-        ### Trending Days can see the complete trading day be one-sided in both Am and Pm Sessions. 
-
-        ### Consolidation Days can see opposing directions in the Am and Pm Sessions. Or it can see one Session produce a swing and the other be quite or consolidate.
-
-        ## Consolidation Days 
-        ### Overnight Price Action: Can be trending or Rangebound.
-        ### New York Session News: Lack of Noteworthy Reports Due. 
-        ### Economic Calendar: High to Medium Impact US Reports Due to release on another trading day later in the week.
-
-        ### Formation Characteristics:
-        ### After a HTF Premium or Discount Array is met. 
-        ### At Equilibrium of a HTF Price Swing - Mid-Point Pause.
-        ### Bank Holidays in the United States. 
-        ### Ahead of holidays in the US.
-        ### Bond Auction day before and Am Session Day of. 
-
-        ## Consolidation Brings Expansion 
-        ### When we identify the market is likely to trade in a small range or "consolidation day" - we should immediately note the next trading day or a day not long after it - will produce a "long range day" or Trending Day.
-
-        ### While the Bond is held in a narrow range - this will create a stranglehold on volatility for the other asset classes - on average.
-
-        ### The use of this observation serves us well as Fore Traders - in that we can reduce or limit our expectations on the Fx Pairs movement and operate in a more reserved fashion. Sticking to low hanging fruit and small gains.
-
-        ## Trending Days 
-        ### Overnight Price Action: Can be trending or Rangebound.
-        ### New York Session News: Volatility Injection.
-        ### Economic Calendar: High to Medium Impact US Reports Due to Release at 8:30am NY time.
-
-        ### Formation Characteristics:
-        ### After a small range day or a series of small range day's.
-        ### Directionally driven by Daily PD Array Matrix. 
-        ### Liquidity Seeking Movement PD Array and Order Flow.
-
-        ## Index Trading 
-        ## Index Trading Basics 
-
-        ### Trade Symbol: [ES] E-mini S&P 500
-        ### Trading Session: New York Session 9:30am to 4:00pm
-        ### Contract Delivery Months:
-        -> March - Code [H]
-        -> June - Code [M]
-        -> September - Code [U]
-        -> December - Code [Z]
-        -> Format: ES\Code\Year or i.e. ESU17 [Sept 2017 contract]
-
-        ### Amount Per Tick: $12.50 [0.25] or $50.00 per one point.
-        ### $50.00 x S&P 500 Index.
-
-        ## Spooz Opening Range Concept
-        ### Highest Volume: Between 9:30am and 10:00am NY Time.
-        ### True Day: 9:30am to 4:00pm NY Time.
-        ### Opening Range: 
-        -> Begins 9:30am NY Time
-        -> Begins 10:30am NY Time 
-
-        ## Narrow Your Focus:
-        ### The Opening Range between 9:30am to 10:30am tends to create the Spooz Market High or Low of the Day. It can be a run on Stops or Fair Value Gap.
-
-        ## The Am Trend
-        ### Trading Overnight Session: London 
-        ### New York Am Session: 9:30am to Noon
-        ### The True Day High or Low will tend to from in between the hours of 9:30am and 10:30am New York time.
-        ### Between the Open at 9:30am and Noon New York time - there is typically a trend or price swing daily. [Am Trend]
-        ### The Am Trend can be a continuation of overnight direction or an outright reversal of direction right from the Open.
-        ### You want to study many days of intraday Price Action to learn how consistent this morning price swing is.
-        ### The Am Trend can end at 10:30am to 11:00am but anticipate it continuing up to Noon or "New York Lunch Hour."
-
-        ## The Index SMT 
-        ### Between 5:00am and 9:30am New York time relative High and Lows should be compared.
-
-        ### When Institutional Order Flow is Bullish = Compare Lows.
-        -> One Index will fail to confirm Lower Lows in all three.
-
-        ### When Institutional Order Flow is Bearish = Compare Highs. 
-        -> One Index will fail to confirm Higher Highs in all three.
-
-        ### Typically there will be an Index SMT divergence to qualify the Am Trend setups a few times per week. When it is not obvious - assume it's not there.
-
-        ## The Pm Trend 
-        ### After the New York Lunch Hour 
-        ### New York Pm Session: 1:00pm to 4:00pm
-        ### The True Day High or Low will tend to form in between the hours of 3:00pm and 4:00pm New York time. 
-        ### Between 1:00pm ad 4:00pm New York time - there is typically a trend or price swing daily. [Pm Trend]
-        ### The Pm Trend can be a continuation of the Am Trend direction or an intraday reversal into the Close.
-        ### Measured Moves in the Afternoon tend to be faster than Am.
-        ### Typically 2:00pm New York time sees the move begin.
-
-        ## The Index SMT 
-        ### Between Noon and 3:00pm New York time relative Highs and Lows should be compared.
-
-        ### When Institutional Order Flow is Bullish = Compare Lows.
-        -> One Index will fail to confirm Lower Lows in all three.
-
-        ### When Institutional Order Flow is Bearish = Compare Highs.
-        -> One Index will fail to confirm High Highs in all three.
-
-        '''
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            section = data.get('section')
+            text = data.get('text')
+            
+            # Check if a Chill instance with the same section already exists
+            if Chill.objects.filter(section=section).exists():
+                return JsonResponse({'message': 'Chill Data with this section already exists!'}, status=400)
+            
+            # If not, save the new data
+            chill_data = Chill(
+                section=section,
+                text=text
+            )
+            chill_data.save()
+            return JsonResponse({'message': 'Chill Data Saved Successfully!'}, status=201)
         
-        # Check if a Chill instance with the same section already exists
-        if Chill.objects.filter(section=section).exists():
-            return JsonResponse({'message': 'Chill Data with this section already exists!'}, status=400)
-        
-        # If not, save the new data
-        chill_data = Chill(
-            section=section,
-            text=text
-        )
-        chill_data.save()
-        return JsonResponse({'message': 'Chill Data Saved Successfully!'}, status=201)
-    
-    except Exception as e:
-        print(f'error in Chill Data Function: {e}')
-        return JsonResponse({'message': f'error in Chill Data Function: {e}'}, status=500)
+        except Exception as e:
+            print(f'Error in Chill Data Function: {e}')
+            return JsonResponse({'message': f'Error in Chill Data Function: {e}'}, status=500)
+    else:
+        return JsonResponse({'message': 'Invalid request method.'}, status=405)
 
 
 @csrf_exempt
