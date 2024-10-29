@@ -5600,13 +5600,15 @@ def generate_cot_data(request):
         plot_urls = plot_net_positions(unfiltered_currency_df)
 
         # Extract data for each specific asset
-        assets = ['EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE', 'USD INDEX - ICE FUTURES U.S.']
+        assets = ['EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE', 'USD INDEX - ICE FUTURES U.S.', 'GOLD - COMMODITY EXCHANGE INC']
         data = {}
 
         round_off_number = 2
-        
+        currency_df = currency_df[currency_df['Market and Exchange Names'] != 'MICRO GOLD - COMMODITY EXCHANGE INC.']
+
         for asset in assets:
             asset_df = currency_df[currency_df['Market and Exchange Names'] == asset]
+            
             if not asset_df.empty:
                 # Get the most recent data
                 latest_data = asset_df.iloc[0]
