@@ -5602,7 +5602,7 @@ def generate_cot_data(request):
         plot_urls = plot_net_positions(unfiltered_currency_df)
 
         # Extract data for each specific asset
-        assets = ['EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE', 'USD INDEX - ICE FUTURES U.S.', 'GOLD - COMMODITY EXCHANGE INC']
+        assets = ['EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE', 'USD INDEX - ICE FUTURES U.S.', 'GOLD - COMMODITY EXCHANGE INC.']
         data = {}
 
         round_off_number = 2
