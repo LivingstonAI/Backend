@@ -5604,7 +5604,7 @@ def generate_cot_data(request):
         data = {}
 
         round_off_number = 2
-        currency_df = currency_df[currency_df['Market and Exchange Names'] != 'MICRO GOLD - COMMODITY EXCHANGE INC.']
+        # currency_df = currency_df[currency_df['Market and Exchange Names'] != 'MICRO GOLD - COMMODITY EXCHANGE INC.']
 
         for asset in assets:
             asset_df = currency_df[currency_df['Market and Exchange Names'] == asset]
