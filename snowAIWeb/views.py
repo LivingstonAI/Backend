@@ -5542,11 +5542,13 @@ def generate_cot_data(request):
         currency_df = df[df['As of Date in Form YYYY-MM-DD'].dt.year == current_year]
 
         # Define your currency keywords
-        currency_keywords = ['USD INDEX', 'EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE']
+        currency_keywords = ['USD INDEX', 'EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE', 'GOLD - COMMODITY EXCHANGE INC']
 
         # Filter the DataFrame for the current year and specific currencies
         unfiltered_currency_df = df[df['As of Date in Form YYYY-MM-DD'].dt.year == current_year]
         unfiltered_currency_df = unfiltered_currency_df[unfiltered_currency_df['Market and Exchange Names'].str.contains('|'.join(currency_keywords), case=False, na=False)]
+        unfiltered_currency_df = unfiltered_currency_df[unfiltered_currency_df['Market and Exchange Names'] != 'MICRO GOLD - COMMODITY EXCHANGE INC.']
+
 
         # Group by 'Market and Exchange Names' and get the index of the maximum open interest
         # idx = currency_df.groupby('Market and Exchange Names')['Open Interest (All)'].idxmax()
@@ -5604,7 +5606,6 @@ def generate_cot_data(request):
         data = {}
 
         round_off_number = 2
-        # currency_df = currency_df[currency_df['Market and Exchange Names'] != 'MICRO GOLD - COMMODITY EXCHANGE INC.']
 
         for asset in assets:
             asset_df = currency_df[currency_df['Market and Exchange Names'] == asset]
