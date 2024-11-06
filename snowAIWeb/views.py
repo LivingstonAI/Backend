@@ -5797,28 +5797,33 @@ def delete_chill_entry(request):
 @csrf_exempt
 def fetch_trading_images(request):
     try:
-        # Define the base directory for images.
+        # Define the base directory for images
         base_dir = os.path.join(os.path.dirname(__file__), 'image_folder')
         
-        # Initialize an empty dictionary to hold folders and their images.
+        # Initialize an empty dictionary to hold folders and their images
         images_data = {}
         
-        # Loop through each subfolder in the base directory.
+        # Loop through each subfolder in the base directory
         for folder in os.listdir(base_dir):
             folder_path = os.path.join(base_dir, folder)
             if os.path.isdir(folder_path):
-                # Get all image files in the current folder.
-                images = [
-                    os.path.join(folder, img) 
-                    for img in os.listdir(folder_path) 
-                    if img.lower().endswith(('.png', '.jpg', '.jpeg', '.gif'))
-                ]
-                images_data[folder] = images
+                encoded_images = []
+                # Read and encode each image file in Base64
+                for img_file in os.listdir(folder_path):
+                    if img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                        img_path = os.path.join(folder_path, img_file)
+                        with open(img_path, "rb") as image_file:
+                            # Encode the image and add it to the list
+                            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                            encoded_images.append({
+                                "filename": img_file,
+                                "data": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"
+                            })
+                images_data[folder] = encoded_images
         
         return JsonResponse({"folders": images_data}, status=200)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
-
 
 
 
