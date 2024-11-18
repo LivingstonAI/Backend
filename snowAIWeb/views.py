@@ -5542,7 +5542,7 @@ def generate_cot_data(request):
         currency_df = df[df['As of Date in Form YYYY-MM-DD'].dt.year == current_year]
 
         # Define your currency keywords
-        currency_keywords = ['USD INDEX', 'EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE', 'GOLD - COMMODITY EXCHANGE INC', 'UST 5Y NOTE - CHICAGO BOARD OF TRADE', 'DOW JONES U.S. REAL ESTATE IDX - CHICAGO BOARD OF TRADE', 'UST 10Y NOTE - CHICAGO BOARD OF TRADE', 'UST BOND - CHICAGO BOARD OF TRADE', 'NASDAQ MINI - CHICAGO MERCANTILE EXCHANGE']
+        currency_keywords = ['USD INDEX', 'EURO FX - CHICAGO MERCANTILE EXCHANGE', 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE', 'GOLD - COMMODITY EXCHANGE INC', 'UST 5Y NOTE - CHICAGO BOARD OF TRADE', 'DOW JONES U.S. REAL ESTATE IDX - CHICAGO BOARD OF TRADE', 'UST 10Y NOTE - CHICAGO BOARD OF TRADE', 'UST BOND - CHICAGO BOARD OF TRADE', 'NASDAQ MINI - CHICAGO MERCANTILE EXCHANGE', 'E-MINI S&P 500 -']
 
         # Filter the DataFrame for the current year and specific currencies
         unfiltered_currency_df = df[df['As of Date in Form YYYY-MM-DD'].dt.year == current_year]
