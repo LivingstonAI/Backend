@@ -5937,7 +5937,7 @@ def manage_alerts():
                 (condition == ">" and latest_price > target_price) or
                 (condition == "<" and latest_price < target_price)
             )
-
+            print(f'Condition met is: {condition_met}')
             if condition_met:
                 # Send notification
                 message = (
