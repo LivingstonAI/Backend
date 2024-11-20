@@ -5870,11 +5870,7 @@ def alert_bot(request):
 
 
 def send_whatsapp_message(asset, message):
-    
-    # Twilio setup after fix
-    ACCOUNT_SID = os.environ['TWILIO_SID']
-    AUTH_TOKEN = os.environ['TWILIO_AUTH_TOKEN']
-    TWILIO_CLIENT = Client(ACCOUNT_SID, AUTH_TOKEN)
+
 
     """
     Sends a WhatsApp message using Twilio.
