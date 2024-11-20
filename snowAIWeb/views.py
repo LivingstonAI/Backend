@@ -5846,16 +5846,17 @@ def alert_bot(request):
                     responses.append({"asset": asset, "error": "Missing required fields."})
                     continue
 
-                # Update or create each alert
-                alert_obj, created = AlertBot.objects.update_or_create(
-                    asset=asset,
-                    condition=condition,
-                    defaults={"price": price}
-                )
-                if created:
-                    responses.append({"asset": asset, "message": "Asset alert created."})
-                else:
+                # Ensure uniqueness per asset
+                existing_alert = AlertBot.objects.filter(asset=asset).first()
+
+                if existing_alert:
+                    existing_alert.price = price
+                    existing_alert.condition = condition
+                    existing_alert.save()
                     responses.append({"asset": asset, "message": "Asset alert updated."})
+                else:
+                    AlertBot.objects.create(asset=asset, price=price, condition=condition)
+                    responses.append({"asset": asset, "message": "Asset alert created."})
             
             return JsonResponse({"results": responses}, status=200)
         
