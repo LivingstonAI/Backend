@@ -5905,6 +5905,7 @@ def send_whatsapp_message(asset, message):
     print(f"{asset}: {message}")
 
 
+
 def manage_alerts():
     """
     Checks all alerts in the AlertBot model and sends notifications if conditions are met.
