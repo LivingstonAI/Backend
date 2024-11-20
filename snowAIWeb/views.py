@@ -5916,6 +5916,7 @@ def manage_alerts():
             asset = alert.asset
             target_price = alert.price
             condition = alert.condition  # e.g., "greater_than" or "less_than"
+            print(f'Asset is: {asset} with type: {type(asset)}\nTarget Price is: {target_price} with type: {type(target_price)}\n Condition is: {condition} with type: {type(condition)}\n')
 
             # Fetch real-time data
             data = obtain_dataset(asset, interval="1m", num_days=1)
@@ -5944,7 +5945,8 @@ def manage_alerts():
                 # Mark the alert as checked
                 alert.checked = True
                 alert.save()
-
+            else:
+                print('\nCondition not met')
         except Exception as e:
             print(f"Error processing alert for {alert.asset}: {e}")
 
