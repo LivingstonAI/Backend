@@ -5897,6 +5897,7 @@ def send_whatsapp_message(asset, message):
     """
     Sends a WhatsApp message using Twilio.
     """
+    
     TWILIO_CLIENT.messages.create(
         body=message,
         from_='whatsapp:+14155238886',
@@ -5962,7 +5963,7 @@ def manage_alerts():
 # Schedule the alert_bot function to run every 5 minutes
 scheduler.add_job(
     manage_alerts,  # Replace with the name of your alert-checking function
-    trigger=IntervalTrigger(minutes=1),
+    trigger=IntervalTrigger(minutes=2),
     id='manage_alerts_job',
     name='Check alerts every 5 minutes',
     replace_existing=True
