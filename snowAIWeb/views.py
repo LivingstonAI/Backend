@@ -5884,7 +5884,7 @@ def send_whatsapp_message(asset, message):
         from_='whatsapp:+14155238886',
         to='whatsapp:+27847316417'
     )
-    print(f"WhatsApp message sent for {asset}: {message}")
+    print(f"{asset}: {message}")
 
 
 def manage_alerts():
