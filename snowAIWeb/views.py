@@ -538,7 +538,6 @@ def get_user_data(request, user_email):
         return JsonResponse({"error": "User data not found"}, status=404)
 
 
-
 @csrf_exempt
 def save_conversation(request, user_email, identifier):
     if request.method == 'POST':
@@ -5321,6 +5320,8 @@ def get_user_assets(request, email='butterrobot83@gmail.com'):
     except Exception as e:
         print(f'Error occured in get_user_assets: {e}')
         return JsonResponse({'error': f'Error occured in get_user_assets: {e}'})
+
+
 
 
 # @csrf_exempt

@@ -179,6 +179,24 @@ class Chill(models.Model):
     text = models.TextField()
 
 
+class AlertBot(models.Model):
+    CONDITION_CHOICES = [
+        ('<', 'Less than'),
+        ('>', 'Greater than'),
+        ('=', 'Equal to'),
+    ]
+
+    asset = models.CharField(max_length=50)  # Use CharField for asset names or codes
+    price = models.FloatField()  # FloatField for prices
+    condition = models.CharField(max_length=1, choices=CONDITION_CHOICES)  # Limit choices to valid conditions
+    checked = models.BooleanField(default=False)  # BooleanField for simple checked/unchecked state
+
+    def __str__(self):
+        return f"{self.asset} {self.condition} {self.price}"
+
+    class Meta:
+        verbose_name = "Alert"
+        verbose_name_plural = "Alerts"
 
 
 
