@@ -5827,7 +5827,42 @@ def fetch_trading_images(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+@csrf_exempt
+def alert_bot(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            
+            if not isinstance(data, list):
+                return JsonResponse({"error": "Expected a list of alerts."}, status=400)
+            
+            responses = []
+            for alert in data:
+                asset = alert.get("asset")
+                price = alert.get("price")
+                condition = alert.get("condition")
 
+                if not asset or not price or not condition:
+                    responses.append({"asset": asset, "error": "Missing required fields."})
+                    continue
+
+                # Update or create each alert
+                alert_obj, created = AlertBot.objects.update_or_create(
+                    asset=asset,
+                    condition=condition,
+                    defaults={"price": price}
+                )
+                if created:
+                    responses.append({"asset": asset, "message": "Asset alert created."})
+                else:
+                    responses.append({"asset": asset, "message": "Asset alert updated."})
+            
+            return JsonResponse({"results": responses}, status=200)
+        
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+    else:
+        return JsonResponse({"error": "Invalid request method."}, status=405)
 
 
 

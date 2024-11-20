@@ -69,6 +69,7 @@ urlpatterns = [
     path('edit-chill-data', views.edit_chill_data, name='edit-chill-data'),
     path('delete-chill-entry', views.delete_chill_entry, name='delete-chill-entry'),
     path('fetch-trading-images', views.fetch_trading_images, name='fetch-trading-images'),
+    path('alert-bot', views.alert_bot, name='alert-bot'),
 
 
     path('contact-us', views.contact_us, name='contact-us'),
