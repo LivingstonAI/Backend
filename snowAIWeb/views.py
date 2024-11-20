@@ -5929,7 +5929,7 @@ def manage_alerts():
                 continue
 
             # Get the most recent closing price
-            latest_price = data["Close"].iloc[-1]
+            latest_price = round(data["Close"].iloc[-1], 5)
 
             # Check the condition
             condition_met = (
