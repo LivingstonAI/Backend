@@ -5914,8 +5914,6 @@ def manage_alerts():
     Designed to be called periodically by an external scheduler.
     """
 
-    print('Alert Function is in play...')
-
     alerts = AlertBot.objects.filter(checked=False)  # Fetch unchecked alerts
     for alert in alerts:
         try:
@@ -5939,10 +5937,6 @@ def manage_alerts():
                 (condition == "<" and latest_price < target_price)
             )
 
-            print(f'Asset is: {asset} with type: {type(asset)}\nTarget Price is: {target_price} with type: {type(target_price)}\n Condition is: {condition} with type: {type(condition)}\nCurrent price: {latest_price} with type: {type(latest_price)}')
-
-
-            print(f'Condition met is: {condition_met}')
 
             if condition_met:
                 # Send notification
@@ -5955,8 +5949,7 @@ def manage_alerts():
                 # Mark the alert as checked
                 alert.checked = True
                 alert.save()
-            else:
-                print('\nCondition not met')
+
         except Exception as e:
             print(f"Error processing alert for {alert.asset}: {e}")
 
