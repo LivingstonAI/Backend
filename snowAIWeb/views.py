@@ -5872,10 +5872,11 @@ def alert_bot(request):
                 if existing_alert:
                     existing_alert.price = price
                     existing_alert.condition = condition
+                    existing_alert.checked = False
                     existing_alert.save()
                     responses.append({"asset": asset, "message": "Asset alert updated."})
                 else:
-                    AlertBot.objects.create(asset=asset, price=price, condition=condition)
+                    AlertBot.objects.create(asset=asset, price=price, condition=condition, checked=False)
                     responses.append({"asset": asset, "message": "Asset alert created."})
             
             return JsonResponse({"results": responses}, status=200)
