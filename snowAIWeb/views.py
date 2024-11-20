@@ -5941,7 +5941,7 @@ def manage_alerts():
             if condition_met:
                 # Send notification
                 message = (
-                    f"Alert triggered for {asset}! Current price: {latest_price}, "
+                    f"Alert triggered for {asset}! Current price: {latest_price} "
                     f"{condition} {target_price}"
                 )
                 send_whatsapp_message(asset, message)
