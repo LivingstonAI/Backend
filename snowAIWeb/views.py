@@ -64,6 +64,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 import cot_reports as cot
 import seaborn as sns
 import io
+from twilio.rest import Client
+
 
 # Comment
 # current_hour = datetime.datetime.now().time().hour
@@ -5867,6 +5869,66 @@ def alert_bot(request):
 
 
 
+def send_whatsapp_message(asset, message):
+    
+    # Twilio setup
+    ACCOUNT_SID = 'ACc5b451c653c4b18a8c5efcc6730a98c2'
+    AUTH_TOKEN = '50402affda98cbd93e02c245b29846f4'
+    TWILIO_CLIENT = Client(ACCOUNT_SID, AUTH_TOKEN)
+
+    """
+    Sends a WhatsApp message using Twilio.
+    """
+    TWILIO_CLIENT.messages.create(
+        body=message,
+        from_='whatsapp:+14155238886',
+        to='whatsapp:+27847316417'
+    )
+    print(f"WhatsApp message sent for {asset}: {message}")
+
+
+def manage_alerts():
+    """
+    Checks all alerts in the AlertBot model and sends notifications if conditions are met.
+    Designed to be called periodically by an external scheduler.
+    """
+    alerts = AlertBot.objects.filter(checked=False)  # Fetch unchecked alerts
+    for alert in alerts:
+        try:
+            asset = alert.asset
+            target_price = alert.price
+            condition = alert.condition  # e.g., "greater_than" or "less_than"
+
+            # Fetch real-time data
+            data = obtain_dataset(asset, interval="1m", num_days=1)
+
+            if data.empty:
+                print(f"No data available for {asset}. Skipping.")
+                continue
+
+            # Get the most recent closing price
+            latest_price = data["Close"].iloc[-1]
+
+            # Check the condition
+            condition_met = (
+                (condition == "greater_than" and latest_price > target_price) or
+                (condition == "less_than" and latest_price < target_price)
+            )
+
+            if condition_met:
+                # Send notification
+                message = (
+                    f"Alert triggered for {asset}! Current price: {latest_price}, "
+                    f"Condition: {condition} {target_price}"
+                )
+                send_whatsapp_message(asset, message)
+
+                # Mark the alert as checked
+                alert.checked = True
+                alert.save()
+
+        except Exception as e:
+            print(f"Error processing alert for {alert.asset}: {e}")
 
 
 

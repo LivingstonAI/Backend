@@ -42,6 +42,7 @@ sqlparse==0.4.4
 tornado==6.3.3
 trio==0.22.2
 trio-websocket==0.10.3
+twilio==9.3.7
 tzdata==2023.3
 urllib3==2.0.4
 whitenoise==6.6.0
