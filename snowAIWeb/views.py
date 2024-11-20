@@ -5920,7 +5920,6 @@ def manage_alerts():
             asset = alert.asset
             target_price = alert.price
             condition = alert.condition  # e.g., "greater_than" or "less_than"
-            print(f'Asset is: {asset} with type: {type(asset)}\nTarget Price is: {target_price} with type: {type(target_price)}\n Condition is: {condition} with type: {type(condition)}\n')
 
             # Fetch real-time data
             data = obtain_dataset(asset, interval="1m", num_days=1)
@@ -5938,8 +5937,11 @@ def manage_alerts():
                 (condition == "<" and latest_price < target_price)
             )
 
+            print(f'Asset is: {asset} with type: {type(asset)}\nTarget Price is: {target_price} with type: {type(target_price)}\n Condition is: {condition} with type: {type(condition)}\nCurrent price: {latest_price} with type: {type(latest_price)}')
+
+
             print(f'Condition met is: {condition_met}')
-            
+
             if condition_met:
                 # Send notification
                 message = (
