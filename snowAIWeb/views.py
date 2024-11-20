@@ -5933,8 +5933,8 @@ def manage_alerts():
 
             # Check the condition
             condition_met = (
-                (condition == "greater_than" and latest_price > target_price) or
-                (condition == "less_than" and latest_price < target_price)
+                (condition == ">" and latest_price > target_price) or
+                (condition == "<" and latest_price < target_price)
             )
 
             if condition_met:
