@@ -5964,7 +5964,7 @@ def manage_alerts():
 # Schedule the alert_bot function to run every 5 minutes
 scheduler.add_job(
     manage_alerts,  # Replace with the name of your alert-checking function
-    trigger=IntervalTrigger(minutes=2),
+    trigger=IntervalTrigger(minutes=5),
     id='manage_alerts_job',
     name='Check alerts every 5 minutes',
     replace_existing=True
