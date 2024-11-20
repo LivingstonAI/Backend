@@ -5872,8 +5872,8 @@ def alert_bot(request):
 def send_whatsapp_message(asset, message):
     
     # Twilio setup
-    ACCOUNT_SID = 'ACc5b451c653c4b18a8c5efcc6730a98c2'
-    AUTH_TOKEN = '50402affda98cbd93e02c245b29846f4'
+    ACCOUNT_SID = os.environ['TWILIO_SID']
+    AUTH_TOKEN = os.environ['TWILIO_AUTH_TOKEN']
     TWILIO_CLIENT = Client(ACCOUNT_SID, AUTH_TOKEN)
 
     """
