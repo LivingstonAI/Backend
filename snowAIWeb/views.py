@@ -5954,12 +5954,12 @@ def manage_alerts():
             print(f"Error processing alert for {alert.asset}: {e}")
 
 
-# Schedule the alert_bot function to run every 10 minutes
+# Schedule the alert_bot function to run every 5 minutes
 scheduler.add_job(
     manage_alerts,  # Replace with the name of your alert-checking function
-    trigger=IntervalTrigger(minutes=10),
+    trigger=IntervalTrigger(minutes=5),
     id='manage_alerts_job',
-    name='Check alerts every 10 minutes',
+    name='Check alerts every 5 minutes',
     replace_existing=True
 )
 
