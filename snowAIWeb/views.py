@@ -2427,7 +2427,7 @@ def analyse_image(image_data):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Please give a technical analysis of this image (of a trading chart). If not provided a trading chart, please respond with a query to send a trading chart."
+                            "text": "Please give a technical analysis of this image (of a trading chart)."
                         },
                         {
                             "type": "image_url",
