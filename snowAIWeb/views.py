@@ -5981,15 +5981,21 @@ def create_finetuning_data(request):
                 ]
             })
 
+        # Define file path
+        file_path = 'chill_data.jsonl'
+
         # Save as JSONL file
-        with open('chill_data.jsonl', 'w') as jsonl_file:
+        with open(file_path, 'w') as jsonl_file:
             for item in data_list:
                 jsonl_file.write(json.dumps(item) + '\n')
 
-        print("CHILL data exported successfully to chill_data.jsonl!")
-        return JsonResponse({'message': f"CHILL data exported successfully to chill_data.jsonl!"})
+        # Serve the file as a download
+        with open(file_path, 'rb') as jsonl_file:
+            response = HttpResponse(jsonl_file.read(), content_type='application/jsonl')
+            response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
+            return response
     except Exception as e:
-        return JsonResponse({'message': f"Error occured: \n{e}"})
+        return JsonResponse({'message': f"Error occurred: \n{e}"})
 
 
 
