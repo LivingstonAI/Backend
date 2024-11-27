@@ -5964,8 +5964,32 @@ scheduler.add_job(
 )
 
 
+@csrf_exempt
+def create_finetuning_data(request):
+    try:
+        # Query all CHILL entries
+        chill_data = Chill.objects.all()
 
+        # Prepare dataset for JSONL format
+        data_list = []
+        for entry in chill_data:
+            data_list.append({
+                "messages": [
+                    {"role": "system", "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."},
+                    {"role": "user", "content": entry.section},
+                    {"role": "assistant", "content": entry.text}
+                ]
+            })
 
+        # Save as JSONL file
+        with open('chill_data.jsonl', 'w') as jsonl_file:
+            for item in data_list:
+                jsonl_file.write(json.dumps(item) + '\n')
+
+        print("CHILL data exported successfully to chill_data.jsonl!")
+        return JsonResponse({'message': f"CHILL data exported successfully to chill_data.jsonl!"})
+    except Exception as e:
+        return JsonResponse({'message': f"Error occured: \n{e}"})
 
 
 
