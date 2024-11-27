@@ -2420,7 +2420,7 @@ def analyse_image(image_data):
         }
 
         payload = {
-            "model": "ft:gpt-4o-mini-2024-07-18:personal:tradergptv2:AYFhBnww",
+            "model": "gpt-4o-mini",
             "messages": [
                 {
                     "role": "user",
