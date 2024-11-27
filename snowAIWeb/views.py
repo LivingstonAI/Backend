@@ -2449,6 +2449,7 @@ def analyse_image(image_data):
         return final_response
 
     except Exception as e:
+        print(f"Error occurred in analyse image function: {e}")
         return {"error": f"Error occurred in analyse image function: {e}"}
 
 
@@ -2468,8 +2469,10 @@ def process_image(request):
 
             return JsonResponse({"status": "success", "result": analysed_image})
         except Exception as e:
+            print(f'error: {e}')
             return JsonResponse({"status": "error", "error": str(e)})
-
+    
+    print("Invalid request method")
     return JsonResponse({"status": "error", "error": "Invalid request method"})
 # {status: 'error', error: 'embedded null byte'}
 
