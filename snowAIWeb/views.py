@@ -770,7 +770,7 @@ def chat_gpt(prompt):
     api_key=os.environ['OPENAI_API_KEY'],
     )
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="ft:gpt-4o-mini-2024-07-18:personal:tradergptv2:AYFhBnww",
         messages=[{"role": "user", "content": prompt}]
     )
     return response.choices[0].message.content.strip()
@@ -2420,7 +2420,7 @@ def analyse_image(image_data):
         }
 
         payload = {
-            "model": "gpt-4o-mini",
+            "model": "ft:gpt-4o-mini-2024-07-18:personal:tradergptv2:AYFhBnww",
             "messages": [
                 {
                     "role": "user",
