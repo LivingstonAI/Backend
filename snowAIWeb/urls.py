@@ -72,6 +72,7 @@ urlpatterns = [
     path('alert-bot', views.alert_bot, name='alert-bot'),
     path('create-finetuning-data', views.create_finetuning_data, name='create-finetuning-data'),
     path('create-combined-finetuning-data', views.create_combined_finetuning_data, name='create-combined-finetuning-data'),
+    path('create-image-finetuning-data', views.create_image_finetuning_data, name='create-image-finetuning-data'),
 
 
     path('contact-us', views.contact_us, name='contact-us'),

@@ -6002,6 +6002,55 @@ def create_finetuning_data(request):
 
 
 @csrf_exempt
+def create_image_finetuning_data(request):
+    try:
+        # Define the base directory for images
+        base_dir = os.path.join(os.path.dirname(__file__), 'image_folder')
+
+        # Prepare dataset for JSONL format
+        data_list = []
+        for root, _, files in os.walk(base_dir):
+            for img_file in files:
+                if img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                    img_path = os.path.join(root, img_file)
+                    with open(img_path, "rb") as image_file:
+                        # Encode image in Base64
+                        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                        data_list.append({
+                            "messages": [
+                                {"role": "system", "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."},
+                                {"role": "user", "content": "What do you see in this image?"},
+                                {"role": "user", "content": [
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"
+                                        }
+                                    }
+                                ]},
+                                {"role": "assistant", "content": "This is a trading chart. I can help analyze it."}
+                            ]
+                        })
+
+        # Define file path
+        file_path = 'image_data.jsonl'
+
+        # Save as JSONL file
+        with open(file_path, 'w') as jsonl_file:
+            for item in data_list:
+                jsonl_file.write(json.dumps(item) + '\n')
+
+        # Serve the file as a download
+        with open(file_path, 'rb') as jsonl_file:
+            response = HttpResponse(jsonl_file.read(), content_type='application/jsonl')
+            response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
+            return response
+    except Exception as e:
+        return JsonResponse({'message': f"Error occurred: {str(e)}"})
+
+
+
+@csrf_exempt
 def create_combined_finetuning_data(request):
     try:
         # Prepare combined dataset
