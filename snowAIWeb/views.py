@@ -6016,18 +6016,12 @@ def create_image_finetuning_data(request):
                     with open(img_path, "rb") as image_file:
                         # Encode image in Base64
                         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                        # Flatten the "user" content to be a single string
                         data_list.append({
                             "messages": [
                                 {"role": "system", "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."},
                                 {"role": "user", "content": "What do you see in this image?"},
-                                {"role": "user", "content": [
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"
-                                        }
-                                    }
-                                ]},
+                                {"role": "user", "content": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"},
                                 {"role": "assistant", "content": "This is a trading chart. I can help analyze it."}
                             ]
                         })
@@ -6038,6 +6032,7 @@ def create_image_finetuning_data(request):
         # Save as JSONL file
         with open(file_path, 'w') as jsonl_file:
             for item in data_list:
+                # Ensure each JSON object is written as a single line
                 jsonl_file.write(json.dumps(item) + '\n')
 
         # Serve the file as a download
@@ -6045,9 +6040,9 @@ def create_image_finetuning_data(request):
             response = HttpResponse(jsonl_file.read(), content_type='application/jsonl')
             response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
             return response
+
     except Exception as e:
         return JsonResponse({'message': f"Error occurred: {str(e)}"})
-
 
 
 @csrf_exempt
