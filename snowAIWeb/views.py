@@ -6102,7 +6102,7 @@ def create_combined_finetuning_data(request):
 def get_accounts(request):
     accounts = Account.objects.all()
     accounts_data = [
-        {"id": account.id, "account_name": account.name, "initial_capital": account.initial_capital}
+        {"id": account.id, "name": account.account_name, "initial_capital": account.initial_capital}
         for account in accounts
     ]
     return JsonResponse(accounts_data, safe=False)
