@@ -770,7 +770,7 @@ def chat_gpt(prompt):
     api_key=os.environ['OPENAI_API_KEY'],
     )
     response = client.chat.completions.create(
-        model="ft:gpt-4o-mini-2024-07-18:personal:tradergptv2:AYFhBnww",
+        model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
     return response.choices[0].message.content.strip()
@@ -6096,6 +6096,12 @@ def create_combined_finetuning_data(request):
 
     except Exception as e:
         return JsonResponse({'message': f"Error occurred: {str(e)}"})
+
+
+
+
+
+
 
 
 
