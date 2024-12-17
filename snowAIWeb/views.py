@@ -6107,6 +6107,7 @@ def get_accounts(request):
     ]
     return JsonResponse(accounts_data, safe=False)
 
+
 # Create a new account
 @csrf_exempt
 def create_account(request):
@@ -6118,6 +6119,7 @@ def create_account(request):
             account = Account.objects.create(name=account_name, initial_capital=initial_capital)
             return JsonResponse({"message": "Account created successfully!", "id": account.id}, status=201)
         return JsonResponse({"error": "Invalid data"}, status=400)
+
 
 # Delete an account
 @csrf_exempt
