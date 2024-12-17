@@ -76,6 +76,8 @@ urlpatterns = [
     path('accounts/', views.get_accounts, name='get_accounts'),
     path('create_account/', views.create_account, name='create_account'),
     path('delete_account/<int:account_id>/', views.delete_account, name='delete_account'),
+    path("accounts/<int:account_id>/", views.update_account, name="update_account"),
+
 
 
     path('contact-us', views.contact_us, name='contact-us'),

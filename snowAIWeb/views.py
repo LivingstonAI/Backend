@@ -6131,7 +6131,26 @@ def delete_account(request, account_id):
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
 
-
+@csrf_exempt
+def update_account(request, account_id):
+    if request.method == "PUT":
+        try:
+            data = json.loads(request.body)
+            account = Account.objects.get(id=account_id)
+            account.name = data.get("name", account.name)
+            account.initial_capital = data.get("initial_capital", account.initial_capital)
+            account.save()
+            return JsonResponse({
+                "id": account.id,
+                "name": account.name,
+                "initial_capital": account.initial_capital
+            })
+        except Account.DoesNotExist:
+            return JsonResponse({"error": "Account not found"}, status=404)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
+    else:
+        return JsonResponse({"error": "Invalid HTTP method"}, status=405)
 
 
 
