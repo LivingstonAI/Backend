@@ -6098,7 +6098,35 @@ def create_combined_finetuning_data(request):
         return JsonResponse({'message': f"Error occurred: {str(e)}"})
 
 
+# Fetch all accounts
+def get_accounts(request):
+    accounts = Account.objects.all()
+    accounts_data = [
+        {"id": account.id, "name": account.name, "initial_capital": account.initial_capital}
+        for account in accounts
+    ]
+    return JsonResponse(accounts_data, safe=False)
 
+# Create a new account
+@csrf_exempt
+def create_account(request):
+    if request.method == "POST":
+        data = json.loads(request.body)
+        account_name = data.get("name")
+        initial_capital = data.get("initial_capital")
+        if account_name and initial_capital:
+            account = Account.objects.create(name=account_name, initial_capital=initial_capital)
+            return JsonResponse({"message": "Account created successfully!", "id": account.id}, status=201)
+        return JsonResponse({"error": "Invalid data"}, status=400)
+
+# Delete an account
+@csrf_exempt
+def delete_account(request, account_id):
+    if request.method == "DELETE":
+        account = get_object_or_404(Account, id=account_id)
+        account.delete()
+        return JsonResponse({"message": "Account deleted successfully!"}, status=200)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
 
 
 
