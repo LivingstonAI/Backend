@@ -6131,29 +6131,34 @@ def delete_account(request, account_id):
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
 
-@csrf_exempt
-def update_account(request, account_id):
-    if request.method == "PUT":
+@csrf_exempt  # You may want to add CSRF handling or use Django's built-in token authentication
+def update_account(request):
+    if request.method == 'POST':
         try:
             data = json.loads(request.body)
+            account_id = data.get('id')
+            name = data.get('name')
+            initial_capital = data.get('initial_capital')
+
+            # Find the account by ID
             account = Account.objects.get(id=account_id)
-            account.name = data.get("name", account.name)
-            account.initial_capital = data.get("initial_capital", account.initial_capital)
+            account.name = name
+            account.initial_capital = initial_capital
             account.save()
+
             return JsonResponse({
-                "id": account.id,
-                "name": account.name,
-                "initial_capital": account.initial_capital
+                'id': account.id,
+                'name': account.name,
+                'initial_capital': account.initial_capital,
             })
+
         except Account.DoesNotExist:
-            return JsonResponse({"error": "Account not found"}, status=404)
+            return JsonResponse({'error': 'Account not found'}, status=404)
+
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=400)
-    else:
-        return JsonResponse({"error": "Invalid HTTP method"}, status=405)
+            return JsonResponse({'error': str(e)}, status=500)
 
-
-
+    return JsonResponse({'error': 'Invalid request method'}, status=400)
 
 
 # LEGODI BACKEND CODE
