@@ -6099,10 +6099,16 @@ def create_combined_finetuning_data(request):
 
 
 # Fetch all accounts
+@csrf_exempt
 def get_accounts(request):
     accounts = Account.objects.all()
     accounts_data = [
-        {"id": account.id, "name": account.account_name, "initial_capital": account.initial_capital}
+        {
+            "id": account.id,
+            "name": account.account_name,
+            "initial_capital": account.initial_capital,
+            "main_assets": account.main_assets,  # Include main_assets in the response
+        }
         for account in accounts
     ]
     return JsonResponse(accounts_data, safe=False)
