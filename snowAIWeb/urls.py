@@ -76,7 +76,8 @@ urlpatterns = [
     path('accounts/', views.get_accounts, name='get_accounts'),
     path('create_account/', views.create_account, name='create_account'),
     path('delete_account/<int:account_id>/', views.delete_account, name='delete_account'),
-    path("accounts/update/", views.update_account, name="update_account"),
+    path('accounts/update/', views.update_account, name='update_account'),
+    path('view-trading-analytics', views.view_trading_analytics, name='view-trading-analytics'),
 
 
 

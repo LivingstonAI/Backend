@@ -6176,8 +6176,39 @@ def update_account(request):
     return JsonResponse({'error': 'Invalid request method'}, status=400)
 
 
-
-
+@csrf_exempt
+def view_trading_analytics(request):
+    account_name = request.GET.get('account_name')  # Get account_name from the query params
+    
+    try:
+        # Fetch the account data
+        account = Account.objects.get(account_name=account_name)
+        
+        # Fetch related trades for this account
+        trades = AccountTrades.objects.filter(account=account)
+        
+        # Prepare the data for response
+        analytics_data = {
+            'account_name': account.account_name,
+            'main_assets': account.main_assets,
+            'initial_capital': account.initial_capital,
+            'trades': [{
+                'asset': trade.asset,
+                'order_type': trade.order_type,
+                'amount': trade.amount,
+                'outcome': trade.outcome,
+                'strategy': trade.strategy,
+                'day_of_week_entered': trade.day_of_week_entered,
+                'day_of_week_closed': trade.day_of_week_closed,
+                'trading_session_entered': trade.trading_session_entered,
+                'trading_session_closed': trade.trading_session_closed,
+            } for trade in trades]
+        }
+        
+        return JsonResponse(analytics_data, safe=False)
+    
+    except Account.DoesNotExist:
+        return JsonResponse({'error': 'Account not found'}, status=404)
 
 
 
