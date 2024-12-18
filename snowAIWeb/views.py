@@ -6211,7 +6211,44 @@ def view_trading_analytics(request):
         return JsonResponse({'error': 'Account not found'}, status=404)
 
 
+@csrf_exempt
+def create_new_trade_data(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            account_name = data.get('account_name')
+            asset = data.get('asset')
+            order_type = data.get('order_type')
+            strategy = data.get('strategy')
+            day_of_week_entered = data.get('day_of_week_entered')
+            trading_session_entered = data.get('trading_session_entered')
+            amount = data.get('amount')
+            emotional_bias = data.get('emotional_bias', '')
+            reflection = data.get('reflection', '')
 
+            # Retrieve the account based on the account_name
+            account = Account.objects.get(account_name=account_name)
+
+            # Create the trade entry in the AccountTrades model
+            trade = AccountTrades.objects.create(
+                account=account,
+                asset=asset,
+                order_type=order_type,
+                strategy=strategy,
+                day_of_week_entered=day_of_week_entered,
+                trading_session_entered=trading_session_entered,
+                amount=amount,
+                emotional_bias=emotional_bias,
+                reflection=reflection,
+                outcome="Pending",  # Default value, to be updated later
+            )
+
+            return JsonResponse({'message': 'Trade recorded successfully!'}, status=200)
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    return JsonResponse({'error': 'Invalid request method.'}, status=405)
 
 
 
