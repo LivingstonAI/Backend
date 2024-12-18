@@ -6115,11 +6115,17 @@ def create_account(request):
         data = json.loads(request.body)
         account_name = data.get("name")
         initial_capital = data.get("initial_capital")
-        if account_name and initial_capital:
-            account = Account.objects.create(account_name=account_name, initial_capital=initial_capital)
+        main_assets = data.get("main_assets")  # Get main_assets from the request body
+
+        if account_name and initial_capital is not None and main_assets:
+            account = Account.objects.create(
+                account_name=account_name,
+                initial_capital=initial_capital,
+                main_assets=main_assets  # Store main_assets as a string (comma-separated)
+            )
             return JsonResponse({"message": "Account created successfully!", "id": account.id}, status=201)
         return JsonResponse({"error": "Invalid data"}, status=400)
-
+        
 
 # Delete an account
 @csrf_exempt
