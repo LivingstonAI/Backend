@@ -6222,6 +6222,7 @@ def create_new_trade_data(request):
             strategy = data.get('strategy')
             day_of_week_entered = data.get('day_of_week_entered')
             trading_session_entered = data.get('trading_session_entered')
+            outcome = data.get('outcome')
             amount = data.get('amount')
             emotional_bias = data.get('emotional_bias', '')
             reflection = data.get('reflection', '')
@@ -6240,7 +6241,7 @@ def create_new_trade_data(request):
                 amount=amount,
                 emotional_bias=emotional_bias,
                 reflection=reflection,
-                outcome="Pending",  # Default value, to be updated later
+                outcome=outcome,  # Default value, to be updated later
             )
 
             return JsonResponse({'message': 'Trade recorded successfully!'}, status=200)
