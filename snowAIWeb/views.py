@@ -6147,17 +6147,24 @@ def update_account(request):
             account_id = data.get('id')
             name = data.get('name')
             initial_capital = data.get('initial_capital')
+            main_assets = data.get('main_assets')  # Get the updated main_assets
 
             # Find the account by ID
             account = Account.objects.get(id=account_id)
-            account.name = name
-            account.initial_capital = initial_capital
+            account.account_name = name  # Update account name
+            account.initial_capital = initial_capital  # Update initial capital
+
+            # Update main_assets if it exists
+            if main_assets:
+                account.main_assets = main_assets  # Save the updated main assets
+
             account.save()
 
             return JsonResponse({
                 'id': account.id,
-                'name': account.name,
+                'name': account.account_name,
                 'initial_capital': account.initial_capital,
+                'main_assets': account.main_assets,  # Return updated main assets
             })
 
         except Account.DoesNotExist:
@@ -6167,6 +6174,18 @@ def update_account(request):
             return JsonResponse({'error': str(e)}, status=500)
 
     return JsonResponse({'error': 'Invalid request method'}, status=400)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # LEGODI BACKEND CODE
