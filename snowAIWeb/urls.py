@@ -80,6 +80,7 @@ urlpatterns = [
     path('view-trading-analytics', views.view_trading_analytics, name='view-trading-analytics'),
     path('create-new-trade-data', views.create_new_trade_data, name='create-new-trade-data'),
     path('fetch-trading-data', views.fetch_trading_data, name='fetch-trading-data'),
+    path('fetch-account-data', views.fetch_account_data, name='fetch-account-data'),
 
 
     path('contact-us', views.contact_us, name='contact-us'),

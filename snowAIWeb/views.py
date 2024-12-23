@@ -6264,6 +6264,27 @@ def fetch_trading_data(request):
             return JsonResponse({'error': str(e)}, status=400)
 
 
+@csrf_exempt
+def fetch_account_data(request):
+    if request.method == 'GET':
+        try:
+            # Get the account_name from the request
+            account_name = request.GET.get('account_name')
+            if account_name:
+                # Fetch the account data based on account_name
+                account = Account.objects.filter(account_name=account_name).values('account_name', 'main_assets', 'initial_capital').first()
+                if account:
+                    return JsonResponse(account, safe=False)
+                else:
+                    return JsonResponse({'error': 'Account not found'}, status=404)
+            else:
+                return JsonResponse({'error': 'Account name is required'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+
+
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
