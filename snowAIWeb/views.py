@@ -6252,8 +6252,16 @@ def create_new_trade_data(request):
     return JsonResponse({'error': 'Invalid request method.'}, status=405)
 
 
-
-
+@csrf_exempt
+def fetch_trading_data(request):
+    if request.method == 'GET':
+        try:
+            # Fetching all trade data (you can filter based on the request if needed)
+            trades = AccountTrades.objects.all().values('account__account_name', 'asset', 'order_type', 'strategy', 'day_of_week_entered', 'day_of_week_closed', 'trading_session_entered', 'trading_session_closed', 'outcome', 'amount', 'emotional_bias', 'reflection')
+            # Return the data as JSON
+            return JsonResponse(list(trades), safe=False)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
 
 
 
