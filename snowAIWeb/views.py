@@ -763,10 +763,13 @@ def update_daily_brief(user_email='butterrobot83@gmail.com'):
 
             except Exception as e:
                 print(f"Error processing asset {asset}: {e}")
+                return JsonResponse({'message': f"Error processing asset {asset}: {e}"})
                 continue
 
     except Exception as e:
         print(f"Exception occurred in update_daily_brief function: {e}")
+        return JsonResponse({'message': f"Exception occurred in update_daily_brief function: {e}"})
+
 
 
 def get_openai_key(request):
