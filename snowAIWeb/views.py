@@ -659,7 +659,19 @@ def update_user_assets(request, user_email):
         except TellUsMore.DoesNotExist:
             return JsonResponse({'error': 'User not found'}, status=404)
     else:
-        return JsonResponse({'error': 'Invalid request method'}, status=405)  
+        return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+
+# Set the OpenAI API key globally
+openai.api_key = os.environ['OPENAI_API_KEY']
+
+
+def chat_gpt(prompt):
+    response = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message['content'].strip()
 
 
 @csrf_exempt
@@ -672,7 +684,6 @@ def daily_brief(request):
             return JsonResponse({'message': f'Error Occurred in Daily Brief Function: {e}'})
     else:
         return JsonResponse({'message': 'Invalid request method'}, status=405)
-
 
 
 def update_daily_brief(user_email='butterrobot83@gmail.com'):
@@ -767,17 +778,6 @@ def update_daily_brief(user_email='butterrobot83@gmail.com'):
 def get_openai_key(request):
     return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
 
-
-# Set the OpenAI API key globally
-openai.api_key = os.environ['OPENAI_API_KEY']
-
-
-def chat_gpt(prompt):
-    response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return response.choices[0].message['content'].strip()
 
 
 @csrf_exempt
