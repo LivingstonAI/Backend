@@ -665,7 +665,6 @@ def update_user_assets(request, user_email):
 # Set the OpenAI API key globally
 openai.api_key = os.environ['OPENAI_API_KEY']
 
-
 def chat_gpt(prompt):
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
