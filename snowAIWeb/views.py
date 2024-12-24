@@ -57,7 +57,7 @@ from scipy.signal import argrelextrema, find_peaks
 from sklearn.neighbors import KernelDensity
 import pytz
 import openai
-from openai import OpenAI
+# from openai import OpenAI
 from django.utils import timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
