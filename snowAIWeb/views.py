@@ -662,13 +662,16 @@ def update_user_assets(request, user_email):
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
-# Set the OpenAI API key globally
-openai.api_key = os.environ['OPENAI_API_KEY']
+# Initialize the OpenAI client
+client = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
 def chat_gpt(prompt):
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
+        messages=[{
+            "role": "user",
+            "content": prompt,
+        }],
         model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
     )
     return response.choices[0].message['content'].strip()
 
