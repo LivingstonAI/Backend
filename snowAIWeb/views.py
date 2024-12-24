@@ -768,16 +768,16 @@ def get_openai_key(request):
     return JsonResponse({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']})
 
 
+# Set the OpenAI API key globally
+openai.api_key = os.environ['OPENAI_API_KEY']
+
+
 def chat_gpt(prompt):
-    client = OpenAI(
-    # defaults to os.environ.get("OPENAI_API_KEY")
-    api_key=os.environ['OPENAI_API_KEY'],
-    )
-    response = client.chat.completions.create(
+    response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.choices[0].message.content.strip()
+    return response.choices[0].message['content'].strip()
 
 
 @csrf_exempt
@@ -794,7 +794,6 @@ def reflections_summary(request, asset):
         print(f'Error occured in reflections_summary function: {e}')
         return JsonResponse({'message': f'Error occured in reflections_summary function: {e}'})
         
-
 
 # Schedule the update_daily_brief function to run every hour
 scheduler.add_job(
