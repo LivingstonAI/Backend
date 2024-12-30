@@ -6182,15 +6182,19 @@ def update_account(request):
 def get_trading_analytics(request):
     account_name = request.GET.get('account_name')  # Get account_name from the query params
     print(f'Account name is: {account_name}')
+    error_count = 0
     
     try:
         # Fetch the account data
         print('Test 1')
+        error_count += 1
         account = Account.objects.get(account_name=account_name)
         print('Test 2')
+        error_count += 1
         # Fetch related trades for this account
         trades = AccountTrades.objects.filter(account=account)
         print('Test 3')
+        error_count += 1
 
         
         # Prepare the data for response
@@ -6211,12 +6215,13 @@ def get_trading_analytics(request):
             } for trade in trades]
         }
         print('Test 4')
+        error_count += 1
 
         
         return JsonResponse(analytics_data, safe=False)
     
     except Account.DoesNotExist:
-        return JsonResponse({'error': 'Account not found'}, status=404)
+        return JsonResponse({'error': f'Account not found with account name: {account_name} with error count: {error_count}'}, status=404)
 
 
 @csrf_exempt
