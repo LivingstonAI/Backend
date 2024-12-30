@@ -6184,10 +6184,13 @@ def get_trading_analytics(request):
     
     try:
         # Fetch the account data
+        print('Test 1')
         account = Account.objects.get(account_name=account_name)
-        
+        print('Test 2')
         # Fetch related trades for this account
         trades = AccountTrades.objects.filter(account=account)
+        print('Test 3')
+
         
         # Prepare the data for response
         analytics_data = {
@@ -6206,6 +6209,8 @@ def get_trading_analytics(request):
                 'trading_session_closed': trade.trading_session_closed,
             } for trade in trades]
         }
+        print('Test 4')
+
         
         return JsonResponse(analytics_data, safe=False)
     
