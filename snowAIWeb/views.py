@@ -6181,6 +6181,7 @@ def update_account(request):
 @csrf_exempt
 def get_trading_analytics(request):
     account_name = request.GET.get('account_name')  # Get account_name from the query params
+    print(f'Account name is: {account_name}')
     
     try:
         # Fetch the account data
