@@ -6285,15 +6285,41 @@ def fetch_account_data(request):
             account_name = request.GET.get('account_name')
             if account_name:
                 # Fetch the account data based on account_name
-                account = Account.objects.filter(account_name=account_name).values('account_name', 'main_assets', 'initial_capital').first()
+                account = Account.objects.filter(account_name=account_name).first()
                 if account:
-                    return JsonResponse(account, safe=False)
+                    # Serialize the account data
+                    account_data = {
+                        'account_name': account.account_name,
+                        'main_assets': account.main_assets,
+                        'initial_capital': account.initial_capital,
+                        'trades': list(
+                            account.trades.values(
+                                'asset',
+                                'order_type',
+                                'strategy',
+                                'day_of_week_entered',
+                                'day_of_week_closed',
+                                'trading_session_entered',
+                                'trading_session_closed',
+                                'outcome',
+                                'amount',
+                                'emotional_bias',
+                                'reflection',
+                            )
+                        )
+                    }
+                    return JsonResponse(account_data, safe=False)
                 else:
                     return JsonResponse({'error': 'Account not found'}, status=404)
             else:
                 return JsonResponse({'error': 'Account name is required'}, status=400)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
+
+
+
+
+
 
 
 
