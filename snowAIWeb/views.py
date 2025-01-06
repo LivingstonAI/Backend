@@ -6186,14 +6186,11 @@ def get_trading_analytics(request):
     
     try:
         # Fetch the account data
-        print('Test 1')
         error_count += 1
         account = Account.objects.get(account_name=account_name)
-        print('Test 2')
         error_count += 1
         # Fetch related trades for this account
         trades = AccountTrades.objects.filter(account=account)
-        print('Test 3')
         error_count += 1
 
         
