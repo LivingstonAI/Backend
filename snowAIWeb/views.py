@@ -702,15 +702,19 @@ def daily_brief(request):
     else:
         return JsonResponse({'message': 'Invalid request method'}, status=405)
 
-
 def update_daily_brief(user_email='butterrobot83@gmail.com'):
-    # The user email is to be able to filter out the assets I trade in the TellUsMore object.
+    # Fetch the user's assets from the DailyBriefAssets model
     try:
-        # Fetch the user's assets
-        user_assets = TellUsMore.objects.filter(user_email=user_email)[0].main_assets
+        # Replace TellUsMore with DailyBriefAssets and adjust the query accordingly
+        user_assets = DailyBriefAssets.objects.all()
+        
+        if not user_assets:
+            raise ValueError("No assets found for the given user email.")
+
+        # Retrieve assets from the DailyBriefAssets model
+        currency_list = user_assets.main_assets.split(", ")
         news_data_list = []
         model_replies_list = []
-        currency_list = user_assets.split(", ")
         
         # Establish a connection to the API
         conn = http.client.HTTPSConnection('api.marketaux.com')
@@ -788,7 +792,94 @@ def update_daily_brief(user_email='butterrobot83@gmail.com'):
 
     except Exception as e:
         print(f"Exception occurred in update_daily_brief function: {e}")
-        return JsonResponse({'message': f"Exception occurred in update_daily_brief function: {e}"})
+        return JsonResponse({'message': f"Exception occurred in update_daily_brief function: {e}'})
+
+# def update_daily_brief(user_email='butterrobot83@gmail.com'):
+#     # The user email is to be able to filter out the assets I trade in the TellUsMore object.
+#     try:
+#         # Fetch the user's assets
+#         user_assets = TellUsMore.objects.filter(user_email=user_email)[0].main_assets
+#         news_data_list = []
+#         model_replies_list = []
+#         currency_list = user_assets.split(", ")
+        
+#         # Establish a connection to the API
+#         conn = http.client.HTTPSConnection('api.marketaux.com')
+
+#         # Define query parameters
+#         params_template = {
+#             'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
+#             'langauge': 'en',
+#             'limit': 50,
+#         }
+
+#         for asset in currency_list:
+#             try:
+#                 # Update the symbol in the query parameters
+#                 params = params_template.copy()
+#                 params['symbols'] = asset
+
+#                 # Send a GET request
+#                 conn.request('GET', '/v1/news/all?{}'.format(urllib.parse.urlencode(params)))
+
+#                 # Get the response
+#                 res = conn.getresponse()
+
+#                 # Read the response data
+#                 data = res.read()
+
+#                 # Decode the data from bytes to a string
+#                 data_str = data.decode('utf-8')
+
+#                 # Parse the JSON data
+#                 news_data = json.loads(data_str)
+
+#                 # Check if news data is valid
+#                 if 'data' not in news_data or not news_data['data']:
+#                     raise ValueError(f"No news data available for asset: {asset}")
+
+#                 # If new data is successfully fetched, delete old entries for the asset
+#                 dailyBrief.objects.filter(asset=asset).delete()
+
+#                 # Iterate through the news articles and save specific fields to the database
+#                 for article in news_data['data']:
+#                     title = article['title']
+#                     description = article['description']
+#                     source = article['source']
+#                     url = article['url']
+#                     highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
+
+#                     # Create a dictionary with the specific fields
+#                     news_entry_data = {
+#                         'title': title,
+#                         'description': description,
+#                         'source': source,
+#                         'url': url,
+#                         'highlights': highlights,
+#                     }
+#                     news_data_list.append(news_entry_data)
+
+#                 # Get Livingston's response for the summary
+#                 livingston_response = chat_gpt(
+#                     f'Provide me a fundamental data summary of the news data (in paragraph format) for this asset as if you were a professional trader and analyst: {asset}\nWith this news data for the asset: {news_data_list}'
+#                 )
+#                 model_replies_list.append(livingston_response)
+
+#                 # Get the current date and time
+#                 now = timezone.now()
+
+#                 # Save the new daily brief entry for this asset
+#                 daily_brief = dailyBrief(asset=asset, summary=livingston_response, last_update=now)
+#                 daily_brief.save()
+
+#             except Exception as e:
+#                 print(f"Error processing asset {asset}: {e}")
+#                 return JsonResponse({'message': f"Error processing asset {asset}: {e}"})
+#                 continue
+
+#     except Exception as e:
+#         print(f"Exception occurred in update_daily_brief function: {e}")
+#         return JsonResponse({'message': f"Exception occurred in update_daily_brief function: {e}"})
 
 
 
