@@ -703,15 +703,14 @@ def daily_brief(request):
         return JsonResponse({'message': 'Invalid request method'}, status=405)
 
 def update_daily_brief(user_email='butterrobot83@gmail.com'):
-    # Fetch the user's assets from the DailyBriefAssets model
     try:
-        # Replace TellUsMore with DailyBriefAssets and adjust the query accordingly
-        user_assets = DailyBriefAssets.objects.all()
+        # Fetch the user's assets from the DailyBriefAssets model
+        user_assets = DailyBriefAssets.objects.filter(user_email=user_email).first()
         
         if not user_assets:
             raise ValueError("No assets found for the given user email.")
 
-        # Retrieve assets from the DailyBriefAssets model
+        # Retrieve assets from the main_assets field
         currency_list = user_assets.main_assets.split(", ")
         news_data_list = []
         model_replies_list = []
@@ -722,7 +721,7 @@ def update_daily_brief(user_email='butterrobot83@gmail.com'):
         # Define query parameters
         params_template = {
             'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
-            'langauge': 'en',
+            'language': 'en',
             'limit': 50,
         }
 
@@ -737,17 +736,12 @@ def update_daily_brief(user_email='butterrobot83@gmail.com'):
 
                 # Get the response
                 res = conn.getresponse()
-
-                # Read the response data
                 data = res.read()
 
-                # Decode the data from bytes to a string
-                data_str = data.decode('utf-8')
+                # Parse the JSON response
+                news_data = json.loads(data.decode('utf-8'))
 
-                # Parse the JSON data
-                news_data = json.loads(data_str)
-
-                # Check if news data is valid
+                # Validate the news data
                 if 'data' not in news_data or not news_data['data']:
                     raise ValueError(f"No news data available for asset: {asset}")
 
@@ -756,11 +750,13 @@ def update_daily_brief(user_email='butterrobot83@gmail.com'):
 
                 # Iterate through the news articles and save specific fields to the database
                 for article in news_data['data']:
-                    title = article['title']
-                    description = article['description']
-                    source = article['source']
-                    url = article['url']
-                    highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
+                    title = article.get('title', '')
+                    description = article.get('description', '')
+                    source = article.get('source', '')
+                    url = article.get('url', '')
+                    highlights = (
+                        article['entities'][0].get('highlights', '') if article.get('entities') else ''
+                    )
 
                     # Create a dictionary with the specific fields
                     news_entry_data = {
@@ -772,7 +768,7 @@ def update_daily_brief(user_email='butterrobot83@gmail.com'):
                     }
                     news_data_list.append(news_entry_data)
 
-                # Get Livingston's response for the summary
+                # Generate a summary using Livingston (or your GPT model)
                 livingston_response = chat_gpt(
                     f'Provide me a fundamental data summary of the news data (in paragraph format) for this asset as if you were a professional trader and analyst: {asset}\nWith this news data for the asset: {news_data_list}'
                 )
@@ -787,12 +783,17 @@ def update_daily_brief(user_email='butterrobot83@gmail.com'):
 
             except Exception as e:
                 print(f"Error processing asset {asset}: {e}")
-                return JsonResponse({'message': f"Error processing asset {asset}: {e}"})
+                # Log the error but continue processing other assets
                 continue
+
+        # Return a success message
+        return JsonResponse({'message': 'Daily brief successfully updated.'})
 
     except Exception as e:
         print(f"Exception occurred in update_daily_brief function: {e}")
-        return JsonResponse({'message': f"Exception occurred in update_daily_brief function: {e}'})
+        # Corrected JSON response
+        return JsonResponse({'message': f"Exception occurred in update_daily_brief function: {e}"})
+
 
 # def update_daily_brief(user_email='butterrobot83@gmail.com'):
 #     # The user email is to be able to filter out the assets I trade in the TellUsMore object.
