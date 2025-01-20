@@ -702,16 +702,20 @@ def daily_brief(request):
     else:
         return JsonResponse({'message': 'Invalid request method'}, status=405)
 
-def update_daily_brief(user_email='butterrobot83@gmail.com'):
+def update_daily_brief():
     try:
-        # Fetch the user's assets from the DailyBriefAssets model
+        # Fetch all assets from the DailyBriefAssets model
         user_assets = DailyBriefAssets.objects.all()
         
-        if not user_assets:
-            raise ValueError("No assets found for the given user email.")
+        if not user_assets.exists():
+            raise ValueError("No assets found in the DailyBriefAssets model.")
 
-        # Retrieve assets from the main_assets field
-        currency_list = user_assets.main_assets.split(", ")
+        # Retrieve all asset names into a list
+        currency_list = [asset.asset for asset in user_assets]
+        
+        if not currency_list:
+            raise ValueError("Currency list is empty.")
+
         news_data_list = []
         model_replies_list = []
         
@@ -784,8 +788,7 @@ def update_daily_brief(user_email='butterrobot83@gmail.com'):
             except Exception as e:
                 print(f"Error processing asset {asset}: {e}")
                 # Log the error but continue processing other assets
-                # continue
-                return JsonResponse({'error': f'Errpr Occured In Update DB Function: {e}'})
+                return JsonResponse({'error': f'Error Occurred In Update DB Function: {e}'})
 
         # Return a success message
         return JsonResponse({'message': 'Daily brief successfully updated.'})
