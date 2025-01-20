@@ -784,7 +784,8 @@ def update_daily_brief(user_email='butterrobot83@gmail.com'):
             except Exception as e:
                 print(f"Error processing asset {asset}: {e}")
                 # Log the error but continue processing other assets
-                continue
+                # continue
+                return JsonResponse({'error': f'Errpr Occured In Update DB Function: {e}'})
 
         # Return a success message
         return JsonResponse({'message': 'Daily brief successfully updated.'})
