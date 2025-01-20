@@ -201,6 +201,10 @@ class dailyBrief(models.Model):
     last_update = models.DateTimeField(null=True)
 
 
+class DailyBriefAssets(models.Model):
+    asset = models.CharField(max_length=50)  # Use CharField for asset names or codes
+
+
 class Chill(models.Model):
     section = models.TextField()
     text = models.TextField()
@@ -224,6 +228,8 @@ class AlertBot(models.Model):
     class Meta:
         verbose_name = "Alert"
         verbose_name_plural = "Alerts"
+
+
 
 
 

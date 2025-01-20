@@ -81,6 +81,7 @@ urlpatterns = [
     path('create-new-trade-data', views.create_new_trade_data, name='create-new-trade-data'),
     path('fetch-trading-data', views.fetch_trading_data, name='fetch-trading-data'),
     path('fetch-account-data/', views.fetch_account_data, name='fetch-account-data'),
+    path('set-daily-brief-assets', views.set_daily_brief_assets, name='set-daily-brief-assets'),
 
 
     path('contact-us', views.contact_us, name='contact-us'),

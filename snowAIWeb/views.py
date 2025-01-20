@@ -674,6 +674,24 @@ def chat_gpt(prompt):
 
 
 @csrf_exempt
+def set_daily_brief_assets(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            selected_assets = data.get('assets', [])
+
+            # Clear existing assets and add the new ones
+            DailyBriefAssets.objects.all().delete()
+            for asset in selected_assets:
+                DailyBriefAssets.objects.create(asset=asset)
+            
+            return JsonResponse({"message": "Assets updated successfully!"}, status=200)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=400)
+    return JsonResponse({"error": "Invalid request method."}, status=400)
+
+
+@csrf_exempt
 def daily_brief(request):
     if request.method == 'POST':
         try:
