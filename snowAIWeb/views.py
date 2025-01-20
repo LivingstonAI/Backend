@@ -705,7 +705,7 @@ def daily_brief(request):
 def update_daily_brief(user_email='butterrobot83@gmail.com'):
     try:
         # Fetch the user's assets from the DailyBriefAssets model
-        user_assets = DailyBriefAssets.objects.filter(user_email=user_email).first()
+        user_assets = DailyBriefAssets.objects.all()
         
         if not user_assets:
             raise ValueError("No assets found for the given user email.")
