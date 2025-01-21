@@ -5363,14 +5363,16 @@ def get_model_performance(request):
 @csrf_exempt
 def get_user_assets(request, email='butterrobot83@gmail.com'):
     try:
-        # Returns My assets as a list
-        user_assets = TellUsMore.objects.filter(user_email=email)[0].main_assets.split(", ")
+        # Fetch unique asset names from tradeModel
+        user_assets = tradeModel.objects.values_list('asset', flat=True).distinct()
         
-        return JsonResponse({'message': user_assets})
-    except Exception as e:
-        print(f'Error occured in get_user_assets: {e}')
-        return JsonResponse({'error': f'Error occured in get_user_assets: {e}'})
+        # Convert QuerySet to a list
+        unique_assets = list(user_assets)
 
+        return JsonResponse({'message': unique_assets})
+    except Exception as e:
+        print(f'Error occurred in get_user_assets: {e}')
+        return JsonResponse({'error': f'Error occurred in get_user_assets: {e}'})
 
 
 
