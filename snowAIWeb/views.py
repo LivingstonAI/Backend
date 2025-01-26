@@ -76,8 +76,20 @@ scheduler = BackgroundScheduler()
 scheduler.start()
 
 
+@csrf_exempt
 def zinaida_feedback_form(request):
-    return
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            feedback = data.get("feedback")
+            if not feedback:
+                return JsonResponse({"message": "Feedback cannot be empty."}, status=400)
+            
+            FeedbackForm.objects.create(feedback=feedback)
+            return JsonResponse({"message": "Feedback submitted successfully."}, status=201)
+        except Exception as e:
+            return JsonResponse({"message": f"An error occurred: {str(e)}"}, status=500)
+    return JsonResponse({"message": "Invalid request method."}, status=405)
 
 
 def is_bullish_run(candle1, candle2, candle3, candle4):
