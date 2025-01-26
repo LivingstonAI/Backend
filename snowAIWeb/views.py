@@ -71,8 +71,13 @@ from twilio.rest import Client
 # current_hour = datetime.datetime.now().time().hour
 
 
+
 scheduler = BackgroundScheduler()
 scheduler.start()
+
+
+def zinaida_feedback_form(request):
+    return
 
 
 def is_bullish_run(candle1, candle2, candle3, candle4):

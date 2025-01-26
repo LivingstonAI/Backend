@@ -230,7 +230,8 @@ class AlertBot(models.Model):
         verbose_name_plural = "Alerts"
 
 
-
+class FeedbackForm(models.Model): 
+    feedback = models.TextField()
 
 
 

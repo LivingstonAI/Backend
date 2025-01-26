@@ -84,6 +84,9 @@ urlpatterns = [
     path('set-daily-brief-assets', views.set_daily_brief_assets, name='set-daily-brief-assets'),
 
 
+    path('zinaida-feedback', views.zinaida_feedback_form, name=;'zinaida-feedback'),
+
+
     path('contact-us', views.contact_us, name='contact-us'),
     path('book-order', views.book_order, name='book-order'),
     path('api/register/', UserRegistrationView.as_view(), name='user-register'),
