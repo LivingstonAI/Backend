@@ -3,6 +3,7 @@ from django.shortcuts import get_object_or_404
 from django.http import JsonResponse, HttpResponse, HttpResponseNotFound
 from django.contrib.auth import authenticate, login
 from django.views.decorators.csrf import csrf_exempt
+from django.utils.timezone import now
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -6115,7 +6116,7 @@ def manage_alerts():
             data = obtain_dataset(asset, interval="1m", num_days=1)
 
             if data.empty:
-                print(f"No data available for {asset}. Skipping.")
+                print(f"No data available for {asset}. Skipping...")
                 continue
 
             # Get the most recent closing price
@@ -6421,11 +6422,11 @@ def create_new_trade_data(request):
             amount = data.get('amount')
             emotional_bias = data.get('emotional_bias', '')
             reflection = data.get('reflection', '')
-
+            
             # Retrieve the account based on the account_name
             account = Account.objects.get(account_name=account_name)
 
-            # Create the trade entry in the AccountTrades model
+            # Create the trade entry with the current timestamp
             trade = AccountTrades.objects.create(
                 account=account,
                 asset=asset,
@@ -6436,11 +6437,14 @@ def create_new_trade_data(request):
                 amount=amount,
                 emotional_bias=emotional_bias,
                 reflection=reflection,
-                outcome=outcome,  # Default value, to be updated later
+                outcome=outcome,
+                date_entered=now(),  # Save the current timestamp
             )
 
             return JsonResponse({'message': 'Trade recorded successfully!'}, status=200)
 
+        except Account.DoesNotExist:
+            return JsonResponse({'error': 'Account not found.'}, status=404)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)
 
