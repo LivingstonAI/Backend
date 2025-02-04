@@ -89,6 +89,7 @@ class AccountTrades(models.Model):
     amount = models.FloatField()  # Trade amount as a float, e.g., -100 or 150
     emotional_bias = models.TextField(blank=True, null=True)  # Notes on emotional state (optional)
     reflection = models.TextField(blank=True, null=True)  # Reflective notes (optional)
+    date_entered = models.DateTimeField(blank=True, null=True)  # New field for the date trade was entered
 
     def __str__(self):
         return f"{self.account.account_name} - {self.asset} ({self.order_type})"
