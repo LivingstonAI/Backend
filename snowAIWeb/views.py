@@ -6506,74 +6506,92 @@ def fetch_account_data(request):
 
 
 @csrf_exempt
-def get_time_trading_analytics(request):
+def time_trading_analytics(request):
     if request.method == 'GET':
         account_name = request.GET.get('account_name')
-        if not account_name:
-            return JsonResponse({'error': 'Account name is required'}, status=400)
-
-        account = Account.objects.get(account_name=account_name)
-        trades = AccountTrades.objects.filter(account=account)
+        time_frame = request.GET.get('time_frame', 'month')  # month, week, day
+        start_date = request.GET.get('start_date')
         
-        # Calculate overall metrics
+        # Get base queryset
+        trades = AccountTrades.objects.filter(
+            account__account_name=account_name,
+            date_entered__gte=start_date
+        )
+        
+        # Calculate basic metrics
         total_trades = trades.count()
         winning_trades = trades.filter(outcome='Profit').count()
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
         total_profit = trades.filter(outcome='Profit').aggregate(Sum('amount'))['amount__sum'] or 0
         total_loss = abs(trades.filter(outcome='Loss').aggregate(Sum('amount'))['amount__sum'] or 0)
-        profit_factor = total_profit / total_loss if total_loss > 0 else 0
         
-        avg_win = trades.filter(outcome='Profit').aggregate(Avg('amount'))['amount__avg'] or 0
-        avg_loss = trades.filter(outcome='Loss').aggregate(Avg('amount'))['amount__avg'] or 0
+        profit_factor = total_profit / total_loss if total_loss > 0 else float('inf')
         
-        # Performance by day of week
-        day_performance = trades.annotate(
-            weekday=ExtractWeekDay('date_entered')
-        ).values('weekday').annotate(
-            profit=Sum('amount'),
+        # Get performance by different dimensions
+        performance_by_day = list(trades.values('day_of_week_entered').annotate(
+            total=Sum('amount'),
             count=Count('id'),
-            wins=Count(Case(When(outcome='Profit', then=1)))
-        ).order_by('weekday')
+            win_rate=Count(Case(When(outcome='Profit', then=1))) * 100.0 / Count('id')
+        ))
         
-        # Performance by asset
-        asset_performance = trades.values('asset').annotate(
-            profit=Sum('amount'),
+        performance_by_session = list(trades.values('trading_session_entered').annotate(
+            total=Sum('amount'),
             count=Count('id'),
-            wins=Count(Case(When(outcome='Profit', then=1)))
-        )
+            win_rate=Count(Case(When(outcome='Profit', then=1))) * 100.0 / Count('id')
+        ))
         
-        # Performance by session
-        session_performance = trades.values('trading_session_entered').annotate(
-            profit=Sum('amount'),
+        performance_by_asset = list(trades.values('asset').annotate(
+            total=Sum('amount'),
             count=Count('id'),
-            wins=Count(Case(When(outcome='Profit', then=1)))
-        )
+            win_rate=Count(Case(When(outcome='Profit', then=1))) * 100.0 / Count('id')
+        ))
         
-        # Performance by strategy
-        strategy_performance = trades.values('strategy').annotate(
-            profit=Sum('amount'),
+        performance_by_strategy = list(trades.values('strategy').annotate(
+            total=Sum('amount'),
             count=Count('id'),
-            wins=Count(Case(When(outcome='Profit', then=1)))
-        )
+            win_rate=Count(Case(When(outcome='Profit', then=1))) * 100.0 / Count('id')
+        ))
         
-        return JsonResponse({
-            'overall_metrics': {
+        # Time series data based on timeframe
+        if time_frame == 'month':
+            time_series = trades.annotate(
+                period=ExtractMonth('date_entered')
+            )
+        elif time_frame == 'week':
+            time_series = trades.annotate(
+                period=ExtractWeek('date_entered')
+            )
+        else:  # day
+            time_series = trades.annotate(
+                period=F('date_entered__date')
+            )
+        
+        time_series = list(time_series.values('period').annotate(
+            total=Sum('amount'),
+            count=Count('id'),
+            win_rate=Count(Case(When(outcome='Profit', then=1))) * 100.0 / Count('id')
+        ).order_by('period'))
+        
+        response_data = {
+            'summary': {
                 'total_trades': total_trades,
                 'win_rate': win_rate,
                 'profit_factor': profit_factor,
-                'avg_win': avg_win,
-                'avg_loss': avg_loss,
-                'total_profit': total_profit
+                'total_profit': total_profit,
+                'average_win': trades.filter(outcome='Profit').aggregate(Avg('amount'))['amount__avg'],
+                'average_loss': trades.filter(outcome='Loss').aggregate(Avg('amount'))['amount__avg'],
             },
-            'day_performance': list(day_performance),
-            'asset_performance': list(asset_performance),
-            'session_performance': list(session_performance),
-            'strategy_performance': list(strategy_performance)
-        })
-    else:
-        return JsonResponse({'error': 'GET method required'}, status=405)  # Closing parenthesis added here
-
+            'by_day': performance_by_day,
+            'by_session': performance_by_session,
+            'by_asset': performance_by_asset,
+            'by_strategy': performance_by_strategy,
+            'time_series': time_series,
+        }
+        
+        return JsonResponse(response_data)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
 
