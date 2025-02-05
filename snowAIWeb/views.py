@@ -6505,74 +6505,74 @@ def fetch_account_data(request):
             return JsonResponse({'error': str(e)}, status=500)
 
 
-# @csrf_exempt
-# def get_time_trading_analytics(request):
-#     if request.method == 'GET':
-#         account_name = request.GET.get('account_name')
-#         if not account_name:
-#             return JsonResponse({'error': 'Account name is required'}, status=400)
+@csrf_exempt
+def get_time_trading_analytics(request):
+    if request.method == 'GET':
+        account_name = request.GET.get('account_name')
+        if not account_name:
+            return JsonResponse({'error': 'Account name is required'}, status=400)
 
-#         account = Account.objects.get(account_name=account_name)
-#         trades = AccountTrades.objects.filter(account=account)
+        account = Account.objects.get(account_name=account_name)
+        trades = AccountTrades.objects.filter(account=account)
         
-#         # Calculate overall metrics
-#         total_trades = trades.count()
-#         winning_trades = trades.filter(outcome='Profit').count()
-#         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        # Calculate overall metrics
+        total_trades = trades.count()
+        winning_trades = trades.filter(outcome='Profit').count()
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
-#         total_profit = trades.filter(outcome='Profit').aggregate(Sum('amount'))['amount__sum'] or 0
-#         total_loss = abs(trades.filter(outcome='Loss').aggregate(Sum('amount'))['amount__sum'] or 0)
-#         profit_factor = total_profit / total_loss if total_loss > 0 else 0
+        total_profit = trades.filter(outcome='Profit').aggregate(Sum('amount'))['amount__sum'] or 0
+        total_loss = abs(trades.filter(outcome='Loss').aggregate(Sum('amount'))['amount__sum'] or 0)
+        profit_factor = total_profit / total_loss if total_loss > 0 else 0
         
-#         avg_win = trades.filter(outcome='Profit').aggregate(Avg('amount'))['amount__avg'] or 0
-#         avg_loss = trades.filter(outcome='Loss').aggregate(Avg('amount'))['amount__avg'] or 0
+        avg_win = trades.filter(outcome='Profit').aggregate(Avg('amount'))['amount__avg'] or 0
+        avg_loss = trades.filter(outcome='Loss').aggregate(Avg('amount'))['amount__avg'] or 0
         
-#         # Performance by day of week
-#         day_performance = trades.annotate(
-#             weekday=ExtractWeekDay('date_entered')
-#         ).values('weekday').annotate(
-#             profit=Sum('amount'),
-#             count=Count('id'),
-#             wins=Count(Case(When(outcome='Profit', then=1)))
-#         ).order_by('weekday')
+        # Performance by day of week
+        day_performance = trades.annotate(
+            weekday=ExtractWeekDay('date_entered')
+        ).values('weekday').annotate(
+            profit=Sum('amount'),
+            count=Count('id'),
+            wins=Count(Case(When(outcome='Profit', then=1)))
+        ).order_by('weekday')
         
-#         # Performance by asset
-#         asset_performance = trades.values('asset').annotate(
-#             profit=Sum('amount'),
-#             count=Count('id'),
-#             wins=Count(Case(When(outcome='Profit', then=1)))
-#         )
+        # Performance by asset
+        asset_performance = trades.values('asset').annotate(
+            profit=Sum('amount'),
+            count=Count('id'),
+            wins=Count(Case(When(outcome='Profit', then=1)))
+        )
         
-#         # Performance by session
-#         session_performance = trades.values('trading_session_entered').annotate(
-#             profit=Sum('amount'),
-#             count=Count('id'),
-#             wins=Count(Case(When(outcome='Profit', then=1)))
-#         )
+        # Performance by session
+        session_performance = trades.values('trading_session_entered').annotate(
+            profit=Sum('amount'),
+            count=Count('id'),
+            wins=Count(Case(When(outcome='Profit', then=1)))
+        )
         
-#         # Performance by strategy
-#         strategy_performance = trades.values('strategy').annotate(
-#             profit=Sum('amount'),
-#             count=Count('id'),
-#             wins=Count(Case(When(outcome='Profit', then=1)))
-#         )
+        # Performance by strategy
+        strategy_performance = trades.values('strategy').annotate(
+            profit=Sum('amount'),
+            count=Count('id'),
+            wins=Count(Case(When(outcome='Profit', then=1)))
+        )
         
-#         return JsonResponse({
-#             'overall_metrics': {
-#                 'total_trades': total_trades,
-#                 'win_rate': win_rate,
-#                 'profit_factor': profit_factor,
-#                 'avg_win': avg_win,
-#                 'avg_loss': avg_loss,
-#                 'total_profit': total_profit
-#             },
-#             'day_performance': list(day_performance),
-#             'asset_performance': list(asset_performance),
-#             'session_performance': list(session_performance),
-#             'strategy_performance': list(strategy_performance)
-#         })
-#     else:
-#         return JsonResponse({'error': 'GET method required'}, status=405
+        return JsonResponse({
+            'overall_metrics': {
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'profit_factor': profit_factor,
+                'avg_win': avg_win,
+                'avg_loss': avg_loss,
+                'total_profit': total_profit
+            },
+            'day_performance': list(day_performance),
+            'asset_performance': list(asset_performance),
+            'session_performance': list(session_performance),
+            'strategy_performance': list(strategy_performance)
+        })
+    else:
+        return JsonResponse({'error': 'GET method required'}, status=405)  # Closing parenthesis added here
 
 
 
