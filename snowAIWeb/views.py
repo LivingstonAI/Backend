@@ -2,7 +2,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse, HttpResponse, HttpResponseNotFound
 from django.db.models import Avg, Count, Sum, Case, When, F
-from django.db.models.functions import ExtractWeekDay 
+from django.db.models.functions import ExtractWeek, ExtractMonth, ExtractYear
 from django.contrib.auth import authenticate, login
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.timezone import now
