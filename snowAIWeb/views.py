@@ -6042,7 +6042,22 @@ def fetch_trading_images(request):
 
 @csrf_exempt
 def alert_bot(request):
-    if request.method == "POST":
+    if request.method == "GET":
+        # Fetch all alerts
+        alerts = AlertBot.objects.all()
+        alerts_data = [
+            {
+                "id": alert.id,
+                "asset": alert.asset,
+                "price": alert.price,
+                "condition": alert.condition,
+                "checked": alert.checked
+            }
+            for alert in alerts
+        ]
+        return JsonResponse({"alerts": alerts_data}, status=200)
+
+    elif request.method == "POST":
         try:
             data = json.loads(request.body)
             
@@ -6076,9 +6091,25 @@ def alert_bot(request):
         
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == "DELETE":
+        try:
+            alert_id = request.GET.get('id')
+            if not alert_id:
+                return JsonResponse({"error": "Alert ID is required."}, status=400)
+            
+            alert = AlertBot.objects.filter(id=alert_id).first()
+            if not alert:
+                return JsonResponse({"error": "Alert not found."}, status=404)
+            
+            alert.delete()
+            return JsonResponse({"message": "Alert deleted successfully."}, status=200)
+        
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+            
     else:
         return JsonResponse({"error": "Invalid request method."}, status=405)
-
 
 
 def send_whatsapp_message(asset, message):
@@ -6493,6 +6524,7 @@ def fetch_account_data(request):
                                 'amount',
                                 'emotional_bias',
                                 'reflection',
+                                'date_entered',  # Add this field
                             )
                         )
                     }
