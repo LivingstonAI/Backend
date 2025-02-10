@@ -68,6 +68,7 @@ import cot_reports as cot
 import seaborn as sns
 import io
 from twilio.rest import Client
+import zipfile
 
 
 # Comment
@@ -6285,16 +6286,101 @@ def create_image_finetuning_data(request):
         return JsonResponse({'message': f"Error occurred: {str(e)}"})
 
 
+# @csrf_exempt
+# def create_combined_finetuning_data(request):
+#     try:
+#         # Prepare combined dataset
+#         data_list = []
+
+#         # Step 1: Add CHILL data
+#         chill_data = Chill.objects.all()
+#         for entry in chill_data:
+#             data_list.append({
+#                 "messages": [
+#                     {
+#                         "role": "system",
+#                         "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."
+#                     },
+#                     {
+#                         "role": "user",
+#                         "content": entry.section
+#                     },
+#                     {
+#                         "role": "assistant",
+#                         "content": entry.text
+#                     }
+#                 ]
+#             })
+
+#         # Step 2: Add Image data
+#         base_dir = os.path.join(os.path.dirname(__file__), 'image_folder')
+#         for root, _, files in os.walk(base_dir):
+#             for img_file in files:
+#                 if img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+#                     img_path = os.path.join(root, img_file)
+#                     with open(img_path, "rb") as image_file:
+#                         # Encode image in Base64
+#                         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                        
+#                         # Create properly formatted image entry
+#                         image_content = {
+#                             "messages": [
+#                                 {
+#                                     "role": "system",
+#                                     "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."
+#                                 },
+#                                 {
+#                                     "role": "user",
+#                                     "content": [
+#                                         {
+#                                             "type": "text",
+#                                             "text": "What do you see in this image?"
+#                                         },
+#                                         {
+#                                             "type": "image_url",
+#                                             "image_url": {
+#                                                 "url": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"
+#                                             }
+#                                         }
+#                                     ]
+#                                 },
+#                                 {
+#                                     "role": "assistant",
+#                                     "content": "This is a trading chart. I can help analyze it."
+#                                 }
+#                             ]
+#                         }
+#                         data_list.append(image_content)
+
+#         # Step 3: Save combined data as JSONL
+#         file_path = 'combined_finetuning_data.jsonl'
+#         with open(file_path, 'w') as jsonl_file:
+#             for item in data_list:
+#                 jsonl_file.write(json.dumps(item) + '\n')
+
+#         # Step 4: Serve the file as a download
+#         with open(file_path, 'rb') as jsonl_file:
+#             response = HttpResponse(jsonl_file.read(), content_type='application/jsonl')
+#             response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
+#             return response
+
+#     except Exception as e:
+#         return JsonResponse({'message': f"Error occurred: {str(e)}"})
+        
+
 @csrf_exempt
 def create_combined_finetuning_data(request):
     try:
+        # Settings for chunking
+        MAX_ENTRIES_PER_FILE = 1000  # Adjust this number based on your needs
+        
         # Prepare combined dataset
-        data_list = []
-
+        all_data = []
+        
         # Step 1: Add CHILL data
         chill_data = Chill.objects.all()
         for entry in chill_data:
-            data_list.append({
+            all_data.append({
                 "messages": [
                     {
                         "role": "system",
@@ -6318,10 +6404,7 @@ def create_combined_finetuning_data(request):
                 if img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
                     img_path = os.path.join(root, img_file)
                     with open(img_path, "rb") as image_file:
-                        # Encode image in Base64
                         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-                        
-                        # Create properly formatted image entry
                         image_content = {
                             "messages": [
                                 {
@@ -6349,23 +6432,40 @@ def create_combined_finetuning_data(request):
                                 }
                             ]
                         }
-                        data_list.append(image_content)
+                        all_data.append(image_content)
 
-        # Step 3: Save combined data as JSONL
-        file_path = 'combined_finetuning_data.jsonl'
-        with open(file_path, 'w') as jsonl_file:
-            for item in data_list:
-                jsonl_file.write(json.dumps(item) + '\n')
+        # Step 3: Create chunks and save as separate JSONL files
+        chunk_files = []
+        for i in range(0, len(all_data), MAX_ENTRIES_PER_FILE):
+            chunk = all_data[i:i + MAX_ENTRIES_PER_FILE]
+            file_path = f'finetuning_data_part_{i//MAX_ENTRIES_PER_FILE + 1}.jsonl'
+            chunk_files.append(file_path)
+            
+            with open(file_path, 'w') as jsonl_file:
+                for item in chunk:
+                    jsonl_file.write(json.dumps(item) + '\n')
 
-        # Step 4: Serve the file as a download
-        with open(file_path, 'rb') as jsonl_file:
-            response = HttpResponse(jsonl_file.read(), content_type='application/jsonl')
-            response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
-            return response
+        # Step 4: Create ZIP file containing all chunks
+        zip_file_path = 'chunked_finetuning_data.zip'
+        with zipfile.ZipFile(zip_file_path, 'w') as zipf:
+            for file_path in chunk_files:
+                zipf.write(file_path)
+                
+        # Step 5: Serve the ZIP file
+        with open(zip_file_path, 'rb') as zip_file:
+            response = HttpResponse(zip_file.read(), content_type='application/zip')
+            response['Content-Disposition'] = f'attachment; filename="{os.path.basename(zip_file_path)}"'
+
+        # Clean up temporary files
+        for file_path in chunk_files:
+            os.remove(file_path)
+        os.remove(zip_file_path)
+
+        return response
 
     except Exception as e:
         return JsonResponse({'message': f"Error occurred: {str(e)}"})
-        
+
 
 # Fetch all accounts
 @csrf_exempt
