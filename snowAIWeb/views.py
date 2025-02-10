@@ -6221,7 +6221,6 @@ def create_finetuning_data(request):
     except Exception as e:
         return JsonResponse({'message': f"Error occurred: \n{e}"})
 
-
 @csrf_exempt
 def create_image_finetuning_data(request):
     try:
@@ -6237,15 +6236,36 @@ def create_image_finetuning_data(request):
                     with open(img_path, "rb") as image_file:
                         # Encode image in Base64
                         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-                        # Flatten the "user" content to be a single string
-                        data_list.append({
+                        
+                        # Create a single message for the image with proper formatting
+                        image_content = {
                             "messages": [
-                                {"role": "system", "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."},
-                                {"role": "user", "content": "What do you see in this image?"},
-                                {"role": "user", "content": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"},
-                                {"role": "assistant", "content": "This is a trading chart. I can help analyze it."}
+                                {
+                                    "role": "system",
+                                    "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."
+                                },
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "What do you see in this image?"
+                                        },
+                                        {
+                                            "type": "image_url",
+                                            "image_url": {
+                                                "url": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    "role": "assistant",
+                                    "content": "This is a trading chart. I can help analyze it."
+                                }
                             ]
-                        })
+                        }
+                        data_list.append(image_content)
 
         # Define file path
         file_path = 'image_data.jsonl'
@@ -6253,7 +6273,6 @@ def create_image_finetuning_data(request):
         # Save as JSONL file
         with open(file_path, 'w') as jsonl_file:
             for item in data_list:
-                # Ensure each JSON object is written as a single line
                 jsonl_file.write(json.dumps(item) + '\n')
 
         # Serve the file as a download
