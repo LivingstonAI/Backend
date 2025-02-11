@@ -7407,7 +7407,7 @@ def trader_analysis(request):
         return JsonResponse(response_data)
         
     except Exception as e:
-      
+        print(f'Error in Trader Analysis Function: {e}')
         return JsonResponse({
             'status': 'error',
             'message': str(e),
