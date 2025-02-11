@@ -7322,6 +7322,56 @@ def run_trader_dialogue(asset: str, interval: str = '1h', num_days: int = 7, max
     return conversation, annotated_chart
 
 
+@csrf_exempt
+def trader_analysis(request):
+    if request.method != 'POST':
+        return HttpResponseBadRequest("Only POST requests are allowed.")
+
+    try:
+        # Extract parameters from request
+        data = json.loads(request.body)
+        asset = data.get('asset', 'eurusd')
+        interval = data.get('interval', '1h')
+        num_days = int(data.get('num_days', 7))
+        
+        # Run the trader dialogue
+        dialogue = TraderDialogue(asset, interval, num_days)
+        messages, chart_path = dialogue.conduct_dialogue()
+        
+        # Convert messages to serializable format
+        dialogue_messages = []
+        for msg in messages:
+            message_content = json.loads(msg.content) if msg.message_type == "consensus" else msg.content
+            dialogue_messages.append({
+                'trader_id': msg.trader_id,
+                'content': message_content,
+                'message_type': msg.message_type,
+                'responding_to': msg.responding_to
+            })
+        
+        # Read and encode the chart image
+        with open(chart_path, 'rb') as img_file:
+            chart_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+        
+        # Get the market data for interactive chart
+        market_data = dialogue.market_data.reset_index().to_dict('records')
+        
+        return JsonResponse({
+            'status': 'success',
+            'messages': dialogue_messages,
+            'chart_base64': chart_base64,
+            'market_data': market_data,
+            'asset': asset,
+            'interval': interval,
+            'num_days': num_days
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
 
 
 # LEGODI BACKEND CODE

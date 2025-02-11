@@ -83,6 +83,8 @@ urlpatterns = [
     path('fetch-account-data/', views.fetch_account_data, name='fetch-account-data'),
     path('set-daily-brief-assets', views.set_daily_brief_assets, name='set-daily-brief-assets'),
     path('time-trading-analytics', views.time_trading_analytics, name='trading_analytics'),
+    path('api/trader-analysis/', views.trader_analysis, name='trader-analysis'),
+
 
 
     path('zinaida-feedback', views.zinaida_feedback_form, name='zinaida-feedback'),
