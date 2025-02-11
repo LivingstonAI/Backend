@@ -89,6 +89,9 @@ import urllib.request
 import base64
 import requests
 
+import logging
+
+
 # Comment
 # current_hour = datetime.datetime.now().time().hour
 
@@ -7328,35 +7331,70 @@ def trader_analysis(request):
         return HttpResponseBadRequest("Only POST requests are allowed.")
 
     try:
+        # Log incoming request
+        print(f"Received trader analysis request: {request.data}")
+        
         # Extract parameters from request
-        data = json.loads(request.body)
+        data = request.data
+        if isinstance(data, str):
+            data = json.loads(data)
+            
         asset = data.get('asset', 'eurusd')
         interval = data.get('interval', '1h')
         num_days = int(data.get('num_days', 7))
+        
+        print(f"Processing analysis for {asset}, interval: {interval}, days: {num_days}")
         
         # Run the trader dialogue
         dialogue = TraderDialogue(asset, interval, num_days)
         messages, chart_path = dialogue.conduct_dialogue()
         
+        # Verify chart file exists
+        if not os.path.exists(chart_path):
+            raise FileNotFoundError(f"Chart file not found at {chart_path}")
+            
         # Convert messages to serializable format
         dialogue_messages = []
         for msg in messages:
-            message_content = json.loads(msg.content) if msg.message_type == "consensus" else msg.content
-            dialogue_messages.append({
-                'trader_id': msg.trader_id,
-                'content': message_content,
-                'message_type': msg.message_type,
-                'responding_to': msg.responding_to
-            })
+            try:
+                # Handle both string and JSON content
+                if msg.message_type == "consensus" and isinstance(msg.content, str):
+                    try:
+                        message_content = json.loads(msg.content)
+                    except json.JSONDecodeError:
+                        message_content = {
+                            'analysis': msg.content,
+                            'recommendation': 'neutral'
+                        }
+                else:
+                    message_content = msg.content
+                    
+                dialogue_messages.append({
+                    'trader_id': msg.trader_id,
+                    'content': message_content,
+                    'message_type': msg.message_type,
+                    'responding_to': msg.responding_to
+                })
+            except Exception as e:
+                print(f"Error processing message: {str(e)}")
+                continue
         
         # Read and encode the chart image
-        with open(chart_path, 'rb') as img_file:
-            chart_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+        try:
+            with open(chart_path, 'rb') as img_file:
+                chart_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+        except Exception as e:
+            print(f"Error reading chart file: {str(e)}")
+            chart_base64 = None
         
         # Get the market data for interactive chart
-        market_data = dialogue.market_data.reset_index().to_dict('records')
+        try:
+            market_data = dialogue.market_data.reset_index().to_dict('records')
+        except Exception as e:
+            print(f"Error converting market data: {str(e)}")
+            market_data = []
         
-        return JsonResponse({
+        response_data = {
             'status': 'success',
             'messages': dialogue_messages,
             'chart_base64': chart_base64,
@@ -7364,15 +7402,16 @@ def trader_analysis(request):
             'asset': asset,
             'interval': interval,
             'num_days': num_days
-        })
+        }
+        
+        return JsonResponse(response_data)
         
     except Exception as e:
-        print(f'Error occured in Trader Analysis Function: {e}')
+      
         return JsonResponse({
             'status': 'error',
-            'message': str(e)
+            'message': str(e),
         }, status=500)
-
 
 
 # LEGODI BACKEND CODE
