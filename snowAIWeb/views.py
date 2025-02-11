@@ -69,7 +69,25 @@ import seaborn as sns
 import io
 from twilio.rest import Client
 import zipfile
+import json
+from dataclasses import dataclass
+from typing import List, Optional, Dict, Any
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle, Arrow
+import pandas as pd
+import re
+from typing import Tuple
+import numpy as np
 
+import matplotlib.pyplot as plt
+import datetime
+import yfinance as yf
+import mplfinance as mpf
+import http.client
+import urllib.parse
+import urllib.request
+import base64
+import requests
 
 # Comment
 # current_hour = datetime.datetime.now().time().hour
@@ -6774,7 +6792,534 @@ def time_trading_analytics(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+def obtain_dataset(asset, interval, num_days):
+    # Calculate the end and start dates
+    end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
 
+    # Download data using yfinance
+    forex_asset = f"{asset}=X"
+    data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+    return data
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+import pandas as pd
+
+
+def generate_candlestick_chart(data, save_path="candlestick_chart.png"):
+    try:
+        # Ensure the data has required columns and clean up
+        data = data[['Open', 'High', 'Low', 'Close']]
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        for idx, row in enumerate(data.itertuples(index=False)):
+            # Access the values by position
+            open_price = row[0]
+            high_price = row[1]
+            low_price = row[2]
+            close_price = row[3]
+
+            # Determine the color of the candlestick
+            color = 'green' if close_price > open_price else 'red'
+
+            # Draw the candlestick body (rectangle)
+            body = Rectangle(
+                (idx - 0.4, min(open_price, close_price)),  # Bottom-left corner
+                0.8,  # Width
+                abs(close_price - open_price),  # Height
+                color=color
+            )
+            ax.add_patch(body)
+
+            # Draw the wick (high-low line)
+            ax.plot(
+                [idx, idx],  # X-coordinates
+                [low_price, high_price],  # Y-coordinates
+                color=color
+            )
+
+        # Set labels and title
+        ax.set_title("Candlestick Chart", fontsize=16)
+        ax.set_xlabel("Date", fontsize=12)
+        ax.set_ylabel("Price", fontsize=12)
+
+        # Format x-axis as dates
+        ax.set_xticks(range(len(data.index)))
+        ax.set_xticklabels(data.index.strftime('%Y-%m-%d'), rotation=45, ha='right')
+
+
+        plt.tight_layout()
+
+        # Save the chart
+        plt.savefig(save_path)
+        plt.close(fig)  # Close the figure to free up memory
+
+        print(f"Chart saved at: {save_path}")
+        return save_path
+
+    except Exception as e:
+        print(f"Error generating candlestick chart: {e}")
+        return None
+
+
+def analyse_image(image_data, news_data):
+    try:
+        # Getting the base64 string
+        base64_image = base64.b64encode(image_data).decode('utf-8')
+
+        api_key = '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'
+
+        # Extract discussion prompt if it exists
+        discussion_prompt = news_data.get('discussion_prompt', '')
+
+        # Construct a more interactive prompt
+        prompt = f"""
+        {discussion_prompt}
+
+        Based on the trading chart image, provide an analysis that addresses the above context.
+        Your response should be in JSON format with two keys:
+        1. 'analysis': A detailed technical analysis that:
+           - Directly responds to any previous trader's points if they exist
+           - Explains your reasoning for agreeing or disagreeing
+           - Points out any overlooked patterns or indicators
+           - Considers both technical and fundamental factors
+        2. 'recommendation': Either 'buy', 'sell', or 'neutral'
+
+        Make sure to format as valid JSON and avoid line breaks in the text.
+
+        Additional context: {news_data}
+        """
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 1000
+        }
+
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+
+        json_data = response.json()
+        final_response = json_data['choices'][0]['message']['content']
+        return final_response
+
+    except Exception as e:
+        print(f"Error occurred in analyse image function: {e}")
+        return json.dumps({
+            "analysis": f"Error occurred in analysis: {str(e)}",
+            "recommendation": "neutral"
+        })
+
+
+def analyse_image_from_file(image_path, news_data):
+    try:
+        # Read the image and encode in base64
+        with open(image_path, "rb") as image_file:
+            image_data = image_file.read()
+        return analyse_image(image_data, news_data)
+    except Exception as e:
+        print(f"Error in image analysis from file: {e}")
+
+
+def fetch_news_data(assets, user_email):
+
+    all_news_data = []
+
+    # List of assets to fetch news data for
+    assets_to_fetch = assets
+
+    # Establish a connection to the API
+    conn = http.client.HTTPSConnection('api.marketaux.com')
+
+    # Define query parameters
+    params_template = {
+        'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
+        'langauge': 'en',
+        'limit': 1,
+    }
+
+    # Iterate through the assets and make API requests
+    for asset in assets_to_fetch:
+        # Update the symbol in the query parameters
+        params = params_template.copy()
+        params['symbols'] = asset
+
+        # Send a GET request
+        conn.request('GET', '/v1/news/all?{}'.format(urllib.parse.urlencode(params)))
+
+        # Get the response
+        res = conn.getresponse()
+
+        # Read the response data
+        data = res.read()
+
+        # Decode the data from bytes to a string
+        data_str = data.decode('utf-8')
+
+        # Parse the JSON data
+        news_data = json.loads(data_str)
+
+        # Iterate through the news articles and save specific fields to the database
+        for article in news_data['data']:
+            title = article['title']
+            description = article['description']
+            source = article['source']
+            url = article['url']
+            highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
+
+            # Create a dictionary with the specific fields
+            news_entry_data = {
+                'asset': asset,
+                'title': title,
+                'description': description,
+                'source': source,
+                'url': url,
+                'highlights': highlights,
+            }
+            all_news_data.append(news_entry_data)
+
+    return ({'message': all_news_data})
+
+def tradergpt(asset, interval, num_days, user_email):
+    try:
+        # Step 1: Fetch dataset and generate chart
+        data = obtain_dataset(asset, interval, num_days)
+        chart_path = generate_candlestick_chart(data)
+
+        # Step 2: Fetch news data
+        news_data = fetch_news_data([asset], user_email)
+
+        # Step 3: Analyse chart
+        chart_analysis = analyse_image_from_file(chart_path, news_data)
+
+        # Combine analysis
+        return {
+            "chart_analysis": chart_analysis,
+            # "news_analysis": news_data
+        }
+    except Exception as e:
+        print(f"Error in combined analysis: {e}")
+
+
+@dataclass
+class TraderMessage:
+    trader_id: str
+    content: str
+    message_type: str = "discussion"  # Can be "discussion" or "consensus"
+    responding_to: Optional[str] = None
+
+class ChartAnnotator:
+    def __init__(self, data: pd.DataFrame, fig_size: Tuple[int, int] = (12, 8)):
+        self.data = data
+        self.fig_size = fig_size
+
+    def extract_price_levels(self, consensus_text: str) -> Dict[str, float]:
+        """Extract price levels from consensus text using regex."""
+        price_patterns = {
+            'support': r'support.*?(\d+\.?\d*)',
+            'resistance': r'resistance.*?(\d+\.?\d*)',
+            'entry': r'entry.*?(\d+\.?\d*)',
+            'stop_loss': r'stop[- ]?loss.*?(\d+\.?\d*)',
+            'target': r'target.*?(\d+\.?\d*)'
+        }
+
+        levels = {}
+        for level_type, pattern in price_patterns.items():
+            matches = re.findall(pattern, consensus_text.lower())
+            if matches:
+                levels[level_type] = float(matches[0])
+
+        return levels
+
+    def draw_annotated_chart(self, consensus_text: str, save_path: str = "annotated_chart.png"):
+        """Create an annotated candlestick chart based on consensus analysis."""
+        # Create figure and axis
+        fig, ax = plt.subplots(figsize=self.fig_size)
+
+        # Extract price levels from consensus
+        levels = self.extract_price_levels(consensus_text)
+
+        # Plot candlesticks
+        for idx, row in enumerate(self.data.itertuples(index=False)):
+            open_price, high_price, low_price, close_price = row[0], row[1], row[2], row[3]
+
+            # Candlestick body
+            color = 'green' if close_price > open_price else 'red'
+            body = Rectangle(
+                (idx - 0.4, min(open_price, close_price)),
+                0.8,
+                abs(close_price - open_price),
+                color=color
+            )
+            ax.add_patch(body)
+
+            # Wick
+            ax.plot([idx, idx], [low_price, high_price], color=color)
+
+        # Add horizontal lines for support and resistance
+        max_price = self.data['High'].max()
+        min_price = self.data['Low'].min()
+        price_range = max_price - min_price
+        x_range = len(self.data)
+
+        # Plot levels with different styles
+        level_styles = {
+            'support': {'color': 'green', 'linestyle': '--', 'alpha': 0.6, 'label': 'Support'},
+            'resistance': {'color': 'red', 'linestyle': '--', 'alpha': 0.6, 'label': 'Resistance'},
+            'entry': {'color': 'blue', 'linestyle': '-', 'alpha': 0.8, 'label': 'Entry'},
+            'stop_loss': {'color': 'red', 'linestyle': ':', 'alpha': 0.8, 'label': 'Stop Loss'},
+            'target': {'color': 'green', 'linestyle': ':', 'alpha': 0.8, 'label': 'Target'}
+        }
+
+        for level_type, price in levels.items():
+            if level_type in level_styles:
+                style = level_styles[level_type]
+                ax.axhline(y=price, **style)
+
+                # Add price label
+                ax.text(x_range + 0.5, price, f'{level_type.replace("_", " ").title()}: {price:.4f}',
+                       verticalalignment='center')
+
+        # Add trend arrows if mentioned in consensus
+        if 'uptrend' in consensus_text.lower():
+            self._add_trend_arrow(ax, 'up', x_range)
+        elif 'downtrend' in consensus_text.lower():
+            self._add_trend_arrow(ax, 'down', x_range)
+
+        # Formatting
+        ax.set_title("Consensus Trading Analysis", fontsize=16)
+        ax.set_xlabel("Date", fontsize=12)
+        ax.set_ylabel("Price", fontsize=12)
+        ax.set_xticks(range(len(self.data.index)))
+        ax.set_xticklabels(self.data.index.strftime('%Y-%m-%d'), rotation=45, ha='right')
+
+        # Add legend
+        ax.legend()
+
+        # Adjust layout and save
+        plt.tight_layout()
+        plt.savefig(save_path)
+        plt.close(fig)
+
+        return save_path
+
+    def _add_trend_arrow(self, ax, direction: str, x_range: int):
+        """Add trend arrow to the chart."""
+        y_range = ax.get_ylim()
+        y_mid = (y_range[0] + y_range[1]) / 2
+        arrow_length = x_range * 0.2
+
+        if direction == 'up':
+            dx = arrow_length
+            dy = (y_range[1] - y_range[0]) * 0.1
+            color = 'green'
+        else:
+            dx = arrow_length
+            dy = -(y_range[1] - y_range[0]) * 0.1
+            color = 'red'
+
+        arrow = Arrow(x_range * 0.1, y_mid, dx, dy,
+                     width=arrow_length * 0.1,
+                     color=color, alpha=0.5)
+        ax.add_patch(arrow)
+
+class TraderDialogue:
+    def __init__(self, asset: str, interval: str, num_days: int, max_messages: int = 6):
+        self.asset = asset
+        self.interval = interval
+        self.num_days = num_days
+        self.max_messages = max_messages
+        self.messages: List[TraderMessage] = []
+
+        # Initialize base data
+        self.market_data = obtain_dataset(asset, interval, num_days)
+        self.chart_path = generate_candlestick_chart(self.market_data)
+        self.news_data = fetch_news_data([asset], user_email=None)
+
+        # Initialize chart annotator
+        self.chart_annotator = ChartAnnotator(self.market_data)
+
+        # Define trader personalities
+        self.trader_personalities = {
+            "Trader1": {
+                "style": "Conservative",
+                "focus": "long-term trends and fundamental analysis",
+                "risk_tolerance": "low"
+            },
+            "Trader2": {
+                "style": "Aggressive",
+                "focus": "short-term momentum and technical patterns",
+                "risk_tolerance": "high"
+            }
+        }
+
+    def _create_discussion_prompt(self, trader_id: str, previous_message: Optional[TraderMessage] = None) -> str:
+        """Create a contextual prompt for regular discussion."""
+        personality = self.trader_personalities[trader_id]
+
+        if previous_message:
+            base_prompt = f"""
+            As a {personality['style']} trader focusing on {personality['focus']} with {personality['risk_tolerance']} risk tolerance,
+            analyze this chart and respond to the following analysis from another trader:
+
+            Previous Analysis: {previous_message.content}
+
+            Consider:
+            1. What points do you agree with and why?
+            2. What factors might need additional consideration?
+            3. How does your trading style inform your perspective?
+
+            Aim to find common ground while highlighting important considerations.
+            """
+        else:
+            base_prompt = f"""
+            As a {personality['style']} trader focusing on {personality['focus']} with {personality['risk_tolerance']} risk tolerance,
+            provide your initial analysis of this chart.
+            """
+
+        # Add market context
+        current_close = self.market_data['Close'].iloc[-1].item()
+        current_open = self.market_data['Open'].iloc[-1].item()
+        price_change = current_close - current_open
+        price_change_pct = (price_change / current_open) * 100
+
+        market_context = f"""
+        Current market context:
+        - Price change: {price_change_pct:.2f}%
+        - Current price: {current_close:.4f}
+        """
+
+        return base_prompt + "\n" + market_context
+
+    def _create_consensus_prompt(self) -> str:
+        """Create a prompt for the final consensus phase."""
+        previous_analyses = "\n".join([
+            f"{msg.trader_id}: {msg.content}"
+            for msg in self.messages
+        ])
+
+        return f"""
+        Review the following discussion about {self.asset}:
+
+        {previous_analyses}
+
+        As a group of traders, we need to reach a final consensus.
+        Please provide specific levels in your analysis:
+        1. Key support and resistance levels
+        2. Suggested entry price
+        3. Stop-loss level
+        4. Target price
+        5. Overall trend direction (uptrend/downtrend)
+
+        Also include:
+        1. Points of agreement between traders
+        2. How different risk tolerances and trading styles are balanced
+        3. Final recommendation that considers both perspectives
+        4. Risk management suggestions
+
+        Format your response as JSON with 'analysis' and 'recommendation' keys.
+        Include numerical price levels in your analysis for chart annotation.
+        """
+
+    def _generate_response(self, trader_id: str, previous_message: Optional[TraderMessage] = None,
+                         message_type: str = "discussion") -> str:
+        """Generate a response based on message type."""
+        if message_type == "consensus":
+            prompt = self._create_consensus_prompt()
+        else:
+            prompt = self._create_discussion_prompt(trader_id, previous_message)
+
+        modified_news = self.news_data.copy()
+        modified_news['discussion_prompt'] = prompt
+
+        return analyse_image_from_file(self.chart_path, modified_news)
+
+    def conduct_dialogue(self) -> Tuple[List[TraderMessage], str]:
+        """Conduct a dialogue and create annotated chart."""
+        # Regular discussion phase
+        discussion_messages = self.max_messages - 1
+
+        # First message
+        initial_message = TraderMessage(
+            trader_id="Trader1",
+            content=self._generate_response("Trader1"),
+            message_type="discussion"
+        )
+        self.messages.append(initial_message)
+
+        # Continue discussion
+        current_msg_count = 1
+        while current_msg_count < discussion_messages:
+            current_trader = "Trader2" if current_msg_count % 2 == 1 else "Trader1"
+            previous_message = self.messages[-1]
+
+            response = TraderMessage(
+                trader_id=current_trader,
+                content=self._generate_response(current_trader, previous_message),
+                message_type="discussion",
+                responding_to=previous_message.trader_id
+            )
+            self.messages.append(response)
+            current_msg_count += 1
+
+        # Final consensus phase
+        consensus = TraderMessage(
+            trader_id="Consensus",
+            content=self._generate_response(
+                trader_id="Consensus",
+                message_type="consensus"
+            ),
+            message_type="consensus"
+        )
+        self.messages.append(consensus)
+
+        # Create annotated chart based on consensus
+        annotated_chart_path = self.chart_annotator.draw_annotated_chart(
+            consensus.content,
+            save_path=f"annotated_{self.asset}_chart.png"
+        )
+
+        return self.messages, annotated_chart_path
+
+def run_trader_dialogue(asset: str, interval: str = '1h', num_days: int = 7, max_messages: int = 6):
+    dialogue = TraderDialogue(asset, interval, num_days, max_messages)
+    conversation, annotated_chart = dialogue.conduct_dialogue()
+
+    print(f"\n=== Trading Discussion for {asset.upper()} ===\n")
+
+    for i, msg in enumerate(conversation, 1):
+        print(f"Message {i} - {msg.trader_id}:")
+        if msg.message_type == "consensus":
+            print("=== FINAL CONSENSUS ===")
+        print(f"{msg.content}")
+        if msg.responding_to:
+            print(f"(Responding to {msg.responding_to})")
+        print("\n" + "="*50 + "\n")
+
+    print(f"Annotated chart saved as: {annotated_chart}")
+    return conversation, annotated_chart
 
 
 
