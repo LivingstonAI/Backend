@@ -6869,7 +6869,7 @@ def analyse_image(image_data, news_data):
         # Getting the base64 string
         base64_image = base64.b64encode(image_data).decode('utf-8')
 
-        api_key = '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'
+        api_key = os.environ['OPENAI_API_KEY']
 
         # Extract discussion prompt if it exists
         discussion_prompt = news_data.get('discussion_prompt', '')
