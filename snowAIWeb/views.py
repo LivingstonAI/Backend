@@ -7345,9 +7345,13 @@ def get_trader_analysis(request):
                     try:
                         # Parse the JSON content
                         parsed_content = json.loads(content)
+                        print(f'\n\n\n Parsed Content is: {parsed_content}\n\n\n')
                         # Ensure the analysis field isn't too long
                         if 'analysis' in parsed_content:
-                            parsed_content['analysis'] = parsed_content['analysis'][:1000]  # Limit length
+                            if isinstance(parsed_content['analysis'], str):
+                                parsed_content['analysis'] = parsed_content['analysis'][:1000]  # Limit length
+                            else:
+                                parsed_content['analysis'] = str(parsed_content['analysis'])[:1000]  # Convert to string first
                         content = parsed_content
                     except json.JSONDecodeError:
                         # If parsing fails, use the raw string
