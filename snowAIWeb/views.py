@@ -7411,7 +7411,52 @@ def trader_analysis(request):
         return JsonResponse({
             'status': 'error',
             'message': str(e),
-        }, status=500)
+            })
+
+
+@csrf_exempt
+def get_trader_analysis(request):
+    if request.method == 'POST':
+        try:
+            asset = request.POST.get('asset', 'EURUSD')
+            interval = request.POST.get('interval', '1h')
+            num_days = int(request.POST.get('num_days', 7))
+            
+            # Run the trader dialogue analysis
+            conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
+            
+            # Convert the conversation to a serializable format
+            conversation_data = []
+            for msg in conversation:
+                conversation_data.append({
+                    'trader_id': msg.trader_id,
+                    'content': msg.content,
+                    'message_type': msg.message_type,
+                    'responding_to': msg.responding_to
+                })
+            
+            # Read and encode the chart image
+            with open(chart_path, 'rb') as image_file:
+                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+            
+            # Clean up the image file
+            os.remove(chart_path)
+            
+            return JsonResponse({
+                'status': 'success',
+                'conversation': conversation_data,
+                'chart_image': encoded_image
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error',
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({
+        'status': 'error',
+        'message': 'Invalid request method.'})
 
 
 # LEGODI BACKEND CODE
