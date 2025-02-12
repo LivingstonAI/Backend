@@ -7416,58 +7416,64 @@ def trader_analysis(request):
 
 @csrf_exempt
 def get_trader_analysis(request):
-    if request.method != 'POST':
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Invalid request method. Only POST requests are allowed.',
-            'type': 'MethodNotAllowed'
-        }, status=405)
-
     try:
-        asset = request.POST.get('asset', 'EURUSD')
-        interval = request.POST.get('interval', '1h')
-        num_days = int(request.POST.get('num_days', 7))
-        
-        # Run the trader dialogue analysis
-        conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
-        
-        # Convert the conversation to a serializable format
-        conversation_data = []
-        for msg in conversation:
-            # Parse the content if it's a string containing JSON
-            if isinstance(msg.content, str):
-                try:
-                    content = json.loads(msg.content)
-                except json.JSONDecodeError:
-                    # If it's not valid JSON, keep it as a string
+        if request.method == 'POST':
+            asset = request.POST.get('asset', 'EURUSD')
+            interval = request.POST.get('interval', '1h')
+            num_days = int(request.POST.get('num_days', 7))
+            
+            # Run the trader dialogue analysis
+            conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
+            
+            # Convert the conversation to a serializable format
+            conversation_data = []
+            for msg in conversation:
+                # Clean and parse the content
+                if isinstance(msg.content, str):
+                    # Remove markdown code block markers
+                    content = msg.content.replace('```json\n', '').replace('\n```', '')
+                    try:
+                        # Parse the JSON content
+                        parsed_content = json.loads(content)
+                        # Ensure the analysis field isn't too long
+                        if 'analysis' in parsed_content:
+                            parsed_content['analysis'] = parsed_content['analysis'][:1000]  # Limit length
+                        content = parsed_content
+                    except json.JSONDecodeError:
+                        # If parsing fails, use the raw string
+                        content = content[:1000]  # Limit length
+                else:
                     content = msg.content
-            else:
-                content = msg.content
 
-            conversation_data.append({
-                'trader_id': msg.trader_id,
-                'content': content,
-                'message_type': msg.message_type,
-                'responding_to': msg.responding_to
-            })
-        
-        # Read and encode the chart image
-        with open(chart_path, 'rb') as image_file:
-            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
-        
-        # Clean up the image file
-        os.remove(chart_path)
-        
-        # Create the response data
-        response_data = {
-            'status': 'success',
-            'conversation': conversation_data,
-            'chart_image': encoded_image
-        }
-        
-        # Ensure the response is JSON serializable
-        return JsonResponse(response_data)
-        
+                conversation_data.append({
+                    'trader_id': msg.trader_id,
+                    'content': content,
+                    'message_type': msg.message_type,
+                    'responding_to': msg.responding_to
+                })
+            
+            # Read and encode the chart image
+            with open(chart_path, 'rb') as image_file:
+                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+            
+            # Clean up the image file
+            if os.path.exists(chart_path):
+                os.remove(chart_path)
+            
+            response_data = {
+                'status': 'success',
+                'conversation': conversation_data,
+                'chart_image': encoded_image
+            }
+            
+            return JsonResponse(response_data)
+        else:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Invalid request method.',
+                'type': 'InvalidRequestMethod'
+            }, status=400)
+            
     except Exception as e:
         return JsonResponse({
             'status': 'error',
