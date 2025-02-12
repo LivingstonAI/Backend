@@ -6816,29 +6816,14 @@ def time_trading_analytics(request):
 #     return data
 
 def obtain_dataset(asset, interval, num_days):
-    try:
-        # Calculate the end and start dates
-        end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-        start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
+    # Calculate the end and start dates
+    end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
 
-        # Download data using yfinance
-        forex_asset = f"{asset}=X"
-        data = yf.download(forex_asset, start=start_start, end=end_date, interval=interval)
-        
-        # Convert data to dictionary format with serializable dates
-        data_dict = {
-            'dates': [d.strftime("%Y-%m-%d %H:%M:%S") for d in data.index],
-            'open': data['Open'].tolist(),
-            'high': data['High'].tolist(),
-            'low': data['Low'].tolist(),
-            'close': data['Close'].tolist()
-        }
-        
-        return pd.DataFrame(data_dict)
-
-    except Exception as e:
-        print(f"Error in obtain_dataset: {str(e)}")
-        return JsonResponse({"message": f'{e}'})
+    # Download data using yfinance
+    forex_asset = f"{asset}=X"
+    data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+    return data
 
 
 import matplotlib.pyplot as plt
@@ -6889,7 +6874,7 @@ def generate_candlestick_chart(data, save_path="candlestick_chart.png"):
 
     except Exception as e:
         print(f"Error in generate_candlestick_chart: {str(e)}")
-        return JsonResponse({"message": f'{e}'})
+        return JsonResponse({"message": f'Error in generate_candlestick_chart: {e}'})
 
 
 
@@ -6970,7 +6955,7 @@ def analyse_image_from_file(image_path, news_data):
         return analyse_image(image_data, news_data)
     except Exception as e:
         print(f"Error in image analysis from file: {e}")
-        return JsonResponse({"message": f'{e}'})
+        return JsonResponse({"message": f'Error in image analysis from file: {e}'})
 
 
 
@@ -7052,7 +7037,7 @@ def tradergpt(asset, interval, num_days, user_email):
         }
     except Exception as e:
         print(f"Error in combined analysis: {e}")
-        return JsonResponse({"message": f'{e}'})
+        return JsonResponse({"message": f'Error in combined analysis: {e}'})
 
 
 
@@ -7421,7 +7406,7 @@ def get_trader_analysis(request):
         print(f"Error in get_trader_analysis: {str(e)}")  # Add logging
         return JsonResponse({
             'status': 'error',
-            'message': str(e),
+            'message': f"Error in get_trader_analysis: {e}",
             'type': type(e).__name__
         })
         
