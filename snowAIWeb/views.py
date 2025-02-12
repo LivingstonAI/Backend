@@ -6794,27 +6794,6 @@ def time_trading_analytics(request):
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
-
-# def obtain_dataset(asset, interval, num_days):
-#     # Calculate the end and start dates
-#     end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-#     start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
-
-#     # Download data using yfinance
-#     forex_asset = f"{asset}=X"
-#     data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
-    
-#     # Convert data to float values to ensure they're hashable
-#     data = data.astype(float)
-    
-#     # Reset index to make dates accessible
-#     data = data.reset_index()
-    
-#     # Convert datetime to string format
-#     # data['Date'] = data['Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
-
-#     return data
-
 def obtain_dataset(asset, interval, num_days):
     # Calculate the end and start dates
     end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -6825,7 +6804,6 @@ def obtain_dataset(asset, interval, num_days):
     data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
     return data
 
-
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import pandas as pd
@@ -6833,49 +6811,59 @@ import pandas as pd
 
 def generate_candlestick_chart(data, save_path="candlestick_chart.png"):
     try:
+        # Ensure the data has required columns and clean up
+        data = data[['Open', 'High', 'Low', 'Close']]
+
         fig, ax = plt.subplots(figsize=(10, 6))
 
-        # Convert dates to datetime objects for plotting
-        dates = pd.to_datetime(data['dates'])
-        
-        for idx, (date, row) in enumerate(zip(dates, data.itertuples(index=False))):
-            open_price = float(row.open)
-            high_price = float(row.high)
-            low_price = float(row.low)
-            close_price = float(row.close)
+        for idx, row in enumerate(data.itertuples(index=False)):
+            # Access the values by position
+            open_price = row[0]
+            high_price = row[1]
+            low_price = row[2]
+            close_price = row[3]
 
+            # Determine the color of the candlestick
             color = 'green' if close_price > open_price else 'red'
-            
-            # Draw candlestick body
+
+            # Draw the candlestick body (rectangle)
             body = Rectangle(
-                (idx - 0.4, min(open_price, close_price)),
-                0.8,
-                abs(close_price - open_price),
+                (idx - 0.4, min(open_price, close_price)),  # Bottom-left corner
+                0.8,  # Width
+                abs(close_price - open_price),  # Height
                 color=color
             )
             ax.add_patch(body)
 
-            # Draw wick
-            ax.plot([idx, idx], [low_price, high_price], color=color)
+            # Draw the wick (high-low line)
+            ax.plot(
+                [idx, idx],  # X-coordinates
+                [low_price, high_price],  # Y-coordinates
+                color=color
+            )
 
-        # Format x-axis
-        ax.set_xticks(range(len(dates)))
-        ax.set_xticklabels([d.strftime('%Y-%m-%d\n%H:%M') for d in dates], rotation=45, ha='right')
+        # Set labels and title
+        ax.set_title("Candlestick Chart", fontsize=16)
+        ax.set_xlabel("Date", fontsize=12)
+        ax.set_ylabel("Price", fontsize=12)
 
-        plt.title(f"Candlestick Chart")
-        plt.xlabel("Date")
-        plt.ylabel("Price")
+        # Format x-axis as dates
+        ax.set_xticks(range(len(data.index)))
+        ax.set_xticklabels(data.index.strftime('%Y-%m-%d'), rotation=45, ha='right')
+
+
         plt.tight_layout()
 
+        # Save the chart
         plt.savefig(save_path)
-        plt.close(fig)
+        plt.close(fig)  # Close the figure to free up memory
 
+        print(f"Chart saved at: {save_path}")
         return save_path
 
     except Exception as e:
-        print(f"Error in generate_candlestick_chart: {str(e)}")
-        return JsonResponse({"message": f'Error in generate_candlestick_chart: {e}'})
-
+        print(f"Error generating candlestick chart: {e}")
+        return None
 
 
 def analyse_image(image_data, news_data):
@@ -6955,8 +6943,6 @@ def analyse_image_from_file(image_path, news_data):
         return analyse_image(image_data, news_data)
     except Exception as e:
         print(f"Error in image analysis from file: {e}")
-        return JsonResponse({"message": f'Error in image analysis from file: {e}'})
-
 
 
 def fetch_news_data(assets, user_email):
@@ -7037,8 +7023,6 @@ def tradergpt(asset, interval, num_days, user_email):
         }
     except Exception as e:
         print(f"Error in combined analysis: {e}")
-        return JsonResponse({"message": f'Error in combined analysis: {e}'})
-
 
 
 @dataclass
@@ -7344,11 +7328,9 @@ def run_trader_dialogue(asset: str, interval: str = '1h', num_days: int = 7, max
 def get_trader_analysis(request):
     try:
         if request.method == 'POST':
-            # Parse JSON data from request body instead of POST
-            data = json.loads(request.body)
-            asset = data.get('asset', 'EURUSD')
-            interval = data.get('interval', '1h')
-            num_days = int(data.get('num_days', 7))
+            asset = request.POST.get('asset', 'EURUSD')
+            interval = request.POST.get('interval', '1h')
+            num_days = int(request.POST.get('num_days', 7))
             
             # Run the trader dialogue analysis
             conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
@@ -7358,26 +7340,26 @@ def get_trader_analysis(request):
             for msg in conversation:
                 # Clean and parse the content
                 if isinstance(msg.content, str):
+                    # Remove markdown code block markers
+                    content = msg.content.replace('```json\n', '').replace('\n```', '')
                     try:
-                        # Remove markdown code block markers and clean whitespace
-                        content = msg.content.strip().replace('```json\n', '').replace('\n```', '').strip()
                         # Parse the JSON content
                         parsed_content = json.loads(content)
                         # Ensure the analysis field isn't too long
                         if 'analysis' in parsed_content:
-                            parsed_content['analysis'] = str(parsed_content['analysis'])[:1000]  # Convert to string and limit length
+                            parsed_content['analysis'] = parsed_content['analysis'][:1000]  # Limit length
                         content = parsed_content
                     except json.JSONDecodeError:
                         # If parsing fails, use the raw string
-                        content = str(msg.content)[:1000]  # Convert to string and limit length
+                        content = content[:1000]  # Limit length
                 else:
-                    content = str(msg.content)[:1000]  # Convert to string and limit length
+                    content = msg.content
 
                 conversation_data.append({
-                    'trader_id': str(msg.trader_id),
+                    'trader_id': msg.trader_id,
                     'content': content,
-                    'message_type': str(msg.message_type),
-                    'responding_to': str(msg.responding_to) if msg.responding_to else None
+                    'message_type': msg.message_type,
+                    'responding_to': msg.responding_to
                 })
             
             # Read and encode the chart image
@@ -7403,13 +7385,11 @@ def get_trader_analysis(request):
             }, status=400)
             
     except Exception as e:
-        print(f"Error in get_trader_analysis: {str(e)}")  # Add logging
         return JsonResponse({
             'status': 'error',
-            'message': f"Error in get_trader_analysis: {e}",
+            'message': str(e),
             'type': type(e).__name__
-        })
-        
+        })        
 
 # LEGODI BACKEND CODE
 def send_simple_message():
