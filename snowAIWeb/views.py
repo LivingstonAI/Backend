@@ -6838,7 +6838,7 @@ def obtain_dataset(asset, interval, num_days):
 
     except Exception as e:
         print(f"Error in obtain_dataset: {str(e)}")
-        raise
+        return JsonResponse({"message": f'{e}'})
 
 
 import matplotlib.pyplot as plt
@@ -6889,7 +6889,8 @@ def generate_candlestick_chart(data, save_path="candlestick_chart.png"):
 
     except Exception as e:
         print(f"Error in generate_candlestick_chart: {str(e)}")
-        raise
+        return JsonResponse({"message": f'{e}'})
+
 
 
 def analyse_image(image_data, news_data):
@@ -6969,6 +6970,8 @@ def analyse_image_from_file(image_path, news_data):
         return analyse_image(image_data, news_data)
     except Exception as e:
         print(f"Error in image analysis from file: {e}")
+        return JsonResponse({"message": f'{e}'})
+
 
 
 def fetch_news_data(assets, user_email):
@@ -7049,6 +7052,8 @@ def tradergpt(asset, interval, num_days, user_email):
         }
     except Exception as e:
         print(f"Error in combined analysis: {e}")
+        return JsonResponse({"message": f'{e}'})
+
 
 
 @dataclass
@@ -7418,7 +7423,7 @@ def get_trader_analysis(request):
             'status': 'error',
             'message': str(e),
             'type': type(e).__name__
-        }, status=500)
+        })
         
 
 # LEGODI BACKEND CODE
