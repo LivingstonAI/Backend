@@ -7416,48 +7416,66 @@ def trader_analysis(request):
 
 @csrf_exempt
 def get_trader_analysis(request):
-    if request.method == 'POST':
-        try:
-            asset = request.POST.get('asset', 'EURUSD')
-            interval = request.POST.get('interval', '1h')
-            num_days = int(request.POST.get('num_days', 7))
-            
-            # Run the trader dialogue analysis
-            conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
-            
-            # Convert the conversation to a serializable format
-            conversation_data = []
-            for msg in conversation:
-                conversation_data.append({
-                    'trader_id': msg.trader_id,
-                    'content': msg.content,
-                    'message_type': msg.message_type,
-                    'responding_to': msg.responding_to
-                })
-            
-            # Read and encode the chart image
-            with open(chart_path, 'rb') as image_file:
-                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
-            
-            # Clean up the image file
-            os.remove(chart_path)
-            
-            return JsonResponse({
-                'status': 'success',
-                'conversation': conversation_data,
-                'chart_image': encoded_image
-            })
-            
-        except Exception as e:
-            return JsonResponse({
-                'status': 'error',
-                'message': str(e)
-            }, status=500)
-    
-    return JsonResponse({
-        'status': 'error',
-        'message': 'Invalid request method.'})
+    if request.method != 'POST':
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid request method. Only POST requests are allowed.',
+            'type': 'MethodNotAllowed'
+        }, status=405)
 
+    try:
+        asset = request.POST.get('asset', 'EURUSD')
+        interval = request.POST.get('interval', '1h')
+        num_days = int(request.POST.get('num_days', 7))
+        
+        # Run the trader dialogue analysis
+        conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
+        
+        # Convert the conversation to a serializable format
+        conversation_data = []
+        for msg in conversation:
+            # Parse the content if it's a string containing JSON
+            if isinstance(msg.content, str):
+                try:
+                    content = json.loads(msg.content)
+                except json.JSONDecodeError:
+                    # If it's not valid JSON, keep it as a string
+                    content = msg.content
+            else:
+                content = msg.content
+
+            conversation_data.append({
+                'trader_id': msg.trader_id,
+                'content': content,
+                'message_type': msg.message_type,
+                'responding_to': msg.responding_to
+            })
+        
+        # Read and encode the chart image
+        with open(chart_path, 'rb') as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+        
+        # Clean up the image file
+        os.remove(chart_path)
+        
+        # Create the response data
+        response_data = {
+            'status': 'success',
+            'conversation': conversation_data,
+            'chart_image': encoded_image
+        }
+        
+        # Ensure the response is JSON serializable
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e),
+            'type': type(e).__name__
+        }, status=500)
+
+        
 
 # LEGODI BACKEND CODE
 def send_simple_message():
