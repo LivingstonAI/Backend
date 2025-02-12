@@ -89,9 +89,6 @@ import urllib.request
 import base64
 import requests
 
-from PIL import Image
-
-
 import logging
 
 
@@ -6817,7 +6814,7 @@ def generate_candlestick_chart(data, save_path="candlestick_chart.png"):
         # Ensure the data has required columns and clean up
         data = data[['Open', 'High', 'Low', 'Close']]
 
-        fig, ax = plt.subplots(figsize=(8, 6), dpi=100)  # Reduced DPI
+        fig, ax = plt.subplots(figsize=(10, 6))
 
         for idx, row in enumerate(data.itertuples(index=False)):
             # Access the values by position
@@ -6858,12 +6855,7 @@ def generate_candlestick_chart(data, save_path="candlestick_chart.png"):
         plt.tight_layout()
 
         # Save the chart
-        plt.savefig(save_path, 
-                   dpi=100,  # Reduced DPI
-                   bbox_inches='tight',
-                   pad_inches=0.1,
-                   optimize=True,
-                   quality=85)  # Reduced quality
+        plt.savefig(save_path)
         plt.close(fig)  # Close the figure to free up memory
 
         print(f"Chart saved at: {save_path}")
@@ -7346,93 +7338,49 @@ def get_trader_analysis(request):
             # Convert the conversation to a serializable format
             conversation_data = []
             for msg in conversation:
-                try:
-                    # Clean and parse the content
-                    if isinstance(msg.content, str):
-                        # Remove markdown code block markers and clean the string
-                        content = msg.content.strip()
-                        content = content.replace('```json\n', '')
-                        content = content.replace('\n```', '')
-                        content = content.replace('\n', ' ')  # Replace newlines with spaces
-                        content = content.replace('\r', '')   # Remove carriage returns
-                        
-                        # Remove any non-printable characters
-                        content = ''.join(char for char in content if char.isprintable())
-                        
-                        try:
-                            # Parse the JSON content
-                            parsed_content = json.loads(content)
-                            
-                            # Sanitize the analysis field
-                            if 'analysis' in parsed_content:
-                                if isinstance(parsed_content['analysis'], str):
-                                    # Clean the analysis text
-                                    analysis_text = parsed_content['analysis']
-                                    analysis_text = analysis_text.replace('\n', ' ')
-                                    analysis_text = analysis_text.replace('\r', '')
-                                    analysis_text = ''.join(char for char in analysis_text if char.isprintable())
-                                    parsed_content['analysis'] = analysis_text[:1000]
-                                else:
-                                    parsed_content['analysis'] = str(parsed_content['analysis'])[:1000]
-                            
-                            # Ensure recommendation is clean
-                            if 'recommendation' in parsed_content:
-                                if isinstance(parsed_content['recommendation'], str):
-                                    parsed_content['recommendation'] = parsed_content['recommendation'].strip().lower()
-                                else:
-                                    parsed_content['recommendation'] = str(parsed_content['recommendation']).strip().lower()
-                            
-                            content = parsed_content
-                        except json.JSONDecodeError as json_err:
-                            print(f"JSON parsing error: {json_err}")
-                            # If JSON parsing fails, use cleaned string
-                            content = content[:1000]
-                    else:
-                        # Convert non-string content to string and clean it
-                        content = str(msg.content)
-                        content = content.replace('\n', ' ')
-                        content = content.replace('\r', '')
-                        content = ''.join(char for char in content if char.isprintable())
-                        content = content[:1000]
+                # Clean and parse the content
+                if isinstance(msg.content, str):
+                    # Remove markdown code block markers
+                    content = msg.content.replace('```json\n', '').replace('\n```', '')
+                    try:
+                        # Parse the JSON content
+                        parsed_content = json.loads(content)
+                        print(f'\n\n\n Parsed Content is: {parsed_content}\n\n\n')
+                        # Ensure the analysis field isn't too long
+                        if 'analysis' in parsed_content:
+                            if isinstance(parsed_content['analysis'], str):
+                                parsed_content['analysis'] = parsed_content['analysis'][:1000]  # Limit length
+                            else:
+                                parsed_content['analysis'] = str(parsed_content['analysis'])[:1000]  # Convert to string first
+                        content = parsed_content
+                    except json.JSONDecodeError:
+                        # If parsing fails, use the raw string
+                        content = content[:1000]  # Limit length
+                else:
+                    content = msg.content
 
-                    # Ensure all fields are properly sanitized strings
-                    conversation_data.append({
-                        'trader_id': str(msg.trader_id).strip(),
-                        'content': content,
-                        'message_type': str(msg.message_type).strip(),
-                        'responding_to': str(msg.responding_to).strip() if msg.responding_to else None
-                    })
-                except Exception as msg_error:
-                    print(f"Error processing message: {msg_error}")
-                    # Skip this message if there's an error
-                    continue
-            
-            try:
-                # Read and encode the chart image
-                with open(chart_path, 'rb') as image_file:
-                    encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
-                
-                # Clean up the image file
-                if os.path.exists(chart_path):
-                    os.remove(chart_path)
-                
-                response_data = {
-                    'status': 'success',
-                    'conversation': conversation_data,
-                    'chart_image': encoded_image
-                }
-                
-                # Validate the response can be serialized
-                json.dumps(response_data)
-                
-                return JsonResponse(response_data)
-            except Exception as img_error:
-                print(f"Error processing image: {img_error}")
-                return JsonResponse({
-                    'status': 'error',
-                    'message': 'Error processing chart image',
-                    'type': type(img_error).__name__
+                conversation_data.append({
+                    'trader_id': msg.trader_id,
+                    'content': content,
+                    'message_type': msg.message_type,
+                    'responding_to': msg.responding_to
                 })
+            
+            # Read and encode the chart image
+            with open(chart_path, 'rb') as image_file:
+                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+            
+            # Clean up the image file
+            if os.path.exists(chart_path):
+                os.remove(chart_path)
+            
+            response_data = {
+                'status': 'success',
+                'conversation': conversation_data,
+                'chart_image': encoded_image
+            }
+            
+            return JsonResponse(response_data)
         else:
             return JsonResponse({
                 'status': 'error',
@@ -7441,13 +7389,11 @@ def get_trader_analysis(request):
             }, status=400)
             
     except Exception as e:
-        print(f"General error: {e}")
         return JsonResponse({
             'status': 'error',
             'message': str(e),
             'type': type(e).__name__
-        }, status=500)
-
+        })        
 
 # LEGODI BACKEND CODE
 def send_simple_message():
