@@ -6852,10 +6852,8 @@ def generate_candlestick_chart(data, save_path="candlestick_chart.png"):
         ax.set_xlabel("Date", fontsize=12)
         ax.set_ylabel("Price", fontsize=12)
 
-        # Format x-axis as dates
-        ax.set_xticks(range(len(data.index)))
-        ax.set_xticklabels(data.index.strftime('%Y-%m-%d'), rotation=45, ha='right')
-
+        # Remove x-axis labels
+        ax.set_xticks([])
 
         plt.tight_layout()
 
