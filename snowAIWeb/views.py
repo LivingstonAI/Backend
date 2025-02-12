@@ -6795,25 +6795,50 @@ def time_trading_analytics(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+# def obtain_dataset(asset, interval, num_days):
+#     # Calculate the end and start dates
+#     end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+#     start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
+
+#     # Download data using yfinance
+#     forex_asset = f"{asset}=X"
+#     data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+    
+#     # Convert data to float values to ensure they're hashable
+#     data = data.astype(float)
+    
+#     # Reset index to make dates accessible
+#     data = data.reset_index()
+    
+#     # Convert datetime to string format
+#     # data['Date'] = data['Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+#     return data
+
 def obtain_dataset(asset, interval, num_days):
-    # Calculate the end and start dates
-    end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
+    try:
+        # Calculate the end and start dates
+        end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
 
-    # Download data using yfinance
-    forex_asset = f"{asset}=X"
-    data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
-    
-    # Convert data to float values to ensure they're hashable
-    data = data.astype(float)
-    
-    # Reset index to make dates accessible
-    data = data.reset_index()
-    
-    # Convert datetime to string format
-    data['Date'] = data['Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        # Download data using yfinance
+        forex_asset = f"{asset}=X"
+        data = yf.download(forex_asset, start=start_start, end=end_date, interval=interval)
+        
+        # Convert data to dictionary format with serializable dates
+        data_dict = {
+            'dates': [d.strftime("%Y-%m-%d %H:%M:%S") for d in data.index],
+            'open': data['Open'].tolist(),
+            'high': data['High'].tolist(),
+            'low': data['Low'].tolist(),
+            'close': data['Close'].tolist()
+        }
+        
+        return pd.DataFrame(data_dict)
 
-    return data
+    except Exception as e:
+        print(f"Error in obtain_dataset: {str(e)}")
+        raise
 
 
 import matplotlib.pyplot as plt
@@ -6823,59 +6848,48 @@ import pandas as pd
 
 def generate_candlestick_chart(data, save_path="candlestick_chart.png"):
     try:
-        # Ensure the data has required columns and clean up
-        data = data[['Open', 'High', 'Low', 'Close']]
-
         fig, ax = plt.subplots(figsize=(10, 6))
 
-        for idx, row in enumerate(data.itertuples(index=False)):
-            # Access the values by position
-            open_price = row[0]
-            high_price = row[1]
-            low_price = row[2]
-            close_price = row[3]
+        # Convert dates to datetime objects for plotting
+        dates = pd.to_datetime(data['dates'])
+        
+        for idx, (date, row) in enumerate(zip(dates, data.itertuples(index=False))):
+            open_price = float(row.open)
+            high_price = float(row.high)
+            low_price = float(row.low)
+            close_price = float(row.close)
 
-            # Determine the color of the candlestick
             color = 'green' if close_price > open_price else 'red'
-
-            # Draw the candlestick body (rectangle)
+            
+            # Draw candlestick body
             body = Rectangle(
-                (idx - 0.4, min(open_price, close_price)),  # Bottom-left corner
-                0.8,  # Width
-                abs(close_price - open_price),  # Height
+                (idx - 0.4, min(open_price, close_price)),
+                0.8,
+                abs(close_price - open_price),
                 color=color
             )
             ax.add_patch(body)
 
-            # Draw the wick (high-low line)
-            ax.plot(
-                [idx, idx],  # X-coordinates
-                [low_price, high_price],  # Y-coordinates
-                color=color
-            )
+            # Draw wick
+            ax.plot([idx, idx], [low_price, high_price], color=color)
 
-        # Set labels and title
-        ax.set_title("Candlestick Chart", fontsize=16)
-        ax.set_xlabel("Date", fontsize=12)
-        ax.set_ylabel("Price", fontsize=12)
+        # Format x-axis
+        ax.set_xticks(range(len(dates)))
+        ax.set_xticklabels([d.strftime('%Y-%m-%d\n%H:%M') for d in dates], rotation=45, ha='right')
 
-        # Format x-axis as dates
-        ax.set_xticks(range(len(data.index)))
-        ax.set_xticklabels(data.index.strftime('%Y-%m-%d'), rotation=45, ha='right')
-
-
+        plt.title(f"Candlestick Chart")
+        plt.xlabel("Date")
+        plt.ylabel("Price")
         plt.tight_layout()
 
-        # Save the chart
         plt.savefig(save_path)
-        plt.close(fig)  # Close the figure to free up memory
+        plt.close(fig)
 
-        print(f"Chart saved at: {save_path}")
         return save_path
 
     except Exception as e:
-        print(f"Error generating candlestick chart: {e}")
-        return None
+        print(f"Error in generate_candlestick_chart: {str(e)}")
+        raise
 
 
 def analyse_image(image_data, news_data):
