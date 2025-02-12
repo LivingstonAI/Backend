@@ -7365,16 +7365,20 @@ def get_trader_analysis(request):
                     'responding_to': msg.responding_to
                 })
 
-            # Compress the image
+            # Compress and resize the image
             image = Image.open(chart_path)
 
             # Convert to RGB if the image is in RGBA mode (to remove alpha channel)
             if image.mode == 'RGBA':
                 image = image.convert('RGB')
 
-            # Create a BytesIO object to save the image into memory
+            # Resize the image (e.g., reduce dimensions to 800x800)
+            max_size = (800, 800)
+            image.thumbnail(max_size)  # Resize to fit within 800x800
+
+            # Save the image to a BytesIO object with lower quality (50 or 60)
             compressed_image_io = io.BytesIO()
-            image.save(compressed_image_io, format='JPEG', quality=75)  # Adjust quality as needed
+            image.save(compressed_image_io, format='JPEG', quality=50)  # Adjust quality as needed (lower = smaller file)
             compressed_image_io.seek(0)
 
             # Encode the compressed image to base64
@@ -7404,7 +7408,7 @@ def get_trader_analysis(request):
             'message': str(e),
             'type': type(e).__name__
         })
-        
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
