@@ -7331,9 +7331,16 @@ def run_trader_dialogue(asset: str, interval: str = '1h', num_days: int = 7, max
 def get_trader_analysis(request):
     try:
         if request.method == 'POST':
-            asset = request.POST.get('asset', 'EURUSD')
-            interval = request.POST.get('interval', '1h')
-            num_days = int(request.POST.get('num_days', 7))
+            # Assuming raw JSON body is sent (e.g., Content-Type: application/json)
+            data = json.loads(request.body)
+            
+            asset = data.get('asset', 'EURUSD')
+            interval = data.get('interval', '1h')
+            num_days = int(data.get('num_days', 7))
+            
+            # asset = request.POST.get('asset', 'EURUSD')
+            # interval = request.POST.get('interval', '1h')
+            # num_days = int(request.POST.get('num_days', 7))
             
             # Run the trader dialogue analysis
             conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
