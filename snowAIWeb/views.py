@@ -92,6 +92,11 @@ import requests
 import logging
 
 
+from PIL import Image
+import io
+
+
+
 # Comment
 # current_hour = datetime.datetime.now().time().hour
 
@@ -7338,24 +7343,18 @@ def get_trader_analysis(request):
             # Convert the conversation to a serializable format
             conversation_data = []
             for msg in conversation:
-                # Clean and parse the content
                 if isinstance(msg.content, str):
-                    # Remove markdown code block markers
                     content = msg.content.replace('```json\n', '').replace('\n```', '')
                     try:
-                        # Parse the JSON content
                         parsed_content = json.loads(content)
-                        print(f'\n\n\n Parsed Content is: {parsed_content}\n\n\n')
-                        # Ensure the analysis field isn't too long
                         if 'analysis' in parsed_content:
                             if isinstance(parsed_content['analysis'], str):
-                                parsed_content['analysis'] = parsed_content['analysis'][:1000]  # Limit length
+                                parsed_content['analysis'] = parsed_content['analysis'][:1000]
                             else:
-                                parsed_content['analysis'] = str(parsed_content['analysis'])[:1000]  # Convert to string first
+                                parsed_content['analysis'] = str(parsed_content['analysis'])[:1000]
                         content = parsed_content
                     except json.JSONDecodeError:
-                        # If parsing fails, use the raw string
-                        content = content[:1000]  # Limit length
+                        content = content[:1000]
                 else:
                     content = msg.content
 
@@ -7365,10 +7364,15 @@ def get_trader_analysis(request):
                     'message_type': msg.message_type,
                     'responding_to': msg.responding_to
                 })
-            
-            # Read and encode the chart image
-            with open(chart_path, 'rb') as image_file:
-                encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+
+            # Compress the image
+            image = Image.open(chart_path)
+            compressed_image_io = io.BytesIO()
+            image.save(compressed_image_io, format='JPEG', quality=75)  # Adjust quality as needed (e.g., 75)
+            compressed_image_io.seek(0)
+
+            # Encode the compressed image to base64
+            encoded_image = base64.b64encode(compressed_image_io.read()).decode('utf-8')
             
             # Clean up the image file
             if os.path.exists(chart_path):
@@ -7393,7 +7397,8 @@ def get_trader_analysis(request):
             'status': 'error',
             'message': str(e),
             'type': type(e).__name__
-        })        
+        })
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
