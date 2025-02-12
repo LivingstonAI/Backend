@@ -6803,7 +6803,18 @@ def obtain_dataset(asset, interval, num_days):
     # Download data using yfinance
     forex_asset = f"{asset}=X"
     data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+    
+    # Convert data to float values to ensure they're hashable
+    data = data.astype(float)
+    
+    # Reset index to make dates accessible
+    data = data.reset_index()
+    
+    # Convert datetime to string format
+    data['Date'] = data['Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
     return data
+
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
@@ -7326,101 +7337,14 @@ def run_trader_dialogue(asset: str, interval: str = '1h', num_days: int = 7, max
 
 
 @csrf_exempt
-def trader_analysis(request):
-    if request.method != 'POST':
-        return HttpResponseBadRequest("Only POST requests are allowed.")
-
-    try:
-        # Log incoming request
-        print(f"Received trader analysis request: {request.data}")
-        
-        # Extract parameters from request
-        data = request.data
-        if isinstance(data, str):
-            data = json.loads(data)
-            
-        asset = data.get('asset', 'eurusd')
-        interval = data.get('interval', '1h')
-        num_days = int(data.get('num_days', 7))
-        
-        print(f"Processing analysis for {asset}, interval: {interval}, days: {num_days}")
-        
-        # Run the trader dialogue
-        dialogue = TraderDialogue(asset, interval, num_days)
-        messages, chart_path = dialogue.conduct_dialogue()
-        
-        # Verify chart file exists
-        if not os.path.exists(chart_path):
-            raise FileNotFoundError(f"Chart file not found at {chart_path}")
-            
-        # Convert messages to serializable format
-        dialogue_messages = []
-        for msg in messages:
-            try:
-                # Handle both string and JSON content
-                if msg.message_type == "consensus" and isinstance(msg.content, str):
-                    try:
-                        message_content = json.loads(msg.content)
-                    except json.JSONDecodeError:
-                        message_content = {
-                            'analysis': msg.content,
-                            'recommendation': 'neutral'
-                        }
-                else:
-                    message_content = msg.content
-                    
-                dialogue_messages.append({
-                    'trader_id': msg.trader_id,
-                    'content': message_content,
-                    'message_type': msg.message_type,
-                    'responding_to': msg.responding_to
-                })
-            except Exception as e:
-                print(f"Error processing message: {str(e)}")
-                continue
-        
-        # Read and encode the chart image
-        try:
-            with open(chart_path, 'rb') as img_file:
-                chart_base64 = base64.b64encode(img_file.read()).decode('utf-8')
-        except Exception as e:
-            print(f"Error reading chart file: {str(e)}")
-            chart_base64 = None
-        
-        # Get the market data for interactive chart
-        try:
-            market_data = dialogue.market_data.reset_index().to_dict('records')
-        except Exception as e:
-            print(f"Error converting market data: {str(e)}")
-            market_data = []
-        
-        response_data = {
-            'status': 'success',
-            'messages': dialogue_messages,
-            'chart_base64': chart_base64,
-            'market_data': market_data,
-            'asset': asset,
-            'interval': interval,
-            'num_days': num_days
-        }
-        
-        return JsonResponse(response_data)
-        
-    except Exception as e:
-        print(f'Error in Trader Analysis Function: {e}')
-        return JsonResponse({
-            'status': 'error',
-            'message': str(e),
-            })
-
-
-@csrf_exempt
 def get_trader_analysis(request):
     try:
         if request.method == 'POST':
-            asset = request.POST.get('asset', 'EURUSD')
-            interval = request.POST.get('interval', '1h')
-            num_days = int(request.POST.get('num_days', 7))
+            # Parse JSON data from request body instead of POST
+            data = json.loads(request.body)
+            asset = data.get('asset', 'EURUSD')
+            interval = data.get('interval', '1h')
+            num_days = int(data.get('num_days', 7))
             
             # Run the trader dialogue analysis
             conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
@@ -7430,26 +7354,26 @@ def get_trader_analysis(request):
             for msg in conversation:
                 # Clean and parse the content
                 if isinstance(msg.content, str):
-                    # Remove markdown code block markers
-                    content = msg.content.replace('```json\n', '').replace('\n```', '')
                     try:
+                        # Remove markdown code block markers and clean whitespace
+                        content = msg.content.strip().replace('```json\n', '').replace('\n```', '').strip()
                         # Parse the JSON content
                         parsed_content = json.loads(content)
                         # Ensure the analysis field isn't too long
                         if 'analysis' in parsed_content:
-                            parsed_content['analysis'] = parsed_content['analysis'][:1000]  # Limit length
+                            parsed_content['analysis'] = str(parsed_content['analysis'])[:1000]  # Convert to string and limit length
                         content = parsed_content
                     except json.JSONDecodeError:
                         # If parsing fails, use the raw string
-                        content = content[:1000]  # Limit length
+                        content = str(msg.content)[:1000]  # Convert to string and limit length
                 else:
-                    content = msg.content
+                    content = str(msg.content)[:1000]  # Convert to string and limit length
 
                 conversation_data.append({
-                    'trader_id': msg.trader_id,
+                    'trader_id': str(msg.trader_id),
                     'content': content,
-                    'message_type': msg.message_type,
-                    'responding_to': msg.responding_to
+                    'message_type': str(msg.message_type),
+                    'responding_to': str(msg.responding_to) if msg.responding_to else None
                 })
             
             # Read and encode the chart image
@@ -7475,12 +7399,12 @@ def get_trader_analysis(request):
             }, status=400)
             
     except Exception as e:
+        print(f"Error in get_trader_analysis: {str(e)}")  # Add logging
         return JsonResponse({
             'status': 'error',
             'message': str(e),
             'type': type(e).__name__
         }, status=500)
-
         
 
 # LEGODI BACKEND CODE
