@@ -967,7 +967,7 @@ def save_news_data(assets, user_email):
 
 
 @csrf_exempt
-def fetch_news_data(request, user_email):
+def fetch_user_news_data(request, user_email):
     try:
         # # Check if news data for the current day already exists
         today = timezone.localtime(timezone.now()).date()
