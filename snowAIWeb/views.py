@@ -7415,6 +7415,17 @@ def run_trader_dialogue(asset: str, interval: str = '1h', num_days: int = 7, max
 #         })
 
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+from PIL import Image
+import io
+import base64
+import os
+from typing import Optional, Tuple, List
+from dataclasses import dataclass
+
+
 class MultiTraderDialogue:
     def __init__(self, trader1_settings: dict, trader2_settings: dict, max_messages: int = 6):
         self.trader1_settings = trader1_settings
@@ -7446,20 +7457,22 @@ class MultiTraderDialogue:
         self.trader1_annotator = ChartAnnotator(self.trader1_data)
         self.trader2_annotator = ChartAnnotator(self.trader2_data)
 
-        # Define trader personalities
+        # Define trader personalities based on settings
         self.trader_personalities = {
             "Trader1": {
-                "style": "Conservative",
-                "focus": "long-term trends and fundamental analysis",
-                "risk_tolerance": "low",
+                "style": trader1_settings.get('style', 'Conservative'),
+                "focus": trader1_settings.get('focus', 'long-term trends and fundamental analysis'),
+                "risk_tolerance": trader1_settings.get('risk_tolerance', 'low'),
+                "bias": trader1_settings.get('bias', 'neutral'),
                 "settings": trader1_settings,
                 "data": self.trader1_data,
                 "chart": self.trader1_chart
             },
             "Trader2": {
-                "style": "Aggressive",
-                "focus": "short-term momentum and technical patterns",
-                "risk_tolerance": "high",
+                "style": trader2_settings.get('style', 'Aggressive'),
+                "focus": trader2_settings.get('focus', 'short-term momentum and technical patterns'),
+                "risk_tolerance": trader2_settings.get('risk_tolerance', 'high'),
+                "bias": trader2_settings.get('bias', 'neutral'),
                 "settings": trader2_settings,
                 "data": self.trader2_data,
                 "chart": self.trader2_chart
@@ -7472,9 +7485,10 @@ class MultiTraderDialogue:
         data = personality['data']
 
         base_prompt = f"""
-        As a {personality['style']} trader analyzing {settings['asset']} on the {settings['interval']} timeframe 
-        with a {settings['numDays']}-day lookback period, focusing on {personality['focus']} 
-        with {personality['risk_tolerance']} risk tolerance,
+        As a {personality['style']} trader with {personality['risk_tolerance']} risk tolerance,
+        analyzing {settings['asset']} on the {settings['interval']} timeframe 
+        with a {settings['numDays']}-day lookback period, focusing on {personality['focus']},
+        and having a {personality['bias']} market bias,
         """
 
         if previous_message:
@@ -7488,8 +7502,9 @@ class MultiTraderDialogue:
             2. What factors might need additional consideration?
             3. How does your timeframe and trading style inform your perspective?
             4. Are there any differences in market behavior between your timeframe and the other trader's timeframe?
+            5. How does your risk tolerance affect your view of the suggested trades?
 
-            Aim to find common ground while highlighting important considerations.
+            Aim to find common ground while highlighting important considerations from your perspective.
             """
         else:
             base_prompt += "provide your initial analysis of this chart."
@@ -7510,12 +7525,12 @@ class MultiTraderDialogue:
 
     def _create_consensus_prompt(self) -> str:
         previous_analyses = "\n".join([
-            f"{msg.trader_id} ({self.trader_personalities[msg.trader_id]['settings']['interval']} timeframe): {msg.content}"
+            f"{msg.trader_id} ({self.trader_personalities[msg.trader_id]['settings']['interval']} timeframe, {self.trader_personalities[msg.trader_id]['style']} style): {msg.content}"
             for msg in self.messages if msg.trader_id in ['Trader1', 'Trader2']
         ])
 
         return f"""
-        Review the following discussion about market analysis from different timeframes:
+        Review the following discussion about market analysis from different timeframes and trading styles:
 
         {previous_analyses}
 
@@ -7541,7 +7556,7 @@ class MultiTraderDialogue:
                          message_type: str = "discussion") -> str:
         if message_type == "consensus":
             prompt = self._create_consensus_prompt()
-            chart_path = self.trader1_chart  # Use primary timeframe for consensus
+            chart_path = self.trader1_chart
         else:
             prompt = self._create_discussion_prompt(trader_id, previous_message)
             chart_path = self.trader_personalities[trader_id]['chart']
@@ -7596,7 +7611,6 @@ class MultiTraderDialogue:
 
         return self.messages, annotated_chart_path
 
-
 @csrf_exempt
 def get_trader_analysis(request):
     try:
@@ -7614,16 +7628,8 @@ def get_trader_analysis(request):
             
             # Initialize multi-trader dialogue
             dialogue = MultiTraderDialogue(
-                trader1_settings={
-                    'asset': traders_settings['trader1']['asset'],
-                    'interval': traders_settings['trader1']['interval'],
-                    'numDays': int(traders_settings['trader1']['numDays'])
-                },
-                trader2_settings={
-                    'asset': traders_settings['trader2']['asset'],
-                    'interval': traders_settings['trader2']['interval'],
-                    'numDays': int(traders_settings['trader2']['numDays'])
-                }
+                trader1_settings=traders_settings['trader1'],
+                trader2_settings=traders_settings['trader2']
             )
             
             # Run the dialogue
@@ -7655,49 +7661,38 @@ def get_trader_analysis(request):
                     'settings': {
                         'asset': dialogue.trader_personalities[msg.trader_id]['settings']['asset'] if msg.trader_id in dialogue.trader_personalities else None,
                         'interval': dialogue.trader_personalities[msg.trader_id]['settings']['interval'] if msg.trader_id in dialogue.trader_personalities else None,
-                        'numDays': dialogue.trader_personalities[msg.trader_id]['settings']['numDays'] if msg.trader_id in dialogue.trader_personalities else None
+                        'numDays': dialogue.trader_personalities[msg.trader_id]['settings']['numDays'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'style': dialogue.trader_personalities[msg.trader_id]['style'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'focus': dialogue.trader_personalities[msg.trader_id]['focus'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'risk_tolerance': dialogue.trader_personalities[msg.trader_id]['risk_tolerance'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'bias': dialogue.trader_personalities[msg.trader_id]['bias'] if msg.trader_id in dialogue.trader_personalities else None
                     } if msg.trader_id != 'Consensus' else None
                 })
 
-            # Compress and resize the image
+            # Process the chart image
             image = Image.open(chart_path)
-
-            # Convert to RGB if the image is in RGBA mode
             if image.mode == 'RGBA':
                 image = image.convert('RGB')
-
-            # Resize the image
+            
             max_size = (800, 800)
             image.thumbnail(max_size)
-
-            # Save the compressed image
+            
             compressed_image_io = io.BytesIO()
             image.save(compressed_image_io, format='JPEG', quality=50)
             compressed_image_io.seek(0)
-
-            # Encode the compressed image
+            
             encoded_image = base64.b64encode(compressed_image_io.read()).decode('utf-8')
             
-            # Clean up the image file
             if os.path.exists(chart_path):
                 os.remove(chart_path)
             
-            # Prepare and send response
             response_data = {
                 'status': 'success',
                 'conversation': conversation_data,
                 'chart_image': encoded_image,
                 'analysis_summary': {
-                    'trader1': {
-                        'asset': traders_settings['trader1']['asset'],
-                        'interval': traders_settings['trader1']['interval'],
-                        'numDays': traders_settings['trader1']['numDays']
-                    },
-                    'trader2': {
-                        'asset': traders_settings['trader2']['asset'],
-                        'interval': traders_settings['trader2']['interval'],
-                        'numDays': traders_settings['trader2']['numDays']
-                    }
+                    'trader1': traders_settings['trader1'],
+                    'trader2': traders_settings['trader2']
                 }
             }
             
@@ -7715,6 +7710,7 @@ def get_trader_analysis(request):
             'message': str(e),
             'type': type(e).__name__
         }, status=500)
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
