@@ -7327,23 +7327,307 @@ def run_trader_dialogue(asset: str, interval: str = '1h', num_days: int = 7, max
     return conversation, annotated_chart
 
 
+# @csrf_exempt
+# def get_trader_analysis(request):
+#     try:
+#         if request.method == 'POST':
+#             # Assuming raw JSON body is sent (e.g., Content-Type: application/json)
+#             data = json.loads(request.body)
+            
+#             asset = data.get('asset', 'EURUSD')
+#             interval = data.get('interval', '1h')
+#             num_days = int(data.get('num_days', 7))
+            
+#             # asset = request.POST.get('asset', 'EURUSD')
+#             # interval = request.POST.get('interval', '1h')
+#             # num_days = int(request.POST.get('num_days', 7))
+            
+#             # Run the trader dialogue analysis
+#             conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
+            
+#             # Convert the conversation to a serializable format
+#             conversation_data = []
+#             for msg in conversation:
+#                 if isinstance(msg.content, str):
+#                     content = msg.content.replace('```json\n', '').replace('\n```', '')
+#                     try:
+#                         parsed_content = json.loads(content)
+#                         if 'analysis' in parsed_content:
+#                             if isinstance(parsed_content['analysis'], str):
+#                                 parsed_content['analysis'] = parsed_content['analysis'][:1000]
+#                             else:
+#                                 parsed_content['analysis'] = str(parsed_content['analysis'])[:1000]
+#                         content = parsed_content
+#                     except json.JSONDecodeError:
+#                         content = content[:1000]
+#                 else:
+#                     content = msg.content
+
+#                 conversation_data.append({
+#                     'trader_id': msg.trader_id,
+#                     'content': content,
+#                     'message_type': msg.message_type,
+#                     'responding_to': msg.responding_to
+#                 })
+
+#             # Compress and resize the image
+#             image = Image.open(chart_path)
+
+#             # Convert to RGB if the image is in RGBA mode (to remove alpha channel)
+#             if image.mode == 'RGBA':
+#                 image = image.convert('RGB')
+
+#             # Resize the image (e.g., reduce dimensions to 800x800)
+#             max_size = (800, 800)
+#             image.thumbnail(max_size)  # Resize to fit within 800x800
+
+#             # Save the image to a BytesIO object with lower quality (50 or 60)
+#             compressed_image_io = io.BytesIO()
+#             image.save(compressed_image_io, format='JPEG', quality=50)  # Adjust quality as needed (lower = smaller file)
+#             compressed_image_io.seek(0)
+
+#             # Encode the compressed image to base64
+#             encoded_image = base64.b64encode(compressed_image_io.read()).decode('utf-8')
+            
+#             # Clean up the image file
+#             if os.path.exists(chart_path):
+#                 os.remove(chart_path)
+            
+#             response_data = {
+#                 'status': 'success',
+#                 'conversation': conversation_data,
+#                 'chart_image': encoded_image
+#             }
+            
+#             return JsonResponse(response_data)
+#         else:
+#             return JsonResponse({
+#                 'status': 'error',
+#                 'message': 'Invalid request method.',
+#                 'type': 'InvalidRequestMethod'
+#             }, status=400)
+            
+#     except Exception as e:
+#         return JsonResponse({
+#             'status': 'error',
+#             'message': str(e),
+#             'type': type(e).__name__
+#         })
+
+
+class MultiTraderDialogue:
+    def __init__(self, trader1_settings: dict, trader2_settings: dict, max_messages: int = 6):
+        self.trader1_settings = trader1_settings
+        self.trader2_settings = trader2_settings
+        self.max_messages = max_messages
+        self.messages = []
+
+        # Initialize market data for both traders
+        self.trader1_data = obtain_dataset(
+            trader1_settings['asset'],
+            trader1_settings['interval'],
+            trader1_settings['numDays']
+        )
+        self.trader2_data = obtain_dataset(
+            trader2_settings['asset'],
+            trader2_settings['interval'],
+            trader2_settings['numDays']
+        )
+
+        # Generate charts for both traders
+        self.trader1_chart = generate_candlestick_chart(self.trader1_data)
+        self.trader2_chart = generate_candlestick_chart(self.trader2_data)
+
+        # Initialize news data for both assets
+        assets = list(set([trader1_settings['asset'], trader2_settings['asset']]))
+        self.news_data = fetch_news_data(assets, user_email=None)
+
+        # Initialize chart annotators
+        self.trader1_annotator = ChartAnnotator(self.trader1_data)
+        self.trader2_annotator = ChartAnnotator(self.trader2_data)
+
+        # Define trader personalities
+        self.trader_personalities = {
+            "Trader1": {
+                "style": "Conservative",
+                "focus": "long-term trends and fundamental analysis",
+                "risk_tolerance": "low",
+                "settings": trader1_settings,
+                "data": self.trader1_data,
+                "chart": self.trader1_chart
+            },
+            "Trader2": {
+                "style": "Aggressive",
+                "focus": "short-term momentum and technical patterns",
+                "risk_tolerance": "high",
+                "settings": trader2_settings,
+                "data": self.trader2_data,
+                "chart": self.trader2_chart
+            }
+        }
+
+    def _create_discussion_prompt(self, trader_id: str, previous_message: Optional[TraderMessage] = None) -> str:
+        personality = self.trader_personalities[trader_id]
+        settings = personality['settings']
+        data = personality['data']
+
+        base_prompt = f"""
+        As a {personality['style']} trader analyzing {settings['asset']} on the {settings['interval']} timeframe 
+        with a {settings['numDays']}-day lookback period, focusing on {personality['focus']} 
+        with {personality['risk_tolerance']} risk tolerance,
+        """
+
+        if previous_message:
+            base_prompt += f"""
+            analyze this chart and respond to the following analysis from another trader:
+
+            Previous Analysis: {previous_message.content}
+
+            Consider:
+            1. What points do you agree with and why?
+            2. What factors might need additional consideration?
+            3. How does your timeframe and trading style inform your perspective?
+            4. Are there any differences in market behavior between your timeframe and the other trader's timeframe?
+
+            Aim to find common ground while highlighting important considerations.
+            """
+        else:
+            base_prompt += "provide your initial analysis of this chart."
+
+        # Add market context
+        current_close = data['Close'].iloc[-1].item()
+        current_open = data['Open'].iloc[-1].item()
+        price_change = current_close - current_open
+        price_change_pct = (price_change / current_open) * 100
+
+        market_context = f"""
+        Current market context for {settings['asset']} ({settings['interval']} timeframe):
+        - Price change: {price_change_pct:.2f}%
+        - Current price: {current_close:.4f}
+        """
+
+        return base_prompt + "\n" + market_context
+
+    def _create_consensus_prompt(self) -> str:
+        previous_analyses = "\n".join([
+            f"{msg.trader_id} ({self.trader_personalities[msg.trader_id]['settings']['interval']} timeframe): {msg.content}"
+            for msg in self.messages if msg.trader_id in ['Trader1', 'Trader2']
+        ])
+
+        return f"""
+        Review the following discussion about market analysis from different timeframes:
+
+        {previous_analyses}
+
+        As a group of traders analyzing multiple timeframes, we need to reach a final consensus.
+        Please provide specific levels in your analysis:
+        1. Key support and resistance levels from both timeframes
+        2. Suggested entry price considering both analyses
+        3. Stop-loss level that respects both timeframes
+        4. Target price based on both perspectives
+        5. Overall trend direction (uptrend/downtrend) on each timeframe
+
+        Also include:
+        1. Points of agreement between different timeframe analyses
+        2. How different risk tolerances and trading styles are balanced
+        3. Final recommendation that considers both timeframes
+        4. Risk management suggestions that account for multiple timeframe analysis
+
+        Format your response as JSON with 'analysis' and 'recommendation' keys.
+        Include numerical price levels in your analysis for chart annotation.
+        """
+
+    def _generate_response(self, trader_id: str, previous_message: Optional[TraderMessage] = None,
+                         message_type: str = "discussion") -> str:
+        if message_type == "consensus":
+            prompt = self._create_consensus_prompt()
+            chart_path = self.trader1_chart  # Use primary timeframe for consensus
+        else:
+            prompt = self._create_discussion_prompt(trader_id, previous_message)
+            chart_path = self.trader_personalities[trader_id]['chart']
+
+        modified_news = self.news_data.copy()
+        modified_news['discussion_prompt'] = prompt
+
+        return analyse_image_from_file(chart_path, modified_news)
+
+    def conduct_dialogue(self) -> Tuple[List[TraderMessage], str]:
+        # First message from Trader1
+        initial_message = TraderMessage(
+            trader_id="Trader1",
+            content=self._generate_response("Trader1"),
+            message_type="discussion"
+        )
+        self.messages.append(initial_message)
+
+        # Continue discussion
+        current_msg_count = 1
+        discussion_messages = self.max_messages - 1
+
+        while current_msg_count < discussion_messages:
+            current_trader = "Trader2" if current_msg_count % 2 == 1 else "Trader1"
+            previous_message = self.messages[-1]
+
+            response = TraderMessage(
+                trader_id=current_trader,
+                content=self._generate_response(current_trader, previous_message),
+                message_type="discussion",
+                responding_to=previous_message.trader_id
+            )
+            self.messages.append(response)
+            current_msg_count += 1
+
+        # Final consensus
+        consensus = TraderMessage(
+            trader_id="Consensus",
+            content=self._generate_response(
+                trader_id="Consensus",
+                message_type="consensus"
+            ),
+            message_type="consensus"
+        )
+        self.messages.append(consensus)
+
+        # Create annotated chart based on consensus
+        annotated_chart_path = self.trader1_annotator.draw_annotated_chart(
+            consensus.content,
+            save_path=f"annotated_multi_timeframe_chart.png"
+        )
+
+        return self.messages, annotated_chart_path
+
+
 @csrf_exempt
 def get_trader_analysis(request):
     try:
         if request.method == 'POST':
-            # Assuming raw JSON body is sent (e.g., Content-Type: application/json)
             data = json.loads(request.body)
+            traders_settings = data.get('traders', {})
             
-            asset = data.get('asset', 'EURUSD')
-            interval = data.get('interval', '1h')
-            num_days = int(data.get('num_days', 7))
+            # Validate trader settings
+            if 'trader1' not in traders_settings or 'trader2' not in traders_settings:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Settings for both traders are required.',
+                    'type': 'ValidationError'
+                }, status=400)
             
-            # asset = request.POST.get('asset', 'EURUSD')
-            # interval = request.POST.get('interval', '1h')
-            # num_days = int(request.POST.get('num_days', 7))
+            # Initialize multi-trader dialogue
+            dialogue = MultiTraderDialogue(
+                trader1_settings={
+                    'asset': traders_settings['trader1']['asset'],
+                    'interval': traders_settings['trader1']['interval'],
+                    'numDays': int(traders_settings['trader1']['numDays'])
+                },
+                trader2_settings={
+                    'asset': traders_settings['trader2']['asset'],
+                    'interval': traders_settings['trader2']['interval'],
+                    'numDays': int(traders_settings['trader2']['numDays'])
+                }
+            )
             
-            # Run the trader dialogue analysis
-            conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
+            # Run the dialogue
+            conversation, chart_path = dialogue.conduct_dialogue()
             
             # Convert the conversation to a serializable format
             conversation_data = []
@@ -7367,36 +7651,54 @@ def get_trader_analysis(request):
                     'trader_id': msg.trader_id,
                     'content': content,
                     'message_type': msg.message_type,
-                    'responding_to': msg.responding_to
+                    'responding_to': msg.responding_to,
+                    'settings': {
+                        'asset': dialogue.trader_personalities[msg.trader_id]['settings']['asset'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'interval': dialogue.trader_personalities[msg.trader_id]['settings']['interval'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'numDays': dialogue.trader_personalities[msg.trader_id]['settings']['numDays'] if msg.trader_id in dialogue.trader_personalities else None
+                    } if msg.trader_id != 'Consensus' else None
                 })
 
             # Compress and resize the image
             image = Image.open(chart_path)
 
-            # Convert to RGB if the image is in RGBA mode (to remove alpha channel)
+            # Convert to RGB if the image is in RGBA mode
             if image.mode == 'RGBA':
                 image = image.convert('RGB')
 
-            # Resize the image (e.g., reduce dimensions to 800x800)
+            # Resize the image
             max_size = (800, 800)
-            image.thumbnail(max_size)  # Resize to fit within 800x800
+            image.thumbnail(max_size)
 
-            # Save the image to a BytesIO object with lower quality (50 or 60)
+            # Save the compressed image
             compressed_image_io = io.BytesIO()
-            image.save(compressed_image_io, format='JPEG', quality=50)  # Adjust quality as needed (lower = smaller file)
+            image.save(compressed_image_io, format='JPEG', quality=50)
             compressed_image_io.seek(0)
 
-            # Encode the compressed image to base64
+            # Encode the compressed image
             encoded_image = base64.b64encode(compressed_image_io.read()).decode('utf-8')
             
             # Clean up the image file
             if os.path.exists(chart_path):
                 os.remove(chart_path)
             
+            # Prepare and send response
             response_data = {
                 'status': 'success',
                 'conversation': conversation_data,
-                'chart_image': encoded_image
+                'chart_image': encoded_image,
+                'analysis_summary': {
+                    'trader1': {
+                        'asset': traders_settings['trader1']['asset'],
+                        'interval': traders_settings['trader1']['interval'],
+                        'numDays': traders_settings['trader1']['numDays']
+                    },
+                    'trader2': {
+                        'asset': traders_settings['trader2']['asset'],
+                        'interval': traders_settings['trader2']['interval'],
+                        'numDays': traders_settings['trader2']['numDays']
+                    }
+                }
             }
             
             return JsonResponse(response_data)
@@ -7412,8 +7714,7 @@ def get_trader_analysis(request):
             'status': 'error',
             'message': str(e),
             'type': type(e).__name__
-        })
-
+        }, status=500)
 
 # LEGODI BACKEND CODE
 def send_simple_message():
