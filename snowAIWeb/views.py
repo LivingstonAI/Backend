@@ -23,6 +23,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 import datetime
 from datetime import datetime, timedelta
+from datetime import time as datetime_time
 import time
 import os
 import http.client
@@ -104,6 +105,20 @@ import io
 
 scheduler = BackgroundScheduler()
 scheduler.start()
+
+
+def new_york_session():
+    now = datetime.now(pytz.timezone('America/New_York')).time()
+    return datetime_time(8, 0) <= now <= datetime_time(17, 0)
+
+def london_session():
+    now = datetime.now(pytz.timezone('Europe/London')).time()
+    return datetime_time(8, 0) <= now <= datetime_time(17, 0)
+
+def asian_session():
+    tokyo_now = datetime.now(pytz.timezone('Asia/Tokyo')).time()
+    hong_kong_now = datetime.now(pytz.timezone('Asia/Hong_Kong')).time()
+    return (datetime_time(8, 0) <= tokyo_now <= datetime_time(17, 0)) or (datetime_time(8, 0) <= hong_kong_now <= datetime_time(17, 0))
 
 
 @csrf_exempt
