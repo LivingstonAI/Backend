@@ -6820,7 +6820,7 @@ def obtain_dataset(asset, interval, num_days):
     start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
 
     # Download data using yfinance
-    forex_asset = f"{asset}"
+    forex_asset = f"{asset}=X"
     data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
     return data
 
