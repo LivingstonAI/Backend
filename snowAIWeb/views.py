@@ -72,7 +72,7 @@ from twilio.rest import Client
 import zipfile
 import json
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Arrow
 import pandas as pd
@@ -95,6 +95,8 @@ import logging
 
 from PIL import Image
 import io
+
+from dataclasses import dataclass
 
 
 
@@ -7340,18 +7342,6 @@ def run_trader_dialogue(asset: str, interval: str = '1h', num_days: int = 7, max
 
     print(f"Annotated chart saved as: {annotated_chart}")
     return conversation, annotated_chart
-
-
-
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-import json
-from PIL import Image
-import io
-import base64
-import os
-from typing import Optional, Tuple, List
-from dataclasses import dataclass
 
 
 class MultiTraderDialogue:
