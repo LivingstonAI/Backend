@@ -7596,7 +7596,7 @@ def get_trader_analysis(request):
                         'style': dialogue.trader_personalities[msg.trader_id]['style'] if msg.trader_id in dialogue.trader_personalities else None,
                         'focus': dialogue.trader_personalities[msg.trader_id]['focus'] if msg.trader_id in dialogue.trader_personalities else None,
                         'risk_tolerance': dialogue.trader_personalities[msg.trader_id]['risk_tolerance'] if msg.trader_id in dialogue.trader_personalities else None,
-                        'bias': dialogue.trader_personalities[msg.trader_id]['bias'] if msg.trader_id in dialogue.trader_personalities else None
+                        # 'bias': dialogue.trader_personalities[msg.trader_id]['bias'] if msg.trader_id in dialogue.trader_personalities else None
                     } if msg.trader_id != 'Consensus' else None
                 })
 
