@@ -890,7 +890,7 @@ def reflections_summary(request, asset):
 # Schedule the update_daily_brief function to run every hour
 scheduler.add_job(
     update_daily_brief,
-    trigger=IntervalTrigger(hours=1),
+    trigger=IntervalTrigger(hours=4),
     id='update_daily_brief_job',
     name='Update daily brief every hour',
     replace_existing=True
@@ -4730,19 +4730,19 @@ def set_init_capital(request):
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
-def obtain_dataset(asset, interval, num_days):
+# def obtain_dataset(asset, interval, num_days):
 
-    # Calculate the date 30 days ago from the current day
-    start_date = (datetime.now() - timedelta(days=num_days)).strftime("%Y-%m-%d")
+#     # Calculate the date 30 days ago from the current day
+#     start_date = (datetime.now() - timedelta(days=num_days)).strftime("%Y-%m-%d")
 
-    # Get latest candle
-    end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+#     # Get latest candle
+#     end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    # Download data using the calculated dates
-    forex_asset = f"{asset}=X"
-    data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+#     # Download data using the calculated dates
+#     forex_asset = f"{asset}=X"
+#     data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
 
-    return data
+#     return data
 
 
 def generate_trading_image(df):
@@ -6977,7 +6977,7 @@ def fetch_news_data(assets, user_email):
     params_template = {
         'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
         'langauge': 'en',
-        'limit': 1,
+        'limit': 3,
     }
 
     # Iterate through the assets and make API requests
