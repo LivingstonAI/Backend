@@ -6820,7 +6820,7 @@ def obtain_dataset(asset, interval, num_days):
     start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
 
     # Download data using yfinance
-    forex_asset = f"{asset}=X"
+    forex_asset = f"{asset}"
     data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
     return data
 
@@ -7341,93 +7341,6 @@ def run_trader_dialogue(asset: str, interval: str = '1h', num_days: int = 7, max
     print(f"Annotated chart saved as: {annotated_chart}")
     return conversation, annotated_chart
 
-
-# @csrf_exempt
-# def get_trader_analysis(request):
-#     try:
-#         if request.method == 'POST':
-#             # Assuming raw JSON body is sent (e.g., Content-Type: application/json)
-#             data = json.loads(request.body)
-            
-#             asset = data.get('asset', 'EURUSD')
-#             interval = data.get('interval', '1h')
-#             num_days = int(data.get('num_days', 7))
-            
-#             # asset = request.POST.get('asset', 'EURUSD')
-#             # interval = request.POST.get('interval', '1h')
-#             # num_days = int(request.POST.get('num_days', 7))
-            
-#             # Run the trader dialogue analysis
-#             conversation, chart_path = run_trader_dialogue(asset, interval, num_days)
-            
-#             # Convert the conversation to a serializable format
-#             conversation_data = []
-#             for msg in conversation:
-#                 if isinstance(msg.content, str):
-#                     content = msg.content.replace('```json\n', '').replace('\n```', '')
-#                     try:
-#                         parsed_content = json.loads(content)
-#                         if 'analysis' in parsed_content:
-#                             if isinstance(parsed_content['analysis'], str):
-#                                 parsed_content['analysis'] = parsed_content['analysis'][:1000]
-#                             else:
-#                                 parsed_content['analysis'] = str(parsed_content['analysis'])[:1000]
-#                         content = parsed_content
-#                     except json.JSONDecodeError:
-#                         content = content[:1000]
-#                 else:
-#                     content = msg.content
-
-#                 conversation_data.append({
-#                     'trader_id': msg.trader_id,
-#                     'content': content,
-#                     'message_type': msg.message_type,
-#                     'responding_to': msg.responding_to
-#                 })
-
-#             # Compress and resize the image
-#             image = Image.open(chart_path)
-
-#             # Convert to RGB if the image is in RGBA mode (to remove alpha channel)
-#             if image.mode == 'RGBA':
-#                 image = image.convert('RGB')
-
-#             # Resize the image (e.g., reduce dimensions to 800x800)
-#             max_size = (800, 800)
-#             image.thumbnail(max_size)  # Resize to fit within 800x800
-
-#             # Save the image to a BytesIO object with lower quality (50 or 60)
-#             compressed_image_io = io.BytesIO()
-#             image.save(compressed_image_io, format='JPEG', quality=50)  # Adjust quality as needed (lower = smaller file)
-#             compressed_image_io.seek(0)
-
-#             # Encode the compressed image to base64
-#             encoded_image = base64.b64encode(compressed_image_io.read()).decode('utf-8')
-            
-#             # Clean up the image file
-#             if os.path.exists(chart_path):
-#                 os.remove(chart_path)
-            
-#             response_data = {
-#                 'status': 'success',
-#                 'conversation': conversation_data,
-#                 'chart_image': encoded_image
-#             }
-            
-#             return JsonResponse(response_data)
-#         else:
-#             return JsonResponse({
-#                 'status': 'error',
-#                 'message': 'Invalid request method.',
-#                 'type': 'InvalidRequestMethod'
-#             }, status=400)
-            
-#     except Exception as e:
-#         return JsonResponse({
-#             'status': 'error',
-#             'message': str(e),
-#             'type': type(e).__name__
-#         })
 
 
 from django.http import JsonResponse
