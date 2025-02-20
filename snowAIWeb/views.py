@@ -890,7 +890,7 @@ def reflections_summary(request, asset):
 # Schedule the update_daily_brief function to run every hour
 scheduler.add_job(
     update_daily_brief,
-    trigger=IntervalTrigger(hours=4),
+    trigger=IntervalTrigger(hours=1),
     id='update_daily_brief_job',
     name='Update daily brief every hour',
     replace_existing=True
