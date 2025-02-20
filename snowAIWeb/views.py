@@ -7416,8 +7416,11 @@ class MultiTraderDialogue:
         As a {personality['style']} trader with {personality['risk_tolerance']} risk tolerance,
         analyzing {settings['asset']} on the {settings['interval']} timeframe 
         with a {settings['numDays']}-day lookback period, focusing on {personality['focus']},
-        and having a {personality['bias']} market bias,
+        and having a market bias,
         """
+
+        # and having a {personality['bias']} market bias,
+
 
         if previous_message:
             base_prompt += f"""
@@ -7638,6 +7641,18 @@ def get_trader_analysis(request):
             'message': str(e),
             'type': type(e).__name__
         }, status=500)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # LEGODI BACKEND CODE
