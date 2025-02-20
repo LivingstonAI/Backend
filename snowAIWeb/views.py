@@ -7391,7 +7391,7 @@ class MultiTraderDialogue:
                 "style": trader1_settings.get('style', 'Conservative'),
                 "focus": trader1_settings.get('focus', 'long-term trends and fundamental analysis'),
                 "risk_tolerance": trader1_settings.get('risk_tolerance', 'low'),
-                "bias": trader1_settings.get('bias', 'neutral'),
+                # "bias": trader1_settings.get('bias', 'neutral'),
                 "settings": trader1_settings,
                 "data": self.trader1_data,
                 "chart": self.trader1_chart
@@ -7400,7 +7400,7 @@ class MultiTraderDialogue:
                 "style": trader2_settings.get('style', 'Aggressive'),
                 "focus": trader2_settings.get('focus', 'short-term momentum and technical patterns'),
                 "risk_tolerance": trader2_settings.get('risk_tolerance', 'high'),
-                "bias": trader2_settings.get('bias', 'neutral'),
+                # "bias": trader2_settings.get('bias', 'neutral'),
                 "settings": trader2_settings,
                 "data": self.trader2_data,
                 "chart": self.trader2_chart
