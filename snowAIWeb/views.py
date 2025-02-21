@@ -743,6 +743,7 @@ def chat_gpt(prompt):
     return response.choices[0].message['content'].strip()
 
 
+
 @csrf_exempt
 def set_daily_brief_assets(request):
     if request.method == "POST":
@@ -7632,6 +7633,41 @@ def get_trader_analysis(request):
             'type': type(e).__name__
         }, status=500)
 
+
+def bullish_market_sentiment(asset):
+    
+    news_data = fetch_news_data([asset], None)
+    prompt = f'''
+    Please give me the sentiment reading for this news data in one word.
+
+    Either Bullish, Bearish or Neutral
+
+    {news_data}
+
+    '''
+    sentiment = chat_gpt(prompt)
+    if sentiment.lower() == 'bullish':
+        return True
+    else:
+        return False
+
+
+def bearish_market_sentiment(asset):
+
+    news_data = fetch_news_data([asset], None)
+    prompt = f'''
+    Please give me the sentiment reading for this news data in one word.
+
+    Either Bullish, Bearish or Neutral
+
+    {news_data}
+
+    '''
+    sentiment = chat_gpt(prompt)
+    if sentiment.lower() == 'bearish':
+        return True
+    else:
+        return False
 
 
 
