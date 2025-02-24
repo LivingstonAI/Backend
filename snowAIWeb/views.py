@@ -4721,14 +4721,22 @@ async def run_genesys_backtests():
         except Exception as e:
             print(f"Error processing backtest for {model}: {e}")
 
-# This should be moved out of the view file, ideally in a scheduler script or app initialization
+
+# import asyncio
+
+# Wrap your function to be run asynchronously
+async def async_run_genesys_backtests():
+    await run_genesys_backtests()
+
+# In the scheduler, use `asyncio.ensure_future` to schedule the coroutine
 scheduler.add_job(
-    run_genesys_backtests,
+    lambda: asyncio.ensure_future(async_run_genesys_backtests()),  # Wrap the coroutine inside ensure_future
     trigger=IntervalTrigger(minutes=1),
     id='run_genesys_backtests',
     name='Update genesys backtests every 1 minute',
     replace_existing=True
 )
+
 
 
 # @csrf_exempt
