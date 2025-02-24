@@ -7670,7 +7670,23 @@ def bearish_market_sentiment(asset):
         return False
 
 
-
+@csrf_exempt
+def save_backtest_model_data(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            backtest = BacktestModels.objects.create(
+                chosen_dataset=data.get('chosen_dataset'),
+                generated_code=data.get('generated_code'),
+                model_backtested=data.get('model_backtested', False),
+                dataset_start=data.get('dataset_start'),
+                dataset_end=data.get('dataset_end'),
+                initial_capital=data.get('initial_capital')
+            )
+            return JsonResponse({'message': 'Backtest data saved successfully!', 'id': backtest.id}, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
 

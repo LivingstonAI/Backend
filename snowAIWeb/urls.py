@@ -85,7 +85,7 @@ urlpatterns = [
     path('time-trading-analytics', views.time_trading_analytics, name='trading_analytics'),
     # path('api/trader-analysis/', views.trader_analysis, name='trader-analysis'),
     path('api/trader-analysis/', views.get_trader_analysis, name='trader-analysis'),
-
+    path('save-backtest-model-data', views.save_backtest_model_data, name='save-backtest-model-data'),
 
 
     path('zinaida-feedback', views.zinaida_feedback_form, name='zinaida-feedback'),
