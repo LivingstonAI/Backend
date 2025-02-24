@@ -4517,7 +4517,7 @@ def split_df(df, start_year, end_year):
     return new_df
 
 
-async def genesys_backest(code):
+async def genesys_backest(generated_code, start_year, end_year, chosen_dataset, initial_capital):
 
     class GenesysBacktest(Strategy):
         def init(self):
@@ -4566,21 +4566,22 @@ async def genesys_backest(code):
     try:
         # Query the model asynchronously using sync_to_async
         queryset = await sync_to_async(SaveDataset.objects.all().first)()
-        dataset_to_use = f'./{queryset.dataset}'
+        dataset_to_use = f'./{chosen_dataset}'
         df_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), dataset_to_use)
         df = pd.read_csv(df_path).drop_duplicates()
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
         
-        split_queryset = await sync_to_async(SplitDataset.objects.get)()
+        # split_queryset = await sync_to_async(SplitDataset.objects.get)()
 
-        start_year = int(split_queryset.start_year)
-        end_year = int(split_queryset.end_year)
+        start_year = int(start_year)
+        end_year = int(end_year)
         new_df = split_df(df, start_year, end_year)
         # print(df)
         
-        init_capital_queryset = await sync_to_async(SetInitCapital.objects.get)()
-        init_capital = float(init_capital_queryset.initial_capital)
+        # init_capital_queryset = await sync_to_async(SetInitCapital.objects.get)()
+        # init_capital = float(init_capital_queryset.initial_capital)
+        init_capital = initial_capital
 
         bt = Backtest(new_df, GenesysBacktest,
                 exclusive_orders=True, cash=init_capital)
@@ -4646,9 +4647,10 @@ def genesys(request):
             generated_code = data.get('generatedCode', '')
 
             # Execute the generated code
+
             try:
                 async def inner_genesys_backtest():
-                    result = await genesys_backest(generated_code)
+                    result = await genesys_backest(generated_code, start_year, end_year, chosen_dataset, initial_capital)
                     return JsonResponse({'message': result})
 
                 # Run the asynchronous code using the event loop

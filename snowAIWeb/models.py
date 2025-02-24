@@ -243,6 +243,52 @@ class BacktestModels(models.Model):
         return f"Backtest on {self.chosen_dataset} from {self.dataset_start} to {self.dataset_end}"
 
 
+
+class BacktestResult(models.Model):
+    start = models.DateField(help_text="Start date of the backtest.")
+    end = models.DateField(help_text="End date of the backtest.")
+    duration = models.CharField(max_length=100, help_text="Duration of the backtest.")
+
+    exposure_time = models.FloatField(help_text="Exposure time percentage.")
+    equity_final = models.FloatField(help_text="Final equity in dollars.")
+    equity_peak = models.FloatField(help_text="Peak equity in dollars.")
+
+    return_percent = models.FloatField(help_text="Total return percentage.")
+    buy_hold_return = models.FloatField(help_text="Buy & Hold return percentage.")
+    annual_return = models.FloatField(help_text="Annualized return percentage.")
+
+    volatility_annual = models.FloatField(help_text="Annualized volatility percentage.")
+    sharpe_ratio = models.FloatField(help_text="Sharpe ratio of the strategy.")
+    sortino_ratio = models.FloatField(help_text="Sortino ratio of the strategy.")
+    calmar_ratio = models.FloatField(help_text="Calmar ratio of the strategy.")
+
+    max_drawdown = models.FloatField(help_text="Maximum drawdown percentage.")
+    avg_drawdown = models.FloatField(help_text="Average drawdown percentage.")
+    max_drawdown_duration = models.CharField(max_length=100, help_text="Maximum drawdown duration.")
+    avg_drawdown_duration = models.CharField(max_length=100, help_text="Average drawdown duration.")
+
+    num_trades = models.IntegerField(help_text="Total number of trades.")
+    win_rate = models.FloatField(help_text="Win rate percentage.")
+
+    best_trade = models.FloatField(help_text="Best trade percentage.")
+    worst_trade = models.FloatField(help_text="Worst trade percentage.")
+    avg_trade = models.FloatField(help_text="Average trade percentage.")
+
+    max_trade_duration = models.CharField(max_length=100, help_text="Maximum trade duration.")
+    avg_trade_duration = models.CharField(max_length=100, help_text="Average trade duration.")
+
+    profit_factor = models.FloatField(help_text="Profit factor of the strategy.")
+    expectancy = models.FloatField(help_text="Expectancy percentage.")
+
+    plot_json = models.JSONField(blank=True, null=True, help_text="Plot data in JSON format.")
+
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Record creation timestamp.")
+
+    def __str__(self):
+        return f"Backtest from {self.start} to {self.end}"
+
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 
