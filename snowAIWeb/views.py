@@ -4517,21 +4517,18 @@ def split_df(df, start_year, end_year):
     return new_df
 
 
-async def genesys_backest(generated_code, start_year, end_year, chosen_dataset, initial_capital):
-
+async def genesys_backtest(generated_code, start_year, end_year, chosen_dataset, initial_capital):
     class GenesysBacktest(Strategy):
         def init(self):
-            price = self.data.Close
+            self.price = self.data.Close
             self.current_equity = 0
-            self.true_init_equity = init_capital
+            self.true_init_equity = initial_capital
 
         def set_take_profit(self, number, type_of_setting):
             current_equity = self.equity
-            # print(f'Current Equity: {current_equity}\n')
             type_of_setting = type_of_setting.upper()
             number = float(number)
             
-            # print(f'self.init_equity: {self.init_equity} vs current equity: {current_equity} with diff: {((current_equity - self.init_equity) / self.true_init_equity) * 100}')
             if type_of_setting == 'PERCENTAGE':
                 percentage = ((current_equity - self.current_equity) / self.true_init_equity) * 100
                 if percentage >= number:
@@ -4540,7 +4537,6 @@ async def genesys_backest(generated_code, start_year, end_year, chosen_dataset, 
                 difference = current_equity - self.current_equity
                 if difference >= number:
                     self.position.close()
-        
 
         def set_stop_loss(self, number, type_of_setting):
             type_of_setting = type_of_setting.upper()
@@ -4554,15 +4550,21 @@ async def genesys_backest(generated_code, start_year, end_year, chosen_dataset, 
                 difference = current_equity - self.current_equity
                 if difference <= number:
                     self.position.close()
-                    
 
-          
         def next(self):
-            dataset = pd.DataFrame({'Open': self.data.Open, 'High': self.data.High, 'Low': self.data.Low, 'Close': self.data.Close, 'Volume': self.data.Volume})
+            dataset = pd.DataFrame({
+                'Open': self.data.Open,
+                'High': self.data.High,
+                'Low': self.data.Low,
+                'Close': self.data.Close,
+                'Volume': self.data.Volume
+            })
             try:
-                exec(code)    
+                # Use the generated code
+                exec(generated_code)
             except Exception as e:
                 print(f'Exception: {e}')
+
     try:
         # Query the model asynchronously using sync_to_async
         queryset = await sync_to_async(SaveDataset.objects.all().first)()
@@ -4571,39 +4573,24 @@ async def genesys_backest(generated_code, start_year, end_year, chosen_dataset, 
         df = pd.read_csv(df_path).drop_duplicates()
         df.index = pd.to_datetime(df['Time'].values)
         del df['Time']
-        
-        # split_queryset = await sync_to_async(SplitDataset.objects.get)()
 
         start_year = int(start_year)
         end_year = int(end_year)
         new_df = split_df(df, start_year, end_year)
-        # print(df)
         
-        # init_capital_queryset = await sync_to_async(SetInitCapital.objects.get)()
-        # init_capital = float(init_capital_queryset.initial_capital)
+        # init_capital = await sync_to_async(SetInitCapital.objects.get)()
         init_capital = initial_capital
 
-        bt = Backtest(new_df, GenesysBacktest,
-                exclusive_orders=True, cash=init_capital)
-
+        bt = Backtest(new_df, GenesysBacktest, exclusive_orders=True, cash=init_capital)
         output = bt.run()
 
-        # return_plot = False
-
-        # if len(new_df) > 5000:
-        #     return_plot = True
-        # else:
-        #     return_plot = False
         try:
             p = bt.plot()
-                
             item = json_item(p, "new_plot")
-            # print(item)
-                
             plot_json = json.dumps(item)
         except Exception as e:
             plot_json = {}
-        
+
         # Convert the relevant output fields to a dictionary
         result_dict = {
             "Start": str(output['Start']),
@@ -4632,9 +4619,9 @@ async def genesys_backest(generated_code, start_year, end_year, chosen_dataset, 
             "Avg. Trade Duration": str(output['Avg. Trade Duration']),
             "Profit Factor": str(output['Profit Factor']),
             "Expectancy [%]": str(output['Expectancy [%]']),
-            # "SQN": output['SQN'],
         }
         return result_dict, plot_json
+
     except Exception as e:
         return JsonResponse({'error': str(e)})
 
@@ -4720,6 +4707,16 @@ async def run_genesys_backtests():
 
         except Exception as e:
             print(f"Error processing backtest for {model}: {e}")
+from asgiref.sync import async_to_sync  # Import async_to_sync to call async functions
+
+@csrf_exempt
+def trigger_backtest(request):
+    try:
+        # Use async_to_sync to call the async function in a synchronous view
+        async_to_sync(run_genesys_backtests)()
+        return JsonResponse({"status": "success", "message": "Backtest completed successfully."}, status=200)
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
 
 # import asyncio
@@ -4736,16 +4733,6 @@ async def run_genesys_backtests():
 #     name='Update genesys backtests every 1 minute',
 #     replace_existing=True
 # )
-from asgiref.sync import async_to_sync  # Import async_to_sync to call async functions
-
-@csrf_exempt
-def trigger_backtest(request):
-    try:
-        # Use async_to_sync to call the async function in a synchronous view
-        async_to_sync(run_genesys_backtests)()
-        return JsonResponse({"status": "success", "message": "Backtest completed successfully."}, status=200)
-    except Exception as e:
-        return JsonResponse({"status": "error", "message": str(e)}, status=500)
 
 
 # @csrf_exempt
