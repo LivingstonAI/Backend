@@ -4721,7 +4721,7 @@ async def run_genesys_backtests():
         except Exception as e:
             print(f"Error processing backtest for {model}: {e}")
 
-# Schedule the run_genesys_backtests function to run every 5 minutes
+# This should be moved out of the view file, ideally in a scheduler script or app initialization
 scheduler.add_job(
     run_genesys_backtests,
     trigger=IntervalTrigger(minutes=2),
@@ -4734,8 +4734,8 @@ scheduler.add_job(
 @csrf_exempt
 async def test_async_backtest(request):
     try:
-        # Ensure that run_genesys_backtests is an async function
-        backtest = await run_genesys_backtests()
+        # Run the asynchronous backtest function
+        await run_genesys_backtests()
         return JsonResponse({'message': 'Backtest Successful!'})
     except Exception as e:
         return JsonResponse({'message': str(e)})
