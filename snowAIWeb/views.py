@@ -4721,14 +4721,14 @@ async def run_genesys_backtests():
         except Exception as e:
             print(f"Error processing backtest for {model}: {e}")
 
-# This should be moved out of the view file, ideally in a scheduler script or app initialization
-scheduler.add_job(
-    run_genesys_backtests,
-    trigger=IntervalTrigger(minutes=2),
-    id='run_genesys_backtests',
-    name='Update genesys backtests every 2 minutes',
-    replace_existing=True
-)
+# # This should be moved out of the view file, ideally in a scheduler script or app initialization
+# scheduler.add_job(
+#     run_genesys_backtests,
+#     trigger=IntervalTrigger(minutes=2),
+#     id='run_genesys_backtests',
+#     name='Update genesys backtests every 2 minutes',
+#     replace_existing=True
+# )
 
 
 @csrf_exempt
