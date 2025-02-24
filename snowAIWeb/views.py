@@ -4738,9 +4738,10 @@ async def run_genesys_backtests():
 # )
 
 @csrf_exempt
-async def trigger_backtest(request):
+def trigger_backtest(request):
     try:
-        await run_genesys_backtests()
+        # Use async_to_sync to call the async function in a synchronous view
+        async_to_sync(run_genesys_backtests)()
         return JsonResponse({"status": "success", "message": "Backtest completed successfully."}, status=200)
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
