@@ -4730,6 +4730,13 @@ scheduler.add_job(
     replace_existing=True
 )
 
+@csrf_exempt
+def test_async_backtest(request):
+    try:
+        backtest = await run_genesys_backtests()
+        return JsonResponse({'message': f'Backtest Successful!'})
+    except Exception as e:
+        return JsonResponse({'message': f'{e}'})
 
 
 @csrf_exempt
