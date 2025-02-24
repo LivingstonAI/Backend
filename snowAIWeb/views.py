@@ -4724,9 +4724,9 @@ async def run_genesys_backtests():
 # This should be moved out of the view file, ideally in a scheduler script or app initialization
 scheduler.add_job(
     run_genesys_backtests,
-    trigger=IntervalTrigger(minutes=2),
+    trigger=IntervalTrigger(minutes=1),
     id='run_genesys_backtests',
-    name='Update genesys backtests every 2 minutes',
+    name='Update genesys backtests every 1 minute',
     replace_existing=True
 )
 
