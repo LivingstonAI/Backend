@@ -231,6 +231,18 @@ class AlertBot(models.Model):
         verbose_name_plural = "Alerts"
 
 
+class BacktestModels(models.Model):
+    chosen_dataset = models.CharField(max_length=255, help_text="Name or path of the dataset used.")
+    generated_code = models.TextField(help_text="Generated code for the backtest.")
+    model_backtested = models.BooleanField(default=False, help_text="Indicates whether the model was backtested.")
+    dataset_start = models.CharField(max_length=50, help_text="Start date of the dataset (YYYY-MM-DD format).")
+    dataset_end = models.CharField(max_length=50, help_text="End date of the dataset (YYYY-MM-DD format).")
+    initial_capital = models.FloatField(help_text="Initial capital for the backtest.")
+
+    def __str__(self):
+        return f"Backtest on {self.chosen_dataset} from {self.dataset_start} to {self.dataset_end}"
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 
