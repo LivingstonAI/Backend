@@ -86,6 +86,7 @@ urlpatterns = [
     # path('api/trader-analysis/', views.trader_analysis, name='trader-analysis'),
     path('api/trader-analysis/', views.get_trader_analysis, name='trader-analysis'),
     path('save-backtest-model-data', views.save_backtest_model_data, name='save-backtest-model-data'),
+    path('trigger-backtest', views.trigger_backtest, name='trigger-backtest'),
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
 
     path('zinaida-feedback', views.zinaida_feedback_form, name='zinaida-feedback'),
