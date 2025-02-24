@@ -4666,6 +4666,71 @@ def genesys(request):
         return JsonResponse({'message': 'api-call works!'})
 
 
+async def run_genesys_backtests():
+    """
+    Periodically fetches untested backtest models, runs the backtest, and stores the results.
+    """
+    untested_models = await sync_to_async(list)(BacktestModels.objects.filter(model_backtested=False))
+
+    for model in untested_models:
+        try:
+            result_dict, plot_json = await genesys_backest(
+                model.generated_code,
+                model.dataset_start,
+                model.dataset_end,
+                model.chosen_dataset,
+                model.initial_capital
+            )
+
+            # Save results to BacktestResult
+            await sync_to_async(BacktestResult.objects.create)(
+                backtest_model=model,
+                start=result_dict.get("Start"),
+                end=result_dict.get("End"),
+                duration=result_dict.get("Duration"),
+                exposure_time=float(result_dict.get("Exposure Time [%]", 0)),
+                equity_final=float(result_dict.get("Equity Final [$]", 0)),
+                equity_peak=float(result_dict.get("Equity Peak [$]", 0)),
+                return_pct=float(result_dict.get("Return [%]", 0)),
+                buy_hold_return=float(result_dict.get("Buy & Hold Return [%]", 0)),
+                return_ann=float(result_dict.get("Return (Ann.) [%]", 0)),
+                volatility_ann=float(result_dict.get("Volatility (Ann.) [%]", 0)),
+                sharpe_ratio=float(result_dict.get("Sharpe Ratio", 0)),
+                sortino_ratio=float(result_dict.get("Sortino Ratio", 0)),
+                calmar_ratio=float(result_dict.get("Calmar Ratio", 0)),
+                max_drawdown=float(result_dict.get("Max. Drawdown [%]", 0)),
+                avg_drawdown=float(result_dict.get("Avg. Drawdown [%]", 0)),
+                max_drawdown_duration=result_dict.get("Max. Drawdown Duration"),
+                avg_drawdown_duration=result_dict.get("Avg. Drawdown Duration"),
+                trades=int(result_dict.get("# Trades", 0)),
+                win_rate=float(result_dict.get("Win Rate [%]", 0)),
+                best_trade=float(result_dict.get("Best Trade [%]", 0)),
+                worst_trade=float(result_dict.get("Worst Trade [%]", 0)),
+                avg_trade=float(result_dict.get("Avg. Trade [%]", 0)),
+                max_trade_duration=result_dict.get("Max. Trade Duration"),
+                avg_trade_duration=result_dict.get("Avg. Trade Duration"),
+                profit_factor=float(result_dict.get("Profit Factor", 0)),
+                expectancy=float(result_dict.get("Expectancy [%]", 0)),
+                plot_json=plot_json
+            )
+
+            # Mark model as backtested
+            model.model_backtested = True
+            await sync_to_async(model.save)()
+
+        except Exception as e:
+            print(f"Error processing backtest for {model}: {e}")
+
+# Schedule the run_genesys_backtests function to run every 5 minutes
+scheduler.add_job(
+    run_genesys_backtests,
+    trigger=IntervalTrigger(minutes=2),
+    id='run_genesys_backtests',
+    name='Update genesys backtests every 5 minutes',
+    replace_existing=True
+)
+
+
 @csrf_exempt
 def save_dataset(request, dataset):
     dataset_to_save = dataset
