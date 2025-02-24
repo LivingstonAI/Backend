@@ -4736,6 +4736,7 @@ async def run_genesys_backtests():
 #     name='Update genesys backtests every 1 minute',
 #     replace_existing=True
 # )
+from asgiref.sync import async_to_sync  # Import async_to_sync to call async functions
 
 @csrf_exempt
 def trigger_backtest(request):
