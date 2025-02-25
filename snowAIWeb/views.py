@@ -4718,6 +4718,7 @@ async def run_genesys_backtests():
             model.model_backtested = True
             await sync_to_async(model.save)()
 
+
         except Exception as e:
             print(f"Error processing backtest for {model}: {e}")
 from asgiref.sync import async_to_sync  # Import async_to_sync to call async functions
@@ -4738,14 +4739,14 @@ def trigger_backtest(request):
 # async def async_run_genesys_backtests():
 #     await run_genesys_backtests()
 
-# # In the scheduler, use `asyncio.ensure_future` to schedule the coroutine
-# scheduler.add_job(
-#     lambda: asyncio.ensure_future(async_run_genesys_backtests()),  # Wrap the coroutine inside ensure_future
-#     trigger=IntervalTrigger(minutes=1),
-#     id='run_genesys_backtests',
-#     name='Update genesys backtests every 1 minute',
-#     replace_existing=True
-# )
+# In the scheduler, use `asyncio.ensure_future` to schedule the coroutine
+scheduler.add_job(
+    lambda: asyncio.ensure_future(async_run_genesys_backtests()),  # Wrap the coroutine inside ensure_future
+    trigger=IntervalTrigger(minutes=1),
+    id='run_genesys_backtests',
+    name='Update genesys backtests every 1 minute',
+    replace_existing=True
+)
 
 
 # @csrf_exempt
@@ -7457,6 +7458,8 @@ class MultiTraderDialogue:
             trader2_settings['interval'],
             trader2_settings['numDays']
         )
+
+
 
         # Generate charts for both traders
         self.trader1_chart = generate_candlestick_chart(self.trader1_data)
