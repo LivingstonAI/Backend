@@ -4742,7 +4742,7 @@ def trigger_backtest(request):
 # In the scheduler, use `asyncio.ensure_future` to schedule the coroutine
 scheduler.add_job(
     lambda: asyncio.ensure_future(async_run_genesys_backtests()),  # Wrap the coroutine inside ensure_future
-    trigger=IntervalTrigger(minutes=1),
+    trigger=IntervalTrigger(minutes=5),
     id='run_genesys_backtests',
     name='Update genesys backtests every 1 minute',
     replace_existing=True
