@@ -4682,11 +4682,14 @@ async def run_genesys_backtests():
                 model.initial_capital
         )
 
+        start_date = datetime.strptime(result_dict.get("Start"), "%Y-%m-%d %H:%M:%S").date()
+        end_date = datetime.strptime(result_dict.get("End"), "%Y-%m-%d %H:%M:%S").date()
+
         # Save results to BacktestResult
         await sync_to_async(BacktestResult.objects.create)(
             backtest_model=model,
-            start=result_dict.get("Start"),
-            end=result_dict.get("End"),
+            start=start_date,
+            end=end_date,
             duration=result_dict.get("Duration"),
             exposure_time=float(result_dict.get("Exposure Time [%]", 0)),
             equity_final=float(result_dict.get("Equity Final [$]", 0)),
@@ -4748,7 +4751,7 @@ async def async_run_genesys_backtests():
 # In the scheduler, use `asyncio.ensure_future` to schedule the coroutine
 scheduler.add_job(
     lambda: asyncio.ensure_future(async_run_genesys_backtests()),  # Wrap the coroutine inside ensure_future
-    trigger=IntervalTrigger(minutes=1),
+    trigger=IntervalTrigger(minutes=5),
     id='run_genesys_backtests',
     name='Update genesys backtests every 1 minute',
     replace_existing=True
