@@ -4759,7 +4759,7 @@ def trigger_backtest(request):
     except Exception as e:
         return JsonResponse({"status": "error", "message": f"Loop error: {str(e)}"}, status=500)
 
-        
+
 # import asyncio
 
 # Replace your current scheduler code with this
@@ -4778,9 +4778,9 @@ def run_genesys_backtests_wrapper():
 # Schedule the wrapper function instead of the async function directly
 scheduler.add_job(
     run_genesys_backtests_wrapper,
-    trigger=IntervalTrigger(minutes=1),
+    trigger=IntervalTrigger(minutes=30),
     id='run_genesys_backtests',
-    name='Update genesys backtests every 1 minutes',
+    name='Update genesys backtests every 30 minutes',
     replace_existing=True
 )
 
