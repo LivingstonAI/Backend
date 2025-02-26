@@ -88,6 +88,7 @@ urlpatterns = [
     path('save-backtest-model-data', views.save_backtest_model_data, name='save-backtest-model-data'),
     path('trigger-backtest', views.trigger_backtest, name='trigger-backtest'),
     path('fetch-backtested-results', views.fetch_backtested_results, name='fetch-backtested-results'),
+    path('delete-backtest-model', views.delete_backtest_model, name='delete-backtest-model'),
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
 
     path('zinaida-feedback', views.zinaida_feedback_form, name='zinaida-feedback'),

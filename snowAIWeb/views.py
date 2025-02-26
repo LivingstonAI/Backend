@@ -4865,6 +4865,27 @@ def fetch_backtested_results(request):
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
+@csrf_exempt
+def delete_backtest_model(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            model_id = data.get('model_id')
+            
+            if not model_id:
+                return JsonResponse({'status': 'error', 'message': 'Model ID is required'})
+                
+            model = BacktestModels.objects.get(id=model_id)
+            # This will also delete all related BacktestResult objects due to CASCADE
+            model.delete()
+            
+            return JsonResponse({'status': 'success', 'message': 'Model and associated results deleted'})
+        except BacktestModels.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Model not found'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+    
+    return JsonResponse({'status': 'error', 'message': 'Only POST method is allowed'})
 
 # @csrf_exempt
 # async def test_async_backtest(request):
