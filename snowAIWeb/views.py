@@ -4752,11 +4752,92 @@ async def async_run_genesys_backtests():
 # In the scheduler, use `asyncio.ensure_future` to schedule the coroutine
 scheduler.add_job(
     lambda: asyncio.ensure_future(async_run_genesys_backtests()),  # Wrap the coroutine inside ensure_future
-    trigger=IntervalTrigger(minutes=5),
+    trigger=IntervalTrigger(minutes=30),
     id='run_genesys_backtests',
-    name='Update genesys backtests every 1 minute',
+    name='Update genesys backtests every 30 minutes',
     replace_existing=True
 )
+
+@csrf_exempt
+def fetch_backtested_results(request):
+    try:
+        # Get all backtest results with related model information
+        results = BacktestResult.objects.select_related('backtest_model').all()
+        
+        # Group results by backtest model
+        grouped_results = {}
+        
+        for result in results:
+            model_id = result.backtest_model.id if result.backtest_model else 'unknown'
+            
+            if model_id not in grouped_results:
+                # If this is the first result for this model, initialize the model info
+                if result.backtest_model:
+                    grouped_results[model_id] = {
+                        'model_info': {
+                            'id': result.backtest_model.id,
+                            'dataset': result.backtest_model.chosen_dataset,
+                            'start_date': result.backtest_model.dataset_start,
+                            'end_date': result.backtest_model.dataset_end,
+                            'initial_capital': result.backtest_model.initial_capital,
+                            'code_snippet': result.backtest_model.generated_code[:200] + '...' if len(result.backtest_model.generated_code) > 200 else result.backtest_model.generated_code,
+                        },
+                        'results': []
+                    }
+                else:
+                    grouped_results[model_id] = {
+                        'model_info': {
+                            'id': 'unknown',
+                            'dataset': 'Unknown',
+                            'start_date': 'Unknown',
+                            'end_date': 'Unknown',
+                            'initial_capital': 0,
+                            'code_snippet': 'No code available',
+                        },
+                        'results': []
+                    }
+            
+            # Add this result to the appropriate group
+            grouped_results[model_id]['results'].append({
+                'id': result.id,
+                'start': result.start,
+                'end': result.end,
+                'duration': result.duration,
+                'exposure_time': result.exposure_time,
+                'equity_final': result.equity_final,
+                'equity_peak': result.equity_peak,
+                'return_percent': result.return_percent,
+                'buy_hold_return': result.buy_hold_return,
+                'annual_return': result.annual_return,
+                'volatility_annual': result.volatility_annual,
+                'sharpe_ratio': result.sharpe_ratio,
+                'sortino_ratio': result.sortino_ratio,
+                'calmar_ratio': result.calmar_ratio,
+                'max_drawdown': result.max_drawdown,
+                'avg_drawdown': result.avg_drawdown,
+                'max_drawdown_duration': result.max_drawdown_duration,
+                'avg_drawdown_duration': result.avg_drawdown_duration,
+                'num_trades': result.num_trades,
+                'win_rate': result.win_rate,
+                'best_trade': result.best_trade,
+                'worst_trade': result.worst_trade,
+                'avg_trade': result.avg_trade,
+                'max_trade_duration': result.max_trade_duration,
+                'avg_trade_duration': result.avg_trade_duration,
+                'profit_factor': result.profit_factor,
+                'expectancy': result.expectancy,
+                'created_at': result.created_at,
+                'has_plot': bool(result.plot_json),
+                'plot_json': result.plot_json
+            })
+        
+        # Convert to list for easier handling in React
+        results_list = list(grouped_results.values())
+        
+        return JsonResponse({'status': 'success', 'data': results_list})
+    
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
 
 # @csrf_exempt
