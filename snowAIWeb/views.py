@@ -4513,7 +4513,7 @@ def split_df(df, start_year, end_year):
     
     # Filter rows based on the specified start and end years
     new_df = df[(df.index.year >= start_year) & (df.index.year <= end_year)]
-    
+
     return new_df
 
 
@@ -4736,13 +4736,13 @@ def trigger_backtest(request):
 # import asyncio
 
 # Wrap your function to be run asynchronously
-# async def async_run_genesys_backtests():
-#     await run_genesys_backtests()
+async def async_run_genesys_backtests():
+    await run_genesys_backtests()
 
 # In the scheduler, use `asyncio.ensure_future` to schedule the coroutine
 scheduler.add_job(
     lambda: asyncio.ensure_future(async_run_genesys_backtests()),  # Wrap the coroutine inside ensure_future
-    trigger=IntervalTrigger(minutes=5),
+    trigger=IntervalTrigger(minutes=1),
     id='run_genesys_backtests',
     name='Update genesys backtests every 1 minute',
     replace_existing=True
