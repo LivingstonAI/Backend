@@ -4665,63 +4665,76 @@ def genesys(request):
     else:
         return JsonResponse({'message': 'api-call works!'})
 
-
 async def run_genesys_backtests():
     """
     Periodically fetches untested backtest models, runs the backtest, and stores the results.
     """
-    untested_models = await sync_to_async(list)(BacktestModels.objects.filter(model_backtested=False))
+    try:
+        # Get all untested models
+        untested_models = await sync_to_async(list)(BacktestModels.objects.filter(model_backtested=False))
+        
+        for model in untested_models:
+            try:
+                # Run the backtest
+                result_dict, plot_json = await genesys_backest(
+                    model.generated_code,
+                    model.dataset_start,
+                    model.dataset_end,
+                    model.chosen_dataset,
+                    model.initial_capital
+                )
+                
+                # Parse dates
+                from datetime import datetime
+                start_date = datetime.strptime(result_dict.get("Start"), "%Y-%m-%d %H:%M:%S").date()
+                end_date = datetime.strptime(result_dict.get("End"), "%Y-%m-%d %H:%M:%S").date()
 
-    for model in untested_models:
-        # try:
-        result_dict, plot_json = await genesys_backest(
-                model.generated_code,
-                model.dataset_start,
-                model.dataset_end,
-                model.chosen_dataset,
-                model.initial_capital
-        )
-        from datetime import datetime
+                # Create the result object using sync_to_async
+                await sync_to_async(BacktestResult.objects.create)(
+                    backtest_model=model,
+                    start=start_date,
+                    end=end_date,
+                    duration=result_dict.get("Duration"),
+                    exposure_time=float(result_dict.get("Exposure Time [%]", 0)),
+                    equity_final=float(result_dict.get("Equity Final [$]", 0)),
+                    equity_peak=float(result_dict.get("Equity Peak [$]", 0)),
+                    return_percent=float(result_dict.get("Return [%]", 0)),
+                    buy_hold_return=float(result_dict.get("Buy & Hold Return [%]", 0)),
+                    annual_return=float(result_dict.get("Return (Ann.) [%]", 0)),
+                    volatility_annual=float(result_dict.get("Volatility (Ann.) [%]", 0)),
+                    sharpe_ratio=float(result_dict.get("Sharpe Ratio", 0)),
+                    sortino_ratio=float(result_dict.get("Sortino Ratio", 0)),
+                    calmar_ratio=float(result_dict.get("Calmar Ratio", 0)),
+                    max_drawdown=float(result_dict.get("Max. Drawdown [%]", 0)),
+                    avg_drawdown=float(result_dict.get("Avg. Drawdown [%]", 0)),
+                    max_drawdown_duration=result_dict.get("Max. Drawdown Duration"),
+                    avg_drawdown_duration=result_dict.get("Avg. Drawdown Duration"),
+                    num_trades=int(result_dict.get("# Trades", 0)),
+                    win_rate=float(result_dict.get("Win Rate [%]", 0)),
+                    best_trade=float(result_dict.get("Best Trade [%]", 0)),
+                    worst_trade=float(result_dict.get("Worst Trade [%]", 0)),
+                    avg_trade=float(result_dict.get("Avg. Trade [%]", 0)),
+                    max_trade_duration=result_dict.get("Max. Trade Duration"),
+                    avg_trade_duration=result_dict.get("Avg. Trade Duration"),
+                    profit_factor=float(result_dict.get("Profit Factor", 0)),
+                    expectancy=float(result_dict.get("Expectancy [%]", 0)),
+                    plot_json=plot_json
+                )
 
-        start_date = datetime.strptime(result_dict.get("Start"), "%Y-%m-%d %H:%M:%S").date()
-        end_date = datetime.strptime(result_dict.get("End"), "%Y-%m-%d %H:%M:%S").date()
-
-        # Save results to BacktestResult
-        await sync_to_async(BacktestResult.objects.create)(
-            backtest_model=model,
-            start=start_date,
-            end=end_date,
-            duration=result_dict.get("Duration"),
-            exposure_time=float(result_dict.get("Exposure Time [%]", 0)),
-            equity_final=float(result_dict.get("Equity Final [$]", 0)),
-            equity_peak=float(result_dict.get("Equity Peak [$]", 0)),
-            return_percent=float(result_dict.get("Return [%]", 0)),  # Changed from return_pct
-            buy_hold_return=float(result_dict.get("Buy & Hold Return [%]", 0)),
-            annual_return=float(result_dict.get("Return (Ann.) [%]", 0)),  # Changed from return_ann
-            volatility_annual=float(result_dict.get("Volatility (Ann.) [%]", 0)),  # Changed from volatility_ann
-            sharpe_ratio=float(result_dict.get("Sharpe Ratio", 0)),
-            sortino_ratio=float(result_dict.get("Sortino Ratio", 0)),
-            calmar_ratio=float(result_dict.get("Calmar Ratio", 0)),
-            max_drawdown=float(result_dict.get("Max. Drawdown [%]", 0)),
-            avg_drawdown=float(result_dict.get("Avg. Drawdown [%]", 0)),
-            max_drawdown_duration=result_dict.get("Max. Drawdown Duration"),
-            avg_drawdown_duration=result_dict.get("Avg. Drawdown Duration"),
-            num_trades=int(result_dict.get("# Trades", 0)),  # Changed from trades
-            win_rate=float(result_dict.get("Win Rate [%]", 0)),
-            best_trade=float(result_dict.get("Best Trade [%]", 0)),
-            worst_trade=float(result_dict.get("Worst Trade [%]", 0)),
-            avg_trade=float(result_dict.get("Avg. Trade [%]", 0)),
-            max_trade_duration=result_dict.get("Max. Trade Duration"),
-            avg_trade_duration=result_dict.get("Avg. Trade Duration"),
-            profit_factor=float(result_dict.get("Profit Factor", 0)),
-            expectancy=float(result_dict.get("Expectancy [%]", 0)),
-            plot_json=plot_json
-        )
-
-        # Mark model as backtested
-        model.model_backtested = True
-        await sync_to_async(model.save)()
-
+                # Update model status
+                model.model_backtested = True
+                await sync_to_async(model.save)()
+                
+                print(f"Successfully processed backtest for model {model.id}")
+                
+            except Exception as e:
+                print(f"Error processing backtest for model {model.id}: {str(e)}")
+                # Consider adding error tracking to your model
+                # model.error_message = str(e)
+                # await sync_to_async(model.save)()
+    
+    except Exception as e:
+        print(f"Error in run_genesys_backtests: {str(e)}")
 
         # except Exception as e:
         #     print(f"Error processing backtest for {model}: {e}")
@@ -4730,28 +4743,41 @@ from asgiref.sync import async_to_sync  # Import async_to_sync to call async fun
 @csrf_exempt
 def trigger_backtest(request):
     try:
-        # Use the proper way to run async functions in synchronous context
-        async def run_once():
-            await run_genesys_backtests()
-            
+        # Create a new event loop for this request
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(run_once())
-        loop.close()
         
-        return JsonResponse({"status": "success", "message": "Backtest completed successfully."}, status=200)
+        try:
+            # Run the async function in this new loop
+            loop.run_until_complete(run_genesys_backtests())
+            return JsonResponse({"status": "success", "message": "Backtest completed successfully."}, status=200)
+        except Exception as e:
+            return JsonResponse({"status": "error", "message": str(e)}, status=500)
+        finally:
+            # Always close the loop
+            loop.close()
     except Exception as e:
-        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+        return JsonResponse({"status": "error", "message": f"Loop error: {str(e)}"}, status=500)
 
+        
 # import asyncio
 
-# Wrap your function to be run asynchronously
-async def async_run_genesys_backtests():
-    await run_genesys_backtests()
+# Replace your current scheduler code with this
 
-# In the scheduler, use `asyncio.ensure_future` to schedule the coroutine
+def run_genesys_backtests_wrapper():
+    """
+    Wrapper function that sets up the event loop and runs the async function
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(run_genesys_backtests())
+    finally:
+        loop.close()
+
+# Schedule the wrapper function instead of the async function directly
 scheduler.add_job(
-    lambda: asyncio.ensure_future(async_run_genesys_backtests()),  # Wrap the coroutine inside ensure_future
+    run_genesys_backtests_wrapper,
     trigger=IntervalTrigger(minutes=1),
     id='run_genesys_backtests',
     name='Update genesys backtests every 1 minutes',
