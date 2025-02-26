@@ -243,8 +243,10 @@ class BacktestModels(models.Model):
         return f"Backtest on {self.chosen_dataset} from {self.dataset_start} to {self.dataset_end}"
 
 
-
 class BacktestResult(models.Model):
+
+    backtest_model = models.ForeignKey(BacktestModels, on_delete=models.CASCADE, help_text="Related backtest model", null=True)
+
     start = models.DateField(help_text="Start date of the backtest.")
     end = models.DateField(help_text="End date of the backtest.")
     duration = models.CharField(max_length=100, help_text="Duration of the backtest.")

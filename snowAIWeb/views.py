@@ -4691,10 +4691,10 @@ async def run_genesys_backtests():
                 exposure_time=float(result_dict.get("Exposure Time [%]", 0)),
                 equity_final=float(result_dict.get("Equity Final [$]", 0)),
                 equity_peak=float(result_dict.get("Equity Peak [$]", 0)),
-                return_pct=float(result_dict.get("Return [%]", 0)),
+                return_percent=float(result_dict.get("Return [%]", 0)),  # Changed from return_pct
                 buy_hold_return=float(result_dict.get("Buy & Hold Return [%]", 0)),
-                return_ann=float(result_dict.get("Return (Ann.) [%]", 0)),
-                volatility_ann=float(result_dict.get("Volatility (Ann.) [%]", 0)),
+                annual_return=float(result_dict.get("Return (Ann.) [%]", 0)),  # Changed from return_ann
+                volatility_annual=float(result_dict.get("Volatility (Ann.) [%]", 0)),  # Changed from volatility_ann
                 sharpe_ratio=float(result_dict.get("Sharpe Ratio", 0)),
                 sortino_ratio=float(result_dict.get("Sortino Ratio", 0)),
                 calmar_ratio=float(result_dict.get("Calmar Ratio", 0)),
@@ -4702,7 +4702,7 @@ async def run_genesys_backtests():
                 avg_drawdown=float(result_dict.get("Avg. Drawdown [%]", 0)),
                 max_drawdown_duration=result_dict.get("Max. Drawdown Duration"),
                 avg_drawdown_duration=result_dict.get("Avg. Drawdown Duration"),
-                trades=int(result_dict.get("# Trades", 0)),
+                num_trades=int(result_dict.get("# Trades", 0)),  # Changed from trades
                 win_rate=float(result_dict.get("Win Rate [%]", 0)),
                 best_trade=float(result_dict.get("Best Trade [%]", 0)),
                 worst_trade=float(result_dict.get("Worst Trade [%]", 0)),
@@ -4726,12 +4726,18 @@ from asgiref.sync import async_to_sync  # Import async_to_sync to call async fun
 @csrf_exempt
 def trigger_backtest(request):
     try:
-        # Use async_to_sync to call the async function in a synchronous view
-        async_to_sync(run_genesys_backtests)()
+        # Use the proper way to run async functions in synchronous context
+        async def run_once():
+            await run_genesys_backtests()
+            
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(run_once())
+        loop.close()
+        
         return JsonResponse({"status": "success", "message": "Backtest completed successfully."}, status=200)
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=500)
-
 
 # import asyncio
 
