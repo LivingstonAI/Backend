@@ -4681,6 +4681,7 @@ async def run_genesys_backtests():
                 model.chosen_dataset,
                 model.initial_capital
         )
+        from datetime import datetime
 
         start_date = datetime.strptime(result_dict.get("Start"), "%Y-%m-%d %H:%M:%S").date()
         end_date = datetime.strptime(result_dict.get("End"), "%Y-%m-%d %H:%M:%S").date()
