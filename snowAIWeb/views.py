@@ -4784,11 +4784,12 @@ scheduler.add_job(
     replace_existing=True
 )
 
+
 @csrf_exempt
 def fetch_backtested_results(request):
     try:
-        # Get all backtest results with related model information
-        results = BacktestResult.objects.select_related('backtest_model').all()
+        # Get all backtest results ordered by creation time in descending order
+        results = BacktestResult.objects.select_related('backtest_model').order_by('-created_at')
         
         # Group results by backtest model
         grouped_results = {}
@@ -4864,6 +4865,9 @@ def fetch_backtested_results(request):
     
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+
 
 @csrf_exempt
 def delete_backtest_model(request):
