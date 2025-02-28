@@ -7804,7 +7804,68 @@ def save_backtest_model_data(request):
     return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
+@csrf_exempt
+def generate_idea(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            # Create a new idea
+            idea = IdeaModel.objects.create(
+                idea_category=data.get('idea_category'),
+                idea_text=data.get('idea_text'),
+                idea_tracker=data.get('idea_tracker', 'Pending')
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Idea created successfully',
+                'idea': {
+                    'id': idea.id,
+                    'idea_category': idea.idea_category,
+                    'idea_text': idea.idea_text,
+                    'idea_tracker': idea.idea_tracker,
+                    'created_at': idea.created_at.isoformat()
+                }
+            })
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': str(e)
+            }, status=400)
+    
+    return JsonResponse({
+        'success': False,
+        'message': 'Invalid request method'
+    }, status=405)
 
+@csrf_exempt
+def fetch_ideas(request):
+    if request.method == 'GET':
+        try:
+            # Get all ideas, ordered by creation date (newest first)
+            ideas = IdeaModel.objects.all().order_by('-created_at')
+            
+            # Serialize the ideas
+            ideas_list = [{
+                'id': idea.id,
+                'idea_category': idea.idea_category,
+                'idea_text': idea.idea_text,
+                'idea_tracker': idea.idea_tracker,
+                'created_at': idea.created_at.isoformat()
+            } for idea in ideas]
+            
+            return JsonResponse(ideas_list, safe=False)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'message': 'Invalid request method'
+    }, status=405)
 
 
 
