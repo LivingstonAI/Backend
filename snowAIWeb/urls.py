@@ -91,6 +91,8 @@ urlpatterns = [
     path('delete-backtest-model', views.delete_backtest_model, name='delete-backtest-model'),
     path('generate-idea', views.generate_idea, name='generate-idea'),
     path('fetch-ideas', views.fetch_ideas, name='fetch-ideas'),
+    path('delete-idea', views.delete_idea, name='delete-idea'),
+    path('update-idea-tracker', views.update_idea_tracker, name='update-idea-tracker'),
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
 
     path('zinaida-feedback', views.zinaida_feedback_form, name='zinaida-feedback'),

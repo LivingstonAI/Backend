@@ -7839,6 +7839,7 @@ def generate_idea(request):
         'message': 'Invalid request method'
     }, status=405)
 
+
 @csrf_exempt
 def fetch_ideas(request):
     if request.method == 'GET':
@@ -7866,6 +7867,48 @@ def fetch_ideas(request):
         'success': False,
         'message': 'Invalid request method'
     }, status=405)
+
+
+@csrf_exempt
+def delete_idea(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            idea_id = data.get('idea_id')
+            
+            # Find and delete the idea
+            idea = IdeaModel.objects.get(id=idea_id)
+            idea.delete()
+            
+            return JsonResponse({'status': 'success', 'message': 'Idea deleted successfully'})
+        except IdeaModel.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Idea not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    
+    return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def update_idea_tracker(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            idea_id = data.get('idea_id')
+            new_tracker = data.get('idea_tracker')
+            
+            # Find and update the idea
+            idea = IdeaModel.objects.get(id=idea_id)
+            idea.idea_tracker = new_tracker
+            idea.save()
+            
+            return JsonResponse({'status': 'success', 'message': 'Idea tracker updated successfully'})
+        except IdeaModel.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Idea not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    
+    return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
 
 
 
