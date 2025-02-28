@@ -290,6 +290,24 @@ class BacktestResult(models.Model):
         return f"Backtest from {self.start} to {self.end}"
 
 
+class IdeaModel(models.Model):
+    idea_category = models.CharField(max_length=255)  # A text field for the category
+    idea_text = models.TextField()  # A larger text field for the idea description
+    idea_tracker = models.CharField(
+        max_length=50, 
+        choices=[
+            ('Pending', 'Pending'), 
+            ('In Progress', 'In Progress'), 
+            ('Completed', 'Completed')
+        ]
+    )  # A dropdown for status tracking
+    created_at = models.DateTimeField(auto_now_add=True)  # Automatically set to the current time on creation
+
+    def __str__(self):
+        return self.idea_text[:50]  # Show the first 50 characters of the idea text
+
+
+
 
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
