@@ -7913,7 +7913,38 @@ def update_idea_tracker(request):
 
 
 
-
+@csrf_exempt
+def get_ai_account_summary(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            account_name = data.get('account_name')
+            metrics = data.get('metrics', {})
+            trades = data.get('trades', [])
+            
+            # Create a prompt for the AI
+            prompt = f"""
+            Generate a concise trading performance summary for account '{account_name}' based on the following metrics:
+            - Win Rate: {metrics.get('winRate', 0)}%
+            - Average Win: ${metrics.get('averageWin', 0)}
+            - Average Loss: ${metrics.get('averageLoss', 0)}
+            - Profit Factor: {metrics.get('profitFactor', 0)}
+            - Number of Wins: {metrics.get('numberOfWins', 0)}
+            - Number of Losses: {metrics.get('numberOfLosses', 0)}
+            
+            Include an analysis of performance patterns across different days, trading sessions, and strategies.
+            Provide 2-3 actionable recommendations to improve trading performance.
+            Keep the summary under 250 words and focus on the most important insights.
+            """
+            
+            # Get AI summary
+            summary = chat_gpt(prompt)
+            
+            return JsonResponse({'summary': summary})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Invalid request method'}, status=400)
 
 
 

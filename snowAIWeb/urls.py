@@ -93,6 +93,7 @@ urlpatterns = [
     path('fetch-ideas', views.fetch_ideas, name='fetch-ideas'),
     path('delete-idea', views.delete_idea, name='delete-idea'),
     path('update-idea-tracker', views.update_idea_tracker, name='update-idea-tracker'),
+    path('ai-account-summary', views.get_ai_account_summary, name='ai-account-summary'),
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
 
     path('zinaida-feedback', views.zinaida_feedback_form, name='zinaida-feedback'),
