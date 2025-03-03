@@ -7,7 +7,7 @@ from django.contrib.auth import authenticate, login
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.timezone import now
 from rest_framework.views import APIView
-from rest_framework.response import Response-
+from rest_framework.response import Response
 from rest_framework import status
 from .serializers import *
 from .models import *
