@@ -7,7 +7,7 @@ from django.contrib.auth import authenticate, login
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.timezone import now
 from rest_framework.views import APIView
-from rest_framework.response import Response
+from rest_framework.response import Response-
 from rest_framework import status
 from .serializers import *
 from .models import *
@@ -6310,14 +6310,15 @@ def manage_alerts():
                 print(f"No data available for {asset}. Skipping...")
                 continue
 
-            # Get the most recent closing price
-            latest_price = round(data["Close"].iloc[-1], 5)
+            # Get the most recent closing price (ensure it's a scalar value)
+            latest_price = round(float(data["Close"].iloc[-1]), 5)
 
-            # Check the condition
+            # Check the condition (compare scalar values only)
             condition_met = (
-                (condition == ">" and latest_price > target_price) or
-                (condition == "<" and latest_price < target_price)
+                (condition == ">" and latest_price > float(target_price)) or
+                (condition == "<" and latest_price < float(target_price))
             )
+
 
 
             if condition_met:
