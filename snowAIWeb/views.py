@@ -7912,15 +7912,6 @@ def update_idea_tracker(request):
     return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
 
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.core.exceptions import ObjectDoesNotExist
-import json
-from .models import Account, AccountTrades
-
-def chat_gpt(prompt):
-    # Placeholder for AI integration function
-    return "AI analysis placeholder."  # Replace with actual AI call
 
 @csrf_exempt
 def get_ai_account_summary(request):
@@ -7933,12 +7924,11 @@ def get_ai_account_summary(request):
             try:
                 account = Account.objects.get(account_name=account_name)
                 trades = AccountTrades.objects.filter(account=account)
-            # except ObjectDoesNotExist:
-            #     print(f'Error Occured in AI account summary: {e}')
-                # return JsonResponse({'error': 'Account not found'}, status=404)
+            except ObjectDoesNotExist:
+                return JsonResponse({'error': 'Account not found'}, status=404)
 
             # Calculate basic metrics
-            # total_trades = trades.count()
+            total_trades = trades.count()
             wins = trades.filter(outcome='Profit').count()
             losses = trades.filter(outcome='Loss').count()
 
@@ -7998,13 +7988,10 @@ def get_ai_account_summary(request):
 
             return JsonResponse({'summary': summary})
 
-        # except Exception as e:
-        #     print(f'Error Occured in AI account summary: {e}')
-        #     return JsonResponse({'error': str(e)}, status=500)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
 
-
-    # print(f'Error Occured in AI account summary')
-    # return JsonResponse({'error': 'Invalid request method'}, status=400)
+    return JsonResponse({'error': 'Invalid request method'}, status=400)
 
 
 @csrf_exempt
