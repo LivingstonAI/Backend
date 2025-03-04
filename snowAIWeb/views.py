@@ -7928,8 +7928,8 @@ def get_ai_account_summary(request):
             try:
                 account = Account.objects.get(account_name=account_name)
                 account_trades = account.trades.all()
-            except Account.DoesNotExist:
-                return JsonResponse({'error': 'Account not found'}, status=404)
+            # except Account.DoesNotExist:
+            #     return JsonResponse({'error': 'Account not found'}, status=404)
 
             # Convert trades to a list of dictionaries for easy serialization
             trades_data = [
@@ -7983,12 +7983,12 @@ def get_ai_account_summary(request):
                 'ai_analysis': summary
             })
 
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
+        # except json.JSONDecodeError:
+        #     return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        # except Exception as e:
+            # return JsonResponse({'error': str(e)}, status=500)
 
-    return JsonResponse({'error': 'Invalid request method'}, status=400)
+    # return JsonResponse({'error': 'Invalid request method'}, status=400)
 
     
 @csrf_exempt
