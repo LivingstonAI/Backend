@@ -7912,6 +7912,15 @@ def update_idea_tracker(request):
     return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
 
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.core.exceptions import ObjectDoesNotExist
+import json
+from .models import Account, AccountTrades
+
+def chat_gpt(prompt):
+    # Placeholder for AI integration function
+    return "AI analysis placeholder."  # Replace with actual AI call
 
 @csrf_exempt
 def get_ai_account_summary(request):
@@ -7919,44 +7928,80 @@ def get_ai_account_summary(request):
         try:
             data = json.loads(request.body)
             account_name = data.get('account_name')
-            metrics = data.get('metrics', {})
-            trades = data.get('trades', [])
-            
-            # Create a prompt for the AI
+
+            # Query the database for the account and its trades
+            try:
+                account = Account.objects.get(account_name=account_name)
+                trades = AccountTrades.objects.filter(account=account)
+            except ObjectDoesNotExist:
+                return JsonResponse({'error': 'Account not found'}, status=404)
+
+            # Calculate basic metrics
+            total_trades = trades.count()
+            wins = trades.filter(outcome='Profit').count()
+            losses = trades.filter(outcome='Loss').count()
+
+            win_rate = (wins / total_trades) * 100 if total_trades else 0
+            average_win = sum(t.amount for t in trades if t.outcome == 'Profit') / wins if wins else 0
+            average_loss = sum(t.amount for t in trades if t.outcome == 'Loss') / losses if losses else 0
+            profit_factor = abs(sum(t.amount for t in trades if t.outcome == 'Profit') / sum(t.amount for t in trades if t.outcome == 'Loss')) if losses else 0
+
+            # Prepare metrics for AI
+            metrics = {
+                'winRate': round(win_rate, 2),
+                'averageWin': round(average_win, 2),
+                'averageLoss': round(average_loss, 2),
+                'profitFactor': round(profit_factor, 2)
+            }
+
+            # Structure trade data for pattern analysis
+            trade_data = [
+                {
+                    'dayEntered': trade.day_of_week_entered,
+                    'sessionEntered': trade.trading_session_entered,
+                    'strategy': trade.strategy,
+                    'outcome': trade.outcome
+                }
+                for trade in trades
+            ]
+
+            # Create AI prompt
             prompt = f"""
             Generate a trading performance summary for account '{account_name}' with the following structure:
-            
+
             1. An opening statement about overall performance (start with an appropriate emoji)
             2. Key metrics analysis (start with 📊):
-               - Win Rate: {metrics.get('winRate', 0)}%
-               - Average Win: ${metrics.get('averageWin', 0)}
-               - Average Loss: ${metrics.get('averageLoss', 0)}
-               - Profit Factor: {metrics.get('profitFactor', 0)}
-            
+               - Win Rate: {metrics['winRate']}%
+               - Average Win: ${metrics['averageWin']}
+               - Average Loss: ${metrics['averageLoss']}
+               - Profit Factor: {metrics['profitFactor']}
+
             3. Pattern insights (start with 🔍):
                - Day performance patterns
                - Session performance patterns
                - Strategy performance patterns
-            
+
             4. Recommendations (start with 💡):
                - 2-3 actionable recommendations to improve trading performance
-            
+
             5. A brief closing statement (start with an appropriate emoji)
-            
+
             Keep each section concise. Format your response as plain text with emojis at the beginning of each section.
             Total response should be under 250 words and focus on the most important insights.
 
-            AND NOT MARKDOWN PLEAS
+            AND NO MARKDOWN PLEASE.
             """
-            
-            # Get AI summary
+
+            # Get AI-generated summary
             summary = chat_gpt(prompt)
-            
+
             return JsonResponse({'summary': summary})
+
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
-    
+
     return JsonResponse({'error': 'Invalid request method'}, status=400)
+
 
 
 # LEGODI BACKEND CODE
