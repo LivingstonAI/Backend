@@ -7915,51 +7915,51 @@ def update_idea_tracker(request):
 @csrf_exempt
 def get_ai_account_summary(request):
     if request.method == 'POST':
-        try:
-            # Parse incoming JSON data
-            data = json.loads(request.body)
-            account_name = data.get('account_name')
+        # try:
+        # Parse incoming JSON data
+        data = json.loads(request.body)
+        account_name = data.get('account_name')
 
-            # Validate account name is provided
-            if not account_name:
-                return JsonResponse({'error': 'Account name is required'}, status=400)
+        # Validate account name is provided
+        if not account_name:
+            return JsonResponse({'error': 'Account name is required'}, status=400)
 
-            # Retrieve the account with all associated trades
-            try:
-                account = Account.objects.get(account_name=account_name)
-                account_trades = account.trades.all()
-            # except Account.DoesNotExist:
-            #     return JsonResponse({'error': 'Account not found'}, status=404)
+        # Retrieve the account with all associated trades
+        # try:
+        account = Account.objects.get(account_name=account_name)
+        account_trades = account.trades.all()
+        # except Account.DoesNotExist:
+        #     return JsonResponse({'error': 'Account not found'}, status=404)
 
-                # Convert trades to a list of dictionaries for easy serialization
-                trades_data = [
-                    {
-                        'asset': trade.asset,
-                        'order_type': trade.order_type,
-                        'strategy': trade.strategy,
-                        'day_entered': trade.day_of_week_entered,
-                        'day_closed': trade.day_of_week_closed,
-                        'session_entered': trade.trading_session_entered,
-                        'session_closed': trade.trading_session_closed,
-                        'outcome': trade.outcome,
-                        'amount': trade.amount,
-                        'emotional_bias': trade.emotional_bias,
-                        'reflection': trade.reflection,
-                        'date_entered': trade.date_entered.isoformat() if trade.date_entered else None
-                    } 
-                    for trade in account_trades
-                ]
+        # Convert trades to a list of dictionaries for easy serialization
+        trades_data = [
+            {
+                'asset': trade.asset,
+                'order_type': trade.order_type,
+                'strategy': trade.strategy,
+                'day_entered': trade.day_of_week_entered,
+                'day_closed': trade.day_of_week_closed,
+                'session_entered': trade.trading_session_entered,
+                'session_closed': trade.trading_session_closed,
+                'outcome': trade.outcome,
+                'amount': trade.amount,
+                'emotional_bias': trade.emotional_bias,
+                'reflection': trade.reflection,
+                'date_entered': trade.date_entered.isoformat() if trade.date_entered else None
+            } 
+                for trade in account_trades
+            ]
 
-                # Prepare the full account data for AI analysis
-                account_data = {
-                    'account_name': account.account_name,
-                    'main_assets': account.main_assets,
-                    'initial_capital': account.initial_capital,
-                    'trades': trades_data
-                }
+        # Prepare the full account data for AI analysis
+        account_data = {
+            'account_name': account.account_name,
+            'main_assets': account.main_assets,
+            'initial_capital': account.initial_capital,
+            'trades': trades_data
+        }
 
-                # Create AI prompt with raw account data
-                prompt = f"""
+        # Create AI prompt with raw account data
+        prompt = f"""
                 Analyze the entire trading account data for '{account_name}':
 
                 Raw Account Data:
@@ -7973,12 +7973,12 @@ def get_ai_account_summary(request):
                 5. Potential areas of improvement
 
                 Analyze the full dataset thoroughly and provide deep, nuanced insights.
-                """
+            """
 
-                # Get AI-generated summary
-                summary = chat_gpt(prompt)
+        # Get AI-generated summary
+        summary = chat_gpt(prompt)
 
-                return JsonResponse({
+        return JsonResponse({
                     'account_data': account_data,
                     'ai_analysis': summary
                 })
