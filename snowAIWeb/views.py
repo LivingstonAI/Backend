@@ -7926,76 +7926,60 @@ def get_ai_account_summary(request):
 
             # Retrieve the account with all associated trades
             try:
-                # Use select_related and prefetch_related for optimized querying
                 account = Account.objects.get(account_name=account_name)
                 account_trades = account.trades.all()
             except Account.DoesNotExist:
                 return JsonResponse({'error': 'Account not found'}, status=404)
 
-            # Prepare comprehensive account data for AI analysis
-            account_summary = {
-                'account_details': {
-                    'name': account.account_name,
-                    'main_assets': account.main_assets,
-                    'initial_capital': account.initial_capital
-                },
-                'trades': [
-                    {
-                        'asset': trade.asset,
-                        'order_type': trade.order_type,
-                        'strategy': trade.strategy,
-                        'day_entered': trade.day_of_week_entered,
-                        'day_closed': trade.day_of_week_closed,
-                        'session_entered': trade.trading_session_entered,
-                        'session_closed': trade.trading_session_closed,
-                        'outcome': trade.outcome,
-                        'amount': trade.amount,
-                        'emotional_bias': trade.emotional_bias,
-                        'reflection': trade.reflection,
-                        'date_entered': trade.date_entered.isoformat() if trade.date_entered else None
-                    } 
-                    for trade in account_trades
-                ],
-                'performance_metrics': {
-                    'total_trades': account_trades.count(),
-                    'wins': account_trades.filter(outcome='Profit').count(),
-                    'losses': account_trades.filter(outcome='Loss').count(),
-                    'win_rate': round((account_trades.filter(outcome='Profit').count() / account_trades.count()) * 100, 2) if account_trades.count() > 0 else 0,
-                    'total_profit': sum(trade.amount for trade in account_trades.filter(outcome='Profit')),
-                    'total_loss': sum(trade.amount for trade in account_trades.filter(outcome='Loss'))
-                }
+            # Convert trades to a list of dictionaries for easy serialization
+            trades_data = [
+                {
+                    'asset': trade.asset,
+                    'order_type': trade.order_type,
+                    'strategy': trade.strategy,
+                    'day_entered': trade.day_of_week_entered,
+                    'day_closed': trade.day_of_week_closed,
+                    'session_entered': trade.trading_session_entered,
+                    'session_closed': trade.trading_session_closed,
+                    'outcome': trade.outcome,
+                    'amount': trade.amount,
+                    'emotional_bias': trade.emotional_bias,
+                    'reflection': trade.reflection,
+                    'date_entered': trade.date_entered.isoformat() if trade.date_entered else None
+                } 
+                for trade in account_trades
+            ]
+
+            # Prepare the full account data for AI analysis
+            account_data = {
+                'account_name': account.account_name,
+                'main_assets': account.main_assets,
+                'initial_capital': account.initial_capital,
+                'trades': trades_data
             }
 
-            # Create AI prompt with comprehensive data
+            # Create AI prompt with raw account data
             prompt = f"""
-            Analyze the trading performance for account '{account_name}':
+            Analyze the entire trading account data for '{account_name}':
 
-            Account Details:
-            - Main Assets: {account_summary['account_details']['main_assets']}
-            - Initial Capital: ${account_summary['account_details']['initial_capital']}
+            Raw Account Data:
+            {json.dumps(account_data, indent=2)}
 
-            Performance Overview:
-            - Total Trades: {account_summary['performance_metrics']['total_trades']}
-            - Wins: {account_summary['performance_metrics']['wins']}
-            - Losses: {account_summary['performance_metrics']['losses']}
-            - Win Rate: {account_summary['performance_metrics']['win_rate']}%
-            - Total Profit: ${account_summary['performance_metrics']['total_profit']}
-            - Total Loss: ${account_summary['performance_metrics']['total_loss']}
+            Provide a comprehensive trading performance summary that includes:
+            1. Overall performance analysis
+            2. Detailed strategy insights
+            3. Psychological and emotional trading patterns
+            4. Specific, actionable recommendations
+            5. Potential areas of improvement
 
-            Provide a detailed analysis of trading performance, including:
-            1. Strengths and weaknesses in trading strategy
-            2. Insights from trade patterns
-            3. Recommendations for improvement
-            4. Emotional and psychological trading aspects
-
-            Response should be concise, actionable, and insightful.
+            Analyze the full dataset thoroughly and provide deep, nuanced insights.
             """
 
             # Get AI-generated summary
             summary = chat_gpt(prompt)
 
             return JsonResponse({
-                'account_summary': account_summary,
+                'account_data': account_data,
                 'ai_analysis': summary
             })
 
