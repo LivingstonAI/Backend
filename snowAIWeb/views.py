@@ -7929,8 +7929,8 @@ def get_ai_account_summary(request):
             try:
                 # Use select_related and prefetch_related for optimized querying
                 account = Account.objects.select_related().prefetch_related('trades').get(account_name=account_name)
-            except Account.DoesNotExist:
-                return JsonResponse({'error': 'Account not found'}, status=404)
+            # except Account.DoesNotExist:
+                # return JsonResponse({'error': 'Account not found'}, status=404)
 
             # Prepare comprehensive account data for AI analysis
             account_summary = {
@@ -7999,12 +7999,12 @@ def get_ai_account_summary(request):
                 'ai_analysis': summary
             })
 
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
+        # except json.JSONDecodeError:
+            # return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        # except Exception as e:
+            # return JsonResponse({'error': str(e)}, status=500)
 
-    return JsonResponse({'error': 'Invalid request method'}, status=400)
+    # return JsonResponse({'error': 'Invalid request method'}, status=400)
 
     
 @csrf_exempt
