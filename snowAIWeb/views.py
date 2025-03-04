@@ -7938,7 +7938,7 @@ def get_ai_account_summary(request):
                 # return JsonResponse({'error': 'Account not found'}, status=404)
 
             # Calculate basic metrics
-            total_trades = trades.count()
+            # total_trades = trades.count()
             wins = trades.filter(outcome='Profit').count()
             losses = trades.filter(outcome='Loss').count()
 
