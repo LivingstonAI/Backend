@@ -7917,83 +7917,96 @@ def update_idea_tracker(request):
 def get_ai_account_summary(request):
     if request.method == 'POST':
         try:
+            # Parse incoming JSON data
             data = json.loads(request.body)
             account_name = data.get('account_name')
 
-            # Query the database for the account and its trades
+            # Validate account name is provided
+            if not account_name:
+                return JsonResponse({'error': 'Account name is required'}, status=400)
+
+            # Retrieve the account with all associated trades
             try:
-                account = Account.objects.get(account_name=account_name)
-                trades = AccountTrades.objects.filter(account=account)
-            except ObjectDoesNotExist:
+                # Use select_related and prefetch_related for optimized querying
+                account = Account.objects.select_related().prefetch_related('trades').get(account_name=account_name)
+            except Account.DoesNotExist:
                 return JsonResponse({'error': 'Account not found'}, status=404)
 
-            # Calculate basic metrics
-            total_trades = trades.count()
-            wins = trades.filter(outcome='Profit').count()
-            losses = trades.filter(outcome='Loss').count()
-
-            win_rate = (wins / total_trades) * 100 if total_trades else 0
-            average_win = sum(t.amount for t in trades if t.outcome == 'Profit') / wins if wins else 0
-            average_loss = sum(t.amount for t in trades if t.outcome == 'Loss') / losses if losses else 0
-            profit_factor = abs(sum(t.amount for t in trades if t.outcome == 'Profit') / sum(t.amount for t in trades if t.outcome == 'Loss')) if losses else 0
-
-            # Prepare metrics for AI
-            metrics = {
-                'winRate': round(win_rate, 2),
-                'averageWin': round(average_win, 2),
-                'averageLoss': round(average_loss, 2),
-                'profitFactor': round(profit_factor, 2)
+            # Prepare comprehensive account data for AI analysis
+            account_summary = {
+                'account_details': {
+                    'name': account.account_name,
+                    'main_assets': account.main_assets,
+                    'initial_capital': account.initial_capital
+                },
+                'trades': [
+                    {
+                        'asset': trade.asset,
+                        'order_type': trade.order_type,
+                        'strategy': trade.strategy,
+                        'day_entered': trade.day_of_week_entered,
+                        'day_closed': trade.day_of_week_closed,
+                        'session_entered': trade.trading_session_entered,
+                        'session_closed': trade.trading_session_closed,
+                        'outcome': trade.outcome,
+                        'amount': trade.amount,
+                        'emotional_bias': trade.emotional_bias,
+                        'reflection': trade.reflection,
+                        'date_entered': trade.date_entered.isoformat() if trade.date_entered else None
+                    } 
+                    for trade in account.trades.all()
+                ],
+                'performance_metrics': {
+                    'total_trades': account.trades.count(),
+                    'wins': account.trades.filter(outcome='Profit').count(),
+                    'losses': account.trades.filter(outcome='Loss').count(),
+                    'win_rate': round((account.trades.filter(outcome='Profit').count() / account.trades.count()) * 100, 2) if account.trades.count() > 0 else 0,
+                    'total_profit': sum(trade.amount for trade in account.trades.filter(outcome='Profit')),
+                    'total_loss': sum(trade.amount for trade in account.trades.filter(outcome='Loss'))
+                }
             }
 
-            # Structure trade data for pattern analysis
-            trade_data = [
-                {
-                    'dayEntered': trade.day_of_week_entered,
-                    'sessionEntered': trade.trading_session_entered,
-                    'strategy': trade.strategy,
-                    'outcome': trade.outcome
-                }
-                for trade in trades
-            ]
-
-            # Create AI prompt
+            # Create AI prompt with comprehensive data
             prompt = f"""
-            Generate a trading performance summary for account '{account_name}' with the following structure:
+            Analyze the trading performance for account '{account_name}':
 
-            1. An opening statement about overall performance (start with an appropriate emoji)
-            2. Key metrics analysis (start with 📊):
-               - Win Rate: {metrics['winRate']}%
-               - Average Win: ${metrics['averageWin']}
-               - Average Loss: ${metrics['averageLoss']}
-               - Profit Factor: {metrics['profitFactor']}
+            Account Details:
+            - Main Assets: {account_summary['account_details']['main_assets']}
+            - Initial Capital: ${account_summary['account_details']['initial_capital']}
 
-            3. Pattern insights (start with 🔍):
-               - Day performance patterns
-               - Session performance patterns
-               - Strategy performance patterns
+            Performance Overview:
+            - Total Trades: {account_summary['performance_metrics']['total_trades']}
+            - Wins: {account_summary['performance_metrics']['wins']}
+            - Losses: {account_summary['performance_metrics']['losses']}
+            - Win Rate: {account_summary['performance_metrics']['win_rate']}%
+            - Total Profit: ${account_summary['performance_metrics']['total_profit']}
+            - Total Loss: ${account_summary['performance_metrics']['total_loss']}
 
-            4. Recommendations (start with 💡):
-               - 2-3 actionable recommendations to improve trading performance
+            Provide a detailed analysis of trading performance, including:
+            1. Strengths and weaknesses in trading strategy
+            2. Insights from trade patterns
+            3. Recommendations for improvement
+            4. Emotional and psychological trading aspects
 
-            5. A brief closing statement (start with an appropriate emoji)
-
-            Keep each section concise. Format your response as plain text with emojis at the beginning of each section.
-            Total response should be under 250 words and focus on the most important insights.
-
-            AND NO MARKDOWN PLEASE.
+            Response should be concise, actionable, and insightful.
             """
 
             # Get AI-generated summary
             summary = chat_gpt(prompt)
 
-            return JsonResponse({'summary': summary})
+            return JsonResponse({
+                'account_summary': account_summary,
+                'ai_analysis': summary
+            })
 
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
 
     return JsonResponse({'error': 'Invalid request method'}, status=400)
 
-
+    
 @csrf_exempt
 def save_quiz(request):
     if request.method == 'POST':
