@@ -7912,7 +7912,6 @@ def update_idea_tracker(request):
     return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
 
 
-
 @csrf_exempt
 def get_ai_account_summary(request):
     if request.method == 'POST':
@@ -7928,9 +7927,10 @@ def get_ai_account_summary(request):
             # Retrieve the account with all associated trades
             try:
                 # Use select_related and prefetch_related for optimized querying
-                account = Account.objects.select_related().prefetch_related('trades').get(account_name=account_name)
-            # except Account.DoesNotExist:
-                # return JsonResponse({'error': 'Account not found'}, status=404)
+                account = Account.objects.get(account_name=account_name)
+                account_trades = account.trades.all()
+            except Account.DoesNotExist:
+                return JsonResponse({'error': 'Account not found'}, status=404)
 
             # Prepare comprehensive account data for AI analysis
             account_summary = {
@@ -7954,15 +7954,15 @@ def get_ai_account_summary(request):
                         'reflection': trade.reflection,
                         'date_entered': trade.date_entered.isoformat() if trade.date_entered else None
                     } 
-                    for trade in account.trades.all()
+                    for trade in account_trades
                 ],
                 'performance_metrics': {
-                    'total_trades': account.trades.count(),
-                    'wins': account.trades.filter(outcome='Profit').count(),
-                    'losses': account.trades.filter(outcome='Loss').count(),
-                    'win_rate': round((account.trades.filter(outcome='Profit').count() / account.trades.count()) * 100, 2) if account.trades.count() > 0 else 0,
-                    'total_profit': sum(trade.amount for trade in account.trades.filter(outcome='Profit')),
-                    'total_loss': sum(trade.amount for trade in account.trades.filter(outcome='Loss'))
+                    'total_trades': account_trades.count(),
+                    'wins': account_trades.filter(outcome='Profit').count(),
+                    'losses': account_trades.filter(outcome='Loss').count(),
+                    'win_rate': round((account_trades.filter(outcome='Profit').count() / account_trades.count()) * 100, 2) if account_trades.count() > 0 else 0,
+                    'total_profit': sum(trade.amount for trade in account_trades.filter(outcome='Profit')),
+                    'total_loss': sum(trade.amount for trade in account_trades.filter(outcome='Loss'))
                 }
             }
 
@@ -7999,12 +7999,12 @@ def get_ai_account_summary(request):
                 'ai_analysis': summary
             })
 
-        # except json.JSONDecodeError:
-            # return JsonResponse({'error': 'Invalid JSON'}, status=400)
-        # except Exception as e:
-            # return JsonResponse({'error': str(e)}, status=500)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
 
-    # return JsonResponse({'error': 'Invalid request method'}, status=400)
+    return JsonResponse({'error': 'Invalid request method'}, status=400)
 
     
 @csrf_exempt
