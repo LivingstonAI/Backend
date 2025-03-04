@@ -7924,17 +7924,29 @@ def get_ai_account_summary(request):
             
             # Create a prompt for the AI
             prompt = f"""
-            Generate a concise trading performance summary for account '{account_name}' based on the following metrics:
-            - Win Rate: {metrics.get('winRate', 0)}%
-            - Average Win: ${metrics.get('averageWin', 0)}
-            - Average Loss: ${metrics.get('averageLoss', 0)}
-            - Profit Factor: {metrics.get('profitFactor', 0)}
-            - Number of Wins: {metrics.get('numberOfWins', 0)}
-            - Number of Losses: {metrics.get('numberOfLosses', 0)}
+            Generate a trading performance summary for account '{account_name}' with the following structure:
             
-            Include an analysis of performance patterns across different days, trading sessions, and strategies.
-            Provide 2-3 actionable recommendations to improve trading performance.
-            Keep the summary under 250 words and focus on the most important insights.
+            1. An opening statement about overall performance (start with an appropriate emoji)
+            2. Key metrics analysis (start with 📊):
+               - Win Rate: {metrics.get('winRate', 0)}%
+               - Average Win: ${metrics.get('averageWin', 0)}
+               - Average Loss: ${metrics.get('averageLoss', 0)}
+               - Profit Factor: {metrics.get('profitFactor', 0)}
+            
+            3. Pattern insights (start with 🔍):
+               - Day performance patterns
+               - Session performance patterns
+               - Strategy performance patterns
+            
+            4. Recommendations (start with 💡):
+               - 2-3 actionable recommendations to improve trading performance
+            
+            5. A brief closing statement (start with an appropriate emoji)
+            
+            Keep each section concise. Format your response as plain text with emojis at the beginning of each section.
+            Total response should be under 250 words and focus on the most important insights.
+
+            AND NOT MARKDOWN PLEAS
             """
             
             # Get AI summary
@@ -7945,7 +7957,6 @@ def get_ai_account_summary(request):
             return JsonResponse({'error': str(e)}, status=500)
     
     return JsonResponse({'error': 'Invalid request method'}, status=400)
-
 
 
 # LEGODI BACKEND CODE
