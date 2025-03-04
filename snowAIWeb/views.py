@@ -7931,57 +7931,57 @@ def get_ai_account_summary(request):
             # except Account.DoesNotExist:
             #     return JsonResponse({'error': 'Account not found'}, status=404)
 
-            # Convert trades to a list of dictionaries for easy serialization
-            trades_data = [
-                {
-                    'asset': trade.asset,
-                    'order_type': trade.order_type,
-                    'strategy': trade.strategy,
-                    'day_entered': trade.day_of_week_entered,
-                    'day_closed': trade.day_of_week_closed,
-                    'session_entered': trade.trading_session_entered,
-                    'session_closed': trade.trading_session_closed,
-                    'outcome': trade.outcome,
-                    'amount': trade.amount,
-                    'emotional_bias': trade.emotional_bias,
-                    'reflection': trade.reflection,
-                    'date_entered': trade.date_entered.isoformat() if trade.date_entered else None
-                } 
-                for trade in account_trades
-            ]
+                # Convert trades to a list of dictionaries for easy serialization
+                trades_data = [
+                    {
+                        'asset': trade.asset,
+                        'order_type': trade.order_type,
+                        'strategy': trade.strategy,
+                        'day_entered': trade.day_of_week_entered,
+                        'day_closed': trade.day_of_week_closed,
+                        'session_entered': trade.trading_session_entered,
+                        'session_closed': trade.trading_session_closed,
+                        'outcome': trade.outcome,
+                        'amount': trade.amount,
+                        'emotional_bias': trade.emotional_bias,
+                        'reflection': trade.reflection,
+                        'date_entered': trade.date_entered.isoformat() if trade.date_entered else None
+                    } 
+                    for trade in account_trades
+                ]
 
-            # Prepare the full account data for AI analysis
-            account_data = {
-                'account_name': account.account_name,
-                'main_assets': account.main_assets,
-                'initial_capital': account.initial_capital,
-                'trades': trades_data
-            }
+                # Prepare the full account data for AI analysis
+                account_data = {
+                    'account_name': account.account_name,
+                    'main_assets': account.main_assets,
+                    'initial_capital': account.initial_capital,
+                    'trades': trades_data
+                }
 
-            # Create AI prompt with raw account data
-            prompt = f"""
-            Analyze the entire trading account data for '{account_name}':
+                # Create AI prompt with raw account data
+                prompt = f"""
+                Analyze the entire trading account data for '{account_name}':
 
-            Raw Account Data:
-            {json.dumps(account_data, indent=2)}
+                Raw Account Data:
+                {json.dumps(account_data, indent=2)}
 
-            Provide a comprehensive trading performance summary that includes:
-            1. Overall performance analysis
-            2. Detailed strategy insights
-            3. Psychological and emotional trading patterns
-            4. Specific, actionable recommendations
-            5. Potential areas of improvement
+                Provide a comprehensive trading performance summary that includes:
+                1. Overall performance analysis
+                2. Detailed strategy insights
+                3. Psychological and emotional trading patterns
+                4. Specific, actionable recommendations
+                5. Potential areas of improvement
 
-            Analyze the full dataset thoroughly and provide deep, nuanced insights.
-            """
+                Analyze the full dataset thoroughly and provide deep, nuanced insights.
+                """
 
-            # Get AI-generated summary
-            summary = chat_gpt(prompt)
+                # Get AI-generated summary
+                summary = chat_gpt(prompt)
 
-            return JsonResponse({
-                'account_data': account_data,
-                'ai_analysis': summary
-            })
+                return JsonResponse({
+                    'account_data': account_data,
+                    'ai_analysis': summary
+                })
 
         # except json.JSONDecodeError:
         #     return JsonResponse({'error': 'Invalid JSON'}, status=400)
