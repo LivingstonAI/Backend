@@ -6340,7 +6340,7 @@ def manage_alerts():
 # Schedule the alert_bot function to run every 5 minutes
 scheduler.add_job(
     manage_alerts,  # Replace with the name of your alert-checking function
-    trigger=IntervalTrigger(minutes=1),
+    trigger=IntervalTrigger(minutes=5),
     id='manage_alerts_job',
     name='Check alerts every 5 minutes',
     replace_existing=True
@@ -7933,8 +7933,9 @@ def get_ai_account_summary(request):
             try:
                 account = Account.objects.get(account_name=account_name)
                 trades = AccountTrades.objects.filter(account=account)
-            except ObjectDoesNotExist:
-                return JsonResponse({'error': 'Account not found'}, status=404)
+            # except ObjectDoesNotExist:
+            #     print(f'Error Occured in AI account summary: {e}')
+                # return JsonResponse({'error': 'Account not found'}, status=404)
 
             # Calculate basic metrics
             total_trades = trades.count()
@@ -7997,10 +7998,13 @@ def get_ai_account_summary(request):
 
             return JsonResponse({'summary': summary})
 
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
+        # except Exception as e:
+        #     print(f'Error Occured in AI account summary: {e}')
+        #     return JsonResponse({'error': str(e)}, status=500)
 
-    return JsonResponse({'error': 'Invalid request method'}, status=400)
+
+    # print(f'Error Occured in AI account summary')
+    # return JsonResponse({'error': 'Invalid request method'}, status=400)
 
 
 @csrf_exempt
