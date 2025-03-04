@@ -8003,6 +8003,55 @@ def get_ai_account_summary(request):
     return JsonResponse({'error': 'Invalid request method'}, status=400)
 
 
+@csrf_exempt
+def save_quiz(request):
+    if request.method == 'POST':
+        try:
+            # Parse the incoming JSON data
+            data = json.loads(request.body)
+            
+            # Extract quiz details
+            quiz_name = data.get('quiz_name', 'Unnamed Quiz')
+            total_questions = data.get('total_questions', 0)
+            correct_answers = data.get('correct_answers', 0)
+            questions = data.get('questions', [])
+
+            # Create SavedQuiz instance
+            saved_quiz = SavedQuiz.objects.create(
+                user=None,  # You can add user authentication later
+                quiz_name=quiz_name,
+                total_questions=total_questions,
+                correct_answers=correct_answers
+            )
+
+            # Create SavedQuizQuestion instances
+            for question_data in questions:
+                SavedQuizQuestion.objects.create(
+                    saved_quiz=saved_quiz,
+                    question=question_data.get('question', ''),
+                    selected_answer=question_data.get('selectedAnswer', ''),
+                    correct_answer=question_data.get('correctAnswer', ''),
+                    is_correct=question_data.get('isCorrect', False)
+                )
+
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'Quiz saved successfully',
+                'saved_quiz_id': saved_quiz.id
+            }, status=201)
+
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error', 
+                'message': str(e)
+            }, status=400)
+    
+    return JsonResponse({
+        'status': 'error', 
+        'message': 'Invalid request method'
+    }, status=405)
+
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():

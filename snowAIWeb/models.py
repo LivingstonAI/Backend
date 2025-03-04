@@ -307,6 +307,26 @@ class IdeaModel(models.Model):
         return self.idea_text[:50]  # Show the first 50 characters of the idea text
 
 
+class SavedQuiz(models.Model):
+    # user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    quiz_name = models.CharField(max_length=255)
+    total_questions = models.IntegerField()
+    correct_answers = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.quiz_name} - {self.correct_answers}/{self.total_questions}"
+
+
+class SavedQuizQuestion(models.Model):
+    saved_quiz = models.ForeignKey(SavedQuiz, related_name='questions', on_delete=models.CASCADE)
+    question = models.TextField()
+    selected_answer = models.CharField(max_length=255)
+    correct_answer = models.CharField(max_length=255)
+    is_correct = models.BooleanField()
+
+    def __str__(self):
+        return f"Question for {self.saved_quiz.quiz_name}"
 
 
 class FeedbackForm(models.Model): 
