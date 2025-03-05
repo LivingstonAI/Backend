@@ -7915,7 +7915,6 @@ def update_idea_tracker(request):
 @csrf_exempt
 def get_ai_account_summary(request):
     if request.method == 'POST':
-        # try:
         # Parse incoming JSON data
         data = json.loads(request.body)
         account_name = data.get('account_name')
@@ -7928,8 +7927,6 @@ def get_ai_account_summary(request):
         # try:
         account = Account.objects.get(account_name=account_name)
         account_trades = account.trades.all()
-        # except Account.DoesNotExist:
-        #     return JsonResponse({'error': 'Account not found'}, status=404)
 
         # Convert trades to a list of dictionaries for easy serialization
         trades_data = [
@@ -7982,13 +7979,6 @@ def get_ai_account_summary(request):
                     'account_data': account_data,
                     'ai_analysis': summary
                 })
-
-        # except json.JSONDecodeError:
-        #     return JsonResponse({'error': 'Invalid JSON'}, status=400)
-        # except Exception as e:
-            # return JsonResponse({'error': str(e)}, status=500)
-
-    # return JsonResponse({'error': 'Invalid request method'}, status=400)
 
     
 @csrf_exempt
