@@ -7921,9 +7921,15 @@ def get_ai_account_summary(request):
             metrics = data.get('metrics', {})
             trades = data.get('trades', [])
             
-            # Create a prompt for the AI
+            # Create a prompt for the AI with style guidance
             prompt = f"""
-            Generate a concise trading performance summary for account '{account_name}' based on the following metrics:
+            Generate a trading performance summary for account '{account_name}' with the following requirements:
+            - Use a friendly, conversational tone
+            - Include relevant emojis to highlight key points
+            - Structure the summary with clear, engaging sections
+            - Provide insights and recommendations with enthusiasm
+            
+            Performance Metrics:
             - Win Rate: {metrics.get('winRate', 0)}%
             - Average Win: ${metrics.get('averageWin', 0)}
             - Average Loss: ${metrics.get('averageLoss', 0)}
@@ -7931,11 +7937,15 @@ def get_ai_account_summary(request):
             - Number of Wins: {metrics.get('numberOfWins', 0)}
             - Number of Losses: {metrics.get('numberOfLosses', 0)}
 
-            And this is the trading data: \n\n{trades}\n\n
+            Trading Data: \n\n{trades}\n\n
             
-            Include an analysis of performance patterns across different days, trading sessions, and strategies.
-            Provide 2-3 actionable recommendations to improve trading performance.
-            Keep the summary under 250 words and focus on the most important insights.
+            Summary Guidelines:
+            1. Start with an energetic overview of account performance
+            2. Analyze performance patterns using fun, descriptive language
+            3. Provide 2-3 actionable, motivational recommendations
+            4. Keep the summary concise (under 250 words)
+            5. Use emojis like 📈 for gains, 📉 for losses, 🏆 for achievements
+            6. End with an encouraging note about potential improvements
             """
             
             # Get AI summary
