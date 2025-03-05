@@ -7927,7 +7927,7 @@ def get_ai_account_summary(request):
             - Use a friendly, conversational tone
             - Include relevant emojis to highlight key points
             - Structure the summary with clear, engaging sections
-            - Provide insights and recommendations with enthusiasm
+            - Provide insights and recommendations
             
             Performance Metrics:
             - Win Rate: {metrics.get('winRate', 0)}%
@@ -7940,11 +7940,11 @@ def get_ai_account_summary(request):
             Trading Data: \n\n{trades}\n\n
             
             Summary Guidelines:
-            1. DO NOT USE MARKDOWNS
+            1. DO NOT USE MARKDOWNS OR TEXTS LIKE '*' OR '#'
             2. Start with an overview of account performance
             3. Analyze performance patterns using fun, descriptive language
             4. Provide 2-3 actionable, motivational recommendations
-            5. Keep the summary concise (under 250 words)
+            5. Keep the summary concise
             6. Use emojis like 📈 for gains, 📉 for losses, 🏆 for achievements
             """
             
