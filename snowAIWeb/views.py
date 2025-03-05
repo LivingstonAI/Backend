@@ -7940,12 +7940,12 @@ def get_ai_account_summary(request):
             Trading Data: \n\n{trades}\n\n
             
             Summary Guidelines:
-            1. Start with an energetic overview of account performance
-            2. Analyze performance patterns using fun, descriptive language
-            3. Provide 2-3 actionable, motivational recommendations
-            4. Keep the summary concise (under 250 words)
-            5. Use emojis like 📈 for gains, 📉 for losses, 🏆 for achievements
-            6. End with an encouraging note about potential improvements
+            1. DO NOT USE MARKDOWNS
+            2. Start with an overview of account performance
+            3. Analyze performance patterns using fun, descriptive language
+            4. Provide 2-3 actionable, motivational recommendations
+            5. Keep the summary concise (under 250 words)
+            6. Use emojis like 📈 for gains, 📉 for losses, 🏆 for achievements
             """
             
             # Get AI summary
