@@ -8067,6 +8067,36 @@ def fetch_saved_quizzes(request):
         }, status=500)
 
 
+@csrf_exempt
+def delete_quiz(request, quiz_id):
+    """
+    Delete a saved quiz by its ID
+    """
+    if request.method == 'DELETE':
+        try:
+            # Get the quiz or return 404 if not found
+            quiz = get_object_or_404(SavedQuiz, id=quiz_id)
+            
+            # Delete the quiz (this will also delete related questions due to CASCADE)
+            quiz.delete()
+            
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'Quiz deleted successfully'
+            }, status=200)
+        
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error', 
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({
+        'status': 'error', 
+        'message': 'Invalid request method'
+    }, status=405)
+
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
