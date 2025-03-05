@@ -7921,15 +7921,14 @@ def get_ai_account_summary(request):
             metrics = data.get('metrics', {})
             trades = data.get('trades', [])
             
-            # Create a prompt for the AI with style guidance
+            # Create a prompt for the AI with professional guidance
             prompt = f"""
-            Generate a trading performance summary for account '{account_name}' with the following requirements:
-            - Use a friendly, conversational tone
-            - Include relevant emojis to highlight key points
-            - Structure the summary with clear, engaging sections
-            - Provide insights and recommendations
+            Prepare a comprehensive trading performance analysis for account '{account_name}' with the following requirements:
+            - Maintain a professional and analytical tone
+            - Use clear, concise language
+            - Provide objective insights and data-driven recommendations
             
-            Performance Metrics:
+            Performance Metrics Overview:
             - Win Rate: {metrics.get('winRate', 0)}%
             - Average Win: ${metrics.get('averageWin', 0)}
             - Average Loss: ${metrics.get('averageLoss', 0)}
@@ -7939,13 +7938,18 @@ def get_ai_account_summary(request):
 
             Trading Data: \n\n{trades}\n\n
             
-            Summary Guidelines:
-            1. DO NOT USE MARKDOWNS OR TEXTS LIKE '*' OR '#'
-            2. Start with an overview of account performance
-            3. Analyze performance patterns using fun, descriptive language
-            4. Provide 2-3 actionable, motivational recommendations
-            5. Keep the summary concise
-            6. Use emojis like 📈 for gains, 📉 for losses, 🏆 for achievements
+            Analysis Guidelines:
+            1. Deliver a precise performance assessment
+            2. Identify key performance trends and patterns
+            3. Develop specific, actionable improvement strategies
+            4. Maintain a concise format (under 250 words)
+            5. Use professional terminology
+            6. Highlight both strengths and areas for potential improvement
+            
+            Presentation Instructions:
+            - Avoid using asterisks, hashtags, or markdown formatting
+            - Use subtle emojis sparingly for visual emphasis 📊
+            - Ensure a structured, professional presentation
             """
             
             # Get AI summary
