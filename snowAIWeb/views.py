@@ -8020,6 +8020,54 @@ def save_quiz(request):
     }, status=405)
 
 
+@csrf_exempt
+def fetch_saved_quizzes(request):
+    if request.method != 'GET':
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Only GET method is allowed'
+        }, status=405)  # Method Not Allowed status code
+
+    try:
+        # Fetch all saved quizzes, ordered by most recent first
+        saved_quizzes = SavedQuiz.objects.order_by('-created_at')
+        
+        # Prepare the response data
+        quizzes_data = []
+        for quiz in saved_quizzes:
+            # Get associated questions for each quiz
+            questions = quiz.questions.all()
+            
+            quiz_details = {
+                'id': quiz.id,
+                'quiz_name': quiz.quiz_name,
+                'total_questions': quiz.total_questions,
+                'correct_answers': quiz.correct_answers,
+                'created_at': quiz.created_at.isoformat(),
+                'questions': [
+                    {
+                        'question': q.question,
+                        'selected_answer': q.selected_answer,
+                        'correct_answer': q.correct_answer,
+                        'is_correct': q.is_correct
+                    } for q in questions
+                ]
+            }
+            quizzes_data.append(quiz_details)
+        
+        return JsonResponse({
+            'status': 'success',
+            'quizzes': quizzes_data
+        }, safe=True)
+    
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
