@@ -7945,11 +7945,16 @@ def get_ai_account_summary(request):
             4. Maintain a concise format (under 250 words)
             5. Use professional terminology
             6. Highlight both strengths and areas for potential improvement
+            7. AVOID USING ASTERISKS, HASHTAGS, OR MARKDOWN FORMATTING
+
             
             Presentation Instructions:
-            - Avoid using asterisks, hashtags, or markdown formatting
+            - AVOID USING ASTERISKS, HASHTAGS, OR MARKDOWN FORMATTING
             - Use subtle emojis sparingly for visual emphasis 📊
             - Ensure a structured, professional presentation
+
+            AVOID USING ASTERISKS, HASHTAGS, OR MARKDOWN FORMATTING
+
             """
             
             # Get AI summary
