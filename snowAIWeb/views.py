@@ -7586,7 +7586,8 @@ class MultiTraderDialogue:
         3. Final recommendation that considers both timeframes
         4. Risk management suggestions that account for multiple timeframe analysis
 
-        Format your response as JSON with 'analysis' and 'recommendation' keys.
+        Format your response as the variables with 'analysis' and 'recommendation'. Add some emojis too.
+        Format it to be engaging but professional and concise.
         Include numerical price levels in your analysis for chart annotation.
         """
 
