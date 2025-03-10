@@ -7587,8 +7587,8 @@ class MultiTraderDialogue:
         4. Risk management suggestions that account for multiple timeframe analysis
 
         Format your response as JSON with 'analysis' and 'recommendation' keys.
-        Ensure your 'analysis' section in the json is styled nicely with emojis and no markdowns.
-        Ensure this 'analysis' section is itself not a JSON.
+        Although, for the 'analysis' key, don't make it into a json format. Style it nicely using emojis
+        so that it's easier to read. Otherwise, all else should be as previously instructed.
         Include numerical price levels in your analysis for chart annotation.
         """
 
