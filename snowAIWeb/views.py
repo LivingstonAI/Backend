@@ -4807,7 +4807,9 @@ def fetch_backtested_results(request):
                             'start_date': result.backtest_model.dataset_start,
                             'end_date': result.backtest_model.dataset_end,
                             'initial_capital': result.backtest_model.initial_capital,
-                            'code_snippet': result.backtest_model.generated_code[:200] + '...' if len(result.backtest_model.generated_code) > 200 else result.backtest_model.generated_code,
+                            'code_snippet': result.backtest_model.generated_code,
+
+                            # 'code_snippet': result.backtest_model.generated_code if len(result.backtest_model.generated_code) > 200 else result.backtest_model.generated_code,
                         },
                         'results': []
                     }
