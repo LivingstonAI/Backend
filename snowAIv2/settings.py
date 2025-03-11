@@ -14,7 +14,24 @@ from pathlib import Path
 import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+# BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+# Base directory of your project
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Media files configuration
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Make sure you have Django's file upload handler configured
+FILE_UPLOAD_HANDLERS = [
+    'django.core.files.uploadhandler.MemoryFileUploadHandler',
+    'django.core.files.uploadhandler.TemporaryFileUploadHandler',
+]
+
+# Increase the max upload size if needed (optional, in bytes)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10 MB
 
 
 # Quick-start development settings - unsuitable for production
