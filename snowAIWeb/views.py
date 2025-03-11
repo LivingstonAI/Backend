@@ -8109,6 +8109,7 @@ def save_music(request):
         return JsonResponse({'error': 'Only POST method is allowed'}, status=405)
     
     try:
+
         name = request.POST.get('name')
         file = request.FILES.get('file')
         
@@ -8116,6 +8117,7 @@ def save_music(request):
             return JsonResponse({'error': 'Name and file are required'}, status=400)
         
         # Check if a song with this name already exists
+        MusicModel.objects.all().delete()
         existing_song = MusicModel.objects.filter(name=name).first()
         if existing_song:
             # If it exists, update the file
