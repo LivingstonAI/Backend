@@ -99,6 +99,7 @@ urlpatterns = [
     path('delete-quiz/<int:quiz_id>', views.delete_quiz, name='delete-quiz'),
     path('save-music', views.save_music, name='save-music'),
     path('fetch-music', views.fetch_music, name='fetch-music'),
+    path('delete-music', views.delete_music, name='delete-music'),
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
 
     path('zinaida-feedback', views.zinaida_feedback_form, name='zinaida-feedback'),
