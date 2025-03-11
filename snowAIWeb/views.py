@@ -8133,6 +8133,23 @@ def save_music(request):
         logger.error(f"Error saving music: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
+@csrf_exempt
+def fetch_music(request):
+    try:
+        songs = MusicModel.objects.all()
+        songs_data = []
+        
+        for song in songs:
+            songs_data.append({
+                'id': song.id,
+                'name': song.name,
+                'file': request.build_absolute_uri(song.file.url)  # Get the full URL
+            })
+        
+        return JsonResponse({'songs': songs_data}, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
