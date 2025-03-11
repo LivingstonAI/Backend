@@ -329,6 +329,14 @@ class SavedQuizQuestion(models.Model):
         return f"Question for {self.saved_quiz.quiz_name}"
 
 
+class MusicModel(models.Model):
+    name = models.CharField(max_length=255)
+    file = models.FileField()  # No upload_to specified, it will use the default media directory
+    
+    def __str__(self):
+        return self.name
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 
