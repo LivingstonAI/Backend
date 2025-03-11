@@ -8140,14 +8140,28 @@ def fetch_music(request):
         songs_data = []
         
         for song in songs:
+            # Print debugging info
+            print(f"Song ID: {song.id}")
+            print(f"Song name: {song.name}")
+            print(f"File path: {song.file.path}")  # Physical path
+            print(f"File URL: {song.file.url}")    # URL path
+            print(f"File exists: {os.path.exists(song.file.path)}")
+            
+            absolute_url = request.build_absolute_uri(song.file.url)
+            print(f"Absolute URL: {absolute_url}")
+            
             songs_data.append({
                 'id': song.id,
                 'name': song.name,
-                'file': request.build_absolute_uri(song.file.url)  # Get the full URL
+                'file': absolute_url,
+                'exists': os.path.exists(song.file.path),  # Add this for debugging
+                'file_path': song.file.path,  # Add this for debugging
             })
         
         return JsonResponse({'songs': songs_data}, safe=False)
     except Exception as e:
+        import traceback
+        print(traceback.format_exc())
         return JsonResponse({'error': str(e)}, status=500)
 
 

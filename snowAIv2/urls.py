@@ -25,7 +25,9 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 ]
 
-# Add this to serve media files during development
+# This is important for both development and production
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
+else:
+    # For production, you might need this too if not using cloud storage
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
