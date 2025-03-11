@@ -8099,6 +8099,102 @@ def delete_quiz(request, quiz_id):
     }, status=405)
 
 
+from django.conf import settings
+
+@csrf_exempt
+def save_music(request):
+    """
+    Save music file and name to the database.
+    This should be called only once during setup.
+    """
+    if request.method == 'POST':
+        try:
+            name = request.POST.get('name')
+            file = request.FILES.get('file')
+            
+            # Check if a song with this name already exists
+            if MusicModel.objects.filter(name=name).exists():
+                return JsonResponse({'status': 'error', 'message': f'Song "{name}" already exists'}, status=400)
+            
+            # Create and save the new song
+            music = MusicModel(name=name, file=file)
+            music.save()
+            
+            return JsonResponse({'status': 'success', 'message': f'Song "{name}" saved successfully'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+
+@csrf_exempt
+def get_songs(request):
+    """
+    Get all songs from the database.
+    """
+    try:
+        songs = MusicModel.objects.all()
+        songs_list = [
+            {
+                'id': song.id,
+                'name': song.name,
+                'file': song.file.url if song.file else None
+            }
+            for song in songs
+        ]
+        return JsonResponse(songs_list, safe=False)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+@csrf_exempt
+def batch_save_music(request):
+    """
+    Batch save multiple songs at once.
+    This is a utility function for initial setup.
+    Requires admin authentication (you should add this).
+    
+    Expected format:
+    {
+        "songs": [
+            {"name": "Song Name 1", "filename": "path/to/file1.mp3"},
+            {"name": "Song Name 2", "filename": "path/to/file2.mp3"}
+        ]
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        songs = data.get('songs', [])
+        
+        results = []
+        for song_data in songs:
+            name = song_data.get('name')
+            filename = song_data.get('filename')
+            
+            # Skip if song already exists
+            if MusicModel.objects.filter(name=name).exists():
+                results.append({'name': name, 'status': 'skipped', 'message': 'Already exists'})
+                continue
+            
+            # Check if file exists in the media directory
+            file_path = os.path.join(settings.MEDIA_ROOT, filename)
+            if not os.path.exists(file_path):
+                results.append({'name': name, 'status': 'error', 'message': f'File not found: {filename}'})
+                continue
+            
+            # Create a new song with the file
+            with open(file_path, 'rb') as f:
+                music = MusicModel(name=name)
+                music.file.save(os.path.basename(filename), f)
+                music.save()
+            
+            results.append({'name': name, 'status': 'success', 'message': 'Saved successfully'})
+        
+        return JsonResponse({'status': 'success', 'results': results})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
