@@ -8174,9 +8174,10 @@ def fetch_music(request):
         print(traceback.format_exc())
         return JsonResponse({'error': str(e)}, status=500)
 
+
 @csrf_exempt
 def fetch_asset_update(request):
-    """Fetch current data for all tracked assets with minute-by-minute updates"""
+    """Fetch current data for all tracked assets with 5-minute interval updates"""
     try:
         assets = AssetsTracker.objects.all()
         asset_data = []
@@ -8186,17 +8187,17 @@ def fetch_asset_update(request):
             # Get current data using yfinance
             forex_asset = f"{asset}=X"
             
-            # Get data for the last 2 minutes for comparison
+            # Get data for comparison - look back 15 minutes to ensure we have enough 5-min intervals
             end_date = datetime.datetime.now()
-            start_date = end_date - datetime.timedelta(minutes=2)
+            start_date = end_date - datetime.timedelta(minutes=15)
             
             # Format dates for yfinance
             end_str = end_date.strftime("%Y-%m-%d %H:%M:%S")
             start_str = start_date.strftime("%Y-%m-%d %H:%M:%S")
             
             try:
-                # Use 1m interval for minute-by-minute data
-                data = yf.download(forex_asset, start=start_str, end=end_str, interval="1m")
+                # Use 5m interval for data
+                data = yf.download(forex_asset, start=start_str, end=end_str, interval="5m")
                 
                 if not data.empty and len(data) >= 2:
                     # Convert Series to float to make it JSON serializable
@@ -8209,38 +8210,60 @@ def fetch_asset_update(request):
                         'asset': asset,
                         'current_price': round(current_price, 4),
                         'percent_change': percent_change,
-                        'last_updated': data.index[-1].strftime("%Y-%m-%d %H:%M:%S")
+                        'last_updated': data.index[-1].strftime("%Y-%m-%d %H:%M:%S"),
+                        'compared_to': data.index[-2].strftime("%Y-%m-%d %H:%M:%S")
                     })
                 else:
-                    # Not enough data points available
-                    # Try to get at least the current price
-                    if not data.empty:
+                    # If we don't have at least 2 data points, try getting intraday data with a wider window
+                    wider_start_date = end_date - datetime.timedelta(hours=1)
+                    wider_start_str = wider_start_date.strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    data = yf.download(forex_asset, start=wider_start_str, end=end_str, interval="5m")
+                    
+                    if not data.empty and len(data) >= 2:
+                        previous_price = float(data['Close'].iloc[-2])
                         current_price = float(data['Close'].iloc[-1])
+                        percent_change = round(((current_price - previous_price) / previous_price) * 100, 4)
+                        
                         asset_data.append({
                             'id': asset_obj.id,
                             'asset': asset,
-                            'current_price': round(current_price, 2),
-                            'percent_change': 0,
-                            'last_updated': data.index[-1].strftime("%Y-%m-%d %H:%M:%S") if len(data.index) > 0 else None
+                            'current_price': round(current_price, 4),
+                            'percent_change': percent_change,
+                            'last_updated': data.index[-1].strftime("%Y-%m-%d %H:%M:%S"),
+                            'compared_to': data.index[-2].strftime("%Y-%m-%d %H:%M:%S")
                         })
                     else:
-                        asset_data.append({
-                            'id': asset_obj.id,
-                            'asset': asset,
-                            'current_price': 0,
-                            'percent_change': 0,
-                            'last_updated': None
-                        })
+                        # As a fallback, get the most recent price if available
+                        if not data.empty:
+                            current_price = float(data['Close'].iloc[-1])
+                            asset_data.append({
+                                'id': asset_obj.id,
+                                'asset': asset,
+                                'current_price': round(current_price, 4),
+                                'percent_change': 0,
+                                'last_updated': data.index[-1].strftime("%Y-%m-%d %H:%M:%S") if len(data.index) > 0 else None,
+                                'compared_to': None
+                            })
+                        else:
+                            asset_data.append({
+                                'id': asset_obj.id,
+                                'asset': asset,
+                                'current_price': 0,
+                                'percent_change': 0,
+                                'last_updated': None,
+                                'compared_to': None
+                            })
             except Exception as e:
                 print(f"Error getting data for {asset}: {str(e)}")
-                # Include the asset in the response anyway with default values
                 asset_data.append({
                     'id': asset_obj.id,
                     'asset': asset,
                     'current_price': 0,
                     'percent_change': 0,
                     'error': str(e),
-                    'last_updated': None
+                    'last_updated': None,
+                    'compared_to': None
                 })
         
         return JsonResponse(asset_data, safe=False)
@@ -8248,7 +8271,7 @@ def fetch_asset_update(request):
         print(f"Error in fetch_asset_update: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
-
+        
 @csrf_exempt
 @require_http_methods(["GET"])
 def get_tracked_assets(request):
