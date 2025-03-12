@@ -8174,10 +8174,9 @@ def fetch_music(request):
         print(traceback.format_exc())
         return JsonResponse({'error': str(e)}, status=500)
 
-
 @csrf_exempt
 def fetch_asset_update(request):
-    """Fetch current data for all tracked assets"""
+    """Fetch current data for all tracked assets with minute-by-minute updates"""
     try:
         assets = AssetsTracker.objects.all()
         asset_data = []
@@ -8187,33 +8186,51 @@ def fetch_asset_update(request):
             # Get current data using yfinance
             forex_asset = f"{asset}=X"
             
-            # Get yesterday's data for comparison
-            end_date = datetime.datetime.now().strftime("%Y-%m-%d")
-            start_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+            # Get data for the last 2 minutes for comparison
+            end_date = datetime.datetime.now()
+            start_date = end_date - datetime.timedelta(minutes=2)
+            
+            # Format dates for yfinance
+            end_str = end_date.strftime("%Y-%m-%d %H:%M:%S")
+            start_str = start_date.strftime("%Y-%m-%d %H:%M:%S")
             
             try:
-                data = yf.download(forex_asset, start=start_date, end=end_date, interval="1d")
+                # Use 1m interval for minute-by-minute data
+                data = yf.download(forex_asset, start=start_str, end=end_str, interval="1m")
                 
                 if not data.empty and len(data) >= 2:
                     # Convert Series to float to make it JSON serializable
-                    yesterday_close = float(data['Close'].iloc[-2])
+                    previous_price = float(data['Close'].iloc[-2])
                     current_price = float(data['Close'].iloc[-1])
-                    percent_change = round(((current_price - yesterday_close) / yesterday_close) * 100, 2)
+                    percent_change = round(((current_price - previous_price) / previous_price) * 100, 4)
                     
                     asset_data.append({
                         'id': asset_obj.id,
                         'asset': asset,
                         'current_price': round(current_price, 4),
-                        'percent_change': percent_change
+                        'percent_change': percent_change,
+                        'last_updated': data.index[-1].strftime("%Y-%m-%d %H:%M:%S")
                     })
                 else:
-                    # Handle case where we don't have enough data
-                    asset_data.append({
-                        'id': asset_obj.id,
-                        'asset': asset,
-                        'current_price': 0,
-                        'percent_change': 0
-                    })
+                    # Not enough data points available
+                    # Try to get at least the current price
+                    if not data.empty:
+                        current_price = float(data['Close'].iloc[-1])
+                        asset_data.append({
+                            'id': asset_obj.id,
+                            'asset': asset,
+                            'current_price': round(current_price, 2),
+                            'percent_change': 0,
+                            'last_updated': data.index[-1].strftime("%Y-%m-%d %H:%M:%S") if len(data.index) > 0 else None
+                        })
+                    else:
+                        asset_data.append({
+                            'id': asset_obj.id,
+                            'asset': asset,
+                            'current_price': 0,
+                            'percent_change': 0,
+                            'last_updated': None
+                        })
             except Exception as e:
                 print(f"Error getting data for {asset}: {str(e)}")
                 # Include the asset in the response anyway with default values
@@ -8222,13 +8239,15 @@ def fetch_asset_update(request):
                     'asset': asset,
                     'current_price': 0,
                     'percent_change': 0,
-                    'error': str(e)
+                    'error': str(e),
+                    'last_updated': None
                 })
         
         return JsonResponse(asset_data, safe=False)
     except Exception as e:
         print(f"Error in fetch_asset_update: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
 
 @csrf_exempt
 @require_http_methods(["GET"])
