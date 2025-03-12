@@ -91,6 +91,8 @@ import base64
 import requests
 
 import logging
+from django.views.decorators.http import require_http_methods
+
 
 
 from PIL import Image
@@ -6933,6 +6935,7 @@ def time_trading_analytics(request):
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+
 def obtain_dataset(asset, interval, num_days):
     # Calculate the end and start dates
     end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -8170,6 +8173,120 @@ def fetch_music(request):
         import traceback
         print(traceback.format_exc())
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def fetch_asset_update(request):
+    """Fetch current data for all tracked assets"""
+    try:
+        assets = AssetsTracker.objects.all()
+        asset_data = []
+        
+        for asset_obj in assets:
+            asset = asset_obj.asset
+            # Get current data using yfinance
+            forex_asset = f"{asset}=X"
+            
+            # Get yesterday's data for comparison
+            end_date = datetime.datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+            
+            data = yf.download(forex_asset, start=start_date, end=end_date, interval="1d")
+            
+            if len(data) >= 2:
+                yesterday_close = data['Close'].iloc[-2]
+                current_price = data['Close'].iloc[-1]
+                percent_change = round(((current_price - yesterday_close) / yesterday_close) * 100, 2)
+                
+                asset_data.append({
+                    'id': asset_obj.id,
+                    'asset': asset,
+                    'current_price': round(current_price, 4),
+                    'percent_change': percent_change
+                })
+        
+        return JsonResponse(asset_data, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_tracked_assets(request):
+    """Get all tracked assets"""
+    try:
+        assets = AssetsTracker.objects.all()
+        asset_data = []
+        
+        for asset_obj in assets:
+            asset = asset_obj.asset
+            # Get current data using yfinance
+            forex_asset = f"{asset}=X"
+            
+            # Get yesterday's data for comparison
+            end_date = datetime.datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+            
+            data = yf.download(forex_asset, start=start_date, end=end_date, interval="1d")
+            
+            if len(data) >= 2:
+                yesterday_close = data['Close'].iloc[-2]
+                current_price = data['Close'].iloc[-1]
+                percent_change = round(((current_price - yesterday_close) / yesterday_close) * 100, 2)
+                
+                asset_data.append({
+                    'id': asset_obj.id,
+                    'asset': asset,
+                    'current_price': round(current_price, 4),
+                    'percent_change': percent_change
+                })
+        
+        return JsonResponse(asset_data, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_tracked_asset(request):
+    """Add a new asset to track"""
+    try:
+        data = json.loads(request.body)
+        asset = data.get('asset')
+        
+        if not asset:
+            return JsonResponse({'error': 'Asset is required'}, status=400)
+        
+        # Check if asset already exists
+        if AssetsTracker.objects.filter(asset=asset).exists():
+            return JsonResponse({'error': 'Asset already tracked'}, status=400)
+        
+        # Create new asset tracker
+        asset_tracker = AssetsTracker.objects.create(asset=asset)
+        
+        return JsonResponse({
+            'id': asset_tracker.id,
+            'asset': asset_tracker.asset
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def remove_tracked_asset(request):
+    """Remove a tracked asset"""
+    try:
+        data = json.loads(request.body)
+        asset_id = data.get('id')
+        
+        if not asset_id:
+            return JsonResponse({'error': 'Asset ID is required'}, status=400)
+        
+        # Delete the asset tracker
+        AssetsTracker.objects.filter(id=asset_id).delete()
+        
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
 
 
 # LEGODI BACKEND CODE

@@ -100,6 +100,10 @@ urlpatterns = [
     path('save-music', views.save_music, name='save-music'),
     path('fetch-music', views.fetch_music, name='fetch-music'),
     path('delete-music', views.delete_music, name='delete-music'),
+    path('fetch-asset-update/', views.fetch_asset_update, name='fetch-asset-update'),
+    path('get-tracked-assets/', views.get_tracked_assets, name='get-tracked-assets'),
+    path('add-tracked-asset/', views.add_tracked_asset, name='add-tracked-asset'),
+    path('remove-tracked-asset/', views.remove_tracked_asset, name='remove-tracked-asset'),
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
 
     path('zinaida-feedback', views.zinaida_feedback_form, name='zinaida-feedback'),

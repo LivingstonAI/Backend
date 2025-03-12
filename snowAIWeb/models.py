@@ -336,6 +336,10 @@ class MusicModel(models.Model):
         return self.name
 
 
+class AssetsTracker(models.Model):
+    asset = models.CharField(max_length=50)
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 
