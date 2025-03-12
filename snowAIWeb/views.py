@@ -8178,72 +8178,115 @@ def fetch_music(request):
 @csrf_exempt
 def fetch_asset_update(request):
     """Fetch current data for all tracked assets"""
-    
-    assets = AssetsTracker.objects.all()
-    asset_data = []
+    try:
+        assets = AssetsTracker.objects.all()
+        asset_data = []
         
-    for asset_obj in assets:
-        asset = asset_obj.asset
-        # Get current data using yfinance
-        forex_asset = f"{asset}=X"
+        for asset_obj in assets:
+            asset = asset_obj.asset
+            # Get current data using yfinance
+            forex_asset = f"{asset}=X"
             
-        # Get yesterday's data for comparison
-        end_date = datetime.datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+            # Get yesterday's data for comparison
+            end_date = datetime.datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
             
-        data = yf.download(forex_asset, start=start_date, end=end_date, interval="1d")
-            
-        if len(data) >= 2:
-            yesterday_close = data['Close'].iloc[-2]
-            current_price = data['Close'].iloc[-1]
-            percent_change = round(((current_price - yesterday_close) / yesterday_close) * 100, 2)
+            try:
+                data = yf.download(forex_asset, start=start_date, end=end_date, interval="1d")
                 
-            asset_data.append({
-                'id': asset_obj.id,
-                'asset': asset,
-                'current_price': round(current_price, 4),
-                'percent_change': percent_change
-            })
+                if not data.empty and len(data) >= 2:
+                    # Convert Series to float to make it JSON serializable
+                    yesterday_close = float(data['Close'].iloc[-2])
+                    current_price = float(data['Close'].iloc[-1])
+                    percent_change = round(((current_price - yesterday_close) / yesterday_close) * 100, 2)
+                    
+                    asset_data.append({
+                        'id': asset_obj.id,
+                        'asset': asset,
+                        'current_price': round(current_price, 4),
+                        'percent_change': percent_change
+                    })
+                else:
+                    # Handle case where we don't have enough data
+                    asset_data.append({
+                        'id': asset_obj.id,
+                        'asset': asset,
+                        'current_price': 0,
+                        'percent_change': 0
+                    })
+            except Exception as e:
+                print(f"Error getting data for {asset}: {str(e)}")
+                # Include the asset in the response anyway with default values
+                asset_data.append({
+                    'id': asset_obj.id,
+                    'asset': asset,
+                    'current_price': 0,
+                    'percent_change': 0,
+                    'error': str(e)
+                })
         
-    return JsonResponse(asset_data, safe=False)
-    # except Exception as e:
-    #     return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse(asset_data, safe=False)
+    except Exception as e:
+        print(f"Error in fetch_asset_update: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
 @require_http_methods(["GET"])
 def get_tracked_assets(request):
     """Get all tracked assets"""
-    
-    assets = AssetsTracker.objects.all()
-    asset_data = []
+    try:
+        assets = AssetsTracker.objects.all()
+        asset_data = []
         
-    for asset_obj in assets:
-        asset = asset_obj.asset
-        # Get current data using yfinance
-        forex_asset = f"{asset}=X"
+        for asset_obj in assets:
+            asset = asset_obj.asset
+            # Get current data using yfinance
+            forex_asset = f"{asset}=X"
             
-        # Get yesterday's data for comparison
-        end_date = datetime.datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+            # Get yesterday's data for comparison
+            end_date = datetime.datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
             
-        data = yf.download(forex_asset, start=start_date, end=end_date, interval="1d")
-            
-        if len(data) >= 2:
-            yesterday_close = data['Close'].iloc[-2]
-            current_price = data['Close'].iloc[-1]
-            percent_change = round(((current_price - yesterday_close) / yesterday_close) * 100, 2)
+            try:
+                data = yf.download(forex_asset, start=start_date, end=end_date, interval="1d")
                 
-            asset_data.append({
-                'id': asset_obj.id,
-                'asset': asset,
-                'current_price': round(current_price, 4),
-                'percent_change': percent_change
-            })
+                if not data.empty and len(data) >= 2:
+                    # Convert Series to float to make it JSON serializable
+                    yesterday_close = float(data['Close'].iloc[-2])
+                    current_price = float(data['Close'].iloc[-1])
+                    percent_change = round(((current_price - yesterday_close) / yesterday_close) * 100, 2)
+                    
+                    asset_data.append({
+                        'id': asset_obj.id,
+                        'asset': asset,
+                        'current_price': round(current_price, 4),
+                        'percent_change': percent_change
+                    })
+                else:
+                    # Handle case where we don't have enough data
+                    asset_data.append({
+                        'id': asset_obj.id,
+                        'asset': asset,
+                        'current_price': 0,
+                        'percent_change': 0
+                    })
+            except Exception as e:
+                print(f"Error getting data for {asset}: {str(e)}")
+                # Include the asset in the response anyway with default values
+                asset_data.append({
+                    'id': asset_obj.id,
+                    'asset': asset,
+                    'current_price': 0,
+                    'percent_change': 0,
+                    'error': str(e)
+                })
         
-    return JsonResponse(asset_data, safe=False)
-    # except Exception as e:
-    #     return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse(asset_data, safe=False)
+    except Exception as e:
+        print(f"Error in get_tracked_assets: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
 
+        
 @csrf_exempt
 @require_http_methods(["POST"])
 def add_tracked_asset(request):
