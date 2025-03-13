@@ -8188,24 +8188,36 @@ def fetch_asset_update(request):
             # Get current data using yfinance
             forex_asset = f"{asset}=X"
 
-            # Get yesterday's data for comparison
-            end_date = datetime.datetime.now().strftime("%Y-%m-%d")
-            start_date = (datetime.datetime.now() - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
-
+            # Get more recent data with smaller intervals
+            end_date = datetime.datetime.now()
+            # For more frequent updates, get data for just the last day
+            start_date = end_date - datetime.timedelta(days=1)
+            
             try:
-                data = yf.download(forex_asset, start=start_date, end=end_date, interval="1h")
+                # Use 15min interval for more granular data
+                data = yf.download(
+                    forex_asset, 
+                    start=start_date.strftime("%Y-%m-%d"), 
+                    end=end_date.strftime("%Y-%m-%d %H:%M:%S"), 
+                    interval="15m"
+                )
 
                 if not data.empty and len(data) >= 2:
-                    # Convert Series to float to make it JSON serializable
-                    yesterday_close = float(data['Close'].iloc[-2])
+                    # Get the most recent price
                     current_price = float(data['Close'].iloc[-1])
-                    percent_change = round(((current_price - yesterday_close) / yesterday_close) * 100, 2)
+                    
+                    # Get the previous candle's close (the previous 15-min period)
+                    previous_price = float(data['Close'].iloc[-2])
+                    
+                    # Compare the most recent candle to the previous one
+                    percent_change = round(((current_price - previous_price) / previous_price) * 100, 2)
 
                     asset_data.append({
                         'id': asset_obj.id,
                         'asset': asset,
-                        'current_price': round(current_price, 2),
-                        'percent_change': percent_change
+                        'current_price': round(current_price, 4),
+                        'percent_change': percent_change,
+                        'last_updated': data.index[-1].strftime("%H:%M:%S")  # Add timestamp
                     })
                 else:
                     # Handle case where we don't have enough data
@@ -8213,7 +8225,8 @@ def fetch_asset_update(request):
                         'id': asset_obj.id,
                         'asset': asset,
                         'current_price': 0,
-                        'percent_change': 0
+                        'percent_change': 0,
+                        'error': "Insufficient data"
                     })
             except Exception as e:
                 print(f"Error getting data for {asset}: {str(e)}")
