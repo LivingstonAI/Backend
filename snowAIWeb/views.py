@@ -8187,7 +8187,7 @@ def fetch_asset_update(request):
             
             try:
                 # Use your existing obtain_dataset function - more reliable
-                data = obtain_dataset(asset, "1h", 2)  # Get hourly data for the last 2 days
+                data = obtain_dataset(asset, "1d", 5)  # Get daily data for the last 5 days
                 
                 if not data.empty and len(data) >= 2:
                     # Get the most recent price
