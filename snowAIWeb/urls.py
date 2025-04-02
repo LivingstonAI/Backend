@@ -104,6 +104,11 @@ urlpatterns = [
     path('get-tracked-assets/', views.get_tracked_assets, name='get-tracked-assets'),
     path('add-tracked-asset/', views.add_tracked_asset, name='add-tracked-asset'),
     path('remove-tracked-asset/', views.remove_tracked_asset, name='remove-tracked-asset'),
+    path('api/trade-ideas/', views.get_trade_ideas, name='get_trade_ideas'),
+    path('api/trade-ideas/create/', views.create_trade_idea, name='create_trade_idea'),
+    path('api/trade-ideas/update/<int:id>/', views.update_trade_idea, name='update_trade_idea'),
+    path('api/trade-ideas/delete/<int:id>/', views.delete_trade_idea, name='delete_trade_idea'),
+    # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
 
     path('zinaida-feedback', views.zinaida_feedback_form, name='zinaida-feedback'),

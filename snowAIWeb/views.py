@@ -8337,6 +8337,98 @@ def remove_tracked_asset(request):
     #     return JsonResponse({'error': str(e)}, status=500)
 
 
+# create appropriate views functions here with @csrf_exempts
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_trade_ideas(request):
+    trade_ideas = TradeIdea.objects.all().order_by('-date_created')
+    data = list(trade_ideas.values())
+    return JsonResponse({'trade_ideas': data})
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_trade_idea(request):
+    try:
+        data = json.loads(request.body)
+        trade_idea = TradeIdea.objects.create(
+            heading=data.get('heading'),
+            asset=data.get('asset'),
+            trade_idea=data.get('trade_idea'),
+            trade_status=data.get('trade_status', 'pending'),
+            target_price=data.get('target_price'),
+            stop_loss=data.get('stop_loss'),
+            entry_price=data.get('entry_price')
+        )
+        return JsonResponse({
+            'success': True,
+            'trade_idea_id': trade_idea.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def update_trade_idea(request, id):
+    try:
+        data = json.loads(request.body)
+        trade_idea = TradeIdea.objects.get(id=id)
+        
+        # Update fields if they exist in request
+        if 'heading' in data:
+            trade_idea.heading = data['heading']
+        if 'asset' in data:
+            trade_idea.asset = data['asset']
+        if 'trade_idea' in data:
+            trade_idea.trade_idea = data['trade_idea']
+        if 'trade_status' in data:
+            trade_idea.trade_status = data['trade_status']
+        if 'target_price' in data:
+            trade_idea.target_price = data['target_price']
+        if 'stop_loss' in data:
+            trade_idea.stop_loss = data['stop_loss']
+        if 'entry_price' in data:
+            trade_idea.entry_price = data['entry_price']
+            
+        trade_idea.save()
+        
+        return JsonResponse({
+            'success': True,
+            'trade_idea_id': trade_idea.id
+        })
+    except TradeIdea.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Trade idea not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def delete_trade_idea(request, id):
+    try:
+        trade_idea = TradeIdea.objects.get(id=id)
+        trade_idea.delete()
+        return JsonResponse({
+            'success': True
+        })
+    except TradeIdea.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Trade idea not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():

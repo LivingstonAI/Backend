@@ -336,6 +336,29 @@ class MusicModel(models.Model):
         return self.name
 
 
+from django.utils import timezone
+
+class TradeIdea(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('executed', 'Executed'),
+        ('closed', 'Closed'),
+        ('cancelled', 'Cancelled'),
+    ]
+    
+    heading = models.CharField(max_length=200)
+    asset = models.CharField(max_length=100)
+    trade_idea = models.TextField()
+    date_created = models.DateTimeField(default=timezone.now)
+    trade_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    target_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    stop_loss = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    entry_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    
+    def __str__(self):
+        return f"{self.heading} - {self.asset}"
+
+
 class AssetsTracker(models.Model):
     asset = models.CharField(max_length=50)
 
