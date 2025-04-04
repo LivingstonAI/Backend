@@ -8337,7 +8337,6 @@ def remove_tracked_asset(request):
     #     return JsonResponse({'error': str(e)}, status=500)
 
 
-# create appropriate views functions here with @csrf_exempts
 @csrf_exempt
 @require_http_methods(["GET"])
 def get_trade_ideas(request):
@@ -8357,7 +8356,8 @@ def create_trade_idea(request):
             trade_status=data.get('trade_status', 'pending'),
             target_price=data.get('target_price'),
             stop_loss=data.get('stop_loss'),
-            entry_price=data.get('entry_price')
+            entry_price=data.get('entry_price'),
+            outcome=data.get('outcome', 'pending')  # Added outcome field
         )
         return JsonResponse({
             'success': True,
@@ -8391,6 +8391,8 @@ def update_trade_idea(request, id):
             trade_idea.stop_loss = data['stop_loss']
         if 'entry_price' in data:
             trade_idea.entry_price = data['entry_price']
+        if 'outcome' in data:  # Added outcome field handling
+            trade_idea.outcome = data['outcome']
             
         trade_idea.save()
         
@@ -8428,7 +8430,6 @@ def delete_trade_idea(request, id):
             'success': False,
             'error': str(e)
         }, status=400)
-
 
 # LEGODI BACKEND CODE
 def send_simple_message():

@@ -346,6 +346,13 @@ class TradeIdea(models.Model):
         ('cancelled', 'Cancelled'),
     ]
     
+    OUTCOME_CHOICES = [
+        ('pending', 'Pending'),
+        ('win', 'Win'),
+        ('loss', 'Loss'),
+        ('breakeven', 'Breakeven'),
+    ]
+    
     heading = models.CharField(max_length=200)
     asset = models.CharField(max_length=100)
     trade_idea = models.TextField()
@@ -354,10 +361,11 @@ class TradeIdea(models.Model):
     target_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     stop_loss = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     entry_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, default='pending')
     
     def __str__(self):
         return f"{self.heading} - {self.asset}"
-
+        
 
 class AssetsTracker(models.Model):
     asset = models.CharField(max_length=50)
