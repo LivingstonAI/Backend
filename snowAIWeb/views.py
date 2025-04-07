@@ -8154,6 +8154,8 @@ def save_music(request):
         logger.error(f"Error saving music: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
+from django.urls import reverse
+
 
 @csrf_exempt
 def fetch_music(request):
