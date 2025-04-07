@@ -8118,23 +8118,34 @@ def save_music(request):
         return JsonResponse({'error': 'Only POST method is allowed'}, status=405)
     
     try:
-
         name = request.POST.get('name')
         file = request.FILES.get('file')
         
         if not name or not file:
             return JsonResponse({'error': 'Name and file are required'}, status=400)
         
+        # Read the file content
+        file_data = file.read()
+        file_name = file.name
+        content_type = file.content_type or 'audio/mpeg'
+        
         # Check if a song with this name already exists
         existing_song = MusicModel.objects.filter(name=name).first()
         if existing_song:
-            # If it exists, update the file
-            existing_song.file = file
+            # If it exists, update the record
+            existing_song.file_data = file_data
+            existing_song.file_name = file_name
+            existing_song.content_type = content_type
             existing_song.save()
             return JsonResponse({'success': True, 'message': f'Updated song: {name}'})
         
         # Create new song record
-        music = MusicModel(name=name, file=file)
+        music = MusicModel(
+            name=name, 
+            file_data=file_data,
+            file_name=file_name,
+            content_type=content_type
+        )
         music.save()
         
         return JsonResponse({'success': True, 'message': f'Saved song: {name}'})
@@ -8143,6 +8154,7 @@ def save_music(request):
         logger.error(f"Error saving music: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
+
 @csrf_exempt
 def fetch_music(request):
     try:
@@ -8150,29 +8162,38 @@ def fetch_music(request):
         songs_data = []
         
         for song in songs:
-            # Print debugging info
-            print(f"Song ID: {song.id}")
-            print(f"Song name: {song.name}")
-            print(f"File path: {song.file.path}")  # Physical path
-            print(f"File URL: {song.file.url}")    # URL path
-            print(f"File exists: {os.path.exists(song.file.path)}")
-            
-            absolute_url = request.build_absolute_uri(song.file.url)
-            print(f"Absolute URL: {absolute_url}")
+            # Generate a URL to stream this song
+            stream_url = request.build_absolute_uri(
+                reverse('stream_music', args=[song.id])
+            )
             
             songs_data.append({
                 'id': song.id,
                 'name': song.name,
-                'file': absolute_url,
-                'exists': os.path.exists(song.file.path),  # Add this for debugging
-                'file_path': song.file.path,  # Add this for debugging
+                'file': stream_url,
+                'file_name': song.file_name,
+                'updated_at': song.updated_at.isoformat()
             })
         
         return JsonResponse({'songs': songs_data}, safe=False)
     except Exception as e:
-        import traceback
-        print(traceback.format_exc())
+        logger.error(f"Error fetching music: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def stream_music(request, song_id):
+    try:
+        song = get_object_or_404(MusicModel, id=song_id)
+        
+        # Create a response with the binary data
+        response = HttpResponse(song.file_data, content_type=song.content_type)
+        response['Content-Disposition'] = f'inline; filename="{song.file_name}"'
+        
+        return response
+    except Exception as e:
+        logger.error(f"Error streaming music: {str(e)}")
+        return HttpResponse(status=500)        
 
 
 @csrf_exempt

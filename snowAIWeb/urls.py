@@ -99,6 +99,7 @@ urlpatterns = [
     path('delete-quiz/<int:quiz_id>', views.delete_quiz, name='delete-quiz'),
     path('save-music', views.save_music, name='save-music'),
     path('fetch-music', views.fetch_music, name='fetch-music'),
+    path('stream-music/<int:song_id>', views.stream_music, name='stream_music'),
     path('delete-music', views.delete_music, name='delete-music'),
     path('fetch-asset-update/', views.fetch_asset_update, name='fetch-asset-update'),
     path('get-tracked-assets/', views.get_tracked_assets, name='get-tracked-assets'),

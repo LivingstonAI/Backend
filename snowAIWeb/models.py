@@ -328,13 +328,17 @@ class SavedQuizQuestion(models.Model):
     def __str__(self):
         return f"Question for {self.saved_quiz.quiz_name}"
 
+
 class MusicModel(models.Model):
     name = models.CharField(max_length=255)
-    file = models.FileField(upload_to='music/')  # This will save files to MEDIA_ROOT/music/
-    
+    file_data = models.BinaryField(null=True, blank=True)  # Allow null values
+    content_type = models.CharField(max_length=100, default='audio/mpeg')
+    file_name = models.CharField(max_length=255, null=True)  # Store original filename
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True)
+
     def __str__(self):
         return self.name
-
 
 from django.utils import timezone
 
