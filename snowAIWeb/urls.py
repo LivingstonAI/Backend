@@ -114,19 +114,19 @@ urlpatterns = [
     path('api/prop-firms/create/', views.create_prop_firm, name='create_prop_firm'),
     
     # Accounts
-    path('api/accounts/', views.get_accounts, name='get_accounts'),
-    path('api/accounts/create/', views.create_account, name='create_account'),
-    path('api/accounts/<int:account_id>/update-balance/', views.update_account_balance, name='update_account_balance'),
+    path('api/accounts/', views.get_prop_accounts, name='get_accounts'),
+    path('api/accounts/create/', views.create_prop_account, name='create_account'),
+    path('api/accounts/<int:account_id>/update-balance/', views.update_prop_account_balance, name='update_account_balance'),
     
     # Trading Days and Trades
-    path('api/accounts/<int:account_id>/add-trading-day/', views.add_trading_day, name='add_trading_day'),
-    path('api/accounts/<int:account_id>/add-trade/', views.add_trade, name='add_trade'),
+    path('api/accounts/<int:account_id>/add-trading-day/', views.add_prop_trading_day, name='add_trading_day'),
+    path('api/accounts/<int:account_id>/add-trade/', views.add_prop_trade, name='add_trade'),
     
     # Analytics
-    path('api/accounts/<int:account_id>/analytics/', views.get_account_analytics, name='get_account_analytics'),
+    path('api/accounts/<int:account_id>/analytics/', views.get_prop_account_analytics, name='get_account_analytics'),
     
     # User Metrics
-    path('api/metrics/', views.get_metrics, name='get_metrics'),
+    path('api/metrics/', views.get_prop_metrics, name='get_metrics'),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

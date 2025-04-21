@@ -8517,7 +8517,7 @@ def create_prop_firm(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-def get_accounts(request):
+def get_prop_accounts(request):
     accounts = PropFirmAccount.objects.all()
     data = []
     
@@ -8550,7 +8550,7 @@ def get_accounts(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def create_account(request):
+def create_prop_account(request):
     try:
         data = json.loads(request.body)
         
@@ -8587,7 +8587,7 @@ def create_account(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def update_account_balance(request, account_id):
+def update_prop_account_balance(request, account_id):
     try:
         data = json.loads(request.body)
         account = PropFirmAccount.objects.get(id=account_id)
@@ -8605,7 +8605,7 @@ def update_account_balance(request, account_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def add_trading_day(request, account_id):
+def add_prop_trading_day(request, account_id):
     try:
         data = json.loads(request.body)
         account = PropFirmAccount.objects.get(id=account_id)
@@ -8641,7 +8641,7 @@ def add_trading_day(request, account_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def add_trade(request, account_id):
+def add_prop_trade(request, account_id):
     try:
         data = json.loads(request.body)
         account = PropFirmAccount.objects.get(id=account_id)
@@ -8684,7 +8684,7 @@ def add_trade(request, account_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-def get_account_analytics(request, account_id):
+def get_prop_account_analytics(request, account_id):
     try:
         account = PropFirmAccount.objects.get(id=account_id)
         
@@ -8745,7 +8745,7 @@ def get_account_analytics(request, account_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-def get_metrics(request):
+def get_prop_metrics(request):
     try:
         metrics, created = ManagementMetrics.objects.get_or_create(id=1)
         
@@ -8764,7 +8764,7 @@ def get_metrics(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
-def update_metrics():
+def update_prop_metrics():
     """Helper function to update aggregate metrics"""
     accounts = PropFirmAccount.objects.all()
     
