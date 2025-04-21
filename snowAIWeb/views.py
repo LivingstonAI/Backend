@@ -8454,6 +8454,354 @@ def delete_trade_idea(request, id):
             'error': str(e)
         }, status=400)
 
+
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+import json
+from datetime import datetime, date
+from decimal import Decimal
+from .models import PropFirm, PropFirmAccount, TradingDay, PropTrade, ManagementMetrics
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_prop_firms(request):
+    firms = PropFirm.objects.all()
+    data = [
+        {
+            'id': firm.id,
+            'name': firm.name,
+            'logo': firm.logo.url if firm.logo else None,
+            'website': firm.website,
+            'description': firm.description
+        }
+        for firm in firms
+    ]
+    return JsonResponse({'firms': data})
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_prop_firm(request):
+    try:
+        data = json.loads(request.body)
+        name = data.get('name')
+        website = data.get('website')
+        description = data.get('description')
+        
+        # Create prop firm
+        firm = PropFirm.objects.create(
+            name=name,
+            website=website,
+            description=description
+        )
+        
+        # Handle logo upload separately if included in form data
+        if 'logo' in request.FILES:
+            firm.logo = request.FILES['logo']
+            firm.save()
+        
+        return JsonResponse({
+            'success': True,
+            'firm': {
+                'id': firm.id,
+                'name': firm.name,
+                'logo': firm.logo.url if firm.logo else None,
+                'website': firm.website,
+                'description': firm.description
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_accounts(request):
+    accounts = PropFirmAccount.objects.all()
+    data = []
+    
+    for account in accounts:
+        account_data = {
+            'id': account.id,
+            'prop_firm': {
+                'id': account.prop_firm.id,
+                'name': account.prop_firm.name,
+                'logo': account.prop_firm.logo.url if account.prop_firm.logo else None
+            },
+            'account_name': account.account_name,
+            'account_id': account.account_id,
+            'account_type': account.account_type,
+            'status': account.status,
+            'initial_balance': float(account.initial_balance),
+            'current_balance': float(account.current_balance),
+            'current_equity': float(account.current_equity),
+            'daily_loss_limit': float(account.daily_loss_limit) if account.daily_loss_limit else None,
+            'max_loss_limit': float(account.max_loss_limit) if account.max_loss_limit else None,
+            'profit_target': float(account.profit_target) if account.profit_target else None,
+            'start_date': account.start_date.isoformat(),
+            'end_date': account.end_date.isoformat() if account.end_date else None,
+            'days_remaining': account.days_remaining(),
+            'percentage_to_target': account.percentage_to_target(),
+        }
+        data.append(account_data)
+    
+    return JsonResponse({'accounts': data})
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_account(request):
+    try:
+        data = json.loads(request.body)
+        
+        prop_firm = PropFirm.objects.get(id=data.get('prop_firm_id'))
+        
+        account = PropFirmAccount.objects.create(
+            prop_firm=prop_firm,
+            account_name=data.get('account_name'),
+            account_id=data.get('account_id'),
+            account_type=data.get('account_type'),
+            status=data.get('status', 'IN_PROGRESS'),
+            initial_balance=Decimal(data.get('initial_balance')),
+            current_balance=Decimal(data.get('initial_balance')),  # Start with initial balance
+            current_equity=Decimal(data.get('initial_balance')),   # Start with initial balance
+            daily_loss_limit=Decimal(data.get('daily_loss_limit')) if data.get('daily_loss_limit') else None,
+            max_loss_limit=Decimal(data.get('max_loss_limit')) if data.get('max_loss_limit') else None,
+            profit_target=Decimal(data.get('profit_target')) if data.get('profit_target') else None,
+            start_date=datetime.strptime(data.get('start_date'), '%Y-%m-%d').date(),
+            end_date=datetime.strptime(data.get('end_date'), '%Y-%m-%d').date() if data.get('end_date') else None,
+        )
+        
+        # Update metrics
+        update_metrics()
+        
+        return JsonResponse({
+            'success': True,
+            'account': {
+                'id': account.id,
+                'account_name': account.account_name
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def update_account_balance(request, account_id):
+    try:
+        data = json.loads(request.body)
+        account = PropFirmAccount.objects.get(id=account_id)
+        
+        account.current_balance = Decimal(data.get('current_balance'))
+        account.current_equity = Decimal(data.get('current_equity'))
+        account.save()
+        
+        # Update metrics
+        update_metrics()
+        
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_trading_day(request, account_id):
+    try:
+        data = json.loads(request.body)
+        account = PropFirmAccount.objects.get(id=account_id)
+        
+        # Create trading day
+        trading_day = TradingDay.objects.create(
+            account=account,
+            date=datetime.strptime(data.get('date'), '%Y-%m-%d').date(),
+            starting_balance=Decimal(data.get('starting_balance')),
+            ending_balance=Decimal(data.get('ending_balance')),
+            pnl=Decimal(data.get('pnl')),
+            session_time_minutes=int(data.get('session_time_minutes', 0)),
+            notes=data.get('notes')
+        )
+        
+        # Handle voice memo if included
+        if 'voice_memo' in request.FILES:
+            trading_day.voice_memo = request.FILES['voice_memo']
+            trading_day.save()
+        
+        # Update account balance if it's the most recent day
+        if trading_day.date == date.today():
+            account.current_balance = trading_day.ending_balance
+            account.current_equity = trading_day.ending_balance  # Simplified, in real app equity might differ
+            account.save()
+        
+        # Update metrics
+        update_metrics()
+        
+        return JsonResponse({'success': True, 'trading_day_id': trading_day.id})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_trade(request, account_id):
+    try:
+        data = json.loads(request.body)
+        account = PropFirmAccount.objects.get(id=account_id)
+        
+        # Get trading day if specified
+        trading_day = None
+        if data.get('trading_day_id'):
+            trading_day = TradingDay.objects.get(id=data.get('trading_day_id'), account=account)
+        
+        # Calculate PnL if exit price is provided
+        pnl = None
+        if data.get('exit_price'):
+            price_diff = Decimal(data.get('exit_price')) - Decimal(data.get('entry_price'))
+            if data.get('trade_type') == 'SELL':
+                price_diff = -price_diff
+            pnl = price_diff * Decimal(data.get('size'))
+        
+        # Create trade
+        trade = PropTrade.objects.create(
+            account=account,
+            trading_day=trading_day,
+            asset=data.get('asset'),
+            trade_type=data.get('trade_type'),
+            entry_price=Decimal(data.get('entry_price')),
+            exit_price=Decimal(data.get('exit_price')) if data.get('exit_price') else None,
+            size=Decimal(data.get('size')),
+            entry_time=datetime.strptime(data.get('entry_time'), '%Y-%m-%dT%H:%M:%S'),
+            exit_time=datetime.strptime(data.get('exit_time'), '%Y-%m-%dT%H:%M:%S') if data.get('exit_time') else None,
+            pnl=pnl,
+            strategy=data.get('strategy'),
+            notes=data.get('notes')
+        )
+        
+        # Update metrics
+        update_metrics()
+        
+        return JsonResponse({'success': True, 'trade_id': trade.id})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_account_analytics(request, account_id):
+    try:
+        account = PropFirmAccount.objects.get(id=account_id)
+        
+        # Get trading days
+        trading_days = TradingDay.objects.filter(account=account).order_by('date')
+        trading_days_data = [{
+            'date': day.date.isoformat(),
+            'pnl': float(day.pnl),
+            'balance': float(day.ending_balance)
+        } for day in trading_days]
+        
+        # Get trades
+        trades = PropTrade.objects.filter(account=account, exit_time__isnull=False)
+        
+        # Calculate analytics
+        total_trades = trades.count()
+        winning_trades = trades.filter(pnl__gt=0).count()
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        avg_win = trades.filter(pnl__gt=0).aggregate(avg=models.Avg('pnl'))['avg'] or 0
+        avg_loss = trades.filter(pnl__lt=0).aggregate(avg=models.Avg('pnl'))['avg'] or 0
+        risk_reward = abs(float(avg_win) / float(avg_loss)) if avg_loss != 0 else 0
+        
+        # Group trades by strategy
+        strategies = {}
+        for trade in trades:
+            strategy = trade.strategy or 'Uncategorized'
+            if strategy not in strategies:
+                strategies[strategy] = {'count': 0, 'pnl': 0}
+            strategies[strategy]['count'] += 1
+            strategies[strategy]['pnl'] += float(trade.pnl or 0)
+        
+        # Group trades by asset
+        assets = {}
+        for trade in trades:
+            asset = trade.asset
+            if asset not in assets:
+                assets[asset] = {'count': 0, 'pnl': 0}
+            assets[asset]['count'] += 1
+            assets[asset]['pnl'] += float(trade.pnl or 0)
+        
+        return JsonResponse({
+            'success': True,
+            'trading_days': trading_days_data,
+            'analytics': {
+                'total_trades': total_trades,
+                'winning_trades': winning_trades,
+                'win_rate': win_rate,
+                'risk_reward_ratio': risk_reward,
+                'percentage_to_target': account.percentage_to_target(),
+                'days_remaining': account.days_remaining(),
+            },
+            'strategies': strategies,
+            'assets': assets
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_metrics(request):
+    try:
+        metrics, created = ManagementMetrics.objects.get_or_create(id=1)
+        
+        return JsonResponse({
+            'success': True,
+            'metrics': {
+                'total_accounts': metrics.total_accounts,
+                'total_capital_managed': float(metrics.total_capital_managed),
+                'total_profit': float(metrics.total_profit),
+                'win_rate': float(metrics.win_rate),
+                'avg_risk_reward': float(metrics.avg_risk_reward),
+                'avg_session_time': metrics.avg_session_time,
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+def update_metrics():
+    """Helper function to update aggregate metrics"""
+    accounts = PropFirmAccount.objects.all()
+    
+    # Calculate metrics
+    total_accounts = accounts.count()
+    total_capital = accounts.aggregate(sum=models.Sum('current_balance'))['sum'] or 0
+    
+    # Calculate profit
+    total_profit = 0
+    for account in accounts:
+        profit = account.current_balance - account.initial_balance
+        total_profit += profit
+    
+    # Calculate win rate and risk/reward
+    all_trades = PropTrade.objects.filter(exit_time__isnull=False)
+    total_trades = all_trades.count()
+    winning_trades = all_trades.filter(pnl__gt=0).count()
+    win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+    
+    avg_win = all_trades.filter(pnl__gt=0).aggregate(avg=models.Avg('pnl'))['avg'] or 0
+    avg_loss = all_trades.filter(pnl__lt=0).aggregate(avg=models.Avg('pnl'))['avg'] or 0
+    risk_reward = abs(float(avg_win) / float(avg_loss)) if avg_loss and avg_loss != 0 else 0
+    
+    # Calculate average session time
+    avg_session_time = TradingDay.objects.all().aggregate(avg=models.Avg('session_time_minutes'))['avg'] or 0
+    
+    # Update or create metrics object
+    metrics, created = ManagementMetrics.objects.get_or_create(id=1)
+    metrics.total_accounts = total_accounts
+    metrics.total_capital_managed = total_capital
+    metrics.total_profit = total_profit
+    metrics.win_rate = win_rate
+    metrics.avg_risk_reward = risk_reward
+    metrics.avg_session_time = avg_session_time
+    metrics.save()
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key

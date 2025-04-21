@@ -42,7 +42,7 @@ class TellUsMore(models.Model):
     main_assets = models.CharField(max_length=2000)
     initial_capital = models.FloatField()
     trading_goals = models.CharField(max_length=1000)
-    benefits = models.CharField(max_length=1000)
+    benefits = models.CharField(max_length=1001)
 
 
 class Trade(models.Model):
@@ -373,6 +373,124 @@ class TradeIdea(models.Model):
 
 class AssetsTracker(models.Model):
     asset = models.CharField(max_length=50)
+
+
+
+from django.db import models
+
+class PropFirm(models.Model):
+    name = models.CharField(max_length=100)
+    logo = models.ImageField(upload_to='prop_firm_logos/', null=True, blank=True)
+    website = models.URLField(blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+class PropFirmAccount(models.Model):
+    ACCOUNT_TYPES = (
+        ('CHALLENGE', 'Challenge'),
+        ('VERIFICATION', 'Verification'),
+        ('FUNDED', 'Funded'),
+    )
+    STATUS_CHOICES = (
+        ('IN_PROGRESS', 'In Progress'),
+        ('PASSED', 'Passed'),
+        ('FAILED', 'Failed'),
+        ('LIVE', 'Live'),
+    )
+    
+    prop_firm = models.ForeignKey(PropFirm, on_delete=models.CASCADE, related_name='accounts')
+    account_name = models.CharField(max_length=100)
+    account_id = models.CharField(max_length=100, blank=True, null=True)
+    account_type = models.CharField(max_length=20, choices=ACCOUNT_TYPES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='IN_PROGRESS')
+    
+    # Financial metrics
+    initial_balance = models.DecimalField(max_digits=15, decimal_places=2)
+    current_balance = models.DecimalField(max_digits=15, decimal_places=2)
+    current_equity = models.DecimalField(max_digits=15, decimal_places=2)
+    
+    # Risk parameters
+    daily_loss_limit = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    max_loss_limit = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    profit_target = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    
+    # Time constraints
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)  # For challenges with time limits
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.prop_firm.name} - {self.account_name}"
+    
+    def days_remaining(self):
+        if not self.end_date:
+            return None
+        from datetime import date
+        delta = self.end_date - date.today()
+        return max(0, delta.days)
+    
+    def percentage_to_target(self):
+        if not self.profit_target or self.profit_target == 0:
+            return None
+        profit = self.current_balance - self.initial_balance
+        return (profit / self.profit_target) * 100
+
+class TradingDay(models.Model):
+    account = models.ForeignKey(PropFirmAccount, on_delete=models.CASCADE, related_name='trading_days')
+    date = models.DateField()
+    starting_balance = models.DecimalField(max_digits=15, decimal_places=2)
+    ending_balance = models.DecimalField(max_digits=15, decimal_places=2)
+    pnl = models.DecimalField(max_digits=15, decimal_places=2)
+    session_time_minutes = models.IntegerField(default=0)
+    notes = models.TextField(blank=True, null=True)
+    voice_memo = models.FileField(upload_to='voice_memos/', null=True, blank=True)
+    
+    class Meta:
+        unique_together = ('account', 'date')
+    
+    def __str__(self):
+        return f"{self.account} - {self.date} (${self.pnl})"
+
+class PropTrade(models.Model):
+    TRADE_TYPES = (
+        ('BUY', 'Buy'),
+        ('SELL', 'Sell'),
+    )
+    
+    account = models.ForeignKey(PropFirmAccount, on_delete=models.CASCADE, related_name='trades')
+    trading_day = models.ForeignKey(TradingDay, on_delete=models.CASCADE, related_name='trades', null=True, blank=True)
+    asset = models.CharField(max_length=50)
+    trade_type = models.CharField(max_length=4, choices=TRADE_TYPES)
+    entry_price = models.DecimalField(max_digits=15, decimal_places=5)
+    exit_price = models.DecimalField(max_digits=15, decimal_places=5, null=True, blank=True)
+    size = models.DecimalField(max_digits=15, decimal_places=5)
+    entry_time = models.DateTimeField()
+    exit_time = models.DateTimeField(null=True, blank=True)
+    pnl = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    strategy = models.CharField(max_length=100, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    
+    def __str__(self):
+        return f"{self.asset} {self.trade_type} - {self.entry_time}"
+
+class ManagementMetrics(models.Model):
+    total_accounts = models.IntegerField(default=0)
+    total_capital_managed = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    total_profit = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    win_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    avg_risk_reward = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    avg_session_time = models.IntegerField(default=0)  # in minutes
+    last_updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return "Prop Firm Management Metrics"
+
 
 
 class FeedbackForm(models.Model): 
