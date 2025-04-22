@@ -6938,6 +6938,7 @@ def time_trading_analytics(request):
 
 def obtain_dataset(asset, interval, num_days):
     # Calculate the end and start dates
+    import datetime
     end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
 
