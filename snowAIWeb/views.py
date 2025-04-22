@@ -8476,15 +8476,21 @@ def get_prop_firms(request):
             'website': firm.website,
             'description': firm.description
         }
-        
-        if firm.logo:
-            # Read the file content directly from the model
-            image_file = firm.logo.file
-            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-            image_type = firm.logo.name.split('.')[-1].lower()
-            firm_data['logo'] = f"data:image/{image_type};base64,{encoded_string}"
-        else:
+        try:
+
+            if firm.logo:
+                # Read the file content directly from the model
+                image_file = firm.logo
+                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                image_type = firm.logo.name.split('.')[-1].lower()
+                firm_data['logo'] = f"data:image/{image_type};base64,{encoded_string}"
+            else:
+                firm_data['logo'] = None
+        except Exception as e:
+            print(f'Error occured in get_prop_firms function: {e}')
             firm_data['logo'] = None
+
+
             
         data.append(firm_data)
     
