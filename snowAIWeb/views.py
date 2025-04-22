@@ -8461,6 +8461,7 @@ from django.conf import settings
 from datetime import datetime, date
 from decimal import Decimal
 import base64
+from django.core.files.base import ContentFile
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -8477,16 +8478,18 @@ def get_prop_firms(request):
         }
         
         if firm.logo:
-            with open(firm.logo.path, 'rb') as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-                image_type = firm.logo.name.split('.')[-1].lower()
-                firm_data['logo'] = f"data:image/{image_type};base64,{encoded_string}"
+            # Read the file content directly from the model
+            image_file = firm.logo.file
+            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+            image_type = firm.logo.name.split('.')[-1].lower()
+            firm_data['logo'] = f"data:image/{image_type};base64,{encoded_string}"
         else:
             firm_data['logo'] = None
             
         data.append(firm_data)
     
     return JsonResponse({'firms': data})
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
