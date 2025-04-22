@@ -375,17 +375,11 @@ class AssetsTracker(models.Model):
     asset = models.CharField(max_length=50)
 
 
-
-from django.db import models
-
 class PropFirm(models.Model):
     name = models.CharField(max_length=100)
-    logo = models.ImageField(upload_to='prop_firm_logos/', null=True, blank=True)
+    logo = models.TextField()  # For base64 encoded image
     website = models.URLField(blank=True, null=True)
-    description = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
+    
     def __str__(self):
         return self.name
 
@@ -401,8 +395,7 @@ class PropFirmAccount(models.Model):
         ('FAILED', 'Failed'),
         ('LIVE', 'Live'),
     )
-    
-    prop_firm = models.ForeignKey(PropFirm, on_delete=models.CASCADE, related_name='accounts')
+    prop_firm = models.ForeignKey(PropFirm, on_delete=models.CASCADE, related_name='firm_accounts')
     account_name = models.CharField(max_length=100)
     account_id = models.CharField(max_length=100, blank=True, null=True)
     account_type = models.CharField(max_length=20, choices=ACCOUNT_TYPES)
@@ -491,6 +484,38 @@ class ManagementMetrics(models.Model):
     def __str__(self):
         return "Prop Firm Management Metrics"
 
+# models.py
+from django.db import models
+
+
+class PropFirmManagementMetrics(models.Model):
+    ACCOUNT_TYPE_CHOICES = [
+        ('challenge', 'Challenge'),
+        ('verification', 'Verification'),
+        ('funded', 'Funded'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('in_progress', 'In Progress'),
+        ('passed', 'Passed'),
+        ('failed', 'Failed'),
+        ('live', 'Live'),
+    ]
+    
+    prop_firm = models.ForeignKey(PropFirm, on_delete=models.CASCADE, related_name='accounts')
+    account_type = models.CharField(max_length=20, choices=ACCOUNT_TYPE_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    account_id = models.CharField(max_length=100, blank=True, null=True)
+    starting_balance = models.DecimalField(max_digits=15, decimal_places=2)
+    current_balance = models.DecimalField(max_digits=15, decimal_places=2)
+    current_equity = models.DecimalField(max_digits=15, decimal_places=2)
+    profit_target = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True)
+    max_drawdown = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True)
+    start_date = models.DateField()
+    notes = models.TextField(blank=True, null=True)
+    
+    def __str__(self):
+        return f"{self.prop_firm.name} - {self.account_type} - {self.status}"
 
 
 class FeedbackForm(models.Model): 

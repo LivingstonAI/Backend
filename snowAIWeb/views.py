@@ -8873,6 +8873,193 @@ def serve_prop_firm_logo(request, path):
         return JsonResponse({'error': 'File not found'}, status=404)
 
 
+# views.py
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+from .models import PropFirm, PropFirmManagementMetrics
+from django.core.exceptions import ObjectDoesNotExist
+
+@csrf_exempt
+def prop_firm_list(request):
+    if request.method == 'GET':
+        firms = PropFirm.objects.all()
+        return JsonResponse([{
+            'id': firm.id,
+            'name': firm.name,
+            'logo': firm.logo,
+            'website': firm.website
+        } for firm in firms], safe=False)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            new_firm = PropFirm.objects.create(
+                name=data.get('name'),
+                logo=data.get('logo', ''),
+                website=data.get('website', '')
+            )
+            return JsonResponse({
+                'id': new_firm.id,
+                'name': new_firm.name,
+                'logo': new_firm.logo,
+                'website': new_firm.website
+            }, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+@csrf_exempt
+def prop_firm_detail(request, firm_id):
+    try:
+        firm = PropFirm.objects.get(id=firm_id)
+    except ObjectDoesNotExist:
+        return JsonResponse({'error': 'Prop firm not found'}, status=404)
+    
+    if request.method == 'GET':
+        return JsonResponse({
+            'id': firm.id,
+            'name': firm.name,
+            'logo': firm.logo,
+            'website': firm.website
+        })
+    
+    elif request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            firm.name = data.get('name', firm.name)
+            firm.logo = data.get('logo', firm.logo)
+            firm.website = data.get('website', firm.website)
+            firm.save()
+            return JsonResponse({
+                'id': firm.id,
+                'name': firm.name,
+                'logo': firm.logo,
+                'website': firm.website
+            })
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    
+    elif request.method == 'DELETE':
+        firm.delete()
+        return JsonResponse({'message': 'Prop firm deleted successfully'})
+
+@csrf_exempt
+def metrics_list(request):
+    if request.method == 'GET':
+        metrics = PropFirmManagementMetrics.objects.all()
+        return JsonResponse([{
+            'id': metric.id,
+            'prop_firm': {
+                'id': metric.prop_firm.id,
+                'name': metric.prop_firm.name,
+                'logo': metric.prop_firm.logo
+            },
+            'account_type': metric.account_type,
+            'status': metric.status,
+            'account_id': metric.account_id,
+            'starting_balance': float(metric.starting_balance),
+            'current_balance': float(metric.current_balance),
+            'current_equity': float(metric.current_equity),
+            'profit_target': float(metric.profit_target) if metric.profit_target else None,
+            'max_drawdown': float(metric.max_drawdown) if metric.max_drawdown else None,
+            'start_date': metric.start_date.isoformat(),
+            'notes': metric.notes
+        } for metric in metrics], safe=False)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            prop_firm = PropFirm.objects.get(id=data.get('prop_firm_id'))
+            
+            new_metric = PropFirmManagementMetrics.objects.create(
+                prop_firm=prop_firm,
+                account_type=data.get('account_type'),
+                status=data.get('status'),
+                account_id=data.get('account_id', ''),
+                starting_balance=data.get('starting_balance'),
+                current_balance=data.get('current_balance'),
+                current_equity=data.get('current_equity'),
+                profit_target=data.get('profit_target', None),
+                max_drawdown=data.get('max_drawdown', None),
+                start_date=data.get('start_date'),
+                notes=data.get('notes', '')
+            )
+            
+            return JsonResponse({
+                'id': new_metric.id,
+                'prop_firm': {
+                    'id': new_metric.prop_firm.id,
+                    'name': new_metric.prop_firm.name
+                },
+                'account_type': new_metric.account_type,
+                'status': new_metric.status
+            }, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+@csrf_exempt
+def metric_detail(request, metric_id):
+    try:
+        metric = PropFirmManagementMetrics.objects.get(id=metric_id)
+    except ObjectDoesNotExist:
+        return JsonResponse({'error': 'Metric not found'}, status=404)
+    
+    if request.method == 'GET':
+        return JsonResponse({
+            'id': metric.id,
+            'prop_firm': {
+                'id': metric.prop_firm.id,
+                'name': metric.prop_firm.name,
+                'logo': metric.prop_firm.logo
+            },
+            'account_type': metric.account_type,
+            'status': metric.status,
+            'account_id': metric.account_id,
+            'starting_balance': float(metric.starting_balance),
+            'current_balance': float(metric.current_balance),
+            'current_equity': float(metric.current_equity),
+            'profit_target': float(metric.profit_target) if metric.profit_target else None,
+            'max_drawdown': float(metric.max_drawdown) if metric.max_drawdown else None,
+            'start_date': metric.start_date.isoformat(),
+            'notes': metric.notes
+        })
+    
+    elif request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            
+            if 'prop_firm_id' in data:
+                metric.prop_firm = PropFirm.objects.get(id=data.get('prop_firm_id'))
+            
+            fields = ['account_type', 'status', 'account_id', 'starting_balance', 
+                     'current_balance', 'current_equity', 'profit_target', 
+                     'max_drawdown', 'start_date', 'notes']
+            
+            for field in fields:
+                if field in data:
+                    setattr(metric, field, data.get(field))
+            
+            metric.save()
+            
+            return JsonResponse({
+                'id': metric.id,
+                'prop_firm': {
+                    'id': metric.prop_firm.id,
+                    'name': metric.prop_firm.name
+                },
+                'status': metric.status,
+                'current_balance': float(metric.current_balance),
+                'current_equity': float(metric.current_equity)
+            })
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    
+    elif request.method == 'DELETE':
+        metric.delete()
+        return JsonResponse({'message': 'Metric deleted successfully'})
+
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key

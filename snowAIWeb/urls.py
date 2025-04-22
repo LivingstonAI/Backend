@@ -109,24 +109,10 @@ urlpatterns = [
     path('api/trade-ideas/create/', views.create_trade_idea, name='create_trade_idea'),
     path('api/trade-ideas/update/<int:id>/', views.update_trade_idea, name='update_trade_idea'),
     path('api/trade-ideas/delete/<int:id>/', views.delete_trade_idea, name='delete_trade_idea'),
-    # Prop Firms
-    path('api/prop-firms/', views.get_prop_firms, name='get_prop_firms'),
-    path('api/prop-firms/create/', views.create_prop_firm, name='create_prop_firm'),
-    
-    # Accounts
-    path('api/accounts/', views.get_prop_accounts, name='get_accounts'),
-    path('api/accounts/create/', views.create_prop_account, name='create_account'),
-    path('api/accounts/<int:account_id>/update-balance/', views.update_prop_account_balance, name='update_account_balance'),
-    
-    # Trading Days and Trades
-    path('api/accounts/<int:account_id>/add-trading-day/', views.add_prop_trading_day, name='add_trading_day'),
-    path('api/accounts/<int:account_id>/add-trade/', views.add_prop_trade, name='add_trade'),
-    
-    # Analytics
-    path('api/accounts/<int:account_id>/analytics/', views.get_prop_account_analytics, name='get_account_analytics'),
-    
-    # User Metrics
-    path('api/metrics/', views.get_prop_metrics, name='get_metrics'),
+    path('api/prop-firms/', views.prop_firm_list, name='prop_firm_list'),
+    path('api/prop-firms/<int:firm_id>/', views.prop_firm_detail, name='prop_firm_detail'),
+    path('api/prop-metrics/', views.metrics_list, name='metrics_list'),
+    path('api/prop-metrics/<int:metric_id>/', views.metric_detail, name='metric_detail'),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
