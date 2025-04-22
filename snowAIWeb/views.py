@@ -8460,7 +8460,10 @@ def delete_trade_idea(request, id):
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django.conf import settings
+from django.urls import path
 import json
+import os
 from datetime import datetime, date
 from decimal import Decimal
 from .models import PropFirm, PropFirmAccount, TradingDay, PropTrade, ManagementMetrics
@@ -8482,26 +8485,41 @@ def get_prop_firms(request):
     ]
     return JsonResponse({'firms': data})
 
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_prop_firm(request):
     try:
-        data = json.loads(request.body)
-        name = data.get('name')
-        website = data.get('website')
-        description = data.get('description')
-        
-        # Create prop firm
-        firm = PropFirm.objects.create(
-            name=name,
-            website=website,
-            description=description
-        )
-        
-        # Handle logo upload separately if included in form data
-        if 'logo' in request.FILES:
+        # Check if the request has files
+        if request.FILES and 'logo' in request.FILES:
+            # Handle form data with file upload
+            name = request.POST.get('name')
+            website = request.POST.get('website')
+            description = request.POST.get('description')
+            
+            # Create prop firm
+            firm = PropFirm.objects.create(
+                name=name,
+                website=website,
+                description=description
+            )
+            
+            # Handle logo upload
             firm.logo = request.FILES['logo']
             firm.save()
+        else:
+            # Handle JSON data without file upload
+            data = json.loads(request.body)
+            name = data.get('name')
+            website = data.get('website')
+            description = data.get('description')
+            
+            # Create prop firm
+            firm = PropFirm.objects.create(
+                name=name,
+                website=website,
+                description=description
+            )
         
         return JsonResponse({
             'success': True,
@@ -8515,6 +8533,7 @@ def create_prop_firm(request):
         })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -8549,6 +8568,7 @@ def get_prop_accounts(request):
     
     return JsonResponse({'accounts': data})
 
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_prop_account(request):
@@ -8574,7 +8594,7 @@ def create_prop_account(request):
         )
         
         # Update metrics
-        update_metrics()
+        update_prop_metrics()
         
         return JsonResponse({
             'success': True,
@@ -8583,8 +8603,11 @@ def create_prop_account(request):
                 'account_name': account.account_name
             }
         })
+    except PropFirm.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Prop firm not found'}, status=404)
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -8598,34 +8621,52 @@ def update_prop_account_balance(request, account_id):
         account.save()
         
         # Update metrics
-        update_metrics()
+        update_prop_metrics()
         
         return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def add_prop_trading_day(request, account_id):
     try:
-        data = json.loads(request.body)
-        account = PropFirmAccount.objects.get(id=account_id)
-        
-        # Create trading day
-        trading_day = TradingDay.objects.create(
-            account=account,
-            date=datetime.strptime(data.get('date'), '%Y-%m-%d').date(),
-            starting_balance=Decimal(data.get('starting_balance')),
-            ending_balance=Decimal(data.get('ending_balance')),
-            pnl=Decimal(data.get('pnl')),
-            session_time_minutes=int(data.get('session_time_minutes', 0)),
-            notes=data.get('notes')
-        )
-        
-        # Handle voice memo if included
-        if 'voice_memo' in request.FILES:
-            trading_day.voice_memo = request.FILES['voice_memo']
-            trading_day.save()
+        # Check if the request has form data or JSON
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            # Handle form data
+            account = PropFirmAccount.objects.get(id=account_id)
+            
+            # Create trading day
+            trading_day = TradingDay.objects.create(
+                account=account,
+                date=datetime.strptime(request.POST.get('date'), '%Y-%m-%d').date(),
+                starting_balance=Decimal(request.POST.get('starting_balance')),
+                ending_balance=Decimal(request.POST.get('ending_balance')),
+                pnl=Decimal(request.POST.get('pnl')),
+                session_time_minutes=int(request.POST.get('session_time_minutes', 0)),
+                notes=request.POST.get('notes')
+            )
+            
+            # Handle voice memo if included
+            if 'voice_memo' in request.FILES:
+                trading_day.voice_memo = request.FILES['voice_memo']
+                trading_day.save()
+        else:
+            # Handle JSON data
+            data = json.loads(request.body)
+            account = PropFirmAccount.objects.get(id=account_id)
+            
+            # Create trading day
+            trading_day = TradingDay.objects.create(
+                account=account,
+                date=datetime.strptime(data.get('date'), '%Y-%m-%d').date(),
+                starting_balance=Decimal(data.get('starting_balance')),
+                ending_balance=Decimal(data.get('ending_balance')),
+                pnl=Decimal(data.get('pnl')),
+                session_time_minutes=int(data.get('session_time_minutes', 0)),
+                notes=data.get('notes')
+            )
         
         # Update account balance if it's the most recent day
         if trading_day.date == date.today():
@@ -8634,11 +8675,12 @@ def add_prop_trading_day(request, account_id):
             account.save()
         
         # Update metrics
-        update_metrics()
+        update_prop_metrics()
         
         return JsonResponse({'success': True, 'trading_day_id': trading_day.id})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -8677,11 +8719,12 @@ def add_prop_trade(request, account_id):
         )
         
         # Update metrics
-        update_metrics()
+        update_prop_metrics()
         
         return JsonResponse({'success': True, 'trade_id': trade.id})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -8744,6 +8787,7 @@ def get_prop_account_analytics(request, account_id):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
+
 @csrf_exempt
 @require_http_methods(["GET"])
 def get_prop_metrics(request):
@@ -8767,6 +8811,8 @@ def get_prop_metrics(request):
 
 def update_prop_metrics():
     """Helper function to update aggregate metrics"""
+    from django.db import models
+    
     accounts = PropFirmAccount.objects.all()
     
     # Calculate metrics
@@ -8801,6 +8847,19 @@ def update_prop_metrics():
     metrics.avg_risk_reward = risk_reward
     metrics.avg_session_time = avg_session_time
     metrics.save()
+
+
+# Add this function to serve media files in development
+def serve_prop_firm_logo(request, path):
+    from django.http import FileResponse
+    from django.conf import settings
+    import os
+    
+    file_path = os.path.join(settings.MEDIA_ROOT, 'prop_firm_logos', path)
+    if os.path.exists(file_path):
+        return FileResponse(open(file_path, 'rb'))
+    else:
+        return JsonResponse({'error': 'File not found'}, status=404)
 
 
 # LEGODI BACKEND CODE
