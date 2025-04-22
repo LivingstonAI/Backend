@@ -8460,24 +8460,33 @@ def delete_trade_idea(request, id):
 from django.conf import settings
 from datetime import datetime, date
 from decimal import Decimal
-
+import base64
 
 @csrf_exempt
 @require_http_methods(["GET"])
 def get_prop_firms(request):
     firms = PropFirm.objects.all()
-    data = [
-        {
+    data = []
+    
+    for firm in firms:
+        firm_data = {
             'id': firm.id,
             'name': firm.name,
-            'logo': firm.logo.url if firm.logo else None,
             'website': firm.website,
             'description': firm.description
         }
-        for firm in firms
-    ]
+        
+        if firm.logo:
+            with open(firm.logo.path, 'rb') as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                image_type = firm.logo.name.split('.')[-1].lower()
+                firm_data['logo'] = f"data:image/{image_type};base64,{encoded_string}"
+        else:
+            firm_data['logo'] = None
+            
+        data.append(firm_data)
+    
     return JsonResponse({'firms': data})
-
 
 @csrf_exempt
 @require_http_methods(["POST"])
