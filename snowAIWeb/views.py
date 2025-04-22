@@ -8457,16 +8457,9 @@ def delete_trade_idea(request, id):
 
 
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
 from django.conf import settings
-from django.urls import path
-import json
-import os
 from datetime import datetime, date
 from decimal import Decimal
-from .models import PropFirm, PropFirmAccount, TradingDay, PropTrade, ManagementMetrics
 
 
 @csrf_exempt
