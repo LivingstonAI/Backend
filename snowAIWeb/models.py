@@ -518,6 +518,53 @@ class PropFirmManagementMetrics(models.Model):
         return f"{self.prop_firm.name} - {self.account_type} - {self.status}"
 
 
+
+from django.db import models
+
+class EconomicEvent(models.Model):
+    IMPACT_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
+    
+    CURRENCY_CHOICES = [
+        ('USD', 'US Dollar'),
+        ('EUR', 'Euro'),
+        ('GBP', 'British Pound'),
+        ('JPY', 'Japanese Yen'),
+        ('AUD', 'Australian Dollar'),
+        ('CAD', 'Canadian Dollar'),
+        ('CHF', 'Swiss Franc'),
+        ('CNY', 'Chinese Yuan'),
+    ]
+    
+    date_time = models.DateTimeField()
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES)
+    impact = models.CharField(max_length=10, choices=IMPACT_CHOICES)
+    event_name = models.CharField(max_length=255)
+    actual = models.CharField(max_length=50, blank=True, null=True)
+    forecast = models.CharField(max_length=50, blank=True, null=True)
+    previous = models.CharField(max_length=50, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['date_time']
+    
+    def __str__(self):
+        return f"{self.date_time.strftime('%Y-%m-%d %H:%M')} - {self.currency} - {self.event_name}"
+
+
+
+
+
+
+
+
+
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 

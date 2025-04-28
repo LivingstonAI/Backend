@@ -9059,6 +9059,111 @@ def metric_detail(request, metric_id):
         return JsonResponse({'message': 'Metric deleted successfully'})
 
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.shortcuts import get_object_or_404
+import json
+from datetime import datetime
+from .models import EconomicEvent
+
+# Helper function to serialize EconomicEvent objects to dictionaries
+def event_to_dict(event):
+    return {
+        'id': event.id,
+        'date_time': event.date_time.isoformat(),
+        'currency': event.currency,
+        'impact': event.impact,
+        'event_name': event.event_name,
+        'actual': event.actual,
+        'forecast': event.forecast,
+        'previous': event.previous,
+        'created_at': event.created_at.isoformat(),
+        'updated_at': event.updated_at.isoformat()
+    }
+
+@csrf_exempt
+def economic_events_list(request):
+    """List all economic events or create a new one"""
+    if request.method == 'GET':
+        # Filter by date range if provided
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        events = EconomicEvent.objects.all()
+        
+        if start_date and end_date:
+            # Format: YYYY-MM-DD
+            start_datetime = datetime.strptime(f"{start_date} 00:00:00", "%Y-%m-%d %H:%M:%S")
+            end_datetime = datetime.strptime(f"{end_date} 23:59:59", "%Y-%m-%d %H:%M:%S")
+            events = events.filter(date_time__range=(start_datetime, end_datetime))
+        
+        events_data = [event_to_dict(event) for event in events]
+        return JsonResponse(events_data, safe=False)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            # Create a new event
+            event = EconomicEvent(
+                date_time=data['date_time'],
+                currency=data['currency'],
+                impact=data['impact'],
+                event_name=data['event_name'],
+                actual=data.get('actual'),
+                forecast=data.get('forecast'),
+                previous=data.get('previous')
+            )
+            event.save()
+            
+            return JsonResponse(event_to_dict(event), status=201)
+        except (KeyError, json.JSONDecodeError):
+            return JsonResponse({'error': 'Invalid data provided'}, status=400)
+
+@csrf_exempt
+def economic_event_detail(request, pk):
+    """Retrieve, update or delete an economic event"""
+    event = get_object_or_404(EconomicEvent, pk=pk)
+    
+    if request.method == 'GET':
+        return JsonResponse(event_to_dict(event))
+    
+    elif request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            
+            # Update fields
+            event.date_time = data.get('date_time', event.date_time)
+            event.currency = data.get('currency', event.currency)
+            event.impact = data.get('impact', event.impact)
+            event.event_name = data.get('event_name', event.event_name)
+            event.actual = data.get('actual', event.actual)
+            event.forecast = data.get('forecast', event.forecast)
+            event.previous = data.get('previous', event.previous)
+            
+            event.save()
+            return JsonResponse(event_to_dict(event))
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid data provided'}, status=400)
+    
+    elif request.method == 'DELETE':
+        event.delete()
+        return JsonResponse({}, status=204)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
