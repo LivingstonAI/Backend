@@ -9071,15 +9071,15 @@ from .models import EconomicEvent
 def event_to_dict(event):
     return {
         'id': event.id,
-        'date_time': event.date_time.isoformat(),
+        'date_time': event.date_time.isoformat() if hasattr(event.date_time, 'isoformat') else event.date_time,
         'currency': event.currency,
         'impact': event.impact,
         'event_name': event.event_name,
         'actual': event.actual,
         'forecast': event.forecast,
         'previous': event.previous,
-        'created_at': event.created_at.isoformat(),
-        'updated_at': event.updated_at.isoformat()
+        'created_at': event.created_at.isoformat() if hasattr(event.created_at, 'isoformat') else event.created_at,
+        'updated_at': event.updated_at.isoformat() if hasattr(event.updated_at, 'isoformat') else event.updated_at
     }
 
 @csrf_exempt
@@ -9120,6 +9120,8 @@ def economic_events_list(request):
             return JsonResponse(event_to_dict(event), status=201)
         except (KeyError, json.JSONDecodeError):
             return JsonResponse({'error': 'Invalid data provided'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
 
 @csrf_exempt
 def economic_event_detail(request, pk):
@@ -9134,25 +9136,31 @@ def economic_event_detail(request, pk):
             data = json.loads(request.body)
             
             # Update fields
-            event.date_time = data.get('date_time', event.date_time)
-            event.currency = data.get('currency', event.currency)
-            event.impact = data.get('impact', event.impact)
-            event.event_name = data.get('event_name', event.event_name)
-            event.actual = data.get('actual', event.actual)
-            event.forecast = data.get('forecast', event.forecast)
-            event.previous = data.get('previous', event.previous)
+            if 'date_time' in data:
+                event.date_time = data['date_time']
+            if 'currency' in data:
+                event.currency = data['currency']
+            if 'impact' in data:
+                event.impact = data['impact']
+            if 'event_name' in data:
+                event.event_name = data['event_name']
+            if 'actual' in data:
+                event.actual = data['actual']
+            if 'forecast' in data:
+                event.forecast = data['forecast']
+            if 'previous' in data:
+                event.previous = data['previous']
             
             event.save()
             return JsonResponse(event_to_dict(event))
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid data provided'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
     
     elif request.method == 'DELETE':
         event.delete()
         return JsonResponse({}, status=204)
-
-
-
 
 
 
