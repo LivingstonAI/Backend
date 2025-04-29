@@ -519,7 +519,6 @@ class PropFirmManagementMetrics(models.Model):
 
 
 
-from django.db import models
 
 class EconomicEvent(models.Model):
     IMPACT_CHOICES = [

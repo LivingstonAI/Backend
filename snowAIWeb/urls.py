@@ -117,6 +117,7 @@ urlpatterns = [
     path('api/economic-events/<int:pk>/', views.economic_event_detail, name='economic-event-detail'),
     path('api/data-calendar-economic-events/', views.data_calendar_economic_events_list, name='economic-events-list'),
     path('api/data-calendar-economic-events/<int:event_id>/', views.data_calendar_economic_event_detail, name='economic-event-detail'),
+    path('api/unique-economic-events/', views.unique_economic_events_list, name='unique_economic_events_list'),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
