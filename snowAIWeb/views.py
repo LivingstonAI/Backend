@@ -9164,6 +9164,68 @@ def economic_event_detail(request, pk):
 
 
 
+# views.py
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.shortcuts import get_object_or_404
+import json
+from .models import EconomicEvent
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def data_calendar_economic_events_list(request):
+    # Get query parameters
+    currency = request.GET.get('currency', '')
+    impact = request.GET.get('impact', '')
+    
+    # Start with all events
+    events = EconomicEvent.objects.all()
+    
+    # Apply filters if provided
+    if currency:
+        events = events.filter(currency=currency)
+    
+    if impact:
+        events = events.filter(impact=impact)
+    
+    # Convert to list of dictionaries
+    events_data = []
+    for event in events:
+        events_data.append({
+            'id': event.id,
+            'date_time': event.date_time.isoformat(),
+            'currency': event.currency,
+            'impact': event.impact,
+            'event_name': event.event_name,
+            'actual': event.actual,
+            'forecast': event.forecast,
+            'previous': event.previous,
+        })
+    
+    return JsonResponse(events_data, safe=False)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def data_calendar_economic_event_detail(request, event_id):
+    event = get_object_or_404(EconomicEvent, id=event_id)
+    
+    event_data = {
+        'id': event.id,
+        'date_time': event.date_time.isoformat(),
+        'currency': event.currency,
+        'impact': event.impact,
+        'event_name': event.event_name,
+        'actual': event.actual,
+        'forecast': event.forecast,
+        'previous': event.previous,
+        'created_at': event.created_at.isoformat(),
+        'updated_at': event.updated_at.isoformat(),
+    }
+    
+    return JsonResponse(event_data)
+
+
 
 
 
