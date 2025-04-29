@@ -9226,8 +9226,6 @@ def data_calendar_economic_event_detail(request, event_id):
     return JsonResponse(event_data)
 
 
-# from django.db.models import Max
-
 @csrf_exempt
 @require_http_methods(["GET"])
 def unique_economic_events_list(request):
