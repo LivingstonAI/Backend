@@ -9269,6 +9269,73 @@ def unique_economic_events_list(request):
     return JsonResponse(events_data, safe=False)
 
 
+@csrf_exempt
+@require_http_methods(["GET"])
+def event_history(request, event_name):
+    # Get query parameters for additional filtering
+    currency = request.GET.get('currency', '')
+    impact = request.GET.get('impact', '')
+    
+    # Initialize query to get all matching events with the same name
+    query = EconomicEvent.objects.filter(event_name=event_name)
+    
+    # Apply additional filters if provided
+    if currency:
+        query = query.filter(currency=currency)
+    
+    if impact:
+        query = query.filter(impact=impact)
+    
+    # Order by date_time
+    query = query.order_by('date_time')
+    
+    # Process the data for charts
+    events_data = []
+    for event in query:
+        # Clean the actual and forecast values for chart display
+        actual_value = clean_numeric_value(event.actual)
+        forecast_value = clean_numeric_value(event.forecast)
+        previous_value = clean_numeric_value(event.previous)
+        
+        events_data.append({
+            'id': event.id,
+            'date': event.date_time.strftime('%Y-%m-%d'),
+            'currency': event.currency,
+            'impact': event.impact,
+            'event_name': event.event_name,
+            'actual': event.actual,  # Original string value
+            'forecast': event.forecast,  # Original string value
+            'previous': event.previous,  # Original string value
+            'actual_value': actual_value,  # Cleaned numeric value for charts
+            'forecast_value': forecast_value,  # Cleaned numeric value for charts
+            'previous_value': previous_value,  # Cleaned numeric value for charts
+        })
+    
+    return JsonResponse({
+        'event_name': event_name,
+        'currency': currency if currency else 'All',
+        'impact': impact if impact else 'All',
+        'data_points': len(events_data),
+        'history': events_data
+    })
+
+def clean_numeric_value(value_str):
+    """
+    Convert string values like '3.2%', '$50.4B', etc. to float values
+    for charting purposes
+    """
+    if not value_str or value_str.strip() == '':
+        return None
+    
+    try:
+        # Remove common symbols and convert to float
+        cleaned = value_str.replace('%', '').replace('$', '')
+        cleaned = cleaned.replace('K', '').replace('M', '').replace('B', '')
+        cleaned = cleaned.replace(',', '')
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return None
+
 
 
 
