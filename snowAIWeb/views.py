@@ -9226,12 +9226,7 @@ def data_calendar_economic_event_detail(request, event_id):
     return JsonResponse(event_data)
 
 
-# views.py - Add this new endpoint
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-from django.db.models import Max
-from .models import EconomicEvent
+# from django.db.models import Max
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -9241,9 +9236,8 @@ def unique_economic_events_list(request):
     impact = request.GET.get('impact', '')
     search_term = request.GET.get('search', '')
     
-    # Start with the base queryset using values() for distinct event names
-    # Using distinct() with values() to get unique event names
-    query = EconomicEvent.objects.values('event_name')
+    # Get filtered QuerySet
+    query = EconomicEvent.objects.all()
     
     # Apply filters if provided
     if currency:
@@ -9255,26 +9249,26 @@ def unique_economic_events_list(request):
     if search_term:
         query = query.filter(event_name__icontains=search_term)
     
-    # Use distinct to get unique event names
-    unique_events = query.annotate(
-        id=Max('id'),  # Get one ID to reference
-        currency=Max('currency'),  # Get the associated currency
-        impact=Max('impact')  # Get the associated impact
-    ).distinct('event_name').order_by('event_name')
+    # Get distinct event names
+    distinct_event_names = query.values_list('event_name', flat=True).distinct()
     
-    # Convert to list of dictionaries
+    # For each distinct event name, get one representative event
     events_data = []
-    for event in unique_events:
-        events_data.append({
-            'id': event['id'],
-            'event_name': event['event_name'],
-            'currency': event['currency'],
-            'impact': event['impact'],
-        })
+    for event_name in distinct_event_names:
+        # Get the first (or any) event with this name that matches our filters
+        event = query.filter(event_name=event_name).first()
+        if event:
+            events_data.append({
+                'id': event.id,
+                'event_name': event.event_name,
+                'currency': event.currency,
+                'impact': event.impact,
+            })
+    
+    # Sort the results by event_name
+    events_data.sort(key=lambda x: x['event_name'])
     
     return JsonResponse(events_data, safe=False)
-
-
 
 
 
