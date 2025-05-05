@@ -7919,6 +7919,52 @@ def update_idea_tracker(request):
 
 
 @csrf_exempt
+def update_idea(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            idea_id = data.get('idea_id')
+            
+            # Find the idea by ID
+            idea = IdeaModel.objects.get(id=idea_id)
+            
+            # Update the idea fields
+            idea.idea_category = data.get('idea_category', idea.idea_category)
+            idea.idea_text = data.get('idea_text', idea.idea_text)
+            idea.idea_tracker = data.get('idea_tracker', idea.idea_tracker)
+            
+            # Save the updated idea
+            idea.save()
+            
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'Idea updated successfully',
+                'idea': {
+                    'id': idea.id,
+                    'idea_category': idea.idea_category,
+                    'idea_text': idea.idea_text,
+                    'idea_tracker': idea.idea_tracker,
+                    'created_at': idea.created_at.isoformat()
+                }
+            })
+        except IdeaModel.DoesNotExist:
+            return JsonResponse({
+                'status': 'error', 
+                'message': 'Idea not found'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error', 
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({
+        'status': 'error', 
+        'message': 'Method not allowed'
+    }, status=405)
+
+
+@csrf_exempt
 def get_ai_account_summary(request):
     if request.method == 'POST':
         try:

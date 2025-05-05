@@ -93,6 +93,7 @@ urlpatterns = [
     path('fetch-ideas', views.fetch_ideas, name='fetch-ideas'),
     path('delete-idea', views.delete_idea, name='delete-idea'),
     path('update-idea-tracker', views.update_idea_tracker, name='update-idea-tracker'),
+    path('update-idea', views.update_idea, name='update-idea'),
     path('ai-account-summary', views.get_ai_account_summary, name='ai-account-summary'),
     path('save-quiz', views.save_quiz, name='save-quiz'),
     path('fetch-saved-quizzes', views.fetch_saved_quizzes, name='fetch-saved-quizzes'),
