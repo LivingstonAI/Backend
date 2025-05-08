@@ -122,7 +122,6 @@ urlpatterns = [
     path('api/event-history/<str:event_name>/', views.event_history, name='event-history'),
     path('api/cot/', views.generate_econ_cot_data, name='generate_econ_cot_data'),
     path('api/generate_econ_ai_summary/', views.generate_econ_ai_summary, name='generate_econ_ai_summary'),
-    path('api/economic-events/', views.economic_events, name='economic-events'),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

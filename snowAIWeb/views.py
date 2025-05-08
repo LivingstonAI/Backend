@@ -9387,11 +9387,9 @@ def clean_numeric_value(value_str):
     except (ValueError, TypeError):
         return None
 
-
-
 @csrf_exempt
 def generate_econ_ai_summary(request):
-    """Generate an AI summary based on COT data."""
+    """Generate an AI summary based on COT data and economic events."""
     try:
         if request.method != 'POST':
             return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
@@ -9399,12 +9397,22 @@ def generate_econ_ai_summary(request):
         data = json.loads(request.body)
         prompt = data.get('prompt', '')
         api_key = data.get('api_key', '')
+        currency_code = data.get('currency_code', '')  # Added currency code parameter
         
         if not prompt:
             return JsonResponse({'error': 'Prompt is required'}, status=400)
         
         if not api_key:
             return JsonResponse({'error': 'API key is required'}, status=400)
+            
+        if not currency_code:
+            return JsonResponse({'error': 'Currency code is required'}, status=400)
+        
+        # Get economic events for the currency
+        economic_events = get_economic_events_for_currency(currency_code)
+        
+        # Append economic events data to the prompt
+        prompt_with_events = prompt + "\n\n" + economic_events
         
         # Set the API key
         openai.api_key = api_key
@@ -9413,8 +9421,8 @@ def generate_econ_ai_summary(request):
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a financial analyst specializing in economic data and market analysis. Provide concise, insightful analyses of economic data."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "You are a financial analyst specializing in economic data and market analysis. Provide concise, insightful analyses of economic data and recent economic events."},
+                {"role": "user", "content": prompt_with_events}
             ],
             max_tokens=500,
             temperature=0.7
@@ -9425,47 +9433,36 @@ def generate_econ_ai_summary(request):
         return JsonResponse({'summary': summary})
     
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'error': str(e)}, status=500})
 
 
-@csrf_exempt
-def economic_events(request):
-    """Fetch economic events for a given currency."""
+def get_economic_events_for_currency(currency_code):
+    """Get recent economic events for a specified currency."""
     try:
-        if request.method != 'POST':
-            return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
-        
-        data = json.loads(request.body)
-        currency = data.get('currency', '')
-        
-        if not currency:
-            return JsonResponse({'error': 'Currency code is required'}, status=400)
-        
-        # Get events from the last 3 months
-        three_months_ago = timezone.now() - timedelta(days=90)
-        
-        # Query events for the specified currency
+        # Get events from the last 30 days
+        thirty_days_ago = timezone.now() - timezone.timedelta(days=30)
         events = EconomicEvent.objects.filter(
-            currency=currency,
-            date_time__gte=three_months_ago
-        ).order_by('-date_time')[:20]  # Get 20 most recent events
+            currency=currency_code,
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
         
-        events_data = []
+        if not events:
+            return "No recent economic events found for this currency."
+        
+        # Format the events data
+        events_text = "Recent Economic Events for this currency:\n\n"
         for event in events:
-            events_data.append({
-                'date_time': event.date_time.strftime('%Y-%m-%d %H:%M:%S'),
-                'currency': event.currency,
-                'impact': event.impact,
-                'event_name': event.event_name,
-                'actual': event.actual,
-                'forecast': event.forecast,
-                'previous': event.previous
-            })
+            impact_symbol = "🔴" if event.impact == "high" else "🟠" if event.impact == "medium" else "🟢"
+            events_text += f"Date: {event.date_time.strftime('%Y-%m-%d %H:%M')}\n"
+            events_text += f"Event: {event.event_name} {impact_symbol}\n"
+            events_text += f"Actual: {event.actual or 'N/A'}\n"
+            events_text += f"Forecast: {event.forecast or 'N/A'}\n"
+            events_text += f"Previous: {event.previous or 'N/A'}\n\n"
         
-        return JsonResponse({'events': events_data})
+        return events_text
     
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return f"Error retrieving economic events: {str(e)}"
 
 
 @csrf_exempt
