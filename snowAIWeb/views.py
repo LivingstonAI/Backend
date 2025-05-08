@@ -9433,7 +9433,7 @@ def generate_econ_ai_summary(request):
         return JsonResponse({'summary': summary})
     
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500})
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 def get_economic_events_for_currency(currency_code):
