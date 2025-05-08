@@ -9298,27 +9298,31 @@ def unique_economic_events_list(request):
     if search_term:
         query = query.filter(event_name__icontains=search_term)
     
-    # Get distinct event names
-    distinct_event_names = query.values_list('event_name', flat=True).distinct()
+    # Get distinct event names (case insensitive)
+    # Use a dictionary to track unique event names with case insensitivity
+    unique_events = {}
     
-    # For each distinct event name, get one representative event
-    events_data = []
-    for event_name in distinct_event_names:
-        # Get the first (or any) event with this name that matches our filters
-        event = query.filter(event_name=event_name).first()
-        if event:
-            events_data.append({
+    for event in query:
+        # Use lowercase as the key to ensure case insensitivity
+        event_key = event.event_name.lower().strip()
+        
+        # Only add if we haven't seen this event name before
+        if event_key not in unique_events:
+            unique_events[event_key] = {
                 'id': event.id,
                 'event_name': event.event_name,
                 'currency': event.currency,
                 'impact': event.impact,
-            })
+            }
+    
+    # Convert the dictionary values to a list
+    events_data = list(unique_events.values())
     
     # Sort the results by event_name
     events_data.sort(key=lambda x: x['event_name'])
     
     return JsonResponse(events_data, safe=False)
-
+    
 
 @csrf_exempt
 @require_http_methods(["GET"])
