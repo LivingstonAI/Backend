@@ -9429,6 +9429,46 @@ def generate_econ_ai_summary(request):
 
 
 @csrf_exempt
+def economic_events(request):
+    """Fetch economic events for a given currency."""
+    try:
+        if request.method != 'POST':
+            return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
+        
+        data = json.loads(request.body)
+        currency = data.get('currency', '')
+        
+        if not currency:
+            return JsonResponse({'error': 'Currency code is required'}, status=400)
+        
+        # Get events from the last 3 months
+        three_months_ago = timezone.now() - timedelta(days=90)
+        
+        # Query events for the specified currency
+        events = EconomicEvent.objects.filter(
+            currency=currency,
+            date_time__gte=three_months_ago
+        ).order_by('-date_time')[:20]  # Get 20 most recent events
+        
+        events_data = []
+        for event in events:
+            events_data.append({
+                'date_time': event.date_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'currency': event.currency,
+                'impact': event.impact,
+                'event_name': event.event_name,
+                'actual': event.actual,
+                'forecast': event.forecast,
+                'previous': event.previous
+            })
+        
+        return JsonResponse({'events': events_data})
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
 def generate_econ_cot_data(request):
     try:
         # Get requested assets from POST data if provided
@@ -9566,6 +9606,8 @@ def generate_econ_cot_data(request):
     
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
 
 
 
