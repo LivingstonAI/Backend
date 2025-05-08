@@ -5882,10 +5882,15 @@ def generate_cot_data(request):
                 'USD INDEX - ICE FUTURES U.S.',
                 'EURO FX - CHICAGO MERCANTILE EXCHANGE',
                 'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE',
+                'CANADIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE',
+                'SWISS FRANC - CHICAGO MERCANTILE EXCHANGE',
+                'JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE',
+                'NZ DOLLAR - CHICAGO MERCANTILE EXCHANGE',
+                'AUSTRALIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE',
                 'GOLD - COMMODITY EXCHANGE INC.',
-                'UST 5Y NOTE - CHICAGO BOARD OF TRADE',
-                'UST 10Y NOTE - CHICAGO BOARD OF TRADE',
                 'UST BOND - CHICAGO BOARD OF TRADE',
+                'UST 10Y NOTE - CHICAGO BOARD OF TRADE',
+                'UST 5Y NOTE - CHICAGO BOARD OF TRADE',
                 'NASDAQ MINI - CHICAGO MERCANTILE EXCHANGE',
                 'E-MINI S&P 500 -',
                 'DOW JONES U.S. REAL ESTATE IDX - CHICAGO BOARD OF TRADE'
@@ -9384,6 +9389,183 @@ def clean_numeric_value(value_str):
 
 
 
+@csrf_exempt
+def generate_econ_ai_summary(request):
+    """Generate an AI summary based on COT data."""
+    try:
+        if request.method != 'POST':
+            return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
+        
+        data = json.loads(request.body)
+        prompt = data.get('prompt', '')
+        api_key = data.get('api_key', '')
+        
+        if not prompt:
+            return JsonResponse({'error': 'Prompt is required'}, status=400)
+        
+        if not api_key:
+            return JsonResponse({'error': 'API key is required'}, status=400)
+        
+        # Set the API key
+        openai.api_key = api_key
+        
+        # Generate summary using GPT-4o-mini
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a financial analyst specializing in economic data and market analysis. Provide concise, insightful analyses of economic data."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
+            temperature=0.7
+        )
+        
+        summary = response.choices[0].message.content
+        
+        return JsonResponse({'summary': summary})
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def generate_econ_cot_data(request):
+    try:
+        # Get requested assets from POST data if provided
+        if request.method == 'POST':
+            requested_assets = json.loads(request.body).get('assets', [])
+        else:
+            # Default assets for GET requests
+            requested_assets = [
+                'USD INDEX - ICE FUTURES U.S.',
+                'EURO FX - CHICAGO MERCANTILE EXCHANGE',
+                'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE',
+                'CANADIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE',
+                'SWISS FRANC - CHICAGO MERCANTILE EXCHANGE',
+                'JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE',
+                'NZ DOLLAR - CHICAGO MERCANTILE EXCHANGE',
+                'AUSTRALIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE',
+                'GOLD - COMMODITY EXCHANGE INC.',
+                'UST BOND - CHICAGO BOARD OF TRADE',
+                'UST 10Y NOTE - CHICAGO BOARD OF TRADE',
+                'UST 5Y NOTE - CHICAGO BOARD OF TRADE',
+                'NASDAQ MINI - CHICAGO MERCANTILE EXCHANGE',
+                'E-MINI S&P 500 -',
+                'DOW JONES U.S. REAL ESTATE IDX - CHICAGO BOARD OF TRADE'
+            ]
+
+        # Get the current year and previous year
+        current_year = pd.Timestamp.now().year
+        previous_year = current_year - 1
+
+        # Create list to store DataFrames
+        df_list = []
+
+        # Fetch data for previous and current year
+        for year in range(previous_year, current_year + 1):
+            single_year = cot.cot_year(year, cot_report_type='legacy_futopt')
+            df_list.append(single_year)
+
+        # Concatenate all DataFrames
+        df = pd.concat(df_list, ignore_index=True)
+
+        # Convert dates to datetime
+        df['As of Date in Form YYYY-MM-DD'] = pd.to_datetime(df['As of Date in Form YYYY-MM-DD'])
+
+        # Filter for current year data
+        unfiltered_currency_df = df[df['As of Date in Form YYYY-MM-DD'].dt.year == current_year]
+
+        # Filter for requested assets
+        unfiltered_currency_df = unfiltered_currency_df[
+            unfiltered_currency_df['Market and Exchange Names'].isin(requested_assets)
+        ]
+
+        # Remove specific exclusions (e.g., MICRO GOLD)
+        unfiltered_currency_df = unfiltered_currency_df[
+            unfiltered_currency_df['Market and Exchange Names'] != 'MICRO GOLD - COMMODITY EXCHANGE INC.'
+        ]
+
+        # Fill missing values and ensure numeric columns
+        numeric_columns = [
+            'Noncommercial Positions-Long (All)',
+            'Noncommercial Positions-Short (All)',
+            'Commercial Positions-Long (All)',
+            'Commercial Positions-Short (All)'
+        ]
+        
+        unfiltered_currency_df[numeric_columns] = unfiltered_currency_df[numeric_columns].fillna(0).astype(float)
+
+        # Calculate net positions for unfiltered data
+        unfiltered_currency_df['Net Noncommercial Positions'] = (
+            unfiltered_currency_df['Noncommercial Positions-Long (All)'] - 
+            unfiltered_currency_df['Noncommercial Positions-Short (All)']
+        )
+        unfiltered_currency_df['Net Commercial Positions'] = (
+            unfiltered_currency_df['Commercial Positions-Long (All)'] - 
+            unfiltered_currency_df['Commercial Positions-Short (All)']
+        )
+
+        # Get the rows with maximum open interest for each market
+        idx = unfiltered_currency_df.groupby('Market and Exchange Names')['Open Interest (All)'].idxmax()
+        currency_df = unfiltered_currency_df.loc[idx]
+
+        # Calculate total positions
+        currency_df['Total Noncommercial Positions'] = (
+            currency_df['Noncommercial Positions-Long (All)'] + 
+            currency_df['Noncommercial Positions-Short (All)']
+        )
+        currency_df['Total Commercial Positions'] = (
+            currency_df['Commercial Positions-Long (All)'] + 
+            currency_df['Commercial Positions-Short (All)']
+        )
+        currency_df['Total Positions'] = (
+            currency_df['Total Noncommercial Positions'] + 
+            currency_df['Total Commercial Positions']
+        )
+
+        # Calculate percentages
+        currency_df['Percentage Noncommercial Long'] = (
+            currency_df['Noncommercial Positions-Long (All)'] / 
+            currency_df['Total Noncommercial Positions']
+        ) * 100
+        currency_df['Percentage Noncommercial Short'] = (
+            currency_df['Noncommercial Positions-Short (All)'] / 
+            currency_df['Total Noncommercial Positions']
+        ) * 100
+        currency_df['Percentage Commercial Long'] = (
+            currency_df['Commercial Positions-Long (All)'] / 
+            currency_df['Total Commercial Positions']
+        ) * 100
+        currency_df['Percentage Commercial Short'] = (
+            currency_df['Commercial Positions-Short (All)'] / 
+            currency_df['Total Commercial Positions']
+        ) * 100
+
+        # Generate plots
+        plot_urls = plot_net_positions(unfiltered_currency_df)
+
+        # Prepare response data
+        data = {}
+        round_off_number = 2
+
+        for asset in requested_assets:
+            asset_df = currency_df[currency_df['Market and Exchange Names'] == asset]
+            
+            if not asset_df.empty:
+                latest_data = asset_df.iloc[0]
+                data[asset] = {
+                    'Date': latest_data['As of Date in Form YYYY-MM-DD'].strftime('%Y-%m-%d'),
+                    'Percentage_Noncommercial_Long': round(latest_data['Percentage Noncommercial Long'], round_off_number),
+                    'Percentage_Noncommercial_Short': round(latest_data['Percentage Noncommercial Short'], round_off_number),
+                    'Percentage_Commercial_Long': round(latest_data['Percentage Commercial Long'], round_off_number),
+                    'Percentage_Commercial_Short': round(latest_data['Percentage Commercial Short'], round_off_number),
+                    'Plot_URL': plot_urls.get(asset, '')
+                }
+
+        return JsonResponse(data)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 
