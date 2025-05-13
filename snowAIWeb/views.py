@@ -9385,7 +9385,7 @@ def clean_numeric_value(value_str):
     try:
         # Remove common symbols and convert to float
         cleaned = value_str.replace('%', '').replace('$', '')
-        cleaned = cleaned.replace('K', '').replace('M', '').replace('B', '')
+        cleaned = cleaned.replace('K', '').replace('M', '').replace('B', '').replace('T', '')
         cleaned = cleaned.replace(',', '')
         return float(cleaned)
     except (ValueError, TypeError):
