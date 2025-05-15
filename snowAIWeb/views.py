@@ -9393,7 +9393,7 @@ def clean_numeric_value(value_str):
 
 @csrf_exempt
 def generate_econ_ai_summary(request):
-    """Generate an AI summary based on COT data and economic events."""
+    """Generate an AI summary based on COT data and economic events with improved styling."""
     try:
         if request.method != 'POST':
             return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
@@ -9401,7 +9401,7 @@ def generate_econ_ai_summary(request):
         data = json.loads(request.body)
         prompt = data.get('prompt', '')
         api_key = data.get('api_key', '')
-        currency_code = data.get('currency_code', '')  # Added currency code parameter
+        currency_code = data.get('currency_code', '')
         
         if not prompt:
             return JsonResponse({'error': 'Prompt is required'}, status=400)
@@ -9418,17 +9418,39 @@ def generate_econ_ai_summary(request):
         # Append economic events data to the prompt
         prompt_with_events = prompt + "\n\n" + economic_events
         
+        # Enhanced system prompt for more engaging responses
+        system_prompt = """You are a financial analyst specializing in economic data and market analysis. 
+        Provide concise, insightful analyses of economic data and recent economic events.
+        
+        Follow these style guidelines to make your response more visually appealing:
+        1. Use appropriate emojis to highlight key points (1-2 emojis per section, don't overuse)
+        2. Add clear section headers with emojis (e.g., "📊 Market Positioning")
+        3. Use bullet points for key takeaways
+        4. Include a "Bottom Line" summary at the end
+        5. Ensure the content is well-organized and easy to scan
+        6. Keep the overall analysis professional but engaging
+        7. Bold important terms or conclusions
+        8. DO NOT USE MARKDOWN FORMATTING.
+        
+        Sections to include:
+        - 📊 Current Positioning Analysis
+        - 🔮 Economic Outlook
+        - 📅 Recent Events Impact
+        - 💹 Market Implications
+        - 💡 Bottom Line
+        """
+        
         # Set the API key
         openai.api_key = api_key
         
-        # Generate summary using GPT-4o-mini
+        # Generate summary using GPT-4o-mini with enhanced prompt
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a financial analyst specializing in economic data and market analysis. Provide concise, insightful analyses of economic data and recent economic events."},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt_with_events}
             ],
-            max_tokens=500,
+            max_tokens=600,  # Slightly increased to accommodate formatting
             temperature=0.7
         )
         
@@ -9438,7 +9460,6 @@ def generate_econ_ai_summary(request):
     
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
 
 def get_economic_events_for_currency(currency_code):
     """Get recent economic events for a specified currency."""
