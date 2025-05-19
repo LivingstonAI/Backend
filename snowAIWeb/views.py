@@ -9430,7 +9430,7 @@ def generate_econ_ai_summary(request):
         5. Ensure the content is well-organized and easy to scan
         6. Keep the overall analysis professional but engaging
         7. Bold important terms or conclusions
-        8. DO NOT USE MARKDOWN FORMATTING.
+        8. DO NOT USE MARKDOWN FORMATTING AND ASTERISKS, ie *
         
         Sections to include:
         - 📊 Current Positioning Analysis
