@@ -7012,74 +7012,6 @@ def generate_candlestick_chart(data, save_path="candlestick_chart.png"):
         return None
 
 
-def analyse_image(image_data, news_data):
-    try:
-        # Getting the base64 string
-        base64_image = base64.b64encode(image_data).decode('utf-8')
-
-        api_key = os.environ['OPENAI_API_KEY']
-
-        # Extract discussion prompt if it exists
-        discussion_prompt = news_data.get('discussion_prompt', '')
-
-        # Construct a more interactive prompt
-        prompt = f"""
-        {discussion_prompt}
-
-        Based on the trading chart image, provide an analysis that addresses the above context.
-        Your response should be in JSON format with two keys:
-        1. 'analysis': A detailed technical analysis that:
-           - Directly responds to any previous trader's points if they exist
-           - Explains your reasoning for agreeing or disagreeing
-           - Points out any overlooked patterns or indicators
-           - Considers both technical and fundamental factors
-        2. 'recommendation': Either 'buy', 'sell', or 'neutral'
-
-        Make sure to format as valid JSON and avoid line breaks in the text.
-
-        Additional context: {news_data}
-        """
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompt
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            "max_tokens": 1000
-        }
-
-        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-
-        json_data = response.json()
-        final_response = json_data['choices'][0]['message']['content']
-        return final_response
-
-    except Exception as e:
-        print(f"Error occurred in analyse image function: {e}")
-        return json.dumps({
-            "analysis": f"Error occurred in analysis: {str(e)}",
-            "recommendation": "neutral"
-        })
-
 
 def analyse_image_from_file(image_path, news_data):
     try:
@@ -7091,84 +7023,7 @@ def analyse_image_from_file(image_path, news_data):
         print(f"Error in image analysis from file: {e}")
 
 
-def fetch_news_data(assets, user_email):
 
-    all_news_data = []
-
-    # List of assets to fetch news data for
-    assets_to_fetch = assets
-
-    # Establish a connection to the API
-    conn = http.client.HTTPSConnection('api.marketaux.com')
-
-    # Define query parameters
-    params_template = {
-        'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
-        'langauge': 'en',
-        'limit': 3,
-    }
-
-    # Iterate through the assets and make API requests
-    for asset in assets_to_fetch:
-        # Update the symbol in the query parameters
-        params = params_template.copy()
-        params['symbols'] = asset
-
-        # Send a GET request
-        conn.request('GET', '/v1/news/all?{}'.format(urllib.parse.urlencode(params)))
-
-        # Get the response
-        res = conn.getresponse()
-
-        # Read the response data
-        data = res.read()
-
-        # Decode the data from bytes to a string
-        data_str = data.decode('utf-8')
-
-        # Parse the JSON data
-        news_data = json.loads(data_str)
-
-        # Iterate through the news articles and save specific fields to the database
-        for article in news_data['data']:
-            title = article['title']
-            description = article['description']
-            source = article['source']
-            url = article['url']
-            highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
-
-            # Create a dictionary with the specific fields
-            news_entry_data = {
-                'asset': asset,
-                'title': title,
-                'description': description,
-                'source': source,
-                'url': url,
-                'highlights': highlights,
-            }
-            all_news_data.append(news_entry_data)
-
-    return ({'message': all_news_data})
-
-def tradergpt(asset, interval, num_days, user_email):
-    try:
-        # Step 1: Fetch dataset and generate chart
-        data = obtain_dataset(asset, interval, num_days)
-        chart_path = generate_candlestick_chart(data)
-
-        # Step 2: Fetch news data
-        news_data = fetch_news_data([asset], user_email)
-
-        # Step 3: Analyse chart
-        chart_analysis = analyse_image_from_file(chart_path, news_data)
-
-        # Combine analysis
-        return {
-            "chart_analysis": chart_analysis,
-            # "news_analysis": news_data
-        }
-    except Exception as e:
-        print(f"Error in combined analysis: {e}")
 
 
 @dataclass
@@ -7293,181 +7148,288 @@ class ChartAnnotator:
                      color=color, alpha=0.5)
         ax.add_patch(arrow)
 
-class TraderDialogue:
-    def __init__(self, asset: str, interval: str, num_days: int, max_messages: int = 6):
-        self.asset = asset
-        self.interval = interval
-        self.num_days = num_days
-        self.max_messages = max_messages
-        self.messages: List[TraderMessage] = []
+def get_economic_events_for_currency(currency_code):
+    """Get recent economic events for a specified currency."""
+    try:
+        # Get events from the last 30 days
+        thirty_days_ago = timezone.now() - timezone.timedelta(days=90)
+        events = EconomicEvent.objects.filter(
+            currency=currency_code,
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
+        
+        if not events:
+            return "No recent economic events found for this currency."
+        
+        # Format the events data
+        events_text = f"Recent Economic Events for {currency_code}:\n\n"
+        for event in events:
+            impact_symbol = "🔴" if event.impact == "high" else "🟠" if event.impact == "medium" else "🟢"
+            events_text += f"Date: {event.date_time.strftime('%Y-%m-%d %H:%M')}\n"
+            events_text += f"Event: {event.event_name} {impact_symbol}\n"
+            events_text += f"Actual: {event.actual or 'N/A'}\n"
+            events_text += f"Forecast: {event.forecast or 'N/A'}\n"
+            events_text += f"Previous: {event.previous or 'N/A'}\n\n"
+        
+        return events_text
+    
+    except Exception as e:
+        return f"Error retrieving economic events for {currency_code}: {str(e)}"
 
-        # Initialize base data
-        self.market_data = obtain_dataset(asset, interval, num_days)
-        self.chart_path = generate_candlestick_chart(self.market_data)
-        self.news_data = fetch_news_data([asset], user_email=None)
 
-        # Initialize chart annotator
-        self.chart_annotator = ChartAnnotator(self.market_data)
+def extract_currencies_from_pair(forex_pair):
+    """Extract base and quote currencies from a forex pair."""
+    # Remove any '=X' suffix that might be added for yfinance
+    clean_pair = forex_pair.replace('=X', '')
+    
+    # Dictionary mapping common forex pairs to their base and quote currencies
+    forex_pairs_map = {
+        'EURUSD': ('EUR', 'USD'),
+        'GBPUSD': ('GBP', 'USD'),
+        'USDJPY': ('USD', 'JPY'),
+        'AUDUSD': ('AUD', 'USD'),
+        'USDCHF': ('USD', 'CHF'),
+        'NZDUSD': ('NZD', 'USD'),
+        'USDCAD': ('USD', 'CAD'),
+        'EURJPY': ('EUR', 'JPY'),
+        'GBPJPY': ('GBP', 'JPY'),
+        'EURGBP': ('EUR', 'GBP'),
+        'EURAUD': ('EUR', 'AUD'),
+        'EURCAD': ('EUR', 'CAD'),
+        'EURCHF': ('EUR', 'CHF'),
+        'GBPAUD': ('GBP', 'AUD'),
+        'GBPCAD': ('GBP', 'CAD'),
+        'GBPCHF': ('GBP', 'CHF'),
+        'AUDCAD': ('AUD', 'CAD'),
+        'AUDCHF': ('AUD', 'CHF'),
+        'AUDJPY': ('AUD', 'JPY'),
+        'CADCHF': ('CAD', 'CHF'),
+        'CADJPY': ('CAD', 'JPY'),
+        'CHFJPY': ('CHF', 'JPY'),
+        'NZDCAD': ('NZD', 'CAD'),
+        'NZDCHF': ('NZD', 'CHF'),
+        'NZDJPY': ('NZD', 'JPY')
+    }
+    
+    if clean_pair in forex_pairs_map:
+        return forex_pairs_map[clean_pair]
+    else:
+        # Fallback: assume first 3 chars are base, last 3 are quote
+        if len(clean_pair) >= 6:
+            return (clean_pair[:3], clean_pair[3:6])
+        else:
+            return ('USD', 'USD')  # Default fallback
 
-        # Define trader personalities
-        self.trader_personalities = {
-            "Trader1": {
-                "style": "Conservative",
-                "focus": "long-term trends and fundamental analysis",
-                "risk_tolerance": "low"
-            },
-            "Trader2": {
-                "style": "Aggressive",
-                "focus": "short-term momentum and technical patterns",
-                "risk_tolerance": "high"
+
+def get_economic_events_for_pair(forex_pair):
+    """Get economic events for both currencies in a forex pair."""
+    try:
+        base_currency, quote_currency = extract_currencies_from_pair(forex_pair)
+        
+        # Get events for both currencies
+        base_events = get_economic_events_for_currency(base_currency)
+        quote_events = get_economic_events_for_currency(quote_currency)
+        
+        # Combine the events
+        combined_events = f"=== ECONOMIC EVENTS FOR {forex_pair} ===\n\n"
+        combined_events += f"BASE CURRENCY ({base_currency}):\n"
+        combined_events += base_events + "\n"
+        combined_events += f"QUOTE CURRENCY ({quote_currency}):\n"
+        combined_events += quote_events + "\n"
+        
+        return combined_events
+    
+    except Exception as e:
+        return f"Error retrieving economic events for pair {forex_pair}: {str(e)}"
+
+
+def fetch_news_data(assets, user_email):
+    """Enhanced news data function that includes economic events."""
+    all_news_data = []
+
+    # List of assets to fetch news data for
+    assets_to_fetch = assets
+
+    # Establish a connection to the API
+    conn = http.client.HTTPSConnection('api.marketaux.com')
+
+    # Define query parameters
+    params_template = {
+        'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
+        'langauge': 'en',
+        'limit': 3,
+    }
+
+    # Iterate through the assets and make API requests
+    for asset in assets_to_fetch:
+        # Update the symbol in the query parameters
+        params = params_template.copy()
+        params['symbols'] = asset
+
+        # Send a GET request
+        conn.request('GET', '/v1/news/all?{}'.format(urllib.parse.urlencode(params)))
+
+        # Get the response
+        res = conn.getresponse()
+
+        # Read the response data
+        data = res.read()
+
+        # Decode the data from bytes to a string
+        data_str = data.decode('utf-8')
+
+        # Parse the JSON data
+        news_data = json.loads(data_str)
+
+        # Iterate through the news articles and save specific fields to the database
+        for article in news_data['data']:
+            title = article['title']
+            description = article['description']
+            source = article['source']
+            url = article['url']
+            highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
+
+            # Create a dictionary with the specific fields
+            news_entry_data = {
+                'asset': asset,
+                'title': title,
+                'description': description,
+                'source': source,
+                'url': url,
+                'highlights': highlights,
             }
+            all_news_data.append(news_entry_data)
+
+    # Add economic events data for each asset
+    economic_events_data = []
+    for asset in assets_to_fetch:
+        economic_events = get_economic_events_for_pair(asset)
+        economic_events_data.append({
+            'asset': asset,
+            'economic_events': economic_events
+        })
+
+    return {
+        'message': all_news_data,
+        'economic_events': economic_events_data
+    }
+
+
+def analyse_image(image_data, news_data):
+    """Enhanced image analysis function that includes economic events."""
+    try:
+        # Getting the base64 string
+        base64_image = base64.b64encode(image_data).decode('utf-8')
+
+        api_key = os.environ['OPENAI_API_KEY']
+
+        # Extract discussion prompt if it exists
+        discussion_prompt = news_data.get('discussion_prompt', '')
+
+        # Extract economic events data
+        economic_events_text = ""
+        if 'economic_events' in news_data:
+            for event_data in news_data['economic_events']:
+                economic_events_text += event_data['economic_events'] + "\n"
+
+        # Extract regular news data
+        regular_news_text = ""
+        if 'message' in news_data:
+            for news_item in news_data['message']:
+                regular_news_text += f"Title: {news_item['title']}\n"
+                regular_news_text += f"Description: {news_item['description']}\n"
+                regular_news_text += f"Source: {news_item['source']}\n"
+                if news_item['highlights']:
+                    regular_news_text += f"Highlights: {news_item['highlights']}\n"
+                regular_news_text += "\n"
+
+        # Construct a more interactive prompt
+        prompt = f"""
+        {discussion_prompt}
+
+        Based on the trading chart image and the following fundamental data, provide an analysis that addresses the above context.
+
+        ECONOMIC EVENTS DATA:
+        {economic_events_text}
+
+        RECENT NEWS DATA:
+        {regular_news_text}
+
+        Your response should be in JSON format with two keys:
+        1. 'analysis': A detailed analysis that:
+           - Incorporates both technical chart analysis and fundamental economic events
+           - Directly responds to any previous trader's points if they exist
+           - Explains how recent economic events might impact price action
+           - Considers the timing and impact level of economic releases
+           - Points out any correlation between economic events and chart patterns
+           - Explains your reasoning for agreeing or disagreeing with previous analyses
+        2. 'recommendation': Either 'buy', 'sell', or 'neutral'
+
+        Make sure to format as valid JSON and avoid line breaks in the text.
+        Pay special attention to high-impact economic events (🔴) as they can significantly move the market.
+        """
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
         }
 
-    def _create_discussion_prompt(self, trader_id: str, previous_message: Optional[TraderMessage] = None) -> str:
-        """Create a contextual prompt for regular discussion."""
-        personality = self.trader_personalities[trader_id]
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 1500  # Increased to accommodate economic analysis
+        }
 
-        if previous_message:
-            base_prompt = f"""
-            As a {personality['style']} trader focusing on {personality['focus']} with {personality['risk_tolerance']} risk tolerance,
-            analyze this chart and respond to the following analysis from another trader:
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
 
-            Previous Analysis: {previous_message.content}
+        json_data = response.json()
+        final_response = json_data['choices'][0]['message']['content']
+        return final_response
 
-            Consider:
-            1. What points do you agree with and why?
-            2. What factors might need additional consideration?
-            3. How does your trading style inform your perspective?
+    except Exception as e:
+        print(f"Error occurred in analyse image function: {e}")
+        return json.dumps({
+            "analysis": f"Error occurred in analysis: {str(e)}",
+            "recommendation": "neutral"
+        })
 
-            Aim to find common ground while highlighting important considerations.
-            """
-        else:
-            base_prompt = f"""
-            As a {personality['style']} trader focusing on {personality['focus']} with {personality['risk_tolerance']} risk tolerance,
-            provide your initial analysis of this chart.
-            """
 
-        # Add market context
-        current_close = self.market_data['Close'].iloc[-1].item()
-        current_open = self.market_data['Open'].iloc[-1].item()
-        price_change = current_close - current_open
-        price_change_pct = (price_change / current_open) * 100
+def tradergpt(asset, interval, num_days, user_email):
+    """Enhanced tradergpt function with economic events integration."""
+    try:
+        # Step 1: Fetch dataset and generate chart
+        data = obtain_dataset(asset, interval, num_days)
+        chart_path = generate_candlestick_chart(data)
 
-        market_context = f"""
-        Current market context:
-        - Price change: {price_change_pct:.2f}%
-        - Current price: {current_close:.4f}
-        """
+        # Step 2: Fetch enhanced news data (including economic events)
+        news_data = fetch_news_data([asset], user_email)
 
-        return base_prompt + "\n" + market_context
+        # Step 3: Analyse chart with economic events
+        chart_analysis = analyse_image_from_file(chart_path, news_data)
 
-    def _create_consensus_prompt(self) -> str:
-        """Create a prompt for the final consensus phase."""
-        previous_analyses = "\n".join([
-            f"{msg.trader_id}: {msg.content}"
-            for msg in self.messages
-        ])
-
-        return f"""
-        Review the following discussion about {self.asset}:
-
-        {previous_analyses}
-
-        As a group of traders, we need to reach a final consensus.
-        Please provide specific levels in your analysis:
-        1. Key support and resistance levels
-        2. Suggested entry price
-        3. Stop-loss level
-        4. Target price
-        5. Overall trend direction (uptrend/downtrend)
-
-        Also include:
-        1. Points of agreement between traders
-        2. How different risk tolerances and trading styles are balanced
-        3. Final recommendation that considers both perspectives
-        4. Risk management suggestions
-
-        Format your response as JSON with 'analysis' and 'recommendation' keys.
-        Include numerical price levels in your analysis for chart annotation.
-        """
-
-    def _generate_response(self, trader_id: str, previous_message: Optional[TraderMessage] = None,
-                         message_type: str = "discussion") -> str:
-        """Generate a response based on message type."""
-        if message_type == "consensus":
-            prompt = self._create_consensus_prompt()
-        else:
-            prompt = self._create_discussion_prompt(trader_id, previous_message)
-
-        modified_news = self.news_data.copy()
-        modified_news['discussion_prompt'] = prompt
-
-        return analyse_image_from_file(self.chart_path, modified_news)
-
-    def conduct_dialogue(self) -> Tuple[List[TraderMessage], str]:
-        """Conduct a dialogue and create annotated chart."""
-        # Regular discussion phase
-        discussion_messages = self.max_messages - 1
-
-        # First message
-        initial_message = TraderMessage(
-            trader_id="Trader1",
-            content=self._generate_response("Trader1"),
-            message_type="discussion"
-        )
-        self.messages.append(initial_message)
-
-        # Continue discussion
-        current_msg_count = 1
-        while current_msg_count < discussion_messages:
-            current_trader = "Trader2" if current_msg_count % 2 == 1 else "Trader1"
-            previous_message = self.messages[-1]
-
-            response = TraderMessage(
-                trader_id=current_trader,
-                content=self._generate_response(current_trader, previous_message),
-                message_type="discussion",
-                responding_to=previous_message.trader_id
-            )
-            self.messages.append(response)
-            current_msg_count += 1
-
-        # Final consensus phase
-        consensus = TraderMessage(
-            trader_id="Consensus",
-            content=self._generate_response(
-                trader_id="Consensus",
-                message_type="consensus"
-            ),
-            message_type="consensus"
-        )
-        self.messages.append(consensus)
-
-        # Create annotated chart based on consensus
-        annotated_chart_path = self.chart_annotator.draw_annotated_chart(
-            consensus.content,
-            save_path=f"annotated_{self.asset}_chart.png"
-        )
-
-        return self.messages, annotated_chart_path
-
-def run_trader_dialogue(asset: str, interval: str = '1h', num_days: int = 7, max_messages: int = 6):
-    dialogue = TraderDialogue(asset, interval, num_days, max_messages)
-    conversation, annotated_chart = dialogue.conduct_dialogue()
-
-    print(f"\n=== Trading Discussion for {asset.upper()} ===\n")
-
-    for i, msg in enumerate(conversation, 1):
-        print(f"Message {i} - {msg.trader_id}:")
-        if msg.message_type == "consensus":
-            print("=== FINAL CONSENSUS ===")
-        print(f"{msg.content}")
-        if msg.responding_to:
-            print(f"(Responding to {msg.responding_to})")
-        print("\n" + "="*50 + "\n")
-
-    print(f"Annotated chart saved as: {annotated_chart}")
-    return conversation, annotated_chart
+        # Combine analysis
+        return {
+            "chart_analysis": chart_analysis,
+            "economic_events": news_data.get('economic_events', [])
+        }
+    except Exception as e:
+        print(f"Error in combined analysis: {e}")
 
 
 class MultiTraderDialogue:
@@ -7489,13 +7451,11 @@ class MultiTraderDialogue:
             trader2_settings['numDays']
         )
 
-
-
         # Generate charts for both traders
         self.trader1_chart = generate_candlestick_chart(self.trader1_data)
         self.trader2_chart = generate_candlestick_chart(self.trader2_data)
 
-        # Initialize news data for both assets
+        # Initialize enhanced news data for both assets (including economic events)
         assets = list(set([trader1_settings['asset'], trader2_settings['asset']]))
         self.news_data = fetch_news_data(assets, user_email=None)
 
@@ -7509,7 +7469,6 @@ class MultiTraderDialogue:
                 "style": trader1_settings.get('style', 'Conservative'),
                 "focus": trader1_settings.get('focus', 'long-term trends and fundamental analysis'),
                 "risk_tolerance": trader1_settings.get('risk_tolerance', 'low'),
-                # "bias": trader1_settings.get('bias', 'neutral'),
                 "settings": trader1_settings,
                 "data": self.trader1_data,
                 "chart": self.trader1_chart
@@ -7518,7 +7477,6 @@ class MultiTraderDialogue:
                 "style": trader2_settings.get('style', 'Aggressive'),
                 "focus": trader2_settings.get('focus', 'short-term momentum and technical patterns'),
                 "risk_tolerance": trader2_settings.get('risk_tolerance', 'high'),
-                # "bias": trader2_settings.get('bias', 'neutral'),
                 "settings": trader2_settings,
                 "data": self.trader2_data,
                 "chart": self.trader2_chart
@@ -7530,15 +7488,19 @@ class MultiTraderDialogue:
         settings = personality['settings']
         data = personality['data']
 
+        # Get economic events for this trader's asset
+        economic_events_for_asset = ""
+        for event_data in self.news_data.get('economic_events', []):
+            if event_data['asset'] == settings['asset']:
+                economic_events_for_asset = event_data['economic_events']
+                break
+
         base_prompt = f"""
         As a {personality['style']} trader with {personality['risk_tolerance']} risk tolerance,
         analyzing {settings['asset']} on the {settings['interval']} timeframe 
         with a {settings['numDays']}-day lookback period, focusing on {personality['focus']},
-        and having a market bias,
+        and considering both technical analysis and fundamental economic events,
         """
-
-        # and having a {personality['bias']} market bias,
-
 
         if previous_message:
             base_prompt += f"""
@@ -7552,11 +7514,25 @@ class MultiTraderDialogue:
             3. How does your timeframe and trading style inform your perspective?
             4. Are there any differences in market behavior between your timeframe and the other trader's timeframe?
             5. How does your risk tolerance affect your view of the suggested trades?
+            6. How do the recent economic events support or contradict the previous analysis?
+            7. Are there any upcoming economic releases that could impact the trade setup?
+
+            ECONOMIC EVENTS CONTEXT:
+            {economic_events_for_asset}
 
             Aim to find common ground while highlighting important considerations from your perspective.
+            Pay special attention to how economic fundamentals align with or contradict technical patterns.
             """
         else:
-            base_prompt += "provide your initial analysis of this chart."
+            base_prompt += f"""
+            provide your initial analysis of this chart, incorporating both technical and fundamental analysis.
+
+            ECONOMIC EVENTS CONTEXT:
+            {economic_events_for_asset}
+
+            Consider how recent economic events might have influenced the current price action and 
+            what they suggest for future price movements.
+            """
 
         # Add market context
         current_close = data['Close'].iloc[-1].item()
@@ -7578,27 +7554,41 @@ class MultiTraderDialogue:
             for msg in self.messages if msg.trader_id in ['Trader1', 'Trader2']
         ])
 
+        # Combine all economic events data
+        all_economic_events = ""
+        for event_data in self.news_data.get('economic_events', []):
+            all_economic_events += f"\n{event_data['asset']}:\n{event_data['economic_events']}\n"
+
         return f"""
         Review the following discussion about market analysis from different timeframes and trading styles:
 
         {previous_analyses}
 
-        As a group of traders analyzing multiple timeframes, we need to reach a final consensus.
+        COMBINED ECONOMIC EVENTS DATA:
+        {all_economic_events}
+
+        As a group of traders analyzing multiple timeframes and incorporating fundamental analysis, 
+        we need to reach a final consensus that considers both technical and fundamental factors.
+
         Please provide specific levels in your analysis:
         1. Key support and resistance levels from both timeframes
-        2. Suggested entry price considering both analyses
-        3. Stop-loss level that respects both timeframes
-        4. Target price based on both perspectives
+        2. Suggested entry price considering both analyses and economic events
+        3. Stop-loss level that respects both timeframes and fundamental risks
+        4. Target price based on both technical and fundamental perspectives
         5. Overall trend direction (uptrend/downtrend) on each timeframe
+        6. Economic event risks and opportunities
 
         Also include:
         1. Points of agreement between different timeframe analyses
         2. How different risk tolerances and trading styles are balanced
-        3. Final recommendation that considers both timeframes
-        4. Risk management suggestions that account for multiple timeframe analysis
+        3. How technical analysis aligns with or contradicts fundamental economic data
+        4. Final recommendation that considers both timeframes and economic events
+        5. Risk management suggestions that account for both technical and fundamental risks
+        6. Timing considerations based on upcoming economic releases
 
         Format your response as JSON with 'analysis' and 'recommendation' keys.
         Include numerical price levels in your analysis for chart annotation.
+        Give special weight to high-impact economic events (🔴) in your analysis.
         """
 
     def _generate_response(self, trader_id: str, previous_message: Optional[TraderMessage] = None,
@@ -7660,8 +7650,10 @@ class MultiTraderDialogue:
 
         return self.messages, annotated_chart_path
 
+
 @csrf_exempt
 def get_trader_analysis(request):
+    """Enhanced trader analysis endpoint with economic events integration."""
     try:
         if request.method == 'POST':
             data = json.loads(request.body)
@@ -7675,7 +7667,7 @@ def get_trader_analysis(request):
                     'type': 'ValidationError'
                 }, status=400)
             
-            # Initialize multi-trader dialogue
+            # Initialize multi-trader dialogue with enhanced economic events
             dialogue = MultiTraderDialogue(
                 trader1_settings=traders_settings['trader1'],
                 trader2_settings=traders_settings['trader2']
@@ -7693,12 +7685,12 @@ def get_trader_analysis(request):
                         parsed_content = json.loads(content)
                         if 'analysis' in parsed_content:
                             if isinstance(parsed_content['analysis'], str):
-                                parsed_content['analysis'] = parsed_content['analysis'][:1000]
+                                parsed_content['analysis'] = parsed_content['analysis'][:2000]  # Increased limit for economic analysis
                             else:
-                                parsed_content['analysis'] = str(parsed_content['analysis'])[:1000]
+                                parsed_content['analysis'] = str(parsed_content['analysis'])[:2000]
                         content = parsed_content
                     except json.JSONDecodeError:
-                        content = content[:1000]
+                        content = content[:2000]  # Increased limit for economic analysis
                 else:
                     content = msg.content
 
@@ -7714,7 +7706,6 @@ def get_trader_analysis(request):
                         'style': dialogue.trader_personalities[msg.trader_id]['style'] if msg.trader_id in dialogue.trader_personalities else None,
                         'focus': dialogue.trader_personalities[msg.trader_id]['focus'] if msg.trader_id in dialogue.trader_personalities else None,
                         'risk_tolerance': dialogue.trader_personalities[msg.trader_id]['risk_tolerance'] if msg.trader_id in dialogue.trader_personalities else None,
-                        # 'bias': dialogue.trader_personalities[msg.trader_id]['bias'] if msg.trader_id in dialogue.trader_personalities else None
                     } if msg.trader_id != 'Consensus' else None
                 })
 
@@ -7742,8 +7733,19 @@ def get_trader_analysis(request):
                 'analysis_summary': {
                     'trader1': traders_settings['trader1'],
                     'trader2': traders_settings['trader2']
-                }
+                },
+                'economic_events_included': True,  # Flag to indicate economic events are included
+                'currencies_analyzed': []  # Will be populated with currency pairs
             }
+            
+            # Add information about which currencies were analyzed
+            for asset in [traders_settings['trader1']['asset'], traders_settings['trader2']['asset']]:
+                base_curr, quote_curr = extract_currencies_from_pair(asset)
+                response_data['currencies_analyzed'].append({
+                    'pair': asset,
+                    'base_currency': base_curr,
+                    'quote_currency': quote_curr
+                })
             
             return JsonResponse(response_data)
         else:
@@ -7760,6 +7762,25 @@ def get_trader_analysis(request):
             'type': type(e).__name__
         }, status=500)
 
+
+# Additional utility function to help with currency mapping updates
+def update_currency_mapping():
+    """Utility function to add more currency pairs to the mapping if needed."""
+    additional_pairs = {
+        'GBPNZD': ('GBP', 'NZD'),
+        'AUDNZD': ('AUD', 'NZD'),
+        'EURCZK': ('EUR', 'CZK'),
+        'USDPLN': ('USD', 'PLN'),
+        'USDHUF': ('USD', 'HUF'),
+        'USDTRY': ('USD', 'TRY'),
+        'USDZAR': ('USD', 'ZAR'),
+        'USDMXN': ('USD', 'MXN'),
+        'USDSEK': ('USD', 'SEK'),
+        'USDNOK': ('USD', 'NOK'),
+        'USDDKK': ('USD', 'DKK')
+    }
+    
+    return additional_pairs
 
 def bullish_market_sentiment(asset):
     
@@ -9461,33 +9482,33 @@ def generate_econ_ai_summary(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
-def get_economic_events_for_currency(currency_code):
-    """Get recent economic events for a specified currency."""
-    try:
-        # Get events from the last 30 days
-        thirty_days_ago = timezone.now() - timezone.timedelta(days=30)
-        events = EconomicEvent.objects.filter(
-            currency=currency_code,
-            date_time__gte=thirty_days_ago
-        ).order_by('-date_time')
+# def get_economic_events_for_currency(currency_code):
+#     """Get recent economic events for a specified currency."""
+#     try:
+#         # Get events from the last 30 days
+#         thirty_days_ago = timezone.now() - timezone.timedelta(days=90)
+#         events = EconomicEvent.objects.filter(
+#             currency=currency_code,
+#             date_time__gte=thirty_days_ago
+#         ).order_by('-date_time')
         
-        if not events:
-            return "No recent economic events found for this currency."
+#         if not events:
+#             return "No recent economic events found for this currency."
         
-        # Format the events data
-        events_text = "Recent Economic Events for this currency:\n\n"
-        for event in events:
-            impact_symbol = "🔴" if event.impact == "high" else "🟠" if event.impact == "medium" else "🟢"
-            events_text += f"Date: {event.date_time.strftime('%Y-%m-%d %H:%M')}\n"
-            events_text += f"Event: {event.event_name} {impact_symbol}\n"
-            events_text += f"Actual: {event.actual or 'N/A'}\n"
-            events_text += f"Forecast: {event.forecast or 'N/A'}\n"
-            events_text += f"Previous: {event.previous or 'N/A'}\n\n"
+#         # Format the events data
+#         events_text = "Recent Economic Events for this currency:\n\n"
+#         for event in events:
+#             impact_symbol = "🔴" if event.impact == "high" else "🟠" if event.impact == "medium" else "🟢"
+#             events_text += f"Date: {event.date_time.strftime('%Y-%m-%d %H:%M')}\n"
+#             events_text += f"Event: {event.event_name} {impact_symbol}\n"
+#             events_text += f"Actual: {event.actual or 'N/A'}\n"
+#             events_text += f"Forecast: {event.forecast or 'N/A'}\n"
+#             events_text += f"Previous: {event.previous or 'N/A'}\n\n"
         
-        return events_text
+#         return events_text
     
-    except Exception as e:
-        return f"Error retrieving economic events: {str(e)}"
+#     except Exception as e:
+#         return f"Error retrieving economic events: {str(e)}"
 
 
 @csrf_exempt
