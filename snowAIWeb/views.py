@@ -9650,6 +9650,211 @@ def generate_econ_cot_data(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+logger = logging.getLogger(__name__)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def save_forex_factory_news(request):
+    try:
+        # Parse JSON data from request body
+        data = json.loads(request.body)
+        events_data = data.get('events', [])
+        
+        if not events_data:
+            return JsonResponse({
+                'success': False,
+                'error': 'No events data provided'
+            }, status=400)
+        
+        saved_events = []
+        errors = []
+        
+        for i, event_data in enumerate(events_data):
+            try:
+                # Validate required fields
+                required_fields = ['date_time', 'currency', 'impact', 'event_name']
+                missing_fields = [field for field in required_fields if not event_data.get(field)]
+                
+                if missing_fields:
+                    errors.append(f"Event {i+1}: Missing required fields: {', '.join(missing_fields)}")
+                    continue
+                
+                # Parse and validate datetime
+                date_time_str = event_data.get('date_time')
+                try:
+                    parsed_datetime = parse_datetime(date_time_str)
+                    if not parsed_datetime:
+                        # Try alternative format if the first parsing fails
+                        from datetime import datetime
+                        parsed_datetime = datetime.fromisoformat(date_time_str.replace('Z', '+00:00'))
+                except (ValueError, TypeError) as e:
+                    errors.append(f"Event {i+1}: Invalid datetime format: {date_time_str}")
+                    continue
+                
+                # Validate currency
+                valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']
+                currency = event_data.get('currency', '').upper()
+                if currency not in valid_currencies:
+                    errors.append(f"Event {i+1}: Invalid currency: {currency}")
+                    continue
+                
+                # Validate impact
+                valid_impacts = ['low', 'medium', 'high']
+                impact = event_data.get('impact', '').lower()
+                if impact not in valid_impacts:
+                    errors.append(f"Event {i+1}: Invalid impact level: {impact}")
+                    continue
+                
+                # Prepare event data for saving
+                event_kwargs = {
+                    'date_time': parsed_datetime,
+                    'currency': currency,
+                    'impact': impact,
+                    'event_name': event_data.get('event_name', '').strip(),
+                    'actual': event_data.get('actual') or None,
+                    'forecast': event_data.get('forecast') or None,
+                    'previous': event_data.get('previous') or None,
+                }
+                
+                # Check for duplicates (same datetime, currency, and event_name)
+                existing_event = EconomicEvent.objects.filter(
+                    date_time=parsed_datetime,
+                    currency=currency,
+                    event_name=event_kwargs['event_name']
+                ).first()
+                
+                if existing_event:
+                    # Update existing event
+                    for key, value in event_kwargs.items():
+                        setattr(existing_event, key, value)
+                    existing_event.save()
+                    saved_events.append({
+                        'id': existing_event.id,
+                        'action': 'updated',
+                        'event_name': existing_event.event_name
+                    })
+                    logger.info(f"Updated existing event: {existing_event}")
+                else:
+                    # Create new event
+                    new_event = EconomicEvent.objects.create(**event_kwargs)
+                    saved_events.append({
+                        'id': new_event.id,
+                        'action': 'created',
+                        'event_name': new_event.event_name
+                    })
+                    logger.info(f"Created new event: {new_event}")
+                    
+            except Exception as e:
+                logger.error(f"Error processing event {i+1}: {str(e)}")
+                errors.append(f"Event {i+1}: {str(e)}")
+                continue
+        
+        # Prepare response
+        response_data = {
+            'success': True,
+            'saved_count': len(saved_events),
+            'error_count': len(errors),
+            'saved_events': saved_events
+        }
+        
+        if errors:
+            response_data['errors'] = errors
+            response_data['message'] = f"Saved {len(saved_events)} events with {len(errors)} errors"
+        else:
+            response_data['message'] = f"Successfully saved {len(saved_events)} events"
+        
+        # Return appropriate status code
+        status_code = 200 if saved_events else 400
+        
+        return JsonResponse(response_data, status=status_code)
+        
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON data received")
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON data'
+        }, status=400)
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in save_forex_factory_news: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': 'Internal server error'
+        }, status=500)
+
+
+# Optional: Add a view to retrieve saved events for verification
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_forex_factory_events(request):
+    """
+    Retrieve economic events with optional filtering
+    """
+    try:
+        # Get query parameters for filtering
+        currency = request.GET.get('currency')
+        impact = request.GET.get('impact')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        limit = int(request.GET.get('limit', 100))  # Default limit of 100
+        
+        # Start with all events
+        queryset = EconomicEvent.objects.all()
+        
+        # Apply filters
+        if currency:
+            queryset = queryset.filter(currency=currency.upper())
+        
+        if impact:
+            queryset = queryset.filter(impact=impact.lower())
+            
+        if start_date:
+            try:
+                start_dt = parse_datetime(start_date)
+                if start_dt:
+                    queryset = queryset.filter(date_time__gte=start_dt)
+            except ValueError:
+                pass
+                
+        if end_date:
+            try:
+                end_dt = parse_datetime(end_date)
+                if end_dt:
+                    queryset = queryset.filter(date_time__lte=end_dt)
+            except ValueError:
+                pass
+        
+        # Limit results and order by date
+        events = queryset.order_by('-date_time')[:limit]
+        
+        # Serialize events
+        events_data = []
+        for event in events:
+            events_data.append({
+                'id': event.id,
+                'date_time': event.date_time.isoformat(),
+                'currency': event.currency,
+                'impact': event.impact,
+                'event_name': event.event_name,
+                'actual': event.actual,
+                'forecast': event.forecast,
+                'previous': event.previous,
+                'created_at': event.created_at.isoformat(),
+                'updated_at': event.updated_at.isoformat(),
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'events': events_data,
+            'count': len(events_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error retrieving events: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': 'Failed to retrieve events'
+        }, status=500)
 
 
 
