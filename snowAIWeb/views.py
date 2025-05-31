@@ -9995,6 +9995,7 @@ def process_forex_screenshot(request):
             
     except Exception as e:
         # More specific error handling
+        print(f'Error occured in process_fx function: {e}')
         if "OpenAI" in str(type(e)):
             return JsonResponse({
                 'error': f'OpenAI API error: {str(e)}'
@@ -10076,11 +10077,15 @@ def save_forex_factory_news(request):
         return JsonResponse(response_data)
         
     except json.JSONDecodeError:
+        print(f'Error occured in save_fx function: {e}')
+
         return JsonResponse({
             'error': 'Invalid JSON data'
         }, status=400)
         
     except Exception as e:
+        print(f'Error occured in save_fx function: {e}')
+
         return JsonResponse({
             'error': f'Server error: {str(e)}'
         }, status=500)
