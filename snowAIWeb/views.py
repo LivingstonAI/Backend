@@ -9857,153 +9857,275 @@ logger = logging.getLogger(__name__)
 #         }, status=500)
 
 
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def process_forex_screenshot(request):
+#     """
+#     Process Forex Factory screenshot using OpenAI GPT-4o-mini
+#     """
+#     try:
+#         data = json.loads(request.body)
+#         image_base64 = data.get('image')
+#         api_key = data.get('api_key')
+        
+#         if not image_base64 or not api_key:
+#             return JsonResponse({
+#                 'error': 'Missing image or API key'
+#             }, status=400)
+        
+#         # Initialize OpenAI client with the new syntax
+#         client = OpenAI(api_key=api_key)
+        
+#         # Prepare the prompt for GPT-4o-mini
+#         prompt = """
+#         Analyze this Forex Factory economic calendar screenshot and extract all economic events.
+#         Return a JSON response with an 'events' array containing objects with these fields:
+#         - date_time: ISO format datetime (YYYY-MM-DDTHH:MM)
+#         - currency: 3-letter currency code (USD, EUR, GBP, JPY, AUD, CAD, CHF, CNY)
+#         - impact: 'low', 'medium', or 'high'
+#         - event_name: Name of the economic event
+#         - actual: Actual value (can be empty string if not available)
+#         - forecast: Forecasted value (can be empty string if not available)  
+#         - previous: Previous value (can be empty string if not available)
+        
+#         Example response format:
+#         {
+#           "events": [
+#             {
+#               "date_time": "2024-12-01T10:00",
+#               "currency": "USD",
+#               "impact": "high",
+#               "event_name": "Non-Farm Payrolls",
+#               "actual": "227K",
+#               "forecast": "220K",
+#               "previous": "12K"
+#             }
+#           ]
+#         }
+        
+#         Extract ALL visible events from the screenshot. Pay attention to:
+#         - Time stamps and convert to 24-hour format
+#         - Currency flags/symbols
+#         - Impact levels (usually shown as colored indicators)
+#         - Event names
+#         - Actual, forecast, and previous values
+        
+#         Return only valid JSON without any additional text or formatting.
+#         """
+        
+#         # Make API call to OpenAI using the new client syntax
+#         response = client.chat.completions.create(
+#             model="gpt-4o-mini",
+#             messages=[
+#                 {
+#                     "role": "user",
+#                     "content": [
+#                         {
+#                             "type": "text",
+#                             "text": prompt
+#                         },
+#                         {
+#                             "type": "image_url",
+#                             "image_url": {
+#                                 "url": f"data:image/jpeg;base64,{image_base64}"
+#                             }
+#                         }
+#                     ]
+#                 }
+#             ],
+#             max_tokens=2000,
+#             temperature=0.1
+#         )
+        
+#         # Extract and parse the response
+#         gpt_response = response.choices[0].message.content.strip()
+        
+#         # Try to parse JSON response
+#         try:
+#             parsed_data = json.loads(gpt_response)
+#             events = parsed_data.get('events', [])
+            
+#             # Validate and clean the events data
+#             cleaned_events = []
+#             for event in events:
+#                 try:
+#                     # Validate required fields
+#                     if not all(field in event for field in ['date_time', 'currency', 'impact', 'event_name']):
+#                         continue
+                    
+#                     # Validate currency
+#                     valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']
+#                     if event['currency'] not in valid_currencies:
+#                         event['currency'] = 'USD'  # Default fallback
+                    
+#                     # Validate impact
+#                     valid_impacts = ['low', 'medium', 'high']
+#                     if event['impact'] not in valid_impacts:
+#                         event['impact'] = 'medium'  # Default fallback
+                    
+#                     # Ensure optional fields exist
+#                     event['actual'] = event.get('actual', '')
+#                     event['forecast'] = event.get('forecast', '')
+#                     event['previous'] = event.get('previous', '')
+                    
+#                     # Validate datetime format
+#                     try:
+#                         datetime.fromisoformat(event['date_time'].replace('Z', '+00:00'))
+#                     except ValueError:
+#                         # If invalid datetime, skip this event
+#                         continue
+                    
+#                     cleaned_events.append(event)
+                    
+#                 except Exception as e:
+#                     # Skip invalid events
+#                     continue
+            
+#             return JsonResponse({
+#                 'success': True,
+#                 'events': cleaned_events,
+#                 'message': f'Successfully extracted {len(cleaned_events)} events'
+#             })
+            
+#         except json.JSONDecodeError:
+#             return JsonResponse({
+#                 'error': 'Failed to parse GPT response as JSON',
+#                 'gpt_response': gpt_response
+#             }, status=500)
+            
+#     except Exception as e:
+#         # More specific error handling
+#         print(f'Error occured in process_fx function: {e}')
+#         if "OpenAI" in str(type(e)):
+#             return JsonResponse({
+#                 'error': f'OpenAI API error: {str(e)}'
+#             }, status=500)
+#         else:
+#             return JsonResponse({
+#                 'error': f'Server error: {str(e)}'
+#             }, status=500)
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def process_forex_screenshot(request):
     """
     Process Forex Factory screenshot using OpenAI GPT-4o-mini
     """
-    try:
-        data = json.loads(request.body)
-        image_base64 = data.get('image')
-        api_key = data.get('api_key')
-        
-        if not image_base64 or not api_key:
-            return JsonResponse({
-                'error': 'Missing image or API key'
-            }, status=400)
-        
-        # Initialize OpenAI client with the new syntax
-        client = OpenAI(api_key=api_key)
-        
-        # Prepare the prompt for GPT-4o-mini
-        prompt = """
-        Analyze this Forex Factory economic calendar screenshot and extract all economic events.
-        Return a JSON response with an 'events' array containing objects with these fields:
-        - date_time: ISO format datetime (YYYY-MM-DDTHH:MM)
-        - currency: 3-letter currency code (USD, EUR, GBP, JPY, AUD, CAD, CHF, CNY)
-        - impact: 'low', 'medium', or 'high'
-        - event_name: Name of the economic event
-        - actual: Actual value (can be empty string if not available)
-        - forecast: Forecasted value (can be empty string if not available)  
-        - previous: Previous value (can be empty string if not available)
-        
-        Example response format:
+    data = json.loads(request.body)
+    image_base64 = data.get('image')
+    api_key = data.get('api_key')
+
+    if not image_base64 or not api_key:
+        return JsonResponse({
+            'error': 'Missing image or API key'
+        }, status=400)
+
+    # Initialize OpenAI client with the new syntax
+    client = OpenAI(api_key=api_key)
+
+    # Prepare the prompt for GPT-4o-mini
+    prompt = """
+    Analyze this Forex Factory economic calendar screenshot and extract all economic events.
+    Return a JSON response with an 'events' array containing objects with these fields:
+    - date_time: ISO format datetime (YYYY-MM-DDTHH:MM)
+    - currency: 3-letter currency code (USD, EUR, GBP, JPY, AUD, CAD, CHF, CNY)
+    - impact: 'low', 'medium', or 'high'
+    - event_name: Name of the economic event
+    - actual: Actual value (can be empty string if not available)
+    - forecast: Forecasted value (can be empty string if not available)  
+    - previous: Previous value (can be empty string if not available)
+
+    Example response format:
+    {
+      "events": [
         {
-          "events": [
-            {
-              "date_time": "2024-12-01T10:00",
-              "currency": "USD",
-              "impact": "high",
-              "event_name": "Non-Farm Payrolls",
-              "actual": "227K",
-              "forecast": "220K",
-              "previous": "12K"
-            }
-          ]
+          "date_time": "2024-12-01T10:00",
+          "currency": "USD",
+          "impact": "high",
+          "event_name": "Non-Farm Payrolls",
+          "actual": "227K",
+          "forecast": "220K",
+          "previous": "12K"
         }
-        
-        Extract ALL visible events from the screenshot. Pay attention to:
-        - Time stamps and convert to 24-hour format
-        - Currency flags/symbols
-        - Impact levels (usually shown as colored indicators)
-        - Event names
-        - Actual, forecast, and previous values
-        
-        Return only valid JSON without any additional text or formatting.
-        """
-        
-        # Make API call to OpenAI using the new client syntax
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompt
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}"
-                            }
+      ]
+    }
+
+    Extract ALL visible events from the screenshot. Pay attention to:
+    - Time stamps and convert to 24-hour format
+    - Currency flags/symbols
+    - Impact levels (usually shown as colored indicators)
+    - Event names
+    - Actual, forecast, and previous values
+
+    Return only valid JSON without any additional text or formatting.
+    """
+
+    # Make API call to OpenAI using the new client syntax
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_base64}"
                         }
-                    ]
-                }
-            ],
-            max_tokens=2000,
-            temperature=0.1
-        )
-        
-        # Extract and parse the response
-        gpt_response = response.choices[0].message.content.strip()
-        
-        # Try to parse JSON response
-        try:
-            parsed_data = json.loads(gpt_response)
-            events = parsed_data.get('events', [])
-            
-            # Validate and clean the events data
-            cleaned_events = []
-            for event in events:
-                try:
-                    # Validate required fields
-                    if not all(field in event for field in ['date_time', 'currency', 'impact', 'event_name']):
-                        continue
-                    
-                    # Validate currency
-                    valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']
-                    if event['currency'] not in valid_currencies:
-                        event['currency'] = 'USD'  # Default fallback
-                    
-                    # Validate impact
-                    valid_impacts = ['low', 'medium', 'high']
-                    if event['impact'] not in valid_impacts:
-                        event['impact'] = 'medium'  # Default fallback
-                    
-                    # Ensure optional fields exist
-                    event['actual'] = event.get('actual', '')
-                    event['forecast'] = event.get('forecast', '')
-                    event['previous'] = event.get('previous', '')
-                    
-                    # Validate datetime format
-                    try:
-                        datetime.fromisoformat(event['date_time'].replace('Z', '+00:00'))
-                    except ValueError:
-                        # If invalid datetime, skip this event
-                        continue
-                    
-                    cleaned_events.append(event)
-                    
-                except Exception as e:
-                    # Skip invalid events
-                    continue
-            
-            return JsonResponse({
-                'success': True,
-                'events': cleaned_events,
-                'message': f'Successfully extracted {len(cleaned_events)} events'
-            })
-            
-        except json.JSONDecodeError:
-            return JsonResponse({
-                'error': 'Failed to parse GPT response as JSON',
-                'gpt_response': gpt_response
-            }, status=500)
-            
-    except Exception as e:
-        # More specific error handling
-        print(f'Error occured in process_fx function: {e}')
-        if "OpenAI" in str(type(e)):
-            return JsonResponse({
-                'error': f'OpenAI API error: {str(e)}'
-            }, status=500)
-        else:
-            return JsonResponse({
-                'error': f'Server error: {str(e)}'
-            }, status=500)
+                    }
+                ]
+            }
+        ],
+        max_tokens=2000,
+        temperature=0.1
+    )
+
+    # Extract and parse the response
+    gpt_response = response.choices[0].message.content.strip()
+
+    parsed_data = json.loads(gpt_response)
+    events = parsed_data.get('events', [])
+
+    # Validate and clean the events data
+    cleaned_events = []
+    for event in events:
+        # Validate required fields
+        if not all(field in event for field in ['date_time', 'currency', 'impact', 'event_name']):
+            continue
+
+        # Validate currency
+        valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']
+        if event['currency'] not in valid_currencies:
+            event['currency'] = 'USD'  # Default fallback
+
+        # Validate impact
+        valid_impacts = ['low', 'medium', 'high']
+        if event['impact'] not in valid_impacts:
+            event['impact'] = 'medium'  # Default fallback
+
+        # Ensure optional fields exist
+        event['actual'] = event.get('actual', '')
+        event['forecast'] = event.get('forecast', '')
+        event['previous'] = event.get('previous', '')
+
+        # Validate datetime format
+        datetime.fromisoformat(event['date_time'].replace('Z', '+00:00'))
+
+        cleaned_events.append(event)
+
+    return JsonResponse({
+        'success': True,
+        'events': cleaned_events,
+        'message': f'Successfully extracted {len(cleaned_events)} events'
+    })
+```
+
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
