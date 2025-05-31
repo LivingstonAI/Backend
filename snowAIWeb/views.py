@@ -9857,7 +9857,6 @@ logger = logging.getLogger(__name__)
 #         }, status=500)
 
 
-
 @csrf_exempt
 @require_http_methods(["POST"])
 def process_forex_screenshot(request):
@@ -9874,8 +9873,8 @@ def process_forex_screenshot(request):
                 'error': 'Missing image or API key'
             }, status=400)
         
-        # Initialize OpenAI client
-        openai.api_key = api_key
+        # Initialize OpenAI client with the new syntax
+        client = OpenAI(api_key=api_key)
         
         # Prepare the prompt for GPT-4o-mini
         prompt = """
@@ -9914,8 +9913,8 @@ def process_forex_screenshot(request):
         Return only valid JSON without any additional text or formatting.
         """
         
-        # Make API call to OpenAI
-        response = openai.ChatCompletion.create(
+        # Make API call to OpenAI using the new client syntax
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
@@ -9994,15 +9993,16 @@ def process_forex_screenshot(request):
                 'gpt_response': gpt_response
             }, status=500)
             
-    except openai.error.OpenAIError as e:
-        return JsonResponse({
-            'error': f'OpenAI API error: {str(e)}'
-        }, status=500)
-        
     except Exception as e:
-        return JsonResponse({
-            'error': f'Server error: {str(e)}'
-        }, status=500)
+        # More specific error handling
+        if "OpenAI" in str(type(e)):
+            return JsonResponse({
+                'error': f'OpenAI API error: {str(e)}'
+            }, status=500)
+        else:
+            return JsonResponse({
+                'error': f'Server error: {str(e)}'
+            }, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -10024,9 +10024,15 @@ def save_forex_factory_news(request):
         
         for event_data in events_data:
             try:
+                # Parse datetime more safely
+                date_time_str = event_data['date_time']
+                if 'T' not in date_time_str:
+                    # If no time specified, add default time
+                    date_time_str += 'T00:00:00'
+                
                 # Create EconomicEvent instance
                 event = EconomicEvent(
-                    date_time=datetime.fromisoformat(event_data['date_time'].replace('Z', '+00:00')),
+                    date_time=datetime.fromisoformat(date_time_str.replace('Z', '+00:00')),
                     currency=event_data['currency'],
                     impact=event_data['impact'],
                     event_name=event_data['event_name'],
@@ -10078,7 +10084,6 @@ def save_forex_factory_news(request):
         return JsonResponse({
             'error': f'Server error: {str(e)}'
         }, status=500)
-
 
 
 
