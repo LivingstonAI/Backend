@@ -10006,189 +10006,128 @@ logger = logging.getLogger(__name__)
 #             }, status=500)
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def process_forex_screenshot(request):
-    """
-    Process Forex Factory screenshot using OpenAI GPT-4o-mini
-    """
-    data = json.loads(request.body)
-    image_base64 = data.get('image')
-    api_key = data.get('api_key')
 
-    if not image_base64 or not api_key:
-        return JsonResponse({
-            'error': 'Missing image or API key'
-        }, status=400)
-
-    # Initialize OpenAI client with the new syntax
-    client = OpenAI(api_key=api_key)
-
-    # Prepare the prompt for GPT-4o-mini
-    prompt = """
-    Analyze this Forex Factory economic calendar screenshot and extract all economic events.
-    Return a JSON response with an 'events' array containing objects with these fields:
-    - date_time: ISO format datetime (YYYY-MM-DDTHH:MM)
-    - currency: 3-letter currency code (USD, EUR, GBP, JPY, AUD, CAD, CHF, CNY)
-    - impact: 'low', 'medium', or 'high'
-    - event_name: Name of the economic event
-    - actual: Actual value (can be empty string if not available)
-    - forecast: Forecasted value (can be empty string if not available)  
-    - previous: Previous value (can be empty string if not available)
-
-    Example response format:
-    {
-      "events": [
-        {
-          "date_time": "2024-12-01T10:00",
-          "currency": "USD",
-          "impact": "high",
-          "event_name": "Non-Farm Payrolls",
-          "actual": "227K",
-          "forecast": "220K",
-          "previous": "12K"
-        }
-      ]
-    }
-
-    Extract ALL visible events from the screenshot. Pay attention to:
-    - Time stamps and convert to 24-hour format
-    - Currency flags/symbols
-    - Impact levels (usually shown as colored indicators)
-    - Event names
-    - Actual, forecast, and previous values
-
-    Return only valid JSON without any additional text or formatting.
-    """
-
-    # Make API call to OpenAI using the new client syntax
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_base64}"
-                        }
-                    }
-                ]
-            }
-        ],
-        max_tokens=2000,
-        temperature=0.1
-    )
-
-    # Extract and parse the response
-    gpt_response = response.choices[0].message.content.strip()
-
-    parsed_data = json.loads(gpt_response)
-    events = parsed_data.get('events', [])
-
-    # Validate and clean the events data
-    cleaned_events = []
-    for event in events:
-        # Validate required fields
-        if not all(field in event for field in ['date_time', 'currency', 'impact', 'event_name']):
-            continue
-
-        # Validate currency
-        valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']
-        if event['currency'] not in valid_currencies:
-            event['currency'] = 'USD'  # Default fallback
-
-        # Validate impact
-        valid_impacts = ['low', 'medium', 'high']
-        if event['impact'] not in valid_impacts:
-            event['impact'] = 'medium'  # Default fallback
-
-        # Ensure optional fields exist
-        event['actual'] = event.get('actual', '')
-        event['forecast'] = event.get('forecast', '')
-        event['previous'] = event.get('previous', '')
-
-        # Validate datetime format
-        datetime.fromisoformat(event['date_time'].replace('Z', '+00:00'))
-
-        cleaned_events.append(event)
-
-    return JsonResponse({
-        'success': True,
-        'events': cleaned_events,
-        'message': f'Successfully extracted {len(cleaned_events)} events'
-    })
-```
-
-
+logger = logging.getLogger(__name__)
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def save_forex_factory_news(request):
     """
-    Save economic events to database
+    Save economic events from forex factory screenshot analysis
+    Expected JSON format:
+    {
+        "events": [
+            {
+                "date_time": "2024-12-01T14:30:00",
+                "currency": "USD",
+                "impact": "high",
+                "event_name": "Non-Farm Payrolls",
+                "actual": "150K",
+                "forecast": "160K",
+                "previous": "140K"
+            }
+        ]
+    }
     """
     try:
+        # Parse JSON data
         data = json.loads(request.body)
         events_data = data.get('events', [])
         
         if not events_data:
             return JsonResponse({
-                'error': 'No events data provided'
+                'success': False,
+                'error': 'No events provided'
             }, status=400)
         
+        # Validate and save events
         saved_events = []
         errors = []
         
-        for event_data in events_data:
+        for i, event_data in enumerate(events_data):
             try:
-                # Parse datetime more safely
-                date_time_str = event_data['date_time']
-                if 'T' not in date_time_str:
-                    # If no time specified, add default time
-                    date_time_str += 'T00:00:00'
+                # Validate required fields
+                required_fields = ['date_time', 'currency', 'impact', 'event_name']
+                for field in required_fields:
+                    if not event_data.get(field):
+                        raise ValidationError(f"Missing required field: {field}")
                 
-                # Create EconomicEvent instance
-                event = EconomicEvent(
-                    date_time=datetime.fromisoformat(date_time_str.replace('Z', '+00:00')),
+                # Parse datetime
+                try:
+                    if isinstance(event_data['date_time'], str):
+                        # Handle different datetime formats
+                        dt_str = event_data['date_time']
+                        if 'T' in dt_str:
+                            if dt_str.endswith('Z'):
+                                dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+                            else:
+                                dt = datetime.fromisoformat(dt_str)
+                        else:
+                            dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+                    else:
+                        dt = event_data['date_time']
+                except (ValueError, TypeError) as e:
+                    raise ValidationError(f"Invalid date_time format: {e}")
+                
+                # Validate currency
+                valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']
+                if event_data['currency'] not in valid_currencies:
+                    raise ValidationError(f"Invalid currency: {event_data['currency']}")
+                
+                # Validate impact
+                valid_impacts = ['low', 'medium', 'high']
+                if event_data['impact'] not in valid_impacts:
+                    raise ValidationError(f"Invalid impact: {event_data['impact']}")
+                
+                # Create or update event
+                # Check if event already exists (same datetime, currency, event_name)
+                existing_event = EconomicEvent.objects.filter(
+                    date_time=dt,
                     currency=event_data['currency'],
-                    impact=event_data['impact'],
-                    event_name=event_data['event_name'],
-                    actual=event_data.get('actual', ''),
-                    forecast=event_data.get('forecast', ''),
-                    previous=event_data.get('previous', '')
-                )
+                    event_name=event_data['event_name']
+                ).first()
                 
-                # Validate the model
-                event.full_clean()
-                
-                # Save to database
-                event.save()
-                saved_events.append({
-                    'id': event.id,
-                    'event_name': event.event_name,
-                    'date_time': event.date_time.isoformat()
-                })
+                if existing_event:
+                    # Update existing event
+                    existing_event.impact = event_data['impact']
+                    existing_event.actual = event_data.get('actual', '') or ''
+                    existing_event.forecast = event_data.get('forecast', '') or ''
+                    existing_event.previous = event_data.get('previous', '') or ''
+                    existing_event.save()
+                    saved_events.append({
+                        'id': existing_event.id,
+                        'action': 'updated',
+                        'event_name': existing_event.event_name
+                    })
+                else:
+                    # Create new event
+                    new_event = EconomicEvent.objects.create(
+                        date_time=dt,
+                        currency=event_data['currency'],
+                        impact=event_data['impact'],
+                        event_name=event_data['event_name'],
+                        actual=event_data.get('actual', '') or '',
+                        forecast=event_data.get('forecast', '') or '',
+                        previous=event_data.get('previous', '') or ''
+                    )
+                    saved_events.append({
+                        'id': new_event.id,
+                        'action': 'created',
+                        'event_name': new_event.event_name
+                    })
                 
             except ValidationError as e:
-                errors.append({
-                    'event': event_data.get('event_name', 'Unknown'),
-                    'error': str(e)
-                })
+                errors.append(f"Event {i+1}: {str(e)}")
+                logger.error(f"Validation error for event {i+1}: {e}")
             except Exception as e:
-                errors.append({
-                    'event': event_data.get('event_name', 'Unknown'),
-                    'error': f'Database error: {str(e)}'
-                })
+                errors.append(f"Event {i+1}: Unexpected error - {str(e)}")
+                logger.error(f"Unexpected error for event {i+1}: {e}")
         
+        # Prepare response
         response_data = {
             'success': True,
             'saved_count': len(saved_events),
+            'total_count': len(events_data),
             'saved_events': saved_events
         }
         
@@ -10196,22 +10135,21 @@ def save_forex_factory_news(request):
             response_data['errors'] = errors
             response_data['error_count'] = len(errors)
         
-        return JsonResponse(response_data)
+        status_code = 200 if saved_events else 400
+        return JsonResponse(response_data, status=status_code)
         
     except json.JSONDecodeError:
-        print(f'Error occured in save_fx function: {e}')
-
         return JsonResponse({
-            'error': 'Invalid JSON data'
+            'success': False,
+            'error': 'Invalid JSON format'
         }, status=400)
-        
+    
     except Exception as e:
-        print(f'Error occured in save_fx function: {e}')
-
+        logger.error(f"Unexpected error in save_forex_factory_news: {e}")
         return JsonResponse({
-            'error': f'Server error: {str(e)}'
+            'success': False,
+            'error': 'Internal server error'
         }, status=500)
-
 
 
 

@@ -124,7 +124,6 @@ urlpatterns = [
     path('api/generate_econ_ai_summary/', views.generate_econ_ai_summary, name='generate_econ_ai_summary'),
     # path('save_forex_factory_news', views.save_forex_factory_news, name='save_forex_factory_news'),
     # path('get_forex_factory_events', views.get_forex_factory_events, name='get_forex_factory_events'),
-    path('process_forex_screenshot', views.process_forex_screenshot, name='process_forex_screenshot'),
     path('save_forex_factory_news', views.save_forex_factory_news, name='save_forex_factory_news'),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
