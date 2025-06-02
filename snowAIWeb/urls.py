@@ -125,6 +125,9 @@ urlpatterns = [
     # path('save_forex_factory_news', views.save_forex_factory_news, name='save_forex_factory_news'),
     # path('get_forex_factory_events', views.get_forex_factory_events, name='get_forex_factory_events'),
     path('save_forex_factory_news', views.save_forex_factory_news, name='save_forex_factory_news'),
+    path('fetch_news_data_api', views.fetch_news_data_api, name='fetch_news_data_api'),
+
+
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

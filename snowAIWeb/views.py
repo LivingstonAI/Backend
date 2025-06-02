@@ -7314,6 +7314,79 @@ def fetch_news_data(assets, user_email):
         'economic_events': economic_events_data
     }
 
+@csrf_exempt
+def fetch_news_data_api(request, assets, user_email):
+    """Enhanced news data function that includes economic events."""
+    all_news_data = []
+
+    # List of assets to fetch news data for
+    assets_to_fetch = assets
+
+    # Establish a connection to the API
+    conn = http.client.HTTPSConnection('api.marketaux.com')
+
+    # Define query parameters
+    params_template = {
+        'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
+        'langauge': 'en',
+        'limit': 3,
+    }
+
+    # Iterate through the assets and make API requests
+    for asset in assets_to_fetch:
+        # Update the symbol in the query parameters
+        params = params_template.copy()
+        params['symbols'] = asset
+
+        # Send a GET request
+        conn.request('GET', '/v1/news/all?{}'.format(urllib.parse.urlencode(params)))
+
+        # Get the response
+        res = conn.getresponse()
+
+        # Read the response data
+        data = res.read()
+
+        # Decode the data from bytes to a string
+        data_str = data.decode('utf-8')
+
+        # Parse the JSON data
+        news_data = json.loads(data_str)
+
+        # Iterate through the news articles and save specific fields to the database
+        for article in news_data['data']:
+            title = article['title']
+            description = article['description']
+            source = article['source']
+            url = article['url']
+            highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
+
+            # Create a dictionary with the specific fields
+            news_entry_data = {
+                'asset': asset,
+                'title': title,
+                'description': description,
+                'source': source,
+                'url': url,
+                'highlights': highlights,
+            }
+            all_news_data.append(news_entry_data)
+
+    # Add economic events data for each asset
+    economic_events_data = []
+    for asset in assets_to_fetch:
+        economic_events = get_economic_events_for_pair(asset)
+        economic_events_data.append({
+            'asset': asset,
+            'economic_events': economic_events
+        })
+
+    return {
+        'message': all_news_data,
+        'economic_events': economic_events_data
+    }
+
+
 
 def analyse_image(image_data, news_data):
     """Enhanced image analysis function that includes economic events."""
@@ -10151,6 +10224,9 @@ def save_forex_factory_news(request):
             'error': 'Internal server error'
         }, status=500)
 
+
+@csrf_exempt
+# create views here
 
 
 # LEGODI BACKEND CODE
