@@ -7243,6 +7243,79 @@ def get_economic_events_for_pair(forex_pair):
         return f"Error retrieving economic events for pair {forex_pair}: {str(e)}"
 
 
+
+@csrf_exempt
+def fetch_news_data_api(request):
+    """Enhanced news data function that includes economic events."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+
+    try:
+        body = json.loads(request.body)
+        assets_to_fetch = body.get('assets', [])
+        user_email = body.get('user_email', None)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not assets_to_fetch or not user_email:
+        return JsonResponse({'error': 'Missing assets or user_email'}, status=400)
+
+    all_news_data = []
+
+    conn = http.client.HTTPSConnection('api.marketaux.com')
+    params_template = {
+        'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
+        'langauge': 'en',
+        'limit': 3,
+    }
+
+    for asset in assets_to_fetch:
+        params = params_template.copy()
+        params['symbols'] = asset
+        conn.request('GET', '/v1/news/all?{}'.format(urllib.parse.urlencode(params)))
+        res = conn.getresponse()
+        data = res.read().decode('utf-8')
+        news_data = json.loads(data)
+
+        for article in news_data.get('data', []):
+            # Extract highlights properly
+            highlights = ''
+            if article.get('entities'):
+                entity_highlights = article.get('entities')[0].get('highlights', '')
+                # Handle different highlight formats
+                if isinstance(entity_highlights, str):
+                    highlights = entity_highlights
+                elif isinstance(entity_highlights, dict):
+                    # Extract the actual highlight text
+                    highlights = entity_highlights.get('highlight', '') or entity_highlights.get('text', '')
+                elif isinstance(entity_highlights, list) and len(entity_highlights) > 0:
+                    highlights = entity_highlights[0] if isinstance(entity_highlights[0], str) else str(entity_highlights[0])
+            
+            news_entry_data = {
+                'asset': asset,
+                'title': article.get('title', ''),
+                'description': article.get('description', ''),
+                'source': article.get('source', ''),
+                'url': article.get('url', ''),
+                'highlights': highlights,  # Now always a string
+            }
+            all_news_data.append(news_entry_data)
+
+    economic_events_data = []
+    for asset in assets_to_fetch:
+        economic_events = get_economic_events_for_pair(asset)
+        economic_events_data.append({
+            'asset': asset,
+            'economic_events': economic_events
+        })
+
+    return JsonResponse({
+        'message': all_news_data,
+        'economic_events': economic_events_data
+    }, safe=False)
+
+
+
 def fetch_news_data(assets, user_email):
     """Enhanced news data function that includes economic events."""
     all_news_data = []
@@ -7313,67 +7386,6 @@ def fetch_news_data(assets, user_email):
         'message': all_news_data,
         'economic_events': economic_events_data
     }
-
-
-
-@csrf_exempt
-def fetch_news_data_api(request):
-    """Enhanced news data function that includes economic events."""
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
-
-    try:
-        body = json.loads(request.body)
-        assets_to_fetch = body.get('assets', [])
-        user_email = body.get('user_email', None)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    if not assets_to_fetch or not user_email:
-        return JsonResponse({'error': 'Missing assets or user_email'}, status=400)
-
-    all_news_data = []
-
-    conn = http.client.HTTPSConnection('api.marketaux.com')
-    params_template = {
-        'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
-        'langauge': 'en',
-        'limit': 3,
-    }
-
-    for asset in assets_to_fetch:
-        params = params_template.copy()
-        params['symbols'] = asset
-        conn.request('GET', '/v1/news/all?{}'.format(urllib.parse.urlencode(params)))
-        res = conn.getresponse()
-        data = res.read().decode('utf-8')
-        news_data = json.loads(data)
-
-        for article in news_data.get('data', []):
-            news_entry_data = {
-                'asset': asset,
-                'title': article.get('title', ''),
-                'description': article.get('description', ''),
-                'source': article.get('source', ''),
-                'url': article.get('url', ''),
-                'highlights': article.get('entities', [{}])[0].get('highlights', '') if article.get('entities') else '',
-            }
-            all_news_data.append(news_entry_data)
-
-    economic_events_data = []
-    for asset in assets_to_fetch:
-        economic_events = get_economic_events_for_pair(asset)
-        economic_events_data.append({
-            'asset': asset,
-            'economic_events': economic_events
-        })
-
-    return JsonResponse({
-        'message': all_news_data,
-        'economic_events': economic_events_data
-    }, safe=False)
-
-
 
 
 def analyse_image(image_data, news_data):
