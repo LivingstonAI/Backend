@@ -10225,8 +10225,255 @@ def save_forex_factory_news(request):
         }, status=500)
 
 
+# views.py
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from .models import Account, AccountTrades
+import json
+from django.core.serializers import serialize
+from django.forms.models import model_to_dict
+
 @csrf_exempt
-# create views here
+@require_http_methods(["GET"])
+def get_trades_by_account_calendar(request):
+    """
+    Get all trades for a specific account
+    """
+    try:
+        account_name = request.GET.get('account_name')
+        
+        if not account_name:
+            return JsonResponse({
+                'error': 'account_name parameter is required'
+            }, status=400)
+        
+        # Get the account
+        try:
+            account = Account.objects.get(account_name=account_name)
+        except Account.DoesNotExist:
+            return JsonResponse({
+                'error': f'Account with name "{account_name}" not found'
+            }, status=404)
+        
+        # Get all trades for this account
+        trades = AccountTrades.objects.filter(account=account).order_by('-date_entered')
+        
+        # Convert trades to list of dictionaries
+        trades_data = []
+        for trade in trades:
+            trade_dict = {
+                'id': trade.id,
+                'account_name': trade.account.account_name,
+                'asset': trade.asset,
+                'order_type': trade.order_type,
+                'strategy': trade.strategy,
+                'day_of_week_entered': trade.day_of_week_entered,
+                'day_of_week_closed': trade.day_of_week_closed,
+                'trading_session_entered': trade.trading_session_entered,
+                'trading_session_closed': trade.trading_session_closed,
+                'outcome': trade.outcome,
+                'amount': trade.amount,
+                'emotional_bias': trade.emotional_bias,
+                'reflection': trade.reflection,
+                'date_entered': trade.date_entered.isoformat() if trade.date_entered else None,
+            }
+            trades_data.append(trade_dict)
+        
+        return JsonResponse(trades_data, safe=False)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_trades_by_date_range_calendar(request):
+    """
+    Get trades for a specific account within a date range
+    """
+    try:
+        account_name = request.GET.get('account_name')
+        start_date = request.GET.get('start_date')  # Format: YYYY-MM-DD
+        end_date = request.GET.get('end_date')      # Format: YYYY-MM-DD
+        
+        if not account_name:
+            return JsonResponse({
+                'error': 'account_name parameter is required'
+            }, status=400)
+        
+        # Get the account
+        try:
+            account = Account.objects.get(account_name=account_name)
+        except Account.DoesNotExist:
+            return JsonResponse({
+                'error': f'Account with name "{account_name}" not found'
+            }, status=404)
+        
+        # Start with base query
+        trades_query = AccountTrades.objects.filter(account=account)
+        
+        # Add date filters if provided
+        if start_date:
+            trades_query = trades_query.filter(date_entered__date__gte=start_date)
+        if end_date:
+            trades_query = trades_query.filter(date_entered__date__lte=end_date)
+        
+        trades = trades_query.order_by('-date_entered')
+        
+        # Convert trades to list of dictionaries
+        trades_data = []
+        for trade in trades:
+            trade_dict = {
+                'id': trade.id,
+                'account_name': trade.account.account_name,
+                'asset': trade.asset,
+                'order_type': trade.order_type,
+                'strategy': trade.strategy,
+                'day_of_week_entered': trade.day_of_week_entered,
+                'day_of_week_closed': trade.day_of_week_closed,
+                'trading_session_entered': trade.trading_session_entered,
+                'trading_session_closed': trade.trading_session_closed,
+                'outcome': trade.outcome,
+                'amount': trade.amount,
+                'emotional_bias': trade.emotional_bias,
+                'reflection': trade.reflection,
+                'date_entered': trade.date_entered.isoformat() if trade.date_entered else None,
+            }
+            trades_data.append(trade_dict)
+        
+        return JsonResponse(trades_data, safe=False)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_trade_summary_calendar(request):
+    """
+    Get summary statistics for trades by account
+    """
+    try:
+        account_name = request.GET.get('account_name')
+        
+        if not account_name:
+            return JsonResponse({
+                'error': 'account_name parameter is required'
+            }, status=400)
+        
+        # Get the account
+        try:
+            account = Account.objects.get(account_name=account_name)
+        except Account.DoesNotExist:
+            return JsonResponse({
+                'error': f'Account with name "{account_name}" not found'
+            }, status=404)
+        
+        # Get all trades for this account
+        trades = AccountTrades.objects.filter(account=account)
+        
+        # Calculate summary statistics
+        total_trades = trades.count()
+        profitable_trades = trades.filter(outcome='Profit').count()
+        losing_trades = trades.filter(outcome='Loss').count()
+        
+        total_profit = sum(trade.amount for trade in trades.filter(outcome='Profit'))
+        total_loss = sum(abs(trade.amount) for trade in trades.filter(outcome='Loss'))
+        net_profit = total_profit - total_loss
+        
+        win_rate = (profitable_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        summary = {
+            'account_name': account_name,
+            'total_trades': total_trades,
+            'profitable_trades': profitable_trades,
+            'losing_trades': losing_trades,
+            'total_profit': total_profit,
+            'total_loss': total_loss,
+            'net_profit': net_profit,
+            'win_rate': round(win_rate, 2)
+        }
+        
+        return JsonResponse(summary)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_trade_calendar(request):
+    """
+    Create a new trade
+    """
+    try:
+        data = json.loads(request.body)
+        
+        account_name = data.get('account_name')
+        if not account_name:
+            return JsonResponse({
+                'error': 'account_name is required'
+            }, status=400)
+        
+        # Get the account
+        try:
+            account = Account.objects.get(account_name=account_name)
+        except Account.DoesNotExist:
+            return JsonResponse({
+                'error': f'Account with name "{account_name}" not found'
+            }, status=404)
+        
+        # Create the trade
+        trade = AccountTrades.objects.create(
+            account=account,
+            asset=data.get('asset', ''),
+            order_type=data.get('order_type', ''),
+            strategy=data.get('strategy', ''),
+            day_of_week_entered=data.get('day_of_week_entered', ''),
+            day_of_week_closed=data.get('day_of_week_closed'),
+            trading_session_entered=data.get('trading_session_entered', ''),
+            trading_session_closed=data.get('trading_session_closed'),
+            outcome=data.get('outcome', ''),
+            amount=float(data.get('amount', 0)),
+            emotional_bias=data.get('emotional_bias'),
+            reflection=data.get('reflection'),
+            date_entered=data.get('date_entered')
+        )
+        
+        trade_dict = {
+            'id': trade.id,
+            'account_name': trade.account.account_name,
+            'asset': trade.asset,
+            'order_type': trade.order_type,
+            'strategy': trade.strategy,
+            'day_of_week_entered': trade.day_of_week_entered,
+            'day_of_week_closed': trade.day_of_week_closed,
+            'trading_session_entered': trade.trading_session_entered,
+            'trading_session_closed': trade.trading_session_closed,
+            'outcome': trade.outcome,
+            'amount': trade.amount,
+            'emotional_bias': trade.emotional_bias,
+            'reflection': trade.reflection,
+            'date_entered': trade.date_entered.isoformat() if trade.date_entered else None,
+        }
+        
+        return JsonResponse({
+            'message': 'Trade created successfully',
+            'trade': trade_dict
+        }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'error': 'Invalid JSON data'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
 
 
 # LEGODI BACKEND CODE

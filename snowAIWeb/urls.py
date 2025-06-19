@@ -126,6 +126,14 @@ urlpatterns = [
     # path('get_forex_factory_events', views.get_forex_factory_events, name='get_forex_factory_events'),
     path('save_forex_factory_news', views.save_forex_factory_news, name='save_forex_factory_news'),
     path('fetch_news_data_api', views.fetch_news_data_api, name='fetch_news_data_api'),
+    # Get all trades for a specific account
+    path('api/trades-calendar/', views.get_trades_by_account_calendar, name='get_trades_by_account'),
+    # Get trades within a date range
+    path('api/trades/date-range/', views.get_trades_by_date_range_calendar, name='get_trades_by_date_range'),
+    # Get trade summary statistics
+    path('api/trades/summary-calendar/', views.get_trade_summary_calendar, name='get_trade_summary'),
+    # Create a new trade
+    path('api/trades/create-calendar/', views.create_trade_calendar, name='create_trade'),
 
 
     # create appproprate urls.py here
