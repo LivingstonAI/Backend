@@ -554,9 +554,22 @@ class EconomicEvent(models.Model):
     def __str__(self):
         return f"{self.date_time.strftime('%Y-%m-%d %H:%M')} - {self.currency} - {self.event_name}"
 
+import uuid
 
-
-
+class PaperGPT(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=500)
+    file_name = models.CharField(max_length=255)
+    file_data = models.TextField()  # Base64 encoded PDF
+    file_size = models.BigIntegerField()
+    extracted_text = models.TextField()
+    ai_summary = models.TextField()
+    personal_notes = models.TextField(blank=True)
+    upload_date = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-upload_date']
 
 
 

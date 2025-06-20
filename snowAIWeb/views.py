@@ -10475,6 +10475,118 @@ def create_trade_calendar(request):
             'error': str(e)
         }, status=500)
 
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def paper_gpt(request):
+    if request.method == 'GET':
+        papers = PaperGPT.objects.all().values(
+            'id', 'title', 'file_name', 'file_size', 'upload_date',
+            'ai_summary', 'personal_notes', 'extracted_text'
+        )
+        return JsonResponse(list(papers), safe=False)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            paper = PaperGPT.objects.create(
+                title=data['title'],
+                file_name=data['fileName'],
+                file_data=data['fileData'],
+                file_size=data['fileSize'],
+                extracted_text=data['extractedText'],
+                ai_summary=data['aiSummary'],
+                personal_notes=data.get('personalNotes', '')
+            )
+            return JsonResponse({
+                'id': paper.id,
+                'title': paper.title,
+                'message': 'Paper saved successfully'
+            })
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["PUT", "DELETE"])
+def paper_detail(request, paper_id):
+    try:
+        paper = PaperGPT.objects.get(id=paper_id)
+        
+        if request.method == 'PUT':
+            data = json.loads(request.body)
+            paper.personal_notes = data.get('personalNotes', paper.personal_notes)
+            paper.save()
+            return JsonResponse({'message': 'Paper updated successfully'})
+            
+        elif request.method == 'DELETE':
+            paper.delete()
+            return JsonResponse({'message': 'Paper deleted successfully'})
+            
+    except PaperGPT.DoesNotExist:
+        return JsonResponse({'error': 'Paper not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+@csrf_exempt
+def extract_pdf_text(request):
+   """Extract text from uploaded PDF"""
+   if request.method == 'POST':
+       try:
+           import PyPDF2
+           import io
+           
+           # Get the uploaded file
+           pdf_file = request.FILES.get('pdf')
+           if not pdf_file:
+               return JsonResponse({'error': 'No PDF file provided'}, status=400)
+           
+           # Extract text using PyPDF2
+           pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_file.read()))
+           extracted_text = ""
+           
+           for page_num in range(len(pdf_reader.pages)):
+               page = pdf_reader.pages[page_num]
+               extracted_text += page.extract_text()
+           
+           return JsonResponse({'extracted_text': extracted_text})
+           
+       except Exception as e:
+           return JsonResponse({'error': f'Error extracting text: {str(e)}'}, status=400)
+
+@csrf_exempt
+def generate_paper_summary(request):
+   """Generate AI summary using OpenAI"""
+   if request.method == 'POST':
+       try:
+           data = json.loads(request.body)
+           text = data.get('text', '')
+           
+           if not text:
+               return JsonResponse({'error': 'No text provided'}, status=400)
+           
+           # Get OpenAI API key from settings or environment
+           client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+           
+           response = client.chat.completions.create(
+               model="gpt-4o-mini",
+               messages=[
+                   {
+                       "role": "system", 
+                       "content": "You are an academic research assistant. Provide concise, insightful summaries of research papers highlighting key findings, methodology, and implications."
+                   },
+                   {
+                       "role": "user", 
+                       "content": f"Please summarize this research paper: {text[:4000]}"  # Limit text length
+                   }
+               ],
+               max_tokens=500,
+               temperature=0.7
+           )
+           
+           summary = response.choices[0].message.content
+           return JsonResponse({'summary': summary})
+           
+       except Exception as e:
+           return JsonResponse({'error': f'Error generating summary: {str(e)}'}, status=400)
 
 # LEGODI BACKEND CODE
 def send_simple_message():
