@@ -10475,6 +10475,7 @@ def create_trade_calendar(request):
             'error': str(e)
         }, status=500)
 
+
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def paper_gpt(request):
@@ -10486,12 +10487,13 @@ def paper_gpt(request):
             papers_data.append({
                 'id': paper.id,
                 'title': paper.title,
-                'fileName': paper.file_name,  # Convert snake_case to camelCase
-                'fileSize': paper.file_size,  # Convert snake_case to camelCase
-                'uploadDate': paper.upload_date.isoformat(),  # Convert to ISO string and camelCase
-                'aiSummary': paper.ai_summary,  # Convert snake_case to camelCase
-                'personalNotes': paper.personal_notes,  # Convert snake_case to camelCase
-                'extractedText': paper.extracted_text,  # Convert snake_case to camelCase
+                'fileName': paper.file_name,
+                'fileSize': paper.file_size,
+                'uploadDate': paper.upload_date.isoformat(),
+                'aiSummary': paper.ai_summary,
+                'personalNotes': paper.personal_notes,
+                'extractedText': paper.extracted_text,
+                'fileData': paper.file_data,  # Add this line!
             })
         
         return JsonResponse(papers_data, safe=False)
@@ -10515,6 +10517,7 @@ def paper_gpt(request):
             })
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)
+
 
 @csrf_exempt
 @require_http_methods(["PUT", "DELETE"])
