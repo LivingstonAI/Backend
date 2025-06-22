@@ -10479,11 +10479,22 @@ def create_trade_calendar(request):
 @require_http_methods(["GET", "POST"])
 def paper_gpt(request):
     if request.method == 'GET':
-        papers = PaperGPT.objects.all().values(
-            'id', 'title', 'file_name', 'file_size', 'upload_date',
-            'ai_summary', 'personal_notes', 'extracted_text'
-        )
-        return JsonResponse(list(papers), safe=False)
+        papers = PaperGPT.objects.all()
+        papers_data = []
+        
+        for paper in papers:
+            papers_data.append({
+                'id': paper.id,
+                'title': paper.title,
+                'fileName': paper.file_name,  # Convert snake_case to camelCase
+                'fileSize': paper.file_size,  # Convert snake_case to camelCase
+                'uploadDate': paper.upload_date.isoformat(),  # Convert to ISO string and camelCase
+                'aiSummary': paper.ai_summary,  # Convert snake_case to camelCase
+                'personalNotes': paper.personal_notes,  # Convert snake_case to camelCase
+                'extractedText': paper.extracted_text,  # Convert snake_case to camelCase
+            })
+        
+        return JsonResponse(papers_data, safe=False)
     
     elif request.method == 'POST':
         try:
