@@ -135,9 +135,12 @@ urlpatterns = [
     # Create a new trade
     path('api/trades/create-calendar/', views.create_trade_calendar, name='create_trade'),
     path('paper-gpt/', views.paper_gpt, name='paper_gpt'),
-   path('paper-gpt/<uuid:paper_id>/', views.paper_detail, name='paper_detail'),
-   path('extract-pdf-text/', views.extract_pdf_text, name='extract_pdf_text'),
-   path('generate-summary/', views.generate_paper_summary, name='generate_summary'),
+    path('paper-gpt/<uuid:paper_id>/', views.paper_detail, name='paper_detail'),
+    path('extract-pdf-text/', views.extract_pdf_text, name='extract_pdf_text'),
+    path('generate-summary/', views.generate_paper_summary, name='generate_summary'),
+    path('api/v1/economics/fetch-currency-economic-insights/<str:currency_code>/', 
+            views.retrieve_economic_data_for_selected_currency, 
+            name='retrieve_economic_data_for_selected_currency'),
 
 
     # create appproprate urls.py here

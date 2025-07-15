@@ -10602,6 +10602,70 @@ def generate_paper_summary(request):
        except Exception as e:
            return JsonResponse({'error': f'Error generating summary: {str(e)}'}, status=400)
 
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def retrieve_economic_data_for_selected_currency(request, currency_code):
+    """
+    Retrieve economic data for a specific currency to be used by EconomicsGPT
+    """
+    try:
+        # Get recent economic events for the selected currency (last 30 days)
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        
+        economic_events = EconomicEvent.objects.filter(
+            currency=currency_code.upper(),
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
+        
+        # Format the data for the AI model
+        formatted_data = []
+        for event in economic_events:
+            formatted_data.append({
+                'date_time': event.date_time.strftime('%Y-%m-%d %H:%M'),
+                'currency': event.currency,
+                'impact': event.impact,
+                'event_name': event.event_name,
+                'actual': event.actual,
+                'forecast': event.forecast,
+                'previous': event.previous,
+                'impact_level': event.impact,
+            })
+        
+        # Add summary statistics
+        total_events = len(formatted_data)
+        high_impact_events = len([e for e in formatted_data if e['impact'] == 'high'])
+        medium_impact_events = len([e for e in formatted_data if e['impact'] == 'medium'])
+        low_impact_events = len([e for e in formatted_data if e['impact'] == 'low'])
+        
+        response_data = {
+            'currency': currency_code.upper(),
+            'data_period': '30 days',
+            'total_events': total_events,
+            'impact_summary': {
+                'high_impact': high_impact_events,
+                'medium_impact': medium_impact_events,
+                'low_impact': low_impact_events
+            },
+            'economic_events': formatted_data,
+            'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        return JsonResponse(response_data, safe=False)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': f'Failed to retrieve economic data: {str(e)}',
+            'currency': currency_code.upper()
+        }, status=500)
+
+
+
+
+           
+
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
