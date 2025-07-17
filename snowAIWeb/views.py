@@ -10667,12 +10667,12 @@ def generate_dynamic_chart(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            currency = data.get('currency')
+            currency_pair = data.get('currency_pair')
             timeframe = data.get('timeframe')
             lookback = data.get('lookback')
             
-            # Convert currency to ticker symbol (e.g., USD -> EURUSD=X)
-            ticker = f"{currency}USD=X" if currency != 'USD' else "DX-Y.NYB"
+            # Convert currency pair to ticker symbol for yfinance
+            ticker = f"{currency_pair}=X"
             
             # Fetch data using yfinance
             stock = yf.Ticker(ticker)
@@ -10703,7 +10703,7 @@ def generate_dynamic_chart(request):
             ax.plot(hist.index, hist['Close'], linewidth=2, color='#3b82f6')
             ax.fill_between(hist.index, hist['Close'], alpha=0.3, color='#3b82f6')
             
-            ax.set_title(f'{currency} Price Chart - {timeframe} timeframe, {lookback} lookback', 
+            ax.set_title(f'{currency_pair} Price Chart - {timeframe} timeframe, {lookback} lookback', 
                         fontsize=16, fontweight='bold', color='#1e40af')
             ax.set_xlabel('Time', fontsize=12)
             ax.set_ylabel('Price', fontsize=12)
@@ -10725,7 +10725,7 @@ def generate_dynamic_chart(request):
             return JsonResponse({
                 'success': True,
                 'chart_image': image_base64,
-                'currency': currency,
+                'currency_pair': currency_pair,
                 'timeframe': timeframe,
                 'lookback': lookback
             })
@@ -10737,7 +10737,6 @@ def generate_dynamic_chart(request):
             }, status=400)
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
-
 
            
 
