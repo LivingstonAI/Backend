@@ -141,6 +141,7 @@ urlpatterns = [
     path('api/v1/economics/fetch-currency-economic-insights/<str:currency_code>/', 
             views.retrieve_economic_data_for_selected_currency, 
             name='retrieve_economic_data_for_selected_currency'),
+    path('api/v1/economics/generate-dynamic-chart/', views.generate_dynamic_chart, name='generate_dynamic_chart'),
 
 
     # create appproprate urls.py here

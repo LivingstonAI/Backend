@@ -10660,6 +10660,83 @@ def retrieve_economic_data_for_selected_currency(request, currency_code):
         }, status=500)
 
 
+import matplotlib.dates as mdates
+from io import BytesIO
+@csrf_exempt
+def generate_dynamic_chart(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            currency = data.get('currency')
+            timeframe = data.get('timeframe')
+            lookback = data.get('lookback')
+            
+            # Convert currency to ticker symbol (e.g., USD -> EURUSD=X)
+            ticker = f"{currency}USD=X" if currency != 'USD' else "DX-Y.NYB"
+            
+            # Fetch data using yfinance
+            stock = yf.Ticker(ticker)
+            
+            # Convert lookback to period
+            period_map = {
+                '1d': '1d',
+                '7d': '7d', 
+                '30d': '1mo',
+                '90d': '3mo',
+                '1y': '1y'
+            }
+            
+            # Convert timeframe to interval
+            interval_map = {
+                '1m': '1m',
+                '5m': '5m',
+                '15m': '15m',
+                '1h': '1h',
+                '4h': '4h',
+                '1d': '1d'
+            }
+            
+            hist = stock.history(period=period_map[lookback], interval=interval_map[timeframe])
+            
+            # Create chart
+            fig, ax = plt.subplots(figsize=(12, 6))
+            ax.plot(hist.index, hist['Close'], linewidth=2, color='#3b82f6')
+            ax.fill_between(hist.index, hist['Close'], alpha=0.3, color='#3b82f6')
+            
+            ax.set_title(f'{currency} Price Chart - {timeframe} timeframe, {lookback} lookback', 
+                        fontsize=16, fontweight='bold', color='#1e40af')
+            ax.set_xlabel('Time', fontsize=12)
+            ax.set_ylabel('Price', fontsize=12)
+            ax.grid(True, alpha=0.3)
+            
+            # Format x-axis
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+            plt.xticks(rotation=45)
+            
+            plt.tight_layout()
+            
+            # Convert to base64
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
+            buffer.seek(0)
+            image_base64 = base64.b64encode(buffer.getvalue()).decode()
+            plt.close()
+            
+            return JsonResponse({
+                'success': True,
+                'chart_image': image_base64,
+                'currency': currency,
+                'timeframe': timeframe,
+                'lookback': lookback
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
            
