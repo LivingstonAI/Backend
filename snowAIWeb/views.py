@@ -10698,20 +10698,44 @@ def generate_dynamic_chart(request):
             
             hist = stock.history(period=period_map[lookback], interval=interval_map[timeframe])
             
-            # Create chart
-            fig, ax = plt.subplots(figsize=(12, 6))
-            ax.plot(hist.index, hist['Close'], linewidth=2, color='#3b82f6')
-            ax.fill_between(hist.index, hist['Close'], alpha=0.3, color='#3b82f6')
+            # Check if data is available
+            if hist.empty:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'No data available for {currency_pair}'
+                }, status=400)
             
-            ax.set_title(f'{currency_pair} Price Chart - {timeframe} timeframe, {lookback} lookback', 
+            # Create candlestick chart
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            # Create candlestick data
+            from matplotlib.patches import Rectangle
+            
+            for i, (index, row) in enumerate(hist.iterrows()):
+                color = '#10b981' if row['Close'] >= row['Open'] else '#ef4444'
+                
+                # Draw the wick (high-low line)
+                ax.plot([i, i], [row['Low'], row['High']], color='black', linewidth=1)
+                
+                # Draw the body (rectangle)
+                height = abs(row['Close'] - row['Open'])
+                bottom = min(row['Open'], row['Close'])
+                rect = Rectangle((i-0.3, bottom), 0.6, height, 
+                               facecolor=color, edgecolor='black', linewidth=0.5)
+                ax.add_patch(rect)
+            
+            # Set labels and title
+            ax.set_title(f'{currency_pair} Candlestick Chart - {timeframe} timeframe, {lookback} lookback', 
                         fontsize=16, fontweight='bold', color='#1e40af')
             ax.set_xlabel('Time', fontsize=12)
             ax.set_ylabel('Price', fontsize=12)
             ax.grid(True, alpha=0.3)
             
-            # Format x-axis
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
-            plt.xticks(rotation=45)
+            # Format x-axis with actual dates
+            step = max(1, len(hist) // 10)  # Show max 10 labels
+            ax.set_xticks(range(0, len(hist), step))
+            ax.set_xticklabels([hist.index[i].strftime('%Y-%m-%d %H:%M') for i in range(0, len(hist), step)], 
+                             rotation=45)
             
             plt.tight_layout()
             
@@ -10737,7 +10761,6 @@ def generate_dynamic_chart(request):
             }, status=400)
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
-
            
 
 
