@@ -10671,32 +10671,17 @@ def generate_dynamic_chart(request):
             timeframe = data.get('timeframe')
             lookback = data.get('lookback')
             
-            # Convert currency pair to ticker symbol for yfinance
-            ticker = f"{currency_pair}=X"
-            
-            # Fetch data using yfinance
-            stock = yf.Ticker(ticker)
-            
-            # Convert lookback to period
-            period_map = {
-                '1d': '1d',
-                '7d': '7d', 
-                '30d': '1mo',
-                '90d': '3mo',
-                '1y': '1y'
+            # Convert lookback to number of days
+            lookback_days_map = {
+                '1d': 1,
+                '7d': 7,
+                '30d': 30,
+                '90d': 90,
+                '1y': 365
             }
             
-            # Convert timeframe to interval
-            interval_map = {
-                '1m': '1m',
-                '5m': '5m',
-                '15m': '15m',
-                '1h': '1h',
-                '4h': '4h',
-                '1d': '1d'
-            }
-            
-            hist = stock.history(period=period_map[lookback], interval=interval_map[timeframe])
+            # Use your existing function to get the dataset
+            hist = obtain_dataset(currency_pair, timeframe, lookback_days_map[lookback])
             
             # Check if data is available
             if hist.empty:
@@ -10705,22 +10690,22 @@ def generate_dynamic_chart(request):
                     'error': f'No data available for {currency_pair}'
                 }, status=400)
             
-            # Create candlestick chart using your existing logic
+            # Create candlestick chart using your existing function logic
             fig, ax = plt.subplots(figsize=(12, 8))
             
-            # Clean up data to match your function format
-            chart_data = hist[['Open', 'High', 'Low', 'Close']].copy()
+            # Clean up the data
+            hist = hist[['Open', 'High', 'Low', 'Close']]
             
-            for idx, row in enumerate(chart_data.itertuples(index=False)):
+            for idx, row in enumerate(hist.itertuples(index=False)):
                 # Access the values by position
                 open_price = row[0]
                 high_price = row[1]
                 low_price = row[2]
                 close_price = row[3]
-
+                
                 # Determine the color of the candlestick
                 color = '#10b981' if close_price > open_price else '#ef4444'
-
+                
                 # Draw the candlestick body (rectangle)
                 body = Rectangle(
                     (idx - 0.4, min(open_price, close_price)),  # Bottom-left corner
@@ -10729,12 +10714,12 @@ def generate_dynamic_chart(request):
                     color=color
                 )
                 ax.add_patch(body)
-
+                
                 # Draw the wick (high-low line)
                 ax.plot(
                     [idx, idx],  # X-coordinates
                     [low_price, high_price],  # Y-coordinates
-                    color='black',  # Keep wicks black for better visibility
+                    color=color,
                     linewidth=1
                 )
             
@@ -10745,10 +10730,10 @@ def generate_dynamic_chart(request):
             ax.set_ylabel('Price', fontsize=12)
             ax.grid(True, alpha=0.3)
             
-            # Format x-axis with dates (show some labels)
-            step = max(1, len(chart_data) // 10)  # Show max 10 labels
-            ax.set_xticks(range(0, len(chart_data), step))
-            ax.set_xticklabels([hist.index[i].strftime('%Y-%m-%d %H:%M') for i in range(0, len(chart_data), step)], 
+            # Format x-axis with actual dates (show fewer labels to avoid crowding)
+            step = max(1, len(hist) // 10)  # Show max 10 labels
+            ax.set_xticks(range(0, len(hist), step))
+            ax.set_xticklabels([hist.index[i].strftime('%Y-%m-%d %H:%M') for i in range(0, len(hist), step)], 
                              rotation=45)
             
             plt.tight_layout()
@@ -10758,7 +10743,7 @@ def generate_dynamic_chart(request):
             plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
             buffer.seek(0)
             image_base64 = base64.b64encode(buffer.getvalue()).decode()
-            plt.close(fig)
+            plt.close()
             
             return JsonResponse({
                 'success': True,
