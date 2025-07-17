@@ -10705,24 +10705,38 @@ def generate_dynamic_chart(request):
                     'error': f'No data available for {currency_pair}'
                 }, status=400)
             
-            # Create candlestick chart
+            # Create candlestick chart using your existing logic
             fig, ax = plt.subplots(figsize=(12, 8))
             
-            # Create candlestick data
-            from matplotlib.patches import Rectangle
+            # Clean up data to match your function format
+            chart_data = hist[['Open', 'High', 'Low', 'Close']].copy()
             
-            for i, (index, row) in enumerate(hist.iterrows()):
-                color = '#10b981' if row['Close'] >= row['Open'] else '#ef4444'
-                
+            for idx, row in enumerate(chart_data.itertuples(index=False)):
+                # Access the values by position
+                open_price = row[0]
+                high_price = row[1]
+                low_price = row[2]
+                close_price = row[3]
+
+                # Determine the color of the candlestick
+                color = '#10b981' if close_price > open_price else '#ef4444'
+
+                # Draw the candlestick body (rectangle)
+                body = Rectangle(
+                    (idx - 0.4, min(open_price, close_price)),  # Bottom-left corner
+                    0.8,  # Width
+                    abs(close_price - open_price),  # Height
+                    color=color
+                )
+                ax.add_patch(body)
+
                 # Draw the wick (high-low line)
-                ax.plot([i, i], [row['Low'], row['High']], color='black', linewidth=1)
-                
-                # Draw the body (rectangle)
-                height = abs(row['Close'] - row['Open'])
-                bottom = min(row['Open'], row['Close'])
-                rect = Rectangle((i-0.3, bottom), 0.6, height, 
-                               facecolor=color, edgecolor='black', linewidth=0.5)
-                ax.add_patch(rect)
+                ax.plot(
+                    [idx, idx],  # X-coordinates
+                    [low_price, high_price],  # Y-coordinates
+                    color='black',  # Keep wicks black for better visibility
+                    linewidth=1
+                )
             
             # Set labels and title
             ax.set_title(f'{currency_pair} Candlestick Chart - {timeframe} timeframe, {lookback} lookback', 
@@ -10731,10 +10745,10 @@ def generate_dynamic_chart(request):
             ax.set_ylabel('Price', fontsize=12)
             ax.grid(True, alpha=0.3)
             
-            # Format x-axis with actual dates
-            step = max(1, len(hist) // 10)  # Show max 10 labels
-            ax.set_xticks(range(0, len(hist), step))
-            ax.set_xticklabels([hist.index[i].strftime('%Y-%m-%d %H:%M') for i in range(0, len(hist), step)], 
+            # Format x-axis with dates (show some labels)
+            step = max(1, len(chart_data) // 10)  # Show max 10 labels
+            ax.set_xticks(range(0, len(chart_data), step))
+            ax.set_xticklabels([hist.index[i].strftime('%Y-%m-%d %H:%M') for i in range(0, len(chart_data), step)], 
                              rotation=45)
             
             plt.tight_layout()
@@ -10744,7 +10758,7 @@ def generate_dynamic_chart(request):
             plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
             buffer.seek(0)
             image_base64 = base64.b64encode(buffer.getvalue()).decode()
-            plt.close()
+            plt.close(fig)
             
             return JsonResponse({
                 'success': True,
