@@ -573,6 +573,82 @@ class PaperGPT(models.Model):
 
 
 
+# Add these to your existing models.py
+class TraderGPTForexAnalysisSession(models.Model):
+    session_id = models.CharField(max_length=100, unique=True)
+    user_email = models.EmailField()
+    currency_pairs = models.JSONField()  # Store array of currency pairs
+    analysis_timestamp = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, default='pending')  # pending, completed, failed
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Analysis Session {self.session_id} - {self.user_email}"
+
+
+class TraderGPTForexAnalysisResult(models.Model):
+    SENTIMENT_CHOICES = [
+        ('bullish', 'Bullish'),
+        ('bearish', 'Bearish'),
+        ('neutral', 'Neutral'),
+    ]
+    
+    RISK_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
+    
+    analysis_session = models.ForeignKey(TraderGPTForexAnalysisSession, on_delete=models.CASCADE, related_name='results')
+    currency_pair = models.CharField(max_length=10)
+    sentiment = models.CharField(max_length=10, choices=SENTIMENT_CHOICES)
+    confidence_score = models.IntegerField()  # 0-100
+    entry_strategy = models.TextField()
+    risk_level = models.CharField(max_length=10, choices=RISK_CHOICES)
+    time_horizon = models.CharField(max_length=50)
+    target_price = models.CharField(max_length=20)
+    stop_loss = models.CharField(max_length=20, blank=True, null=True)
+    key_factors = models.TextField()
+    technical_analysis = models.TextField(blank=True, null=True)
+    fundamental_analysis = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.currency_pair} - {self.sentiment} ({self.confidence_score}%)"
+
+
+class TraderGPTAnalysisNewsLink(models.Model):
+    analysis_result = models.ForeignKey(TraderGPTForexAnalysisResult, on_delete=models.CASCADE, related_name='linked_news')
+    title = models.CharField(max_length=500)
+    description = models.TextField()
+    source = models.CharField(max_length=100)
+    url = models.URLField()
+    highlights = models.TextField(blank=True, null=True)
+    relevance_score = models.IntegerField(default=0)  # 0-100
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.analysis_result.currency_pair} - {self.title[:50]}..."
+
+
+class TraderGPTAnalysisEconomicEventLink(models.Model):
+    analysis_result = models.ForeignKey(TraderGPTForexAnalysisResult, on_delete=models.CASCADE, related_name='linked_economic_events')
+    economic_event = models.ForeignKey(EconomicEvent, on_delete=models.CASCADE)
+    relevance_score = models.IntegerField(default=0)  # 0-100
+    impact_assessment = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.analysis_result.currency_pair} - {self.economic_event.event_name}"
+
 
 
 

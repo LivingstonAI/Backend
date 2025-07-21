@@ -142,6 +142,9 @@ urlpatterns = [
             views.retrieve_economic_data_for_selected_currency, 
             name='retrieve_economic_data_for_selected_currency'),
     path('api/v1/economics/generate-dynamic-chart/', views.generate_dynamic_chart, name='generate_dynamic_chart'),
+    # TraderGPT Advanced Forex Analysis URLs
+    path('api/trader-gpt-advanced-forex-analysis/', views.advanced_trader_gpt_forex_analysis_endpoint, name='advanced_trader_gpt_forex_analysis'),
+    path('api/trader-gpt-analysis-history/', views.fetch_trader_gpt_analysis_history_endpoint, name='trader_gpt_analysis_history'),
 
 
     # create appproprate urls.py here
