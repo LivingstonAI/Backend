@@ -145,6 +145,18 @@ urlpatterns = [
     # TraderGPT Advanced Forex Analysis URLs
     path('api/trader-gpt-advanced-forex-analysis/', views.advanced_trader_gpt_forex_analysis_endpoint, name='advanced_trader_gpt_forex_analysis'),
     path('api/trader-gpt-analysis-history/', views.fetch_trader_gpt_analysis_history_endpoint, name='trader_gpt_analysis_history'),
+    # TraderGPT Analysis URLs
+    path('api/fetch-watched-trading-assets/', views.fetch_watched_trading_assets_view, name='fetch_watched_trading_assets'),
+    path('api/add-trading-asset-to-watch/', views.add_trading_asset_to_watch_view, name='add_trading_asset_to_watch'),
+    path('api/remove-watched-trading-asset/', views.remove_watched_trading_asset_view, name='remove_watched_trading_asset'),
+    path('api/fetch-trader-gpt-analyses/', views.fetch_trader_gpt_analyses_view, name='fetch_trader_gpt_analyses'),
+    path('api/run-fresh-trader-analysis/', views.run_fresh_trader_analysis_view, name='run_fresh_trader_analysis'),
+    path('api/trigger-bulk-analysis/', views.trigger_bulk_analysis_view, name='trigger_bulk_analysis'),
+    
+    # Scheduler Control URLs
+    path('api/start-analysis-scheduler/', views.start_scheduler_view, name='start_analysis_scheduler'),
+    path('api/stop-analysis-scheduler/', views.stop_scheduler_view, name='stop_analysis_scheduler'),
+    path('api/scheduler-status/', views.scheduler_status_view, name='scheduler_status'),
 
 
     # create appproprate urls.py here

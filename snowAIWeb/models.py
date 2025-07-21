@@ -652,6 +652,114 @@ class TraderGPTAnalysisEconomicEventLink(models.Model):
 
 
 
+# models.py - Add these to your existing models
+
+from django.db import models
+from django.utils import timezone
+
+class WatchedTradingAsset(models.Model):
+    """Model to store currency pairs that users want to analyze"""
+    ASSET_CHOICES = [
+        ('EURUSD', 'EUR/USD'),
+        ('GBPUSD', 'GBP/USD'),
+        ('USDJPY', 'USD/JPY'),
+        ('USDCHF', 'USD/CHF'),
+        ('AUDUSD', 'AUD/USD'),
+        ('USDCAD', 'USD/CAD'),
+        ('NZDUSD', 'NZD/USD'),
+        ('EURJPY', 'EUR/JPY'),
+        ('GBPJPY', 'GBP/JPY'),
+        ('EURGBP', 'EUR/GBP'),
+        ('AUDJPY', 'AUD/JPY'),
+        ('EURAUD', 'EUR/AUD'),
+        ('USDCNH', 'USD/CNH'),
+        ('GBPAUD', 'GBP/AUD'),
+        ('EURCHF', 'EUR/CHF'),
+        ('AUDCAD', 'AUD/CAD'),
+        ('GBPCAD', 'GBP/CAD'),
+        ('EURCAD', 'EUR/CAD'),
+    ]
+    
+    asset = models.CharField(max_length=10, choices=ASSET_CHOICES, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        ordering = ['asset']
+    
+    def __str__(self):
+        return self.asset
+
+
+class TraderGPTAnalysisRecord(models.Model):
+    """Model to store TraderGPT analysis results"""
+    SENTIMENT_CHOICES = [
+        ('bullish', 'Bullish'),
+        ('bearish', 'Bearish'),
+        ('neutral', 'Neutral'),
+    ]
+    
+    RISK_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
+    
+    TIME_HORIZON_CHOICES = [
+        ('short', 'Short Term (1-7 days)'),
+        ('medium', 'Medium Term (1-4 weeks)'),
+        ('long', 'Long Term (1-6 months)'),
+    ]
+    
+    asset = models.CharField(max_length=10)
+    market_sentiment = models.CharField(max_length=10, choices=SENTIMENT_CHOICES)
+    confidence_score = models.IntegerField(help_text="Confidence score from 1-100")
+    risk_level = models.CharField(max_length=10, choices=RISK_CHOICES)
+    time_horizon = models.CharField(max_length=10, choices=TIME_HORIZON_CHOICES)
+    entry_strategy = models.TextField()
+    key_factors = models.TextField()
+    stop_loss_level = models.CharField(max_length=50, blank=True, null=True)
+    take_profit_level = models.CharField(max_length=50, blank=True, null=True)
+    support_level = models.CharField(max_length=50, blank=True, null=True)
+    resistance_level = models.CharField(max_length=50, blank=True, null=True)
+    raw_analysis = models.TextField(help_text="Full GPT response")
+    news_data_used = models.JSONField(default=dict, blank=True)
+    economic_events_used = models.JSONField(default=dict, blank=True)
+    analysis_timestamp = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-analysis_timestamp']
+        unique_together = ['asset', 'analysis_timestamp']
+    
+    def __str__(self):
+        return f"{self.asset} - {self.market_sentiment} ({self.confidence_score}%) - {self.analysis_timestamp.strftime('%Y-%m-%d %H:%M')}"
+
+
+class AnalysisExecutionLog(models.Model):
+    """Model to log analysis execution attempts"""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+    
+    asset = models.CharField(max_length=10)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(blank=True, null=True)
+    execution_time_seconds = models.FloatField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-started_at']
+    
+    def __str__(self):
+        return f"{self.asset} - {self.status} - {self.started_at.strftime('%Y-%m-%d %H:%M')}"
+
+
 
 class FeedbackForm(models.Model): 
     feedback = models.TextField()

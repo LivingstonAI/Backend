@@ -11049,6 +11049,650 @@ def fetch_trader_gpt_analysis_history_endpoint(request):
         return JsonResponse({'error': f'Failed to fetch history: {str(e)}'}, status=500)
 
 
+
+
+# views.py - Add these views to your existing views file
+
+import json
+import time
+import http.client
+import urllib.parse
+import threading
+from datetime import datetime, timedelta
+from django.shortcuts import render
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.utils import timezone
+from django.db import transaction
+from django.conf import settings
+from .models import (
+    WatchedTradingAsset, 
+    TraderGPTAnalysisRecord, 
+    AnalysisExecutionLog,
+    EconomicEvent
+)
+import openai
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Global scheduler instance
+trader_analysis_scheduler = None
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_watched_trading_assets_view(request):
+    """Fetch all watched trading assets"""
+    try:
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True).order_by('asset')
+        assets_data = [
+            {
+                'id': asset.id,
+                'asset': asset.asset,
+                'created_at': asset.created_at.isoformat()
+            }
+            for asset in watched_assets
+        ]
+        
+        return JsonResponse({
+            'success': True,
+            'watched_assets': assets_data
+        })
+    except Exception as e:
+        logger.error(f"Error fetching watched assets: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_trading_asset_to_watch_view(request):
+    """Add a trading asset to the watch list"""
+    try:
+        data = json.loads(request.body)
+        asset = data.get('asset')
+        
+        if not asset:
+            return JsonResponse({'success': False, 'error': 'Asset is required'}, status=400)
+        
+        # Check if asset is already being watched
+        if WatchedTradingAsset.objects.filter(asset=asset, is_active=True).exists():
+            return JsonResponse({'success': False, 'error': 'Asset is already being watched'}, status=400)
+        
+        # Create or reactivate the watched asset
+        watched_asset, created = WatchedTradingAsset.objects.get_or_create(
+            asset=asset,
+            defaults={'is_active': True}
+        )
+        
+        if not created:
+            watched_asset.is_active = True
+            watched_asset.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'{asset} added to watch list',
+            'asset_id': watched_asset.id
+        })
+    except Exception as e:
+        logger.error(f"Error adding asset to watch: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def remove_watched_trading_asset_view(request):
+    """Remove a trading asset from the watch list"""
+    try:
+        data = json.loads(request.body)
+        asset_id = data.get('asset_id')
+        
+        if not asset_id:
+            return JsonResponse({'success': False, 'error': 'Asset ID is required'}, status=400)
+        
+        watched_asset = WatchedTradingAsset.objects.get(id=asset_id)
+        watched_asset.is_active = False
+        watched_asset.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Asset removed from watch list'
+        })
+    except WatchedTradingAsset.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Asset not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error removing watched asset: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_trader_gpt_analyses_view(request):
+    """Fetch the latest TraderGPT analyses for all watched assets"""
+    try:
+        # Get the most recent analysis for each asset
+        analyses = []
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True)
+        
+        for asset in watched_assets:
+            latest_analysis = TraderGPTAnalysisRecord.objects.filter(
+                asset=asset.asset
+            ).first()
+            
+            if latest_analysis:
+                analyses.append({
+                    'id': latest_analysis.id,
+                    'asset': latest_analysis.asset,
+                    'market_sentiment': latest_analysis.market_sentiment,
+                    'confidence_score': latest_analysis.confidence_score,
+                    'risk_level': latest_analysis.risk_level,
+                    'time_horizon': latest_analysis.time_horizon,
+                    'entry_strategy': latest_analysis.entry_strategy,
+                    'key_factors': latest_analysis.key_factors,
+                    'stop_loss_level': latest_analysis.stop_loss_level,
+                    'take_profit_level': latest_analysis.take_profit_level,
+                    'support_level': latest_analysis.support_level,
+                    'resistance_level': latest_analysis.resistance_level,
+                    'analysis_timestamp': latest_analysis.analysis_timestamp.isoformat(),
+                    'updated_at': latest_analysis.updated_at.isoformat(),
+                })
+        
+        return JsonResponse({
+            'success': True,
+            'analyses': analyses
+        })
+    except Exception as e:
+        logger.error(f"Error fetching analyses: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def run_fresh_trader_analysis_view(request):
+    """Run a fresh analysis for a specific asset"""
+    try:
+        data = json.loads(request.body)
+        asset = data.get('asset')
+        
+        if not asset:
+            return JsonResponse({'success': False, 'error': 'Asset is required'}, status=400)
+        
+        # Check if asset is being watched
+        if not WatchedTradingAsset.objects.filter(asset=asset, is_active=True).exists():
+            return JsonResponse({'success': False, 'error': 'Asset is not in watch list'}, status=400)
+        
+        # Create execution log
+        execution_log = AnalysisExecutionLog.objects.create(
+            asset=asset,
+            status='running'
+        )
+        
+        start_time = time.time()
+        
+        try:
+            # Run the analysis
+            analysis_result = execute_trader_gpt_analysis_for_asset(asset)
+            
+            if analysis_result['success']:
+                execution_log.status = 'completed'
+                execution_log.completed_at = timezone.now()
+                execution_log.execution_time_seconds = time.time() - start_time
+                execution_log.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Fresh analysis completed for {asset}',
+                    'analysis_id': analysis_result['analysis_id']
+                })
+            else:
+                execution_log.status = 'failed'
+                execution_log.error_message = analysis_result.get('error', 'Unknown error')
+                execution_log.execution_time_seconds = time.time() - start_time
+                execution_log.save()
+                
+                return JsonResponse({
+                    'success': False,
+                    'error': analysis_result.get('error', 'Analysis failed')
+                }, status=500)
+                
+        except Exception as analysis_error:
+            execution_log.status = 'failed'
+            execution_log.error_message = str(analysis_error)
+            execution_log.execution_time_seconds = time.time() - start_time
+            execution_log.save()
+            raise
+            
+    except Exception as e:
+        logger.error(f"Error running fresh analysis: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+def execute_trader_gpt_analysis_for_asset(asset):
+    """Execute TraderGPT analysis for a specific asset"""
+    try:
+        # Fetch news and economic data
+        user_email = "system@tradergpt.com"  # System email for automated analysis
+        news_and_events_data = fetch_news_data([asset], user_email)
+        
+        # Get recent economic events for the asset
+        recent_events = EconomicEvent.objects.filter(
+            date_time__gte=timezone.now() - timedelta(days=7),
+            date_time__lte=timezone.now() + timedelta(days=7)
+        ).order_by('date_time')
+        
+        # Prepare the prompt for GPT
+        prompt = f"""
+        Analyze the {asset} currency pair and provide a comprehensive trading analysis.
+        
+        Recent News Data:
+        {json.dumps(news_and_events_data.get('message', [])[:5], indent=2)}
+        
+        Upcoming Economic Events:
+        {json.dumps([{
+            'date': event.date_time.isoformat(),
+            'currency': event.currency,
+            'event': event.event_name,
+            'impact': event.impact,
+            'forecast': event.forecast,
+            'previous': event.previous
+        } for event in recent_events[:10]], indent=2)}
+        
+        Please provide your analysis in the following JSON format:
+        {{
+            "market_sentiment": "bullish|bearish|neutral",
+            "confidence_score": 85,
+            "risk_level": "low|medium|high",
+            "time_horizon": "short|medium|long",
+            "entry_strategy": "Detailed entry strategy with specific levels",
+            "key_factors": "Key factors influencing this analysis",
+            "stop_loss_level": "Recommended stop loss level",
+            "take_profit_level": "Recommended take profit level",
+            "support_level": "Current support level",
+            "resistance_level": "Current resistance level",
+            "summary": "Brief overall summary of the analysis"
+        }}
+        
+        Base your analysis on current market conditions, news sentiment, economic events, and technical factors.
+        Be specific with numerical levels where possible.
+        """
+        
+        # Call GPT
+        gpt_response = chat_gpt(prompt)
+        
+        # Try to parse JSON from the response
+        try:
+            # Extract JSON from the response (in case there's additional text)
+            start_idx = gpt_response.find('{')
+            end_idx = gpt_response.rfind('}') + 1
+            
+            if start_idx != -1 and end_idx != -1:
+                json_str = gpt_response[start_idx:end_idx]
+                analysis_data = json.loads(json_str)
+            else:
+                # If JSON extraction fails, try parsing the whole response
+                analysis_data = json.loads(gpt_response)
+                
+        except json.JSONDecodeError:
+            # If JSON parsing fails, create a basic analysis
+            analysis_data = {
+                "market_sentiment": "neutral",
+                "confidence_score": 50,
+                "risk_level": "medium",
+                "time_horizon": "medium",
+                "entry_strategy": "Wait for clearer market signals before entering",
+                "key_factors": "Analysis could not be parsed properly",
+                "stop_loss_level": "TBD",
+                "take_profit_level": "TBD",
+                "support_level": "TBD",
+                "resistance_level": "TBD",
+                "summary": "Analysis parsing failed"
+            }
+        
+        # Create the analysis record
+        analysis_record = TraderGPTAnalysisRecord.objects.create(
+            asset=asset,
+            market_sentiment=analysis_data.get('market_sentiment', 'neutral'),
+            confidence_score=min(100, max(1, analysis_data.get('confidence_score', 50))),
+            risk_level=analysis_data.get('risk_level', 'medium'),
+            time_horizon=analysis_data.get('time_horizon', 'medium'),
+            entry_strategy=analysis_data.get('entry_strategy', ''),
+            key_factors=analysis_data.get('key_factors', ''),
+            stop_loss_level=analysis_data.get('stop_loss_level', ''),
+            take_profit_level=analysis_data.get('take_profit_level', ''),
+            support_level=analysis_data.get('support_level', ''),
+            resistance_level=analysis_data.get('resistance_level', ''),
+            raw_analysis=gpt_response,
+            news_data_used=news_and_events_data.get('message', []),
+            economic_events_used=[{
+                'date': event.date_time.isoformat(),
+                'currency': event.currency,
+                'event': event.event_name,
+                'impact': event.impact
+            } for event in recent_events[:10]],
+            analysis_timestamp=timezone.now()
+        )
+        
+        return {
+            'success': True,
+            'analysis_id': analysis_record.id,
+            'message': f'Analysis completed for {asset}'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in execute_trader_gpt_analysis_for_asset: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def run_scheduled_trader_gpt_analyses():
+    """
+    Scheduled function to run TraderGPT analyses for all watched assets.
+    This should be called by a scheduler (like Celery, cron, or Django-RQ)
+    """
+    try:
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True)
+        
+        if not watched_assets.exists():
+            logger.info("No watched assets found for analysis")
+            return
+        
+        logger.info(f"Starting scheduled analysis for {watched_assets.count()} assets")
+        
+        results = {
+            'successful': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+        for asset in watched_assets:
+            try:
+                # Check if we already have a recent analysis (within last 4 hours)
+                recent_analysis = TraderGPTAnalysisRecord.objects.filter(
+                    asset=asset.asset,
+                    analysis_timestamp__gte=timezone.now() - timedelta(hours=4)
+                ).exists()
+                
+                if not recent_analysis:
+                    logger.info(f"Running analysis for {asset.asset}")
+                    result = execute_trader_gpt_analysis_for_asset(asset.asset)
+                    
+                    if result['success']:
+                        results['successful'] += 1
+                        logger.info(f"Analysis completed for {asset.asset}")
+                    else:
+                        results['failed'] += 1
+                        results['errors'].append(f"{asset.asset}: {result.get('error', 'Unknown error')}")
+                        logger.error(f"Analysis failed for {asset.asset}: {result.get('error')}")
+                else:
+                    logger.info(f"Skipping {asset.asset} - recent analysis exists")
+                    
+                # Add a small delay between analyses to avoid rate limits
+                time.sleep(2)
+                
+            except Exception as e:
+                results['failed'] += 1
+                results['errors'].append(f"{asset.asset}: {str(e)}")
+                logger.error(f"Error analyzing {asset.asset}: {str(e)}")
+        
+        logger.info(f"Scheduled analysis completed. Successful: {results['successful']}, Failed: {results['failed']}")
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error in run_scheduled_trader_gpt_analyses: {str(e)}")
+        return {
+            'successful': 0,
+            'failed': 0,
+            'errors': [str(e)]
+        }
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def trigger_bulk_analysis_view(request):
+    """Manual trigger for bulk analysis of all watched assets"""
+    try:
+        results = run_scheduled_trader_gpt_analyses()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Bulk analysis completed',
+            'results': results
+        })
+    except Exception as e:
+        logger.error(f"Error in trigger_bulk_analysis_view: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+def get_economic_events_for_pair(currency_pair):
+    """
+    Enhanced function to get relevant economic events for a currency pair
+    """
+    try:
+        # Extract currencies from the pair (e.g., EURUSD -> EUR, USD)
+        if len(currency_pair) == 6:
+            base_currency = currency_pair[:3]
+            quote_currency = currency_pair[3:]
+        else:
+            # Handle other formats if needed
+            return []
+        
+        # Get events for both currencies in the pair
+        relevant_currencies = [base_currency, quote_currency]
+        
+        # Get upcoming events (next 7 days) and recent events (past 3 days)
+        start_date = timezone.now() - timedelta(days=3)
+        end_date = timezone.now() + timedelta(days=7)
+        
+        events = EconomicEvent.objects.filter(
+            currency__in=relevant_currencies,
+            date_time__range=[start_date, end_date]
+        ).order_by('date_time')
+        
+        return [{
+            'date_time': event.date_time.isoformat(),
+            'currency': event.currency,
+            'impact': event.impact,
+            'event_name': event.event_name,
+            'actual': event.actual,
+            'forecast': event.forecast,
+            'previous': event.previous,
+        } for event in events]
+        
+    except Exception as e:
+        logger.error(f"Error getting economic events for {currency_pair}: {str(e)}")
+        return []
+
+
+class TraderAnalysisScheduler:
+    """
+    Simple threading-based scheduler for TraderGPT analyses
+    """
+    def __init__(self, interval_hours=4):
+        self.interval_hours = interval_hours
+        self.running = False
+        self.thread = None
+        self.last_run = None
+        
+    def start(self):
+        """Start the scheduler"""
+        if self.running:
+            logger.info("Scheduler is already running")
+            return
+            
+        self.running = True
+        self.thread = threading.Thread(target=self._run_scheduler, daemon=True)
+        self.thread.start()
+        logger.info(f"TraderGPT analysis scheduler started with {self.interval_hours} hour intervals")
+        
+    def stop(self):
+        """Stop the scheduler"""
+        if not self.running:
+            return
+            
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=5)
+        logger.info("TraderGPT analysis scheduler stopped")
+        
+    def is_running(self):
+        """Check if scheduler is running"""
+        return self.running and self.thread and self.thread.is_alive()
+        
+    def get_status(self):
+        """Get scheduler status"""
+        return {
+            'running': self.is_running(),
+            'interval_hours': self.interval_hours,
+            'last_run': self.last_run.isoformat() if self.last_run else None,
+            'next_run': (self.last_run + timedelta(hours=self.interval_hours)).isoformat() if self.last_run else None
+        }
+        
+    def _run_scheduler(self):
+        """Internal method to run the scheduled analysis"""
+        logger.info("Starting TraderGPT analysis scheduler loop")
+        
+        while self.running:
+            try:
+                current_time = timezone.now()
+                
+                # Check if it's time to run (either first run or interval has passed)
+                if (self.last_run is None or 
+                    current_time >= self.last_run + timedelta(hours=self.interval_hours)):
+                    
+                    logger.info("Running scheduled TraderGPT analysis...")
+                    self.last_run = current_time
+                    
+                    results = run_scheduled_trader_gpt_analyses()
+                    logger.info(f"Scheduled analysis completed: {results}")
+                
+                # Sleep for 1 minute before checking again
+                for _ in range(60):  # 60 seconds = 1 minute
+                    if not self.running:
+                        break
+                    time.sleep(1)
+                    
+            except Exception as e:
+                logger.error(f"Error in scheduler loop: {str(e)}")
+                # Sleep for 5 minutes on error before retrying
+                for _ in range(300):  # 300 seconds = 5 minutes
+                    if not self.running:
+                        break
+                    time.sleep(1)
+
+
+def start_trader_analysis_scheduler():
+    """Start the global scheduler instance"""
+    global trader_analysis_scheduler
+    
+    if trader_analysis_scheduler is None:
+        trader_analysis_scheduler = TraderAnalysisScheduler(interval_hours=4)
+    
+    if not trader_analysis_scheduler.is_running():
+        trader_analysis_scheduler.start()
+        return True
+    return False
+
+
+def stop_trader_analysis_scheduler():
+    """Stop the global scheduler instance"""
+    global trader_analysis_scheduler
+    
+    if trader_analysis_scheduler and trader_analysis_scheduler.is_running():
+        trader_analysis_scheduler.stop()
+        return True
+    return False
+
+
+def get_scheduler_status():
+    """Get the current scheduler status"""
+    global trader_analysis_scheduler
+    
+    if trader_analysis_scheduler is None:
+        return {
+            'running': False,
+            'interval_hours': 4,
+            'last_run': None,
+            'next_run': None
+        }
+    
+    return trader_analysis_scheduler.get_status()
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def start_scheduler_view(request):
+    """API endpoint to start the scheduler"""
+    try:
+        started = start_trader_analysis_scheduler()
+        
+        if started:
+            return JsonResponse({
+                'success': True,
+                'message': 'Scheduler started successfully',
+                'status': get_scheduler_status()
+            })
+        else:
+            return JsonResponse({
+                'success': True,
+                'message': 'Scheduler is already running',
+                'status': get_scheduler_status()
+            })
+    except Exception as e:
+        logger.error(f"Error starting scheduler: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def stop_scheduler_view(request):
+    """API endpoint to stop the scheduler"""
+    try:
+        stopped = stop_trader_analysis_scheduler()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Scheduler stopped successfully' if stopped else 'Scheduler was not running',
+            'status': get_scheduler_status()
+        })
+    except Exception as e:
+        logger.error(f"Error stopping scheduler: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def scheduler_status_view(request):
+    """API endpoint to get scheduler status"""
+    try:
+        return JsonResponse({
+            'success': True,
+            'status': get_scheduler_status()
+        })
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# Auto-start scheduler when Django starts (optional)
+def auto_start_scheduler():
+    """Auto-start the scheduler when Django starts"""
+    try:
+        # Only start if we're in production or if AUTO_START_SCHEDULER is True
+        if getattr(settings, 'AUTO_START_TRADER_SCHEDULER', False):
+            start_trader_analysis_scheduler()
+            logger.info("Auto-started TraderGPT analysis scheduler")
+    except Exception as e:
+        logger.error(f"Error auto-starting scheduler: {str(e)}")
+
+
+# Call auto-start when this module is imported (optional)
+# Uncomment the line below if you want the scheduler to auto-start
+# auto_start_scheduler()
+
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
