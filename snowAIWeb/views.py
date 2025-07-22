@@ -11465,7 +11465,7 @@ def trigger_bulk_analysis_view(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
-def get_economic_events_for_pair(currency_pair):
+def get_economic_events_for_pair_council(currency_pair):
     """
     Enhanced function to get relevant economic events for a currency pair
     """
