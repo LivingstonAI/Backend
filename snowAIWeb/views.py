@@ -10770,7 +10770,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 import json
 
-def get_economic_events_for_pair(currency_pair):
+def get_economic_events_for_pair_two(currency_pair):
     """Get relevant economic events for a currency pair"""
     try:
         # Extract currencies from pair (e.g., EURUSD -> EUR, USD)
@@ -10939,7 +10939,7 @@ def advanced_trader_gpt_forex_analysis_endpoint(request):
                 pair_news = [item for item in news_data.get('message', []) if item.get('asset') == pair]
                 
                 # Get economic events
-                economic_events = get_economic_events_for_pair(pair)
+                economic_events = get_economic_events_for_pair_two(pair)
                 
                 # Generate TraderGPT analysis
                 analysis = generate_trader_gpt_analysis(pair, pair_news, economic_events)
