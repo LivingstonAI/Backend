@@ -11277,6 +11277,47 @@ def run_fresh_trader_analysis_view(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+def get_economic_events_objects_for_currency(currency_code):
+    """Get recent economic events objects for a specified currency (for data processing)."""
+    try:
+        # Get events from the last 30 days
+        thirty_days_ago = timezone.now() - timezone.timedelta(days=30)
+        events = EconomicEvent.objects.filter(
+            currency=currency_code,
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
+        
+        return events
+    
+    except Exception as e:
+        logger.error(f"Error retrieving economic events objects for {currency_code}: {str(e)}")
+        return EconomicEvent.objects.none()  # Return empty queryset
+
+
+
+def get_economic_events_objects_for_pair(forex_pair):
+    """Get economic events objects for both currencies in a forex pair."""
+    try:
+        base_currency, quote_currency = extract_currencies_from_pair(forex_pair)
+        
+        # Get events for both currencies
+        base_events = get_economic_events_objects_for_currency(base_currency)
+        quote_events = get_economic_events_objects_for_currency(quote_currency)
+        
+        # Combine the querysets
+        from django.db.models import Q
+        combined_events = EconomicEvent.objects.filter(
+            Q(currency=base_currency) | Q(currency=quote_currency),
+            date_time__gte=timezone.now() - timezone.timedelta(days=90)
+        ).order_by('-date_time')
+        
+        return combined_events
+    
+    except Exception as e:
+        logger.error(f"Error retrieving economic events objects for pair {forex_pair}: {str(e)}")
+        return EconomicEvent.objects.none()
+
+
 def execute_trader_gpt_analysis_for_asset(asset):
     """Execute TraderGPT analysis for a specific asset"""
     try:
@@ -11284,13 +11325,11 @@ def execute_trader_gpt_analysis_for_asset(asset):
         user_email = "system@tradergpt.com"  # System email for automated analysis
         news_and_events_data = fetch_news_data([asset], user_email)
         
-        # Get recent economic events for the asset
-        # recent_events = EconomicEvent.objects.filter(
-        #     date_time__gte=timezone.now() - timedelta(days=7),
-        #     date_time__lte=timezone.now() + timedelta(days=7)
-        # ).order_by('date_time')
-
-        recent_events = get_economic_events_for_currency(asset)
+        # Get recent economic events for the asset (formatted string for GPT)
+        recent_events_text = get_economic_events_for_pair(asset)
+        
+        # Get economic events objects for data storage
+        recent_events_objects = get_economic_events_objects_for_pair(asset)
         
         # Prepare the prompt for GPT
         prompt = f"""
@@ -11300,7 +11339,7 @@ def execute_trader_gpt_analysis_for_asset(asset):
         {json.dumps(news_and_events_data.get('message', [])[:5], indent=2)}
         
         Economic Events for asset:
-        {recent_events}
+        {recent_events_text}
         
         Please provide your analysis in the following JSON format with strict character limits:
         {{
@@ -11394,20 +11433,23 @@ def execute_trader_gpt_analysis_for_asset(asset):
             confidence_score=confidence_score,
             risk_level=risk_level,
             time_horizon=time_horizon,
-            entry_strategy=str(analysis_data.get('entry_strategy', ''))[:1000],  # Truncate to reasonable length
-            key_factors=str(analysis_data.get('key_factors', ''))[:1000],  # Truncate to reasonable length
-            stop_loss_level=str(analysis_data.get('stop_loss_level', ''))[:200],  # Fits new field length
-            take_profit_level=str(analysis_data.get('take_profit_level', ''))[:200],  # Fits new field length
-            support_level=str(analysis_data.get('support_level', ''))[:200],  # Fits new field length
-            resistance_level=str(analysis_data.get('resistance_level', ''))[:200],  # Fits new field length
-            raw_analysis=gpt_response,  # Store full response for debugging
+            entry_strategy=str(analysis_data.get('entry_strategy', ''))[:1000],
+            key_factors=str(analysis_data.get('key_factors', ''))[:1000],
+            stop_loss_level=str(analysis_data.get('stop_loss_level', ''))[:200],
+            take_profit_level=str(analysis_data.get('take_profit_level', ''))[:200],
+            support_level=str(analysis_data.get('support_level', ''))[:200],
+            resistance_level=str(analysis_data.get('resistance_level', ''))[:200],
+            raw_analysis=gpt_response,
             news_data_used=news_and_events_data.get('message', []),
             economic_events_used=[{
                 'date': event.date_time.isoformat(),
                 'currency': event.currency,
                 'event': event.event_name,
-                'impact': event.impact
-            } for event in recent_events[:10]],
+                'impact': event.impact,
+                'actual': event.actual,
+                'forecast': event.forecast,
+                'previous': event.previous
+            } for event in recent_events_objects[:10]],  # Now using the objects queryset
             analysis_timestamp=timezone.now()
         )
         
@@ -11425,6 +11467,7 @@ def execute_trader_gpt_analysis_for_asset(asset):
             'success': False,
             'error': str(e)
         }
+
 
 def run_scheduled_trader_gpt_analyses():
     """
