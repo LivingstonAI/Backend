@@ -11691,6 +11691,153 @@ def auto_start_scheduler():
 # Uncomment the line below if you want the scheduler to auto-start
 # auto_start_scheduler()
 
+# Add this to your existing views.py where you have the BackgroundScheduler defined
+
+# Assuming you already have this at the top of your views.py:
+# from apscheduler.schedulers.background import BackgroundScheduler
+# scheduler = BackgroundScheduler()
+# scheduler.start()
+
+# Add this job registration after your scheduler.start() line:
+
+def setup_trader_gpt_analysis_scheduler():
+    """Setup the TraderGPT analysis job in the existing scheduler"""
+    try:
+        # Add job to run every 4 hours
+        scheduler.add_job(
+            func=run_scheduled_trader_gpt_analyses,
+            trigger='interval',
+            hours=4,
+            id='trader_gpt_analysis_job',
+            name='TraderGPT Analysis Job',
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info("TraderGPT analysis job added to scheduler - runs every 4 hours")
+        
+        # Optional: Add a job to clean up old analyses (runs daily at 2 AM)
+        scheduler.add_job(
+            func=cleanup_old_analyses,
+            trigger='cron',
+            hour=2,
+            minute=0,
+            id='cleanup_old_analyses_job',
+            name='Cleanup Old Analyses Job',
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info("Cleanup job added to scheduler - runs daily at 2 AM")
+        
+    except Exception as e:
+        logger.error(f"Error setting up TraderGPT scheduler: {str(e)}")
+
+def cleanup_old_analyses():
+    """Clean up analyses older than 30 days"""
+    try:
+        cutoff_date = timezone.now() - timedelta(days=30)
+        deleted_count = TraderGPTAnalysisRecord.objects.filter(
+            created_at__lt=cutoff_date
+        ).count()
+        
+        TraderGPTAnalysisRecord.objects.filter(
+            created_at__lt=cutoff_date
+        ).delete()
+        
+        # Also clean up old execution logs
+        AnalysisExecutionLog.objects.filter(
+            started_at__lt=cutoff_date
+        ).delete()
+        
+        logger.info(f"Cleaned up {deleted_count} old analysis records")
+        
+    except Exception as e:
+        logger.error(f"Error cleaning up old analyses: {str(e)}")
+
+# Call this function after your scheduler.start() line
+setup_trader_gpt_analysis_scheduler()
+
+# Optional: Add these utility functions to manage the scheduler
+
+def start_trader_analysis_job():
+    """Manually start the trader analysis job"""
+    try:
+        scheduler.add_job(
+            func=run_scheduled_trader_gpt_analyses,
+            trigger='interval',
+            hours=4,
+            id='trader_gpt_analysis_job',
+            name='TraderGPT Analysis Job',
+            replace_existing=True,
+            max_instances=1
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Error starting trader analysis job: {str(e)}")
+        return False
+
+def stop_trader_analysis_job():
+    """Manually stop the trader analysis job"""
+    try:
+        scheduler.remove_job('trader_gpt_analysis_job')
+        return True
+    except Exception as e:
+        logger.error(f"Error stopping trader analysis job: {str(e)}")
+        return False
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def manage_scheduler_view(request):
+    """Endpoint to manage the scheduler (start/stop/status)"""
+    try:
+        data = json.loads(request.body)
+        action = data.get('action')
+        
+        if action == 'start':
+            success = start_trader_analysis_job()
+            message = 'Scheduler started successfully' if success else 'Failed to start scheduler'
+        elif action == 'stop':
+            success = stop_trader_analysis_job()
+            message = 'Scheduler stopped successfully' if success else 'Failed to stop scheduler'
+        elif action == 'status':
+            jobs = scheduler.get_jobs()
+            trader_job = next((job for job in jobs if job.id == 'trader_gpt_analysis_job'), None)
+            success = True
+            message = {
+                'running': trader_job is not None,
+                'next_run_time': trader_job.next_run_time.isoformat() if trader_job and trader_job.next_run_time else None,
+                'total_jobs': len(jobs)
+            }
+        else:
+            return JsonResponse({'success': False, 'error': 'Invalid action'}, status=400)
+        
+        return JsonResponse({
+            'success': success,
+            'message': message
+        })
+        
+    except Exception as e:
+        logger.error(f"Error managing scheduler: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# If you want to run the analysis immediately on startup (optional)
+def run_initial_analysis():
+    """Run analysis once on startup"""
+    try:
+        # Add a one-time job to run analysis after 30 seconds
+        scheduler.add_job(
+            func=run_scheduled_trader_gpt_analyses,
+            trigger='date',
+            run_date=timezone.now() + timedelta(seconds=30),
+            id='initial_analysis_job',
+            name='Initial Analysis Job'
+        )
+        logger.info("Initial analysis scheduled to run in 30 seconds")
+    except Exception as e:
+        logger.error(f"Error scheduling initial analysis: {str(e)}")
+
+# Uncomment the line below if you want to run analysis immediately on startup
+# run_initial_analysis()
+
 
 
 # LEGODI BACKEND CODE

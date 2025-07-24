@@ -152,7 +152,7 @@ urlpatterns = [
     path('api/fetch-trader-gpt-analyses/', views.fetch_trader_gpt_analyses_view, name='fetch_trader_gpt_analyses'),
     path('api/run-fresh-trader-analysis/', views.run_fresh_trader_analysis_view, name='run_fresh_trader_analysis'),
     path('api/trigger-bulk-analysis/', views.trigger_bulk_analysis_view, name='trigger_bulk_analysis'),
-    
+    path('api/manage-scheduler/', views.manage_scheduler_view, name='manage_scheduler'),
     # Scheduler Control URLs
     path('api/start-analysis-scheduler/', views.start_scheduler_view, name='start_analysis_scheduler'),
     path('api/stop-analysis-scheduler/', views.stop_scheduler_view, name='stop_analysis_scheduler'),
