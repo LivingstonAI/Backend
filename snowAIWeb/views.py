@@ -11285,10 +11285,12 @@ def execute_trader_gpt_analysis_for_asset(asset):
         news_and_events_data = fetch_news_data([asset], user_email)
         
         # Get recent economic events for the asset
-        recent_events = EconomicEvent.objects.filter(
-            date_time__gte=timezone.now() - timedelta(days=7),
-            date_time__lte=timezone.now() + timedelta(days=7)
-        ).order_by('date_time')
+        # recent_events = EconomicEvent.objects.filter(
+        #     date_time__gte=timezone.now() - timedelta(days=7),
+        #     date_time__lte=timezone.now() + timedelta(days=7)
+        # ).order_by('date_time')
+
+        recent_events = get_economic_events_for_currency(asset)
         
         # Prepare the prompt for GPT
         prompt = f"""
@@ -11297,15 +11299,8 @@ def execute_trader_gpt_analysis_for_asset(asset):
         Recent News Data:
         {json.dumps(news_and_events_data.get('message', [])[:5], indent=2)}
         
-        Upcoming Economic Events:
-        {json.dumps([{
-            'date': event.date_time.isoformat(),
-            'currency': event.currency,
-            'event': event.event_name,
-            'impact': event.impact,
-            'forecast': event.forecast,
-            'previous': event.previous
-        } for event in recent_events[:10]], indent=2)}
+        Economic Events for asset:
+        {recent_events}
         
         Please provide your analysis in the following JSON format with strict character limits:
         {{
