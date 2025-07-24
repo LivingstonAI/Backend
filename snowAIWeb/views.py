@@ -11695,7 +11695,7 @@ def get_scheduler_status():
     if trader_analysis_scheduler is None:
         return {
             'running': False,
-            'interval_hours': 4,
+            'interval_hours': 8,
             'last_run': None,
             'next_run': None
         }
@@ -11790,13 +11790,13 @@ def setup_trader_gpt_analysis_scheduler():
         scheduler.add_job(
             func=run_scheduled_trader_gpt_analyses,
             trigger='interval',
-            hours=4,
+            hours=8,
             id='trader_gpt_analysis_job',
             name='TraderGPT Analysis Job',
             replace_existing=True,
             max_instances=1
         )
-        logger.info("TraderGPT analysis job added to scheduler - runs every 4 hours")
+        logger.info("TraderGPT analysis job added to scheduler - runs every 8 hours")
         
         # Optional: Add a job to clean up old analyses (runs daily at 2 AM)
         scheduler.add_job(
@@ -11847,7 +11847,7 @@ def start_trader_analysis_job():
         scheduler.add_job(
             func=run_scheduled_trader_gpt_analyses,
             trigger='interval',
-            hours=4,
+            hours=8,
             id='trader_gpt_analysis_job',
             name='TraderGPT Analysis Job',
             replace_existing=True,
