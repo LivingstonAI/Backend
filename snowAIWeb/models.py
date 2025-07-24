@@ -718,10 +718,11 @@ class TraderGPTAnalysisRecord(models.Model):
     time_horizon = models.CharField(max_length=10, choices=TIME_HORIZON_CHOICES)
     entry_strategy = models.TextField()
     key_factors = models.TextField()
-    stop_loss_level = models.CharField(max_length=50, blank=True, null=True)
-    take_profit_level = models.CharField(max_length=50, blank=True, null=True)
-    support_level = models.CharField(max_length=50, blank=True, null=True)
-    resistance_level = models.CharField(max_length=50, blank=True, null=True)
+    # Increased max_length for these fields to accommodate longer GPT responses
+    stop_loss_level = models.CharField(max_length=200, blank=True, null=True)
+    take_profit_level = models.CharField(max_length=200, blank=True, null=True)
+    support_level = models.CharField(max_length=200, blank=True, null=True)
+    resistance_level = models.CharField(max_length=200, blank=True, null=True)
     raw_analysis = models.TextField(help_text="Full GPT response")
     news_data_used = models.JSONField(default=dict, blank=True)
     economic_events_used = models.JSONField(default=dict, blank=True)
@@ -736,7 +737,7 @@ class TraderGPTAnalysisRecord(models.Model):
     def __str__(self):
         return f"{self.asset} - {self.market_sentiment} ({self.confidence_score}%) - {self.analysis_timestamp.strftime('%Y-%m-%d %H:%M')}"
 
-
+        
 class AnalysisExecutionLog(models.Model):
     """Model to log analysis execution attempts"""
     STATUS_CHOICES = [

@@ -11206,6 +11206,16 @@ def fetch_trader_gpt_analyses_view(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+logger = logging.getLogger(__name__)
+
+
+def validate_choice_field(value, valid_choices, default):
+    """Validate that a value matches one of the valid choices"""
+    if value and str(value).lower() in [choice[0] for choice in valid_choices]:
+        return str(value).lower()
+    return default
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def run_fresh_trader_analysis_view(request):
@@ -11297,23 +11307,26 @@ def execute_trader_gpt_analysis_for_asset(asset):
             'previous': event.previous
         } for event in recent_events[:10]], indent=2)}
         
-        Please provide your analysis in the following JSON format:
+        Please provide your analysis in the following JSON format with strict character limits:
         {{
-            "market_sentiment": "bullish|bearish|neutral",
+            "market_sentiment": "bullish|bearish|neutral (must be exactly one of these three words)",
             "confidence_score": 85,
-            "risk_level": "low|medium|high",
-            "time_horizon": "short|medium|long",
-            "entry_strategy": "Detailed entry strategy with specific levels",
-            "key_factors": "Key factors influencing this analysis",
-            "stop_loss_level": "Recommended stop loss level",
-            "take_profit_level": "Recommended take profit level",
-            "support_level": "Current support level",
-            "resistance_level": "Current resistance level",
-            "summary": "Brief overall summary of the analysis"
+            "risk_level": "low|medium|high (must be exactly one of these three words)",
+            "time_horizon": "short|medium|long (must be exactly one of these three words)",
+            "entry_strategy": "Detailed entry strategy with specific levels (max 1000 chars)",
+            "key_factors": "Key factors influencing this analysis (max 1000 chars)",
+            "stop_loss_level": "Recommended stop loss level (max 200 chars)",
+            "take_profit_level": "Recommended take profit level (max 200 chars)",
+            "support_level": "Current support level (max 200 chars)",
+            "resistance_level": "Current resistance level (max 200 chars)",
+            "summary": "Brief overall summary of the analysis (max 500 chars)"
         }}
         
-        Base your analysis on current market conditions, news sentiment, economic events, and technical factors.
-        Be specific with numerical levels where possible.
+        IMPORTANT: 
+        - Use ONLY the exact words for sentiment (bullish/bearish/neutral), risk_level (low/medium/high), and time_horizon (short/medium/long)
+        - Keep all responses within the specified character limits
+        - Use concise, specific language with actual price levels where possible
+        - Base your analysis on current market conditions, news sentiment, economic events, and technical factors
         """
         
         # Call GPT
@@ -11332,36 +11345,67 @@ def execute_trader_gpt_analysis_for_asset(asset):
                 # If JSON extraction fails, try parsing the whole response
                 analysis_data = json.loads(gpt_response)
                 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as json_error:
+            logger.error(f"JSON parsing error for {asset}: {str(json_error)}")
+            logger.error(f"GPT Response: {gpt_response}")
+            
             # If JSON parsing fails, create a basic analysis
             analysis_data = {
                 "market_sentiment": "neutral",
                 "confidence_score": 50,
                 "risk_level": "medium",
                 "time_horizon": "medium",
-                "entry_strategy": "Wait for clearer market signals before entering",
-                "key_factors": "Analysis could not be parsed properly",
-                "stop_loss_level": "TBD",
-                "take_profit_level": "TBD",
-                "support_level": "TBD",
-                "resistance_level": "TBD",
-                "summary": "Analysis parsing failed"
+                "entry_strategy": "Wait for clearer market signals before entering position",
+                "key_factors": "Analysis could not be parsed properly from GPT response",
+                "stop_loss_level": "TBD - Analysis parsing failed",
+                "take_profit_level": "TBD - Analysis parsing failed",
+                "support_level": "TBD - Analysis parsing failed",
+                "resistance_level": "TBD - Analysis parsing failed",
+                "summary": "Analysis parsing failed, manual review required"
             }
         
-        # Create the analysis record
+        # Validate choice fields against model choices
+        sentiment = validate_choice_field(
+            analysis_data.get('market_sentiment'),
+            TraderGPTAnalysisRecord.SENTIMENT_CHOICES,
+            'neutral'
+        )
+        
+        risk_level = validate_choice_field(
+            analysis_data.get('risk_level'),
+            TraderGPTAnalysisRecord.RISK_CHOICES,
+            'medium'
+        )
+        
+        time_horizon = validate_choice_field(
+            analysis_data.get('time_horizon'),
+            TraderGPTAnalysisRecord.TIME_HORIZON_CHOICES,
+            'medium'
+        )
+        
+        # Ensure confidence score is within valid range
+        confidence_score = analysis_data.get('confidence_score', 50)
+        if isinstance(confidence_score, str):
+            try:
+                confidence_score = int(confidence_score)
+            except ValueError:
+                confidence_score = 50
+        confidence_score = min(100, max(1, confidence_score))
+        
+        # Create the analysis record with validated and truncated data
         analysis_record = TraderGPTAnalysisRecord.objects.create(
             asset=asset,
-            market_sentiment=analysis_data.get('market_sentiment', 'neutral'),
-            confidence_score=min(100, max(1, analysis_data.get('confidence_score', 50))),
-            risk_level=analysis_data.get('risk_level', 'medium'),
-            time_horizon=analysis_data.get('time_horizon', 'medium'),
-            entry_strategy=analysis_data.get('entry_strategy', ''),
-            key_factors=analysis_data.get('key_factors', ''),
-            stop_loss_level=analysis_data.get('stop_loss_level', ''),
-            take_profit_level=analysis_data.get('take_profit_level', ''),
-            support_level=analysis_data.get('support_level', ''),
-            resistance_level=analysis_data.get('resistance_level', ''),
-            raw_analysis=gpt_response,
+            market_sentiment=sentiment,
+            confidence_score=confidence_score,
+            risk_level=risk_level,
+            time_horizon=time_horizon,
+            entry_strategy=str(analysis_data.get('entry_strategy', ''))[:1000],  # Truncate to reasonable length
+            key_factors=str(analysis_data.get('key_factors', ''))[:1000],  # Truncate to reasonable length
+            stop_loss_level=str(analysis_data.get('stop_loss_level', ''))[:200],  # Fits new field length
+            take_profit_level=str(analysis_data.get('take_profit_level', ''))[:200],  # Fits new field length
+            support_level=str(analysis_data.get('support_level', ''))[:200],  # Fits new field length
+            resistance_level=str(analysis_data.get('resistance_level', ''))[:200],  # Fits new field length
+            raw_analysis=gpt_response,  # Store full response for debugging
             news_data_used=news_and_events_data.get('message', []),
             economic_events_used=[{
                 'date': event.date_time.isoformat(),
@@ -11372,6 +11416,8 @@ def execute_trader_gpt_analysis_for_asset(asset):
             analysis_timestamp=timezone.now()
         )
         
+        logger.info(f"Successfully created analysis record {analysis_record.id} for {asset}")
+        
         return {
             'success': True,
             'analysis_id': analysis_record.id,
@@ -11379,12 +11425,11 @@ def execute_trader_gpt_analysis_for_asset(asset):
         }
         
     except Exception as e:
-        logger.error(f"Error in execute_trader_gpt_analysis_for_asset: {str(e)}")
+        logger.error(f"Error in execute_trader_gpt_analysis_for_asset for {asset}: {str(e)}")
         return {
             'success': False,
             'error': str(e)
         }
-
 
 def run_scheduled_trader_gpt_analyses():
     """
