@@ -157,7 +157,7 @@ urlpatterns = [
     path('api/start-analysis-scheduler/', views.start_scheduler_view, name='start_analysis_scheduler'),
     path('api/stop-analysis-scheduler/', views.stop_scheduler_view, name='stop_analysis_scheduler'),
     path('api/scheduler-status/', views.scheduler_status_view, name='scheduler_status'),
-    ath('api/ai-council/trigger-conversation/', 
+    path('api/ai-council/trigger-conversation/', 
          views.run_manual_council_conversation_view, 
          name='trigger_ai_council_conversation'),
     
