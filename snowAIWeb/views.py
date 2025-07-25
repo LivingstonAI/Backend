@@ -12435,11 +12435,11 @@ def schedule_ai_council_conversations():
 # Add this job to your existing scheduler
 # scheduler = BackgroundScheduler()  # You already have this
 
-# Schedule AI Council conversations to run every 12 hours
+# Schedule AI Council conversations to run every 24 hours
 scheduler.add_job(
     schedule_ai_council_conversations,
     'interval',
-    hours=12,
+    hours=24,
     id='ai_trading_council_conversations',
     replace_existing=True,
     max_instances=1
