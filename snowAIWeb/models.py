@@ -760,7 +760,135 @@ class AnalysisExecutionLog(models.Model):
     def __str__(self):
         return f"{self.asset} - {self.status} - {self.started_at.strftime('%Y-%m-%d %H:%M')}"
 
+# Add this to your models.py
 
+import json
+from django.db import models
+from django.utils import timezone
+
+class AITradingCouncilConversation(models.Model):
+    """Model to store AI Trading Council conversations"""
+    
+    CONVERSATION_STATUS_CHOICES = [
+        ('running', 'Running'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+    
+    ECONOMIC_OUTLOOK_CHOICES = [
+        ('very_positive', 'Very Positive'),
+        ('positive', 'Positive'),
+        ('neutral', 'Neutral'),
+        ('negative', 'Negative'),
+        ('very_negative', 'Very Negative'),
+    ]
+    
+    MARKET_VOLATILITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+        ('extreme', 'Extreme'),
+    ]
+    
+    # Basic conversation info
+    conversation_id = models.CharField(max_length=100, unique=True)
+    title = models.CharField(max_length=200, default="AI Trading Council Discussion")
+    status = models.CharField(max_length=20, choices=CONVERSATION_STATUS_CHOICES, default='running')
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    # Participants and assets
+    participating_assets = models.JSONField(default=list)  # List of assets that participated
+    total_participants = models.IntegerField(default=0)
+    
+    # Conversation content
+    conversation_data = models.JSONField(default=dict)  # Full conversation with turns
+    conversation_summary = models.TextField(blank=True)
+    
+    # Economic insights and metrics
+    overall_economic_outlook = models.CharField(
+        max_length=20, 
+        choices=ECONOMIC_OUTLOOK_CHOICES, 
+        default='neutral'
+    )
+    global_market_sentiment = models.CharField(max_length=20, default='neutral')
+    market_volatility_level = models.CharField(
+        max_length=20, 
+        choices=MARKET_VOLATILITY_CHOICES, 
+        default='medium'
+    )
+    
+    # Key insights
+    major_economic_themes = models.JSONField(default=list)  # List of key themes discussed
+    currency_strength_rankings = models.JSONField(default=dict)  # Currency strength analysis
+    risk_factors_identified = models.JSONField(default=list)  # Risk factors mentioned
+    opportunity_areas = models.JSONField(default=list)  # Opportunities identified
+    
+    # Metrics for quick analysis
+    bullish_sentiment_count = models.IntegerField(default=0)
+    bearish_sentiment_count = models.IntegerField(default=0)
+    neutral_sentiment_count = models.IntegerField(default=0)
+    average_confidence_score = models.FloatField(default=0.0)
+    
+    # Execution details
+    execution_time_seconds = models.FloatField(default=0.0)
+    error_message = models.TextField(blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        db_table = 'ai_trading_council_conversations'
+    
+    def __str__(self):
+        return f"Council Discussion {self.conversation_id} - {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+    
+    def get_participant_count(self):
+        """Get the number of participants in this conversation"""
+        return len(self.participating_assets)
+    
+    def get_dominant_sentiment(self):
+        """Get the most common sentiment from the conversation"""
+        sentiments = {
+            'bullish': self.bullish_sentiment_count,
+            'bearish': self.bearish_sentiment_count,
+            'neutral': self.neutral_sentiment_count
+        }
+        return max(sentiments, key=sentiments.get)
+    
+    def get_conversation_turns_count(self):
+        """Get total number of turns in the conversation"""
+        if isinstance(self.conversation_data, dict) and 'turns' in self.conversation_data:
+            return len(self.conversation_data['turns'])
+        return 0
+
+
+class AITradingCouncilParticipant(models.Model):
+    """Model to track individual participants in council conversations"""
+    
+    conversation = models.ForeignKey(
+        AITradingCouncilConversation, 
+        on_delete=models.CASCADE,
+        related_name='participants'
+    )
+    asset_code = models.CharField(max_length=10)  # e.g., 'EURUSD'
+    participant_name = models.CharField(max_length=100)  # e.g., 'EUR/USD Analyst'
+    
+    # Analysis data this participant contributed
+    market_sentiment = models.CharField(max_length=20, default='neutral')
+    confidence_score = models.IntegerField(default=50)
+    risk_assessment = models.CharField(max_length=20, default='medium')
+    
+    # Key points made by this participant
+    key_insights = models.JSONField(default=list)
+    turns_spoken = models.IntegerField(default=0)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ['conversation', 'asset_code']
+        db_table = 'ai_trading_council_participants'
+    
+    def __str__(self):
+        return f"{self.participant_name} in {self.conversation.conversation_id}"
 
 class FeedbackForm(models.Model): 
     feedback = models.TextField()

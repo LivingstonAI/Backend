@@ -11921,6 +11921,554 @@ def run_initial_analysis():
 # Uncomment the line below if you want to run analysis immediately on startup
 # run_initial_analysis()
 
+# Add these views to your views.py
+
+import json
+import time
+import uuid
+import logging
+from datetime import datetime
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.utils import timezone
+from django.core.paginator import Paginator
+from django.db.models import Q
+
+# Import your existing models and functions
+from .models import (
+    WatchedTradingAsset, 
+    AITradingCouncilConversation, 
+    AITradingCouncilParticipant,
+    TraderGPTAnalysisRecord
+)
+
+logger = logging.getLogger(__name__)
+
+def execute_ai_trading_council_conversation():
+    """Execute an AI Trading Council conversation with all active watched assets"""
+    try:
+        # Get all active watched assets
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True)
+        
+        if not watched_assets.exists():
+            return {
+                'success': False,
+                'error': 'No active watched assets found for council discussion'
+            }
+        
+        # Create conversation record
+        conversation_id = f"council_{uuid.uuid4().hex[:12]}_{int(time.time())}"
+        
+        conversation = AITradingCouncilConversation.objects.create(
+            conversation_id=conversation_id,
+            title=f"AI Trading Council Discussion - {timezone.now().strftime('%Y-%m-%d %H:%M')}",
+            participating_assets=[asset.asset for asset in watched_assets],
+            total_participants=watched_assets.count(),
+            status='running'
+        )
+        
+        start_time = time.time()
+        
+        try:
+            # Execute the conversation
+            conversation_result = run_council_discussion(conversation, watched_assets)
+            
+            if conversation_result['success']:
+                # Update conversation with results
+                conversation.status = 'completed'
+                conversation.completed_at = timezone.now()
+                conversation.execution_time_seconds = time.time() - start_time
+                conversation.conversation_data = conversation_result['conversation_data']
+                conversation.conversation_summary = conversation_result['summary']
+                conversation.overall_economic_outlook = conversation_result['economic_outlook']
+                conversation.global_market_sentiment = conversation_result['market_sentiment']
+                conversation.market_volatility_level = conversation_result['volatility_level']
+                conversation.major_economic_themes = conversation_result['themes']
+                conversation.currency_strength_rankings = conversation_result['currency_rankings']
+                conversation.risk_factors_identified = conversation_result['risk_factors']
+                conversation.opportunity_areas = conversation_result['opportunities']
+                conversation.bullish_sentiment_count = conversation_result['sentiment_counts']['bullish']
+                conversation.bearish_sentiment_count = conversation_result['sentiment_counts']['bearish']
+                conversation.neutral_sentiment_count = conversation_result['sentiment_counts']['neutral']
+                conversation.average_confidence_score = conversation_result['avg_confidence']
+                conversation.save()
+                
+                return {
+                    'success': True,
+                    'conversation_id': conversation.conversation_id,
+                    'message': 'AI Trading Council conversation completed successfully'
+                }
+            else:
+                conversation.status = 'failed'
+                conversation.error_message = conversation_result.get('error', 'Unknown error')
+                conversation.execution_time_seconds = time.time() - start_time
+                conversation.save()
+                
+                return {
+                    'success': False,
+                    'error': conversation_result.get('error', 'Council conversation failed')
+                }
+                
+        except Exception as conversation_error:
+            conversation.status = 'failed'
+            conversation.error_message = str(conversation_error)
+            conversation.execution_time_seconds = time.time() - start_time
+            conversation.save()
+            raise
+            
+    except Exception as e:
+        logger.error(f"Error executing AI Trading Council conversation: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def run_council_discussion(conversation, watched_assets):
+    """Run the actual AI council discussion"""
+    try:
+        conversation_turns = []
+        participants_data = {}
+        sentiment_counts = {'bullish': 0, 'bearish': 0, 'neutral': 0}
+        total_confidence = 0
+        confidence_count = 0
+        
+        # Get recent analysis for each asset to base the discussion on
+        for asset in watched_assets:
+            recent_analysis = TraderGPTAnalysisRecord.objects.filter(
+                asset=asset.asset
+            ).order_by('-analysis_timestamp').first()
+            
+            if recent_analysis:
+                participant_name = f"{asset.get_asset_display()} Analyst"
+                participants_data[asset.asset] = {
+                    'name': participant_name,
+                    'analysis': recent_analysis,
+                    'turns_count': 0
+                }
+        
+        # Run 3 rounds of discussion
+        for round_num in range(1, 4):
+            round_prompt = get_round_prompt(round_num, participants_data, conversation_turns)
+            
+            for asset_code, participant_data in participants_data.items():
+                if participant_data['analysis']:
+                    # Generate participant's response for this round
+                    participant_response = generate_participant_response(
+                        participant_data, 
+                        round_num, 
+                        conversation_turns,
+                        round_prompt
+                    )
+                    
+                    conversation_turns.append({
+                        'round': round_num,
+                        'participant': participant_data['name'],
+                        'asset': asset_code,
+                        'message': participant_response['message'],
+                        'timestamp': timezone.now().isoformat(),
+                        'sentiment': participant_response['sentiment'],
+                        'confidence': participant_response['confidence']
+                    })
+                    
+                    # Update counts
+                    sentiment_counts[participant_response['sentiment']] += 1
+                    total_confidence += participant_response['confidence']
+                    confidence_count += 1
+                    participants_data[asset_code]['turns_count'] += 1
+        
+        # Generate overall summary and insights
+        summary_data = generate_conversation_summary(conversation_turns, participants_data)
+        
+        # Create participant records
+        for asset_code, participant_data in participants_data.items():
+            if participant_data['analysis']:
+                AITradingCouncilParticipant.objects.create(
+                    conversation=conversation,
+                    asset_code=asset_code,
+                    participant_name=participant_data['name'],
+                    market_sentiment=participant_data['analysis'].market_sentiment,
+                    confidence_score=participant_data['analysis'].confidence_score,
+                    risk_assessment=participant_data['analysis'].risk_level,
+                    key_insights=extract_participant_insights(asset_code, conversation_turns),
+                    turns_spoken=participant_data['turns_count']
+                )
+        
+        return {
+            'success': True,
+            'conversation_data': {'turns': conversation_turns},
+            'summary': summary_data['summary'],
+            'economic_outlook': summary_data['economic_outlook'],
+            'market_sentiment': summary_data['market_sentiment'],
+            'volatility_level': summary_data['volatility_level'],
+            'themes': summary_data['themes'],
+            'currency_rankings': summary_data['currency_rankings'],
+            'risk_factors': summary_data['risk_factors'],
+            'opportunities': summary_data['opportunities'],
+            'sentiment_counts': sentiment_counts,
+            'avg_confidence': total_confidence / confidence_count if confidence_count > 0 else 0
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in council discussion: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def get_round_prompt(round_num, participants_data, conversation_turns):
+    """Get the prompt for each discussion round"""
+    if round_num == 1:
+        return "Present your current market analysis and outlook for your currency pair."
+    elif round_num == 2:
+        return "Discuss how global economic factors are affecting your market and respond to other analysts' viewpoints."
+    else:
+        return "Provide your final assessment and key recommendations based on the full discussion."
+
+
+def generate_participant_response(participant_data, round_num, conversation_turns, round_prompt):
+    """Generate a participant's response using GPT"""
+    try:
+        analysis = participant_data['analysis']
+        participant_name = participant_data['name']
+        
+        # Build context from previous turns
+        previous_context = ""
+        if conversation_turns:
+            recent_turns = conversation_turns[-6:]  # Last 6 turns for context
+            for turn in recent_turns:
+                previous_context += f"{turn['participant']}: {turn['message'][:200]}...\n"
+        
+        prompt = f"""
+        You are {participant_name}, an expert analyst specializing in {analysis.asset}.
+        
+        Current Analysis Data:
+        - Market Sentiment: {analysis.market_sentiment}
+        - Confidence: {analysis.confidence_score}%
+        - Risk Level: {analysis.risk_level}
+        - Entry Strategy: {analysis.entry_strategy}
+        - Key Factors: {analysis.key_factors}
+        
+        Previous Discussion Context:
+        {previous_context}
+        
+        Round {round_num} Task: {round_prompt}
+        
+        Provide your response as a trading expert in exactly this JSON format:
+        {{
+            "message": "Your response as the {participant_name} (max 500 characters, professional trading discussion style)",
+            "sentiment": "bullish|bearish|neutral",
+            "confidence": {analysis.confidence_score},
+            "key_point": "One key insight from your analysis (max 200 characters)"
+        }}
+        
+        Keep responses concise, professional, and focused on trading insights.
+        """
+        
+        # Call GPT (using your existing chat_gpt function)
+        gpt_response = chat_gpt(prompt)
+        
+        try:
+            # Parse JSON response
+            start_idx = gpt_response.find('{')
+            end_idx = gpt_response.rfind('}') + 1
+            
+            if start_idx != -1 and end_idx != -1:
+                json_str = gpt_response[start_idx:end_idx]
+                response_data = json.loads(json_str)
+            else:
+                response_data = json.loads(gpt_response)
+                
+        except json.JSONDecodeError:
+            # Fallback response if JSON parsing fails
+            response_data = {
+                "message": f"Based on my {analysis.asset} analysis, I maintain a {analysis.market_sentiment} outlook with {analysis.confidence_score}% confidence.",
+                "sentiment": analysis.market_sentiment,
+                "confidence": analysis.confidence_score,
+                "key_point": "Technical and fundamental factors support current assessment"
+            }
+        
+        return response_data
+        
+    except Exception as e:
+        logger.error(f"Error generating participant response: {str(e)}")
+        return {
+            "message": f"Currently analyzing {participant_data['analysis'].asset} market conditions.",
+            "sentiment": "neutral",
+            "confidence": 50,
+            "key_point": "Analysis in progress"
+        }
+
+
+def generate_conversation_summary(conversation_turns, participants_data):
+    """Generate overall conversation summary and insights"""
+    try:
+        # Prepare conversation summary for GPT
+        conversation_text = ""
+        for turn in conversation_turns:
+            conversation_text += f"{turn['participant']}: {turn['message']}\n"
+        
+        prompt = f"""
+        Analyze this AI Trading Council discussion and provide insights about the global economy:
+        
+        Discussion:
+        {conversation_text}
+        
+        Provide analysis in this JSON format:
+        {{
+            "summary": "Comprehensive summary of the discussion and key conclusions (max 1000 chars)",
+            "economic_outlook": "very_positive|positive|neutral|negative|very_negative",
+            "market_sentiment": "bullish|bearish|neutral",
+            "volatility_level": "low|medium|high|extreme",
+            "themes": ["theme1", "theme2", "theme3"],
+            "currency_rankings": {{"strongest": "USD", "weakest": "EUR", "neutral": ["GBP", "JPY"]}},
+            "risk_factors": ["risk1", "risk2", "risk3"],
+            "opportunities": ["opportunity1", "opportunity2"]
+        }}
+        """
+        
+        gpt_response = chat_gpt(prompt)
+        
+        try:
+            start_idx = gpt_response.find('{')
+            end_idx = gpt_response.rfind('}') + 1
+            
+            if start_idx != -1 and end_idx != -1:
+                json_str = gpt_response[start_idx:end_idx]
+                summary_data = json.loads(json_str)
+            else:
+                summary_data = json.loads(gpt_response)
+        except json.JSONDecodeError:
+            # Fallback summary
+            summary_data = {
+                "summary": "AI Trading Council discussed current market conditions across multiple currency pairs with varying outlooks.",
+                "economic_outlook": "neutral",
+                "market_sentiment": "neutral",
+                "volatility_level": "medium",
+                "themes": ["Market Analysis", "Economic Indicators", "Risk Assessment"],
+                "currency_rankings": {"strongest": "USD", "weakest": "EUR", "neutral": []},
+                "risk_factors": ["Market Volatility", "Economic Uncertainty"],
+                "opportunities": ["Technical Setups", "Fundamental Shifts"]
+            }
+        
+        return summary_data
+        
+    except Exception as e:
+        logger.error(f"Error generating conversation summary: {str(e)}")
+        return {
+            "summary": "Discussion summary unavailable due to processing error.",
+            "economic_outlook": "neutral",
+            "market_sentiment": "neutral",
+            "volatility_level": "medium",
+            "themes": [],
+            "currency_rankings": {},
+            "risk_factors": [],
+            "opportunities": []
+        }
+
+
+def extract_participant_insights(asset_code, conversation_turns):
+    """Extract key insights made by a specific participant"""
+    insights = []
+    for turn in conversation_turns:
+        if turn['asset'] == asset_code:
+            insights.append(turn['message'][:200])
+    return insights
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def run_manual_council_conversation_view(request):
+    """API endpoint to manually trigger a council conversation"""
+    try:
+        result = execute_ai_trading_council_conversation()
+        
+        if result['success']:
+            return JsonResponse({
+                'success': True,
+                'message': result['message'],
+                'conversation_id': result['conversation_id']
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': result['error']
+            }, status=500)
+            
+    except Exception as e:
+        logger.error(f"Error in manual council conversation view: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_council_conversations_view(request):
+    """API endpoint to get council conversations with pagination"""
+    try:
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 10))
+        
+        conversations = AITradingCouncilConversation.objects.all().order_by('-created_at')
+        paginator = Paginator(conversations, page_size)
+        page_obj = paginator.get_page(page)
+        
+        conversations_data = []
+        for conversation in page_obj:
+            conversations_data.append({
+                'id': conversation.id,
+                'conversation_id': conversation.conversation_id,
+                'title': conversation.title,
+                'status': conversation.status,
+                'created_at': conversation.created_at.isoformat(),
+                'completed_at': conversation.completed_at.isoformat() if conversation.completed_at else None,
+                'participating_assets': conversation.participating_assets,
+                'total_participants': conversation.total_participants,
+                'conversation_summary': conversation.conversation_summary,
+                'overall_economic_outlook': conversation.overall_economic_outlook,
+                'global_market_sentiment': conversation.global_market_sentiment,
+                'market_volatility_level': conversation.market_volatility_level,
+                'major_economic_themes': conversation.major_economic_themes,
+                'currency_strength_rankings': conversation.currency_strength_rankings,
+                'risk_factors_identified': conversation.risk_factors_identified,
+                'opportunity_areas': conversation.opportunity_areas,
+                'bullish_sentiment_count': conversation.bullish_sentiment_count,
+                'bearish_sentiment_count': conversation.bearish_sentiment_count,
+                'neutral_sentiment_count': conversation.neutral_sentiment_count,
+                'average_confidence_score': conversation.average_confidence_score,
+                'execution_time_seconds': conversation.execution_time_seconds,
+                'conversation_turns_count': conversation.get_conversation_turns_count(),
+                'dominant_sentiment': conversation.get_dominant_sentiment()
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'conversations': conversations_data,
+            'pagination': {
+                'current_page': page,
+                'total_pages': paginator.num_pages,
+                'total_conversations': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting council conversations: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_council_conversation_details_view(request, conversation_id):
+    """API endpoint to get detailed conversation data"""
+    try:
+        conversation = AITradingCouncilConversation.objects.get(conversation_id=conversation_id)
+        participants = AITradingCouncilParticipant.objects.filter(conversation=conversation)
+        
+        participants_data = []
+        for participant in participants:
+            participants_data.append({
+                'asset_code': participant.asset_code,
+                'participant_name': participant.participant_name,
+                'market_sentiment': participant.market_sentiment,
+                'confidence_score': participant.confidence_score,
+                'risk_assessment': participant.risk_assessment,
+                'key_insights': participant.key_insights,
+                'turns_spoken': participant.turns_spoken
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'conversation': {
+                'conversation_id': conversation.conversation_id,
+                'title': conversation.title,
+                'status': conversation.status,
+                'created_at': conversation.created_at.isoformat(),
+                'completed_at': conversation.completed_at.isoformat() if conversation.completed_at else None,
+                'conversation_data': conversation.conversation_data,
+                'conversation_summary': conversation.conversation_summary,
+                'overall_economic_outlook': conversation.overall_economic_outlook,
+                'global_market_sentiment': conversation.global_market_sentiment,
+                'market_volatility_level': conversation.market_volatility_level,
+                'major_economic_themes': conversation.major_economic_themes,
+                'currency_strength_rankings': conversation.currency_strength_rankings,
+                'risk_factors_identified': conversation.risk_factors_identified,
+                'opportunity_areas': conversation.opportunity_areas,
+                'execution_time_seconds': conversation.execution_time_seconds
+            },
+            'participants': participants_data
+        })
+        
+    except AITradingCouncilConversation.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Conversation not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error getting conversation details: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# Add this to your scheduler setup (where you have BackgroundScheduler)
+
+import logging
+from apscheduler.schedulers.background import BackgroundScheduler
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+def schedule_ai_council_conversations():
+    """Schedule AI Trading Council conversations"""
+    try:
+        # Import here to avoid circular imports
+        from .views import execute_ai_trading_council_conversation
+        
+        logger.info("Starting scheduled AI Trading Council conversation...")
+        result = execute_ai_trading_council_conversation()
+        
+        if result['success']:
+            logger.info(f"Scheduled AI Council conversation completed: {result['conversation_id']}")
+        else:
+            logger.error(f"Scheduled AI Council conversation failed: {result['error']}")
+            
+    except Exception as e:
+        logger.error(f"Error in scheduled AI Council conversation: {str(e)}")
+
+# Add this job to your existing scheduler
+# scheduler = BackgroundScheduler()  # You already have this
+
+# Schedule AI Council conversations to run every 12 hours
+scheduler.add_job(
+    schedule_ai_council_conversations,
+    'interval',
+    hours=12,
+    id='ai_trading_council_conversations',
+    replace_existing=True,
+    max_instances=1
+)
+
+# # You can also add different schedules:
+
+# # Run daily at 9 AM UTC
+# scheduler.add_job(
+#     schedule_ai_council_conversations,
+#     'cron',
+#     hour=9,
+#     minute=0,
+#     id='daily_council_morning',
+#     replace_existing=True,
+#     max_instances=1
+# )
+
+# # Run daily at 3 PM UTC (market close)
+# scheduler.add_job(
+#     schedule_ai_council_conversations,
+#     'cron',
+#     hour=15,
+#     minute=0,
+#     id='daily_council_afternoon',
+#     replace_existing=True,
+#     max_instances=1
+# )
+
 
 
 # LEGODI BACKEND CODE

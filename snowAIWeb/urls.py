@@ -157,6 +157,19 @@ urlpatterns = [
     path('api/start-analysis-scheduler/', views.start_scheduler_view, name='start_analysis_scheduler'),
     path('api/stop-analysis-scheduler/', views.stop_scheduler_view, name='stop_analysis_scheduler'),
     path('api/scheduler-status/', views.scheduler_status_view, name='scheduler_status'),
+    ath('api/ai-council/trigger-conversation/', 
+         views.run_manual_council_conversation_view, 
+         name='trigger_ai_council_conversation'),
+    
+    # Get all council conversations (with pagination)
+    path('api/ai-council/conversations/', 
+         views.get_council_conversations_view, 
+         name='get_ai_council_conversations'),
+    
+    # Get specific conversation details
+    path('api/ai-council/conversations/<str:conversation_id>/', 
+         views.get_council_conversation_details_view, 
+         name='get_ai_council_conversation_details'),
 
 
     # create appproprate urls.py here
