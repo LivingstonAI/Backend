@@ -12469,6 +12469,222 @@ scheduler.add_job(
 #     max_instances=1
 # )
 
+from django.shortcuts import render, get_object_or_404
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+from django.db.models import Q
+import json
+import base64
+from .models import FirmCompliance
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def firm_compliance_list(request):
+    """List all firm compliance records or create a new one"""
+    
+    if request.method == "GET":
+        # Get search query if provided
+        search_query = request.GET.get('search', '')
+        
+        # Filter records based on search query
+        if search_query:
+            records = FirmCompliance.objects.filter(
+                Q(firm_name__icontains=search_query) | 
+                Q(personal_notes__icontains=search_query)
+            )
+        else:
+            records = FirmCompliance.objects.all()
+        
+        # Serialize data
+        data = []
+        for record in records:
+            data.append({
+                'id': str(record.id),
+                'firm_name': record.firm_name,
+                'personal_notes': record.personal_notes,
+                'logo_url': record.logo_url,
+                'created_at': record.created_at.isoformat(),
+                'updated_at': record.updated_at.isoformat(),
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'data': data,
+            'count': len(data)
+        })
+    
+    elif request.method == "POST":
+        try:
+            # Handle both JSON and form data
+            if request.content_type == 'application/json':
+                data = json.loads(request.body)
+                firm_name = data.get('firm_name', '').strip()
+                personal_notes = data.get('personal_notes', '').strip()
+                logo_data = data.get('logo_data')  # Base64 encoded image
+                logo_filename = data.get('logo_filename')
+            else:
+                firm_name = request.POST.get('firm_name', '').strip()
+                personal_notes = request.POST.get('personal_notes', '').strip()
+                logo_file = request.FILES.get('firm_logo')
+            
+            # Validate required fields
+            if not firm_name:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Firm name is required'
+                }, status=400)
+            
+            # Create new record
+            record = FirmCompliance.objects.create(
+                firm_name=firm_name,
+                personal_notes=personal_notes
+            )
+            
+            # Handle logo upload
+            if request.content_type == 'application/json' and logo_data and logo_filename:
+                # Handle base64 encoded image
+                try:
+                    format, imgstr = logo_data.split(';base64,')
+                    ext = format.split('/')[-1]
+                    logo_file = ContentFile(
+                        base64.b64decode(imgstr),
+                        name=f"{record.id}_{logo_filename}"
+                    )
+                    record.firm_logo.save(logo_file.name, logo_file, save=True)
+                except Exception as e:
+                    # If logo upload fails, continue without it
+                    pass
+            elif 'firm_logo' in request.FILES:
+                # Handle direct file upload
+                record.firm_logo = request.FILES['firm_logo']
+                record.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Firm compliance record created successfully',
+                'data': {
+                    'id': str(record.id),
+                    'firm_name': record.firm_name,
+                    'personal_notes': record.personal_notes,
+                    'logo_url': record.logo_url,
+                    'created_at': record.created_at.isoformat(),
+                    'updated_at': record.updated_at.isoformat(),
+                }
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'success': False,
+                'message': 'Invalid JSON data'
+            }, status=400)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': f'Error creating record: {str(e)}'
+            }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT", "DELETE"])
+def firm_compliance_detail(request, compliance_id):
+    """Get, update, or delete a specific firm compliance record"""
+    
+    try:
+        record = get_object_or_404(FirmCompliance, id=compliance_id)
+    except Exception:
+        return JsonResponse({
+            'success': False,
+            'message': 'Record not found'
+        }, status=404)
+    
+    if request.method == "GET":
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'id': str(record.id),
+                'firm_name': record.firm_name,
+                'personal_notes': record.personal_notes,
+                'logo_url': record.logo_url,
+                'created_at': record.created_at.isoformat(),
+                'updated_at': record.updated_at.isoformat(),
+            }
+        })
+    
+    elif request.method == "PUT":
+        try:
+            data = json.loads(request.body)
+            
+            # Update fields if provided
+            if 'firm_name' in data:
+                firm_name = data['firm_name'].strip()
+                if not firm_name:
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'Firm name cannot be empty'
+                    }, status=400)
+                record.firm_name = firm_name
+            
+            if 'personal_notes' in data:
+                record.personal_notes = data['personal_notes'].strip()
+            
+            # Handle logo update
+            if 'logo_data' in data and 'logo_filename' in data:
+                try:
+                    format, imgstr = data['logo_data'].split(';base64,')
+                    logo_file = ContentFile(
+                        base64.b64decode(imgstr),
+                        name=f"{record.id}_{data['logo_filename']}"
+                    )
+                    record.firm_logo.save(logo_file.name, logo_file, save=False)
+                except Exception:
+                    pass
+            
+            record.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Record updated successfully',
+                'data': {
+                    'id': str(record.id),
+                    'firm_name': record.firm_name,
+                    'personal_notes': record.personal_notes,
+                    'logo_url': record.logo_url,
+                    'created_at': record.created_at.isoformat(),
+                    'updated_at': record.updated_at.isoformat(),
+                }
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'success': False,
+                'message': 'Invalid JSON data'
+            }, status=400)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': f'Error updating record: {str(e)}'
+            }, status=500)
+    
+    elif request.method == "DELETE":
+        try:
+            # Delete the logo file if it exists
+            if record.firm_logo:
+                default_storage.delete(record.firm_logo.name)
+            
+            record.delete()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Record deleted successfully'
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': f'Error deleting record: {str(e)}'
+            }, status=500)
 
 
 # LEGODI BACKEND CODE

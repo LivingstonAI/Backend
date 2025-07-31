@@ -170,6 +170,10 @@ urlpatterns = [
     path('api/ai-council/conversations/<str:conversation_id>/', 
          views.get_council_conversation_details_view, 
          name='get_ai_council_conversation_details'),
+     
+     # Firm compliance endpoints
+    path('api/firm-compliance/', views.firm_compliance_list, name='firm_compliance_list'),
+    path('api/firm-compliance/<uuid:compliance_id>/', views.firm_compliance_detail, name='firm_compliance_detail'),
 
 
     # create appproprate urls.py here

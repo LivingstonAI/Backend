@@ -890,6 +890,31 @@ class AITradingCouncilParticipant(models.Model):
     def __str__(self):
         return f"{self.participant_name} in {self.conversation.conversation_id}"
 
+
+class FirmCompliance(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    firm_name = models.CharField(max_length=200, verbose_name="Firm Name")
+    firm_logo = models.ImageField(upload_to='firm_logos/', null=True, blank=True, verbose_name="Firm Logo")
+    personal_notes = models.TextField(verbose_name="Personal Notes", help_text="Your personal compliance notes and rules")
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Firm Compliance"
+        verbose_name_plural = "Firm Compliance Records"
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.firm_name} - Compliance Rules"
+    
+    @property
+    def logo_url(self):
+        """Return the logo URL if exists, otherwise return None"""
+        if self.firm_logo and hasattr(self.firm_logo, 'url'):
+            return self.firm_logo.url
+        return None
+        
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 
