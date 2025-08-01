@@ -12469,6 +12469,7 @@ scheduler.add_job(
 #     max_instances=1
 # )
 
+
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -12478,6 +12479,7 @@ from django.core.files.base import ContentFile
 from django.db.models import Q
 import json
 import base64
+import os
 from .models import FirmCompliance
 
 @csrf_exempt
@@ -12505,7 +12507,7 @@ def firm_compliance_list(request):
                 'id': str(record.id),
                 'firm_name': record.firm_name,
                 'personal_notes': record.personal_notes,
-                'logo_url': record.logo_url,
+                'logo_url': record.logo_url,  # This will now return base64 data URL
                 'created_at': record.created_at.isoformat(),
                 'updated_at': record.updated_at.isoformat(),
             })
@@ -12549,12 +12551,22 @@ def firm_compliance_list(request):
                 try:
                     format, imgstr = logo_data.split(';base64,')
                     ext = format.split('/')[-1]
+                    
+                    # Ensure we have a valid file extension
+                    if ext not in ['jpeg', 'jpg', 'png', 'gif', 'webp']:
+                        ext = 'png'  # default to png
+                    
+                    filename = f"{record.id}_{logo_filename}"
+                    if not filename.lower().endswith(('.' + ext)):
+                        filename = f"{filename}.{ext}"
+                    
                     logo_file = ContentFile(
                         base64.b64decode(imgstr),
-                        name=f"{record.id}_{logo_filename}"
+                        name=filename
                     )
                     record.firm_logo.save(logo_file.name, logo_file, save=True)
                 except Exception as e:
+                    print(f"Error saving logo: {e}")
                     # If logo upload fails, continue without it
                     pass
             elif 'firm_logo' in request.FILES:
@@ -12569,7 +12581,7 @@ def firm_compliance_list(request):
                     'id': str(record.id),
                     'firm_name': record.firm_name,
                     'personal_notes': record.personal_notes,
-                    'logo_url': record.logo_url,
+                    'logo_url': record.logo_url,  # This will now return base64 data URL
                     'created_at': record.created_at.isoformat(),
                     'updated_at': record.updated_at.isoformat(),
                 }
@@ -12606,7 +12618,7 @@ def firm_compliance_detail(request, compliance_id):
                 'id': str(record.id),
                 'firm_name': record.firm_name,
                 'personal_notes': record.personal_notes,
-                'logo_url': record.logo_url,
+                'logo_url': record.logo_url,  # This will now return base64 data URL
                 'created_at': record.created_at.isoformat(),
                 'updated_at': record.updated_at.isoformat(),
             }
@@ -12633,12 +12645,27 @@ def firm_compliance_detail(request, compliance_id):
             if 'logo_data' in data and 'logo_filename' in data:
                 try:
                     format, imgstr = data['logo_data'].split(';base64,')
+                    ext = format.split('/')[-1]
+                    
+                    # Ensure we have a valid file extension
+                    if ext not in ['jpeg', 'jpg', 'png', 'gif', 'webp']:
+                        ext = 'png'  # default to png
+                    
+                    # Delete old logo if exists
+                    if record.firm_logo:
+                        default_storage.delete(record.firm_logo.name)
+                    
+                    filename = f"{record.id}_{data['logo_filename']}"
+                    if not filename.lower().endswith(('.' + ext)):
+                        filename = f"{filename}.{ext}"
+                    
                     logo_file = ContentFile(
                         base64.b64decode(imgstr),
-                        name=f"{record.id}_{data['logo_filename']}"
+                        name=filename
                     )
                     record.firm_logo.save(logo_file.name, logo_file, save=False)
-                except Exception:
+                except Exception as e:
+                    print(f"Error updating logo: {e}")
                     pass
             
             record.save()
@@ -12650,7 +12677,7 @@ def firm_compliance_detail(request, compliance_id):
                     'id': str(record.id),
                     'firm_name': record.firm_name,
                     'personal_notes': record.personal_notes,
-                    'logo_url': record.logo_url,
+                    'logo_url': record.logo_url,  # This will now return base64 data URL
                     'created_at': record.created_at.isoformat(),
                     'updated_at': record.updated_at.isoformat(),
                 }

@@ -890,6 +890,11 @@ class AITradingCouncilParticipant(models.Model):
     def __str__(self):
         return f"{self.participant_name} in {self.conversation.conversation_id}"
 
+from django.db import models
+from django.utils import timezone
+import uuid
+import base64
+from django.core.files.storage import default_storage
 
 class FirmCompliance(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -909,9 +914,31 @@ class FirmCompliance(models.Model):
     
     @property
     def logo_url(self):
-        """Return the logo URL if exists, otherwise return None"""
+        """Return the logo as base64 data URL if exists, otherwise return None"""
         if self.firm_logo and hasattr(self.firm_logo, 'url'):
-            return self.firm_logo.url
+            try:
+                # Read the file and convert to base64
+                with default_storage.open(self.firm_logo.name, 'rb') as image_file:
+                    image_data = image_file.read()
+                    
+                # Get the file extension to determine MIME type
+                file_extension = self.firm_logo.name.split('.')[-1].lower()
+                mime_type_map = {
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'png': 'image/png',
+                    'gif': 'image/gif',
+                    'webp': 'image/webp'
+                }
+                mime_type = mime_type_map.get(file_extension, 'image/jpeg')
+                
+                # Convert to base64 and return as data URL
+                base64_data = base64.b64encode(image_data).decode('utf-8')
+                return f"data:{mime_type};base64,{base64_data}"
+                
+            except Exception as e:
+                print(f"Error reading logo file: {e}")
+                return None
         return None
         
 
