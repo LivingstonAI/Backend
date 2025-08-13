@@ -10476,6 +10476,8 @@ def create_trade_calendar(request):
         }, status=500)
 
 
+# In your Django view, make sure the POST handler includes category:
+
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def paper_gpt(request):
@@ -10491,10 +10493,10 @@ def paper_gpt(request):
                 'fileSize': paper.file_size,
                 'uploadDate': paper.upload_date.isoformat(),
                 'aiSummary': paper.ai_summary,
-                'category': paper.category,
+                'category': paper.category,  # Make sure this field exists
                 'personalNotes': paper.personal_notes,
                 'extractedText': paper.extracted_text,
-                'fileData': paper.file_data,  # Add this line!
+                'fileData': paper.file_data,
             })
         
         return JsonResponse(papers_data, safe=False)
@@ -10502,14 +10504,18 @@ def paper_gpt(request):
     elif request.method == 'POST':
         try:
             data = json.loads(request.body)
+            
+            # Add validation and debugging
+            print("Received data:", data.keys())  # Debug line
+            
             paper = PaperGPT.objects.create(
-                title=data['title'],
-                file_name=data['fileName'],
-                file_data=data['fileData'],
-                file_size=data['fileSize'],
-                category=data['category'],
-                extracted_text=data['extractedText'],
-                ai_summary=data['aiSummary'],
+                title=data.get('title', ''),
+                file_name=data.get('fileName', ''),
+                file_data=data.get('fileData', ''),
+                file_size=data.get('fileSize', 0),
+                category=data.get('category', ''),  # Handle missing category gracefully
+                extracted_text=data.get('extractedText', ''),
+                ai_summary=data.get('aiSummary', ''),
                 personal_notes=data.get('personalNotes', '')
             )
             return JsonResponse({
@@ -10517,9 +10523,12 @@ def paper_gpt(request):
                 'title': paper.title,
                 'message': 'Paper saved successfully'
             })
+        except KeyError as e:
+            return JsonResponse({'error': f'Missing required field: {str(e)}'}, status=400)
         except Exception as e:
+            print("Error saving paper:", str(e))  # Debug line
             return JsonResponse({'error': str(e)}, status=400)
-
+            
 
 @csrf_exempt
 @require_http_methods(["PUT", "DELETE"])
