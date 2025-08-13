@@ -10491,6 +10491,7 @@ def paper_gpt(request):
                 'fileSize': paper.file_size,
                 'uploadDate': paper.upload_date.isoformat(),
                 'aiSummary': paper.ai_summary,
+                'category': paper.category,
                 'personalNotes': paper.personal_notes,
                 'extractedText': paper.extracted_text,
                 'fileData': paper.file_data,  # Add this line!
@@ -10506,6 +10507,7 @@ def paper_gpt(request):
                 file_name=data['fileName'],
                 file_data=data['fileData'],
                 file_size=data['fileSize'],
+                category=data['category'],
                 extracted_text=data['extractedText'],
                 ai_summary=data['aiSummary'],
                 personal_notes=data.get('personalNotes', '')
@@ -10528,6 +10530,7 @@ def paper_detail(request, paper_id):
         if request.method == 'PUT':
             data = json.loads(request.body)
             paper.personal_notes = data.get('personalNotes', paper.personal_notes)
+            paper.category = data.get('category', paper.category)
             paper.save()
             return JsonResponse({'message': 'Paper updated successfully'})
             
@@ -10539,6 +10542,14 @@ def paper_detail(request, paper_id):
         return JsonResponse({'error': 'Paper not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_categories(request):
+    """Get all unique categories"""
+    categories = PaperGPT.objects.values_list('category', flat=True).distinct()
+    categories = [cat for cat in categories if cat]  # Remove empty categories
+    return JsonResponse(list(categories), safe=False)
 
 @csrf_exempt
 def extract_pdf_text(request):

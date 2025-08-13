@@ -564,6 +564,7 @@ class PaperGPT(models.Model):
     file_size = models.BigIntegerField()
     extracted_text = models.TextField()
     ai_summary = models.TextField()
+    category = models.CharField(max_length=100, blank=True, null=True)
     personal_notes = models.TextField(blank=True)
     upload_date = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
