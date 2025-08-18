@@ -78,7 +78,7 @@ urlpatterns = [
     path('delete_account/<int:account_id>/', views.delete_account, name='delete_account'),
     path('accounts/update/', views.update_account, name='update_account'),
     path('get-trading-analytics', views.get_trading_analytics, name='get-trading-analytics'),
-#     path('create-new-trade-data', views.create_new_trade_data, name='create-new-trade-data'),
+    path('create-new-trade-data', views.create_new_trade_data, name='create-new-trade-data'),
     path('fetch-trading-data', views.fetch_trading_data, name='fetch-trading-data'),
     path('fetch-account-data/', views.fetch_account_data, name='fetch-account-data'),
     path('set-daily-brief-assets', views.set_daily_brief_assets, name='set-daily-brief-assets'),
@@ -175,8 +175,6 @@ urlpatterns = [
      # Firm compliance endpoints
     path('api/firm-compliance/', views.firm_compliance_list, name='firm_compliance_list'),
     path('api/firm-compliance/<uuid:compliance_id>/', views.firm_compliance_detail, name='firm_compliance_detail'),
-
-    path('create-new-trade-data', views.create_new_trade_data, name='create-new-trade-data'),
 
 
     # create appproprate urls.py here
