@@ -176,7 +176,7 @@ urlpatterns = [
     path('api/firm-compliance/', views.firm_compliance_list, name='firm_compliance_list'),
     path('api/firm-compliance/<uuid:compliance_id>/', views.firm_compliance_detail, name='firm_compliance_detail'),
 
-    path('create-new-trade-data', views.create_new_trade_data, name='create-new-trade-data'),
+    path('create-new-trade-data/', views.create_new_trade_data, name='create-new-trade-data'),
 
 
     # create appproprate urls.py here
