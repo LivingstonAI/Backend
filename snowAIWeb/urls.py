@@ -176,6 +176,10 @@ urlpatterns = [
     path('api/firm-compliance/', views.firm_compliance_list, name='firm_compliance_list'),
     path('api/firm-compliance/<uuid:compliance_id>/', views.firm_compliance_detail, name='firm_compliance_detail'),
 
+    # Economic Strength Index  
+    path('api/economic-strength-index/', views.economic_strength_index, name='economic-strength-index'),
+
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

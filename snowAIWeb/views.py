@@ -12770,6 +12770,268 @@ def firm_compliance_detail(request, compliance_id):
             }, status=500)
 
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.db.models import Q
+from datetime import datetime, timedelta
+import json
+import numpy as np
+from collections import defaultdict
+
+def clean_numeric_value_esi(value_str):
+    """
+    Convert string values like '3.2%', '$50.4B', etc. to float values
+    Enhanced version for ESI calculation
+    """
+    if not value_str or value_str.strip() == '' or value_str.lower() in ['n/a', 'na', '-']:
+        return None
+    
+    try:
+        # Handle special cases
+        value_str = str(value_str).strip()
+        
+        # Remove common symbols
+        multipliers = {'K': 1000, 'M': 1000000, 'B': 1000000000, 'T': 1000000000000}
+        multiplier = 1
+        
+        # Check for multiplier suffixes
+        for suffix, mult in multipliers.items():
+            if value_str.upper().endswith(suffix):
+                multiplier = mult
+                value_str = value_str[:-1]
+                break
+        
+        # Remove other symbols
+        cleaned = value_str.replace('%', '').replace('$', '').replace(',', '')
+        cleaned = cleaned.replace('€', '').replace('£', '').replace('¥', '')
+        
+        # Handle negative values
+        is_negative = cleaned.startswith('-') or cleaned.startswith('(')
+        cleaned = cleaned.replace('-', '').replace('(', '').replace(')', '')
+        
+        # Convert to float
+        result = float(cleaned) * multiplier
+        return -result if is_negative else result
+        
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+def calculate_percentage_deviation(actual, forecast):
+    """
+    Calculate percentage deviation from forecast
+    Returns standardized deviation score
+    """
+    if actual is None or forecast is None:
+        return 0
+    
+    actual_val = clean_numeric_value_esi(actual)
+    forecast_val = clean_numeric_value_esi(forecast)
+    
+    if actual_val is None or forecast_val is None:
+        return 0
+    
+    # Handle division by zero
+    if forecast_val == 0:
+        return 100 if actual_val > 0 else -100 if actual_val < 0 else 0
+    
+    # Calculate percentage deviation
+    deviation = ((actual_val - forecast_val) / abs(forecast_val)) * 100
+    
+    # Cap extreme values to prevent outliers from skewing the index
+    return max(-200, min(200, deviation))
+
+def get_impact_weight(impact):
+    """
+    Return weight based on impact level
+    """
+    weights = {
+        'high': 3.0,
+        'medium': 2.0,
+        'low': 1.0
+    }
+    return weights.get(impact.lower(), 1.0)
+
+def normalize_esi_scores(scores):
+    """
+    Normalize ESI scores using z-score normalization
+    Then scale to a more interpretable range
+    """
+    if not scores:
+        return scores
+    
+    # Calculate mean and standard deviation
+    mean_score = np.mean(scores)
+    std_score = np.std(scores)
+    
+    if std_score == 0:
+        return [50 for _ in scores]  # Return neutral scores if no variation
+    
+    # Apply z-score normalization
+    normalized = [(score - mean_score) / std_score for score in scores]
+    
+    # Scale to 0-100 range with 50 as neutral
+    # Values above 50 indicate stronger than average performance
+    # Values below 50 indicate weaker than average performance
+    scaled = [max(0, min(100, 50 + (norm * 15))) for norm in normalized]
+    
+    return scaled
+
+@api_view(['POST'])
+def economic_strength_index(request):
+    """
+    Calculate and return Economic Strength Index for selected currencies
+    """
+    try:
+        data = json.loads(request.body)
+        currencies = data.get('currencies', ['USD'])
+        date_range = data.get('date_range', '30d')
+        
+        # Calculate date range
+        range_days = {
+            '7d': 7,
+            '30d': 30,
+            '90d': 90,
+            '180d': 180,
+            '365d': 365
+        }
+        
+        days = range_days.get(date_range, 30)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        # Fetch economic events for selected currencies within date range
+        events = EconomicEvent.objects.filter(
+            currency__in=currencies,
+            date_time__gte=start_date,
+            date_time__lte=end_date,
+            actual__isnull=False,
+            forecast__isnull=False
+        ).exclude(
+            Q(actual='') | Q(forecast='')
+        ).order_by('date_time')
+        
+        # Group events by currency and date
+        currency_data = defaultdict(lambda: defaultdict(list))
+        
+        for event in events:
+            date_key = event.date_time.date().isoformat()
+            currency_data[event.currency][date_key].append(event)
+        
+        # Calculate daily ESI scores for each currency
+        chart_data_dict = defaultdict(dict)
+        
+        for currency in currencies:
+            daily_scores = []
+            dates = []
+            
+            # Get all unique dates across all currencies for consistency
+            all_dates = set()
+            for curr_data in currency_data.values():
+                all_dates.update(curr_data.keys())
+            
+            sorted_dates = sorted(all_dates)
+            
+            for date_str in sorted_dates:
+                events_for_date = currency_data[currency].get(date_str, [])
+                
+                if events_for_date:
+                    # Calculate weighted ESI score for this date
+                    weighted_deviations = []
+                    
+                    for event in events_for_date:
+                        deviation = calculate_percentage_deviation(event.actual, event.forecast)
+                        weight = get_impact_weight(event.impact)
+                        weighted_deviations.append(deviation * weight)
+                    
+                    # Average weighted deviations for the day
+                    if weighted_deviations:
+                        daily_score = np.mean(weighted_deviations)
+                        daily_scores.append(daily_score)
+                        dates.append(date_str)
+                    else:
+                        # No events for this day - use neutral score
+                        daily_scores.append(0)
+                        dates.append(date_str)
+                else:
+                    # No events for this currency on this date
+                    daily_scores.append(0)
+                    dates.append(date_str)
+            
+            # Apply smoothing (7-day moving average) for cleaner visualization
+            if len(daily_scores) > 7:
+                smoothed_scores = []
+                for i in range(len(daily_scores)):
+                    start_idx = max(0, i - 3)
+                    end_idx = min(len(daily_scores), i + 4)
+                    window_scores = daily_scores[start_idx:end_idx]
+                    smoothed_scores.append(np.mean(window_scores))
+                daily_scores = smoothed_scores
+            
+            # Normalize scores
+            normalized_scores = normalize_esi_scores(daily_scores)
+            
+            # Store in chart data structure
+            for i, (date_str, score) in enumerate(zip(dates, normalized_scores)):
+                if date_str not in chart_data_dict:
+                    chart_data_dict[date_str] = {'date': date_str}
+                chart_data_dict[date_str][currency] = score
+        
+        # Convert to list format for chart
+        chart_data = []
+        for date_str in sorted(chart_data_dict.keys()):
+            data_point = chart_data_dict[date_str].copy()
+            # Format date for better display
+            try:
+                date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                data_point['date'] = date_obj.strftime('%m/%d')
+            except:
+                data_point['date'] = date_str
+            chart_data.append(data_point)
+        
+        # Calculate summary statistics
+        summary_stats = {}
+        for currency in currencies:
+            currency_scores = [point.get(currency, 50) for point in chart_data if currency in point]
+            if currency_scores:
+                summary_stats[currency] = {
+                    'current_esi': currency_scores[-1] if currency_scores else 50,
+                    'average_esi': np.mean(currency_scores),
+                    'trend': 'positive' if currency_scores[-1] > np.mean(currency_scores) else 'negative'
+                }
+            else:
+                summary_stats[currency] = {
+                    'current_esi': 50,
+                    'average_esi': 50,
+                    'trend': 'neutral'
+                }
+        
+        response_data = {
+            'success': True,
+            'chart_data': chart_data,
+            'summary_stats': summary_stats,
+            'metadata': {
+                'total_events_analyzed': events.count(),
+                'date_range': f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
+                'currencies': currencies
+            }
+        }
+        
+        return Response(response_data)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': str(e),
+            'chart_data': [],
+            'summary_stats': {}
+        }, status=500)
+
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
