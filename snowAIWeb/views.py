@@ -5983,8 +5983,8 @@ def generate_cot_data(request):
             currency_df['Total Commercial Positions']
         ) * 100
 
-        # Generate plots
-        plot_urls = plot_net_positions(unfiltered_currency_df)  # Assuming this function exists
+        # Generate chart data instead of plots
+        chart_data = generate_chart_data_for_cot(unfiltered_currency_df, requested_assets)
 
         # Prepare response data
         data = {}
@@ -6001,7 +6001,7 @@ def generate_cot_data(request):
                     'Percentage Noncommercial Short': round(latest_data['Percentage Noncommercial Short'], round_off_number),
                     'Percentage Commercial Long': round(latest_data['Percentage Commercial Long'], round_off_number),
                     'Percentage Commercial Short': round(latest_data['Percentage Commercial Short'], round_off_number),
-                    'Plot URL': plot_urls.get(asset, '')
+                    'Chart Data': chart_data.get(asset, {})
                 }
 
         return JsonResponse(data)
@@ -6009,6 +6009,42 @@ def generate_cot_data(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+
+def generate_chart_data_for_cot(df, requested_assets):
+    """Generate chart data for frontend interactive charts"""
+    chart_data = {}
+    
+    for asset in requested_assets:
+        asset_data = df[df['Market and Exchange Names'] == asset].copy()
+        
+        if asset_data.empty:
+            continue
+            
+        # Sort by date
+        asset_data = asset_data.sort_values('As of Date in Form YYYY-MM-DD')
+        
+        # Calculate midpoint for commercial positions
+        min_commercial = asset_data['Net Commercial Positions'].min()
+        max_commercial = asset_data['Net Commercial Positions'].max()
+        midpoint_commercial = (min_commercial + max_commercial) / 2
+        
+        # Prepare data for frontend
+        dates = asset_data['As of Date in Form YYYY-MM-DD'].dt.strftime('%Y-%m-%d').tolist()
+        net_noncommercial = asset_data['Net Noncommercial Positions'].round(2).tolist()
+        net_commercial = asset_data['Net Commercial Positions'].round(2).tolist()
+        open_interest = asset_data['Open Interest (All)'].round(2).tolist()
+        
+        chart_data[asset] = {
+            'dates': dates,
+            'netNoncommercial': net_noncommercial,
+            'netCommercial': net_commercial,
+            'openInterest': open_interest,
+            'midpointCommercial': round(midpoint_commercial, 2),
+            'minCommercial': round(min_commercial, 2),
+            'maxCommercial': round(max_commercial, 2)
+        }
+    
+    return chart_data
 
 def plot_net_positions(df):
     # Get the unique currencies
