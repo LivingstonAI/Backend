@@ -13054,28 +13054,96 @@ def merge_esi_and_forex_data(esi_data, forex_data):
             # Fallback: use original date as key
             merged_data[display_date] = point.copy()
     
-    # Add forex data using YYYY-MM-DD keys
+    # Create a complete date range for forex data interpolation
+    all_forex_dates = set()
     for pair, price_data in forex_data.items():
         for price_point in price_data:
-            forex_date = price_point['date']  # This should be YYYY-MM-DD
-            
+            all_forex_dates.add(price_point['date'])
+    
+    # Sort dates for interpolation
+    sorted_forex_dates = sorted(all_forex_dates)
+    
+    # Add forex data with interpolation for missing values
+    for pair, price_data in forex_data.items():
+        # Create a dictionary of forex prices by date
+        forex_prices_by_date = {point['date']: point['price'] for point in price_data}
+        
+        # Get all dates in our merged data
+        all_merged_dates = list(merged_data.keys())
+        
+        # For each date in our data, try to get forex price or interpolate
+        for date_key in all_merged_dates:
             try:
-                # Check if we have ESI data for this date
-                if forex_date in merged_data:
-                    merged_data[forex_date][f"{pair}_price"] = price_point['price']
+                if date_key in forex_prices_by_date:
+                    # Direct match
+                    merged_data[date_key][f"{pair}_price"] = forex_prices_by_date[date_key]
                 else:
-                    # Create new entry with properly formatted display date
-                    date_obj = datetime.strptime(forex_date, '%Y-%m-%d')
+                    # Try to interpolate or use nearest value
+                    # Convert date_key to datetime for comparison
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    # Find the closest forex dates
+                    closest_before = None
+                    closest_after = None
+                    closest_before_price = None
+                    closest_after_price = None
+                    
+                    for forex_date_str, price in forex_prices_by_date.items():
+                        try:
+                            forex_date = datetime.strptime(forex_date_str, '%Y-%m-%d')
+                            
+                            if forex_date <= target_date:
+                                if closest_before is None or forex_date > closest_before:
+                                    closest_before = forex_date
+                                    closest_before_price = price
+                            
+                            if forex_date >= target_date:
+                                if closest_after is None or forex_date < closest_after:
+                                    closest_after = forex_date
+                                    closest_after_price = price
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_price is not None and closest_after_price is not None and closest_before != closest_after:
+                        # Linear interpolation
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_price = closest_before_price + (closest_after_price - closest_before_price) * weight
+                            merged_data[date_key][f"{pair}_price"] = interpolated_price
+                        else:
+                            merged_data[date_key][f"{pair}_price"] = closest_before_price
+                    elif closest_before_price is not None:
+                        # Use closest before value
+                        merged_data[date_key][f"{pair}_price"] = closest_before_price
+                    elif closest_after_price is not None:
+                        # Use closest after value
+                        merged_data[date_key][f"{pair}_price"] = closest_after_price
+                        
+            except Exception as e:
+                print(f"Error processing forex data for {date_key}: {str(e)}")
+                continue
+        
+        # Also add forex-only dates if they don't exist in ESI data
+        for forex_date_str, price in forex_prices_by_date.items():
+            if forex_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(forex_date_str, '%Y-%m-%d')
                     display_date = date_obj.strftime('%m/%d')
                     
-                    merged_data[forex_date] = {
+                    merged_data[forex_date_str] = {
                         'date': display_date,
-                        f"{pair}_price": price_point['price']
+                        f"{pair}_price": price
                     }
-                    
-            except Exception as e:
-                print(f"Error processing forex date {forex_date}: {str(e)}")
-                continue
+                except Exception as e:
+                    print(f"Error adding forex-only date {forex_date_str}: {str(e)}")
+                    continue
     
     # Convert back to list format and sort by actual date
     merged_list = []
@@ -13283,8 +13351,7 @@ def economic_strength_index(request):
             'error': str(e),
             'chart_data': [],
             'summary_stats': {}
-        }, status=500)
-                        
+        }, status=500)                
 
 # LEGODI BACKEND CODE
 def send_simple_message():
