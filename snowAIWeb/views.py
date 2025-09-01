@@ -12770,17 +12770,15 @@ def firm_compliance_detail(request, compliance_id):
             }, status=500)
 
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from django.db.models import Q
-from datetime import datetime, timedelta
 import json
 import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
 from collections import defaultdict
+from django.db.models import Q
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+import yfinance as yf
 
 def clean_numeric_value_esi(value_str):
     """
@@ -12880,14 +12878,139 @@ def normalize_esi_scores(scores):
     
     return scaled
 
+def obtain_dataset(asset, interval, num_days):
+    """
+    Your existing function - unchanged
+    """
+    # Calculate the end and start dates
+    end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=num_days)).strftime("%Y-%m-%d")
+
+    # Download data using yfinance
+    forex_asset = f"{asset}=X"
+    data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+    return data
+
+def get_forex_data(forex_pairs, date_range):
+    """
+    Fetch forex data for specified pairs and date range
+    """
+    range_days = {
+        '7d': 7,
+        '30d': 30,
+        '90d': 90,
+        '180d': 180,
+        '365d': 365
+    }
+    
+    days = range_days.get(date_range, 30)
+    
+    # Determine interval based on date range
+    if days <= 7:
+        interval = '1h'
+    elif days <= 30:
+        interval = '1d'
+    else:
+        interval = '1d'
+    
+    forex_data = {}
+    
+    for pair in forex_pairs:
+        try:
+            # Use your existing obtain_dataset function
+            data = obtain_dataset(pair, interval, days)
+            
+            if not data.empty:
+                # Reset index to get dates as a column
+                data_reset = data.reset_index()
+                
+                # Convert to the format we need
+                forex_data[pair] = []
+                for _, row in data_reset.iterrows():
+                    date_str = row['Date'].strftime('%Y-%m-%d')
+                    close_price = float(row['Close'])
+                    
+                    forex_data[pair].append({
+                        'date': date_str,
+                        'price': close_price
+                    })
+                        
+        except Exception as e:
+            print(f"Error fetching forex data for {pair}: {str(e)}")
+            forex_data[pair] = []
+    
+    return forex_data
+
+def merge_esi_and_forex_data(esi_data, forex_data):
+    """
+    Merge ESI data with forex price data
+    """
+    # Create a comprehensive date-based dictionary
+    merged_data = {}
+    
+    # Add ESI data
+    for point in esi_data:
+        date_key = point['date']
+        if date_key not in merged_data:
+            merged_data[date_key] = {'date': point['date']}
+        
+        # Add all ESI values
+        for key, value in point.items():
+            if key != 'date':
+                merged_data[date_key][key] = value
+    
+    # Add forex data
+    for pair, price_data in forex_data.items():
+        for price_point in price_data:
+            date_key = price_point['date']
+            
+            # Convert date format if needed (MM/DD to YYYY-MM-DD matching)
+            try:
+                # If the ESI date is in MM/DD format, we need to match it
+                if date_key not in merged_data:
+                    # Try to find matching date in different format
+                    date_obj = datetime.strptime(date_key, '%Y-%m-%d')
+                    formatted_date = date_obj.strftime('%m/%d')
+                    
+                    # Look for existing entry with this formatted date
+                    matching_key = None
+                    for existing_key in merged_data.keys():
+                        if existing_key == formatted_date:
+                            matching_key = existing_key
+                            break
+                    
+                    if matching_key:
+                        merged_data[matching_key][f"{pair}_price"] = price_point['price']
+                    else:
+                        # Create new entry if no ESI data exists for this date
+                        merged_data[date_key] = {
+                            'date': formatted_date,
+                            f"{pair}_price": price_point['price']
+                        }
+                else:
+                    merged_data[date_key][f"{pair}_price"] = price_point['price']
+                    
+            except Exception as e:
+                print(f"Date format error for {date_key}: {str(e)}")
+                continue
+    
+    # Convert back to list format and sort by date
+    merged_list = []
+    for date_key in sorted(merged_data.keys()):
+        merged_list.append(merged_data[date_key])
+    
+    return merged_list
+
 @api_view(['POST'])
 def economic_strength_index(request):
     """
     Calculate and return Economic Strength Index for selected currencies
+    Now with forex overlay capability
     """
     try:
         data = json.loads(request.body)
         currencies = data.get('currencies', ['USD'])
+        forex_pairs = data.get('forex_pairs', [])
         date_range = data.get('date_range', '30d')
         
         # Calculate date range
@@ -12992,6 +13115,15 @@ def economic_strength_index(request):
                 data_point['date'] = date_str
             chart_data.append(data_point)
         
+        # Fetch and merge forex data if requested
+        if forex_pairs:
+            try:
+                forex_data = get_forex_data(forex_pairs, date_range)
+                chart_data = merge_esi_and_forex_data(chart_data, forex_data)
+            except Exception as e:
+                print(f"Error fetching forex data: {str(e)}")
+                # Continue without forex data if there's an error
+        
         # Calculate summary statistics
         summary_stats = {}
         for currency in currencies:
@@ -13009,12 +13141,25 @@ def economic_strength_index(request):
                     'trend': 'neutral'
                 }
         
+        # Add forex summary stats
+        for pair in forex_pairs:
+            price_key = f"{pair}_price"
+            forex_prices = [point.get(price_key) for point in chart_data if point.get(price_key) is not None]
+            if forex_prices:
+                price_change = ((forex_prices[-1] - forex_prices[0]) / forex_prices[0]) * 100
+                summary_stats[f"{pair}_forex"] = {
+                    'current_price': forex_prices[-1],
+                    'price_change_percent': price_change,
+                    'trend': 'bullish' if price_change > 0 else 'bearish'
+                }
+        
         response_data = {
             'success': True,
             'chart_data': chart_data,
             'summary_stats': summary_stats,
             'metadata': {
-                'total_events_analyzed': events.count(),
+                'total_events_analyzed': events.count() if currencies else 0,
+                'forex_pairs_included': forex_pairs,
                 'date_range': f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
                 'currencies': currencies
             }
@@ -13029,7 +13174,6 @@ def economic_strength_index(request):
             'chart_data': [],
             'summary_stats': {}
         }, status=500)
-
 
 
 # LEGODI BACKEND CODE
