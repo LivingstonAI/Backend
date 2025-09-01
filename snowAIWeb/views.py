@@ -12890,10 +12890,9 @@ def obtain_dataset(asset, interval, num_days):
     forex_asset = f"{asset}=X"
     data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
     return data
-
 def get_forex_data(forex_pairs, date_range):
     """
-    Fetch forex data for specified pairs and date range
+    Fetch forex data for specified pairs and date range - alternative approach
     """
     range_days = {
         '7d': 7,
@@ -12904,6 +12903,10 @@ def get_forex_data(forex_pairs, date_range):
     }
     
     days = range_days.get(date_range, 30)
+    
+    # Calculate dates
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
     
     # Determine interval based on date range
     if days <= 7:
@@ -12917,86 +12920,99 @@ def get_forex_data(forex_pairs, date_range):
     
     for pair in forex_pairs:
         try:
-            # Use your existing obtain_dataset function
-            data = obtain_dataset(pair, interval, days)
+            # Direct yfinance call with better error handling
+            forex_symbol = f"{pair}=X"
+            print(f"Fetching {forex_symbol} from {start_date.date()} to {end_date.date()}")
             
-            if not data.empty:
-                # Reset index to get dates as a column
+            data = yf.download(
+                forex_symbol, 
+                start=start_date.strftime('%Y-%m-%d'),
+                end=end_date.strftime('%Y-%m-%d'),
+                interval=interval,
+                progress=False
+            )
+            
+            print(f"Downloaded data shape for {pair}: {data.shape}")
+            print(f"Data columns: {data.columns.tolist()}")
+            
+            if not data.empty and 'Close' in data.columns:
+                forex_data[pair] = []
+                
+                # Reset index to get dates
                 data_reset = data.reset_index()
                 
-                # Convert to the format we need
-                forex_data[pair] = []
                 for _, row in data_reset.iterrows():
-                    date_str = row['Date'].strftime('%Y-%m-%d')
-                    close_price = float(row['Close'])
+                    # Handle different date column names
+                    date_col = 'Date' if 'Date' in row.index else 'Datetime'
                     
-                    forex_data[pair].append({
-                        'date': date_str,
-                        'price': close_price
-                    })
+                    if date_col in row.index:
+                        date_str = row[date_col].strftime('%Y-%m-%d')
+                        close_price = float(row['Close'])
+                        
+                        forex_data[pair].append({
+                            'date': date_str,
+                            'price': close_price
+                        })
+                
+                print(f"Successfully processed {len(forex_data[pair])} data points for {pair}")
+                
+            else:
+                print(f"No data or missing Close column for {pair}")
+                forex_data[pair] = []
                         
         except Exception as e:
             print(f"Error fetching forex data for {pair}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             forex_data[pair] = []
     
+    print(f"Final forex_data keys: {list(forex_data.keys())}")
     return forex_data
+    
 
 def merge_esi_and_forex_data(esi_data, forex_data):
     """
-    Merge ESI data with forex price data
+    Merge ESI data with forex price data - simplified approach
     """
-    # Create a comprehensive date-based dictionary
+    # Create a dictionary with ESI data first
     merged_data = {}
     
-    # Add ESI data
+    # Add ESI data - use MM/DD format as base since that's what ESI uses
     for point in esi_data:
-        date_key = point['date']
-        if date_key not in merged_data:
-            merged_data[date_key] = {'date': point['date']}
-        
-        # Add all ESI values
-        for key, value in point.items():
-            if key != 'date':
-                merged_data[date_key][key] = value
+        date_key = point['date']  # This should be in MM/DD format from ESI
+        merged_data[date_key] = point.copy()
     
-    # Add forex data
+    # Add forex data by matching dates
     for pair, price_data in forex_data.items():
         for price_point in price_data:
-            date_key = price_point['date']
+            forex_date = price_point['date']  # This is in YYYY-MM-DD format from yfinance
             
-            # Convert date format if needed (MM/DD to YYYY-MM-DD matching)
             try:
-                # If the ESI date is in MM/DD format, we need to match it
-                if date_key not in merged_data:
-                    # Try to find matching date in different format
-                    date_obj = datetime.strptime(date_key, '%Y-%m-%d')
-                    formatted_date = date_obj.strftime('%m/%d')
-                    
-                    # Look for existing entry with this formatted date
-                    matching_key = None
-                    for existing_key in merged_data.keys():
-                        if existing_key == formatted_date:
-                            matching_key = existing_key
-                            break
-                    
-                    if matching_key:
-                        merged_data[matching_key][f"{pair}_price"] = price_point['price']
-                    else:
-                        # Create new entry if no ESI data exists for this date
-                        merged_data[date_key] = {
-                            'date': formatted_date,
-                            f"{pair}_price": price_point['price']
-                        }
+                # Convert YYYY-MM-DD to MM/DD to match ESI format
+                date_obj = datetime.strptime(forex_date, '%Y-%m-%d')
+                formatted_date = date_obj.strftime('%m/%d')
+                
+                # Add forex price to existing date or create new entry
+                if formatted_date in merged_data:
+                    merged_data[formatted_date][f"{pair}_price"] = price_point['price']
                 else:
-                    merged_data[date_key][f"{pair}_price"] = price_point['price']
+                    # Create new entry if no ESI data for this date
+                    merged_data[formatted_date] = {
+                        'date': formatted_date,
+                        f"{pair}_price": price_point['price']
+                    }
                     
             except Exception as e:
-                print(f"Date format error for {date_key}: {str(e)}")
+                print(f"Date conversion error for {forex_date}: {str(e)}")
                 continue
     
     # Convert back to list format and sort by date
     merged_list = []
-    for date_key in sorted(merged_data.keys()):
+    
+    # Sort dates properly (convert to datetime for sorting, then back to MM/DD)
+    sorted_dates = sorted(merged_data.keys(), key=lambda x: datetime.strptime(f"2024/{x}", '%Y/%m/%d'))
+    
+    for date_key in sorted_dates:
         merged_list.append(merged_data[date_key])
     
     return merged_list
