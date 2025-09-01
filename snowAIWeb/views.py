@@ -12923,52 +12923,71 @@ def get_forex_data(forex_pairs, date_range):
             data = obtain_dataset(pair, interval, days)
             
             if not data.empty:
-                # Reset index to get dates as a column
-                data_reset = data.reset_index()
+                print(f"Got {len(data)} data points for {pair}")
+                print(f"Data columns: {data.columns.tolist()}")
+                print(f"Data index: {data.index.name}")
                 
-                print(f"Got {len(data_reset)} data points for {pair}")
-                print(f"Sample data columns: {data_reset.columns.tolist()}")
-                print(f"Sample data: {data_reset.head(2).to_dict() if len(data_reset) > 0 else 'No data'}")
-                
-                # Convert to the format we need
-                forex_data[pair] = []
-                for _, row in data_reset.iterrows():
-                    try:
-                        # Handle different possible date column names
-                        date_col = None
-                        for col in ['Date', 'Datetime', 'date', 'datetime']:
-                            if col in row.index:
-                                date_col = col
-                                break
-                        
-                        if date_col is None:
-                            print(f"No date column found in {row.index.tolist()}")
-                            continue
-                            
-                        date_value = row[date_col]
-                        
-                        # Convert timestamp to date string
-                        if hasattr(date_value, 'strftime'):
-                            date_str = date_value.strftime('%Y-%m-%d')
-                        else:
-                            date_str = str(date_value)[:10]  # Take first 10 chars for YYYY-MM-DD
-                        
-                        # Get close price
-                        close_price = None
-                        for col in ['Close', 'close', 'Adj Close']:
-                            if col in row.index and pd.notna(row[col]):
-                                close_price = float(row[col])
-                                break
-                        
-                        if close_price is not None:
-                            forex_data[pair].append({
-                                'date': date_str,
-                                'price': close_price
-                            })
-                            
-                    except Exception as row_error:
-                        print(f"Error processing row for {pair}: {str(row_error)}")
+                # Handle MultiIndex columns - flatten them
+                if isinstance(data.columns, pd.MultiIndex):
+                    # For MultiIndex, we want to access the Close column
+                    # The structure is like ('Close', 'EURUSD=X')
+                    close_col = None
+                    for col in data.columns:
+                        if col[0] == 'Close':
+                            close_col = col
+                            break
+                    
+                    if close_col is None:
+                        print(f"No Close column found in MultiIndex columns for {pair}")
+                        forex_data[pair] = []
                         continue
+                        
+                    # Extract the close prices and dates
+                    forex_data[pair] = []
+                    for date_idx, close_price in data[close_col].items():
+                        try:
+                            # date_idx should be a timestamp from the index
+                            if hasattr(date_idx, 'strftime'):
+                                date_str = date_idx.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_idx)[:10]
+                            
+                            if pd.notna(close_price):
+                                forex_data[pair].append({
+                                    'date': date_str,
+                                    'price': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing data point for {pair}: {str(row_error)}")
+                            continue
+                
+                else:
+                    # Handle regular columns (fallback)
+                    data_reset = data.reset_index()
+                    forex_data[pair] = []
+                    
+                    for _, row in data_reset.iterrows():
+                        try:
+                            # Get date
+                            date_value = row['Date'] if 'Date' in row else row.index[0]
+                            if hasattr(date_value, 'strftime'):
+                                date_str = date_value.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_value)[:10]
+                            
+                            # Get close price
+                            close_price = row['Close'] if 'Close' in row else None
+                            
+                            if close_price is not None and pd.notna(close_price):
+                                forex_data[pair].append({
+                                    'date': date_str,
+                                    'price': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing row for {pair}: {str(row_error)}")
+                            continue
                 
                 print(f"Processed {len(forex_data[pair])} valid data points for {pair}")
                 if forex_data[pair]:
@@ -13265,7 +13284,7 @@ def economic_strength_index(request):
             'chart_data': [],
             'summary_stats': {}
         }, status=500)
-                
+                        
 
 # LEGODI BACKEND CODE
 def send_simple_message():
