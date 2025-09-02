@@ -13206,16 +13206,23 @@ def economic_strength_index(request):
         # Calculate daily ESI scores for each currency
         chart_data_dict = defaultdict(dict)
         
+        # Get all unique dates across all currencies for consistency
+        all_dates = set()
+        for curr_data in currency_data.values():
+            all_dates.update(curr_data.keys())
+        
+        # If no ESI dates, create a basic date range
+        if not all_dates:
+            current_date = start_date
+            while current_date <= end_date:
+                all_dates.add(current_date.strftime('%Y-%m-%d'))
+                current_date += timedelta(days=1)
+        
+        sorted_dates = sorted(all_dates)
+        
         for currency in currencies:
             daily_scores = []
             dates = []
-            
-            # Get all unique dates across all currencies for consistency
-            all_dates = set()
-            for curr_data in currency_data.values():
-                all_dates.update(curr_data.keys())
-            
-            sorted_dates = sorted(all_dates)
             
             for date_str in sorted_dates:
                 events_for_date = currency_data[currency].get(date_str, [])
@@ -13235,13 +13242,59 @@ def economic_strength_index(request):
                         daily_scores.append(daily_score)
                         dates.append(date_str)
                     else:
-                        # No events for this day - use neutral score
-                        daily_scores.append(0)
+                        # No valid events for this day - use None for now
+                        daily_scores.append(None)
                         dates.append(date_str)
                 else:
-                    # No events for this currency on this date
-                    daily_scores.append(0)
+                    # No events for this currency on this date - use None for now
+                    daily_scores.append(None)
                     dates.append(date_str)
+            
+            # Fill gaps with interpolation BEFORE smoothing and normalization
+            filled_scores = []
+            for i, score in enumerate(daily_scores):
+                if score is not None:
+                    filled_scores.append(score)
+                else:
+                    # Find nearest non-null values for interpolation
+                    before_idx = None
+                    after_idx = None
+                    before_score = None
+                    after_score = None
+                    
+                    # Look backwards for nearest score
+                    for j in range(i - 1, -1, -1):
+                        if daily_scores[j] is not None:
+                            before_idx = j
+                            before_score = daily_scores[j]
+                            break
+                    
+                    # Look forwards for nearest score
+                    for j in range(i + 1, len(daily_scores)):
+                        if daily_scores[j] is not None:
+                            after_idx = j
+                            after_score = daily_scores[j]
+                            break
+                    
+                    # Interpolate or use nearest value
+                    if before_score is not None and after_score is not None:
+                        # Linear interpolation
+                        distance_total = after_idx - before_idx
+                        distance_from_before = i - before_idx
+                        weight = distance_from_before / distance_total if distance_total > 0 else 0
+                        interpolated_score = before_score + (after_score - before_score) * weight
+                        filled_scores.append(interpolated_score)
+                    elif before_score is not None:
+                        # Use last known value
+                        filled_scores.append(before_score)
+                    elif after_score is not None:
+                        # Use next known value
+                        filled_scores.append(after_score)
+                    else:
+                        # No data available, use neutral score
+                        filled_scores.append(0)
+            
+            daily_scores = filled_scores
             
             # Apply smoothing (7-day moving average) for cleaner visualization
             if len(daily_scores) > 7:
@@ -13352,7 +13405,7 @@ def economic_strength_index(request):
             'chart_data': [],
             'summary_stats': {}
         }, status=500)
-        
+                
                 
 # LEGODI BACKEND CODE
 def send_simple_message():
