@@ -13405,6 +13405,350 @@ def economic_strength_index(request):
             'chart_data': [],
             'summary_stats': {}
         }, status=500)
+
+from django.shortcuts import render
+from django.core.paginator import Paginator
+from django.db.models import Q, Count, Avg, Max, Min
+
+logger = logging.getLogger(__name__)
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def snowai_research_logbook_api_entries(request):
+    """
+    GET: Retrieve ML model entries with filtering and pagination
+    POST: Create new ML model entry
+    """
+    try:
+        if request.method == 'GET':
+            return snowai_get_ml_entries(request)
+        elif request.method == 'POST':
+            return snowai_create_ml_entry(request)
+    except Exception as e:
+        logger.error(f"SnowAI Research Logbook API error: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+def snowai_get_ml_entries(request):
+    """Get ML entries with filtering and search"""
+    # Get query parameters
+    snowai_search_query = request.GET.get('search', '').strip()
+    snowai_model_type = request.GET.get('model_type', '')
+    snowai_status = request.GET.get('status', '')
+    snowai_market_type = request.GET.get('market_type', '')
+    snowai_tags_filter = request.GET.get('tags', '')
+    snowai_page = int(request.GET.get('page', 1))
+    snowai_per_page = int(request.GET.get('per_page', 12))
+    snowai_sort_by = request.GET.get('sort_by', '-snowai_created_at')
+    
+    # Build queryset
+    queryset = SnowAIMLModelLogEntry.objects.all()
+    
+    # Apply filters
+    if snowai_search_query:
+        queryset = queryset.filter(
+            Q(snowai_model_name__icontains=snowai_search_query) |
+            Q(snowai_description__icontains=snowai_search_query) |
+            Q(snowai_tags__icontains=snowai_search_query) |
+            Q(snowai_notes__icontains=snowai_search_query)
+        )
+    
+    if snowai_model_type:
+        queryset = queryset.filter(snowai_model_type=snowai_model_type)
+    
+    if snowai_status:
+        queryset = queryset.filter(snowai_status=snowai_status)
+    
+    if snowai_market_type:
+        queryset = queryset.filter(snowai_financial_market_type=snowai_market_type)
+    
+    if snowai_tags_filter:
+        for tag in snowai_tags_filter.split(','):
+            queryset = queryset.filter(snowai_tags__icontains=tag.strip())
+    
+    # Apply sorting
+    if snowai_sort_by in ['snowai_created_at', '-snowai_created_at', 'snowai_model_name', '-snowai_model_name', 
+                         'snowai_accuracy_score', '-snowai_accuracy_score', 'snowai_r2_score', '-snowai_r2_score']:
+        queryset = queryset.order_by(snowai_sort_by)
+    
+    # Paginate
+    paginator = Paginator(queryset, snowai_per_page)
+    snowai_page_obj = paginator.get_page(snowai_page)
+    
+    # Serialize data
+    snowai_entries = []
+    for entry in snowai_page_obj:
+        snowai_entry_data = {
+            'id': entry.id,
+            'snowai_model_name': entry.snowai_model_name,
+            'snowai_model_type': entry.snowai_model_type,
+            'snowai_tags': entry.snowai_tags_list,
+            'snowai_description': entry.snowai_description,
+            'snowai_created_at': entry.snowai_created_at.isoformat(),
+            'snowai_updated_at': entry.snowai_updated_at.isoformat(),
+            'snowai_status': entry.snowai_status,
+            'snowai_financial_market_type': entry.snowai_financial_market_type,
+            'snowai_dataset_name': entry.snowai_dataset_name,
+            'snowai_framework_used': entry.snowai_framework_used,
+            
+            # Metrics
+            'snowai_accuracy_score': entry.snowai_accuracy_score,
+            'snowai_precision_score': entry.snowai_precision_score,
+            'snowai_recall_score': entry.snowai_recall_score,
+            'snowai_f1_score': entry.snowai_f1_score,
+            'snowai_mae_score': entry.snowai_mae_score,
+            'snowai_mse_score': entry.snowai_mse_score,
+            'snowai_rmse_score': entry.snowai_rmse_score,
+            'snowai_r2_score': entry.snowai_r2_score,
+            'snowai_auc_score': entry.snowai_auc_score,
+            
+            # Financial metrics
+            'snowai_profit_loss': entry.snowai_profit_loss,
+            'snowai_sharpe_ratio': entry.snowai_sharpe_ratio,
+            'snowai_max_drawdown': entry.snowai_max_drawdown,
+            'snowai_win_rate': entry.snowai_win_rate,
+            'snowai_roi_percentage': entry.snowai_roi_percentage,
+            
+            # Training info
+            'snowai_training_duration': entry.snowai_training_duration,
+            'snowai_epochs_trained': entry.snowai_epochs_trained,
+            
+            # Primary metric for display
+            'snowai_primary_metric': entry.snowai_get_primary_metric(),
+        }
+        snowai_entries.append(snowai_entry_data)
+    
+    return JsonResponse({
+        'entries': snowai_entries,
+        'pagination': {
+            'current_page': snowai_page_obj.number,
+            'total_pages': paginator.num_pages,
+            'total_entries': paginator.count,
+            'has_next': snowai_page_obj.has_next(),
+            'has_previous': snowai_page_obj.has_previous(),
+        }
+    })
+
+def snowai_create_ml_entry(request):
+    """Create new ML model entry"""
+    try:
+        snowai_data = json.loads(request.body)
+        
+        # Create new entry
+        snowai_entry = SnowAIMLModelLogEntry.objects.create(
+            snowai_model_name=snowai_data.get('snowai_model_name', ''),
+            snowai_model_type=snowai_data.get('snowai_model_type', 'other'),
+            snowai_tags=', '.join(snowai_data.get('snowai_tags', [])) if snowai_data.get('snowai_tags') else '',
+            snowai_description=snowai_data.get('snowai_description', ''),
+            snowai_code_used=snowai_data.get('snowai_code_used', ''),
+            snowai_colab_notebook_url=snowai_data.get('snowai_colab_notebook_url', ''),
+            snowai_framework_used=snowai_data.get('snowai_framework_used', ''),
+            
+            # Dataset info
+            snowai_dataset_name=snowai_data.get('snowai_dataset_name', ''),
+            snowai_dataset_description=snowai_data.get('snowai_dataset_description', ''),
+            snowai_dataset_size=snowai_data.get('snowai_dataset_size'),
+            snowai_dataset_features=snowai_data.get('snowai_dataset_features'),
+            snowai_dataset_source=snowai_data.get('snowai_dataset_source', ''),
+            snowai_financial_market_type=snowai_data.get('snowai_financial_market_type', ''),
+            
+            # Metrics
+            snowai_accuracy_score=snowai_data.get('snowai_accuracy_score'),
+            snowai_precision_score=snowai_data.get('snowai_precision_score'),
+            snowai_recall_score=snowai_data.get('snowai_recall_score'),
+            snowai_f1_score=snowai_data.get('snowai_f1_score'),
+            snowai_mae_score=snowai_data.get('snowai_mae_score'),
+            snowai_mse_score=snowai_data.get('snowai_mse_score'),
+            snowai_rmse_score=snowai_data.get('snowai_rmse_score'),
+            snowai_r2_score=snowai_data.get('snowai_r2_score'),
+            snowai_auc_score=snowai_data.get('snowai_auc_score'),
+            snowai_custom_metrics=snowai_data.get('snowai_custom_metrics'),
+            
+            # Training info
+            snowai_training_duration=snowai_data.get('snowai_training_duration'),
+            snowai_epochs_trained=snowai_data.get('snowai_epochs_trained'),
+            snowai_batch_size=snowai_data.get('snowai_batch_size'),
+            snowai_learning_rate=snowai_data.get('snowai_learning_rate'),
+            snowai_optimizer_used=snowai_data.get('snowai_optimizer_used', ''),
+            
+            # Financial metrics
+            snowai_profit_loss=snowai_data.get('snowai_profit_loss'),
+            snowai_sharpe_ratio=snowai_data.get('snowai_sharpe_ratio'),
+            snowai_max_drawdown=snowai_data.get('snowai_max_drawdown'),
+            snowai_win_rate=snowai_data.get('snowai_win_rate'),
+            snowai_roi_percentage=snowai_data.get('snowai_roi_percentage'),
+            
+            # Metadata
+            snowai_status=snowai_data.get('snowai_status', 'experimental'),
+            snowai_notes=snowai_data.get('snowai_notes', ''),
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'id': snowai_entry.id,
+            'message': 'ML model entry created successfully'
+        }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error creating ML entry: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT", "DELETE"])
+def snowai_research_logbook_api_entry_detail(request, entry_id):
+    """
+    GET: Retrieve single ML model entry
+    PUT: Update ML model entry
+    DELETE: Delete ML model entry
+    """
+    try:
+        snowai_entry = SnowAIMLModelLogEntry.objects.get(id=entry_id)
+        
+        if request.method == 'GET':
+            snowai_entry_data = {
+                'id': snowai_entry.id,
+                'snowai_model_name': snowai_entry.snowai_model_name,
+                'snowai_model_type': snowai_entry.snowai_model_type,
+                'snowai_tags': snowai_entry.snowai_tags_list,
+                'snowai_description': snowai_entry.snowai_description,
+                'snowai_code_used': snowai_entry.snowai_code_used,
+                'snowai_colab_notebook_url': snowai_entry.snowai_colab_notebook_url,
+                'snowai_framework_used': snowai_entry.snowai_framework_used,
+                'snowai_created_at': snowai_entry.snowai_created_at.isoformat(),
+                'snowai_updated_at': snowai_entry.snowai_updated_at.isoformat(),
+                'snowai_status': snowai_entry.snowai_status,
+                'snowai_notes': snowai_entry.snowai_notes,
+                
+                # Dataset info
+                'snowai_dataset_name': snowai_entry.snowai_dataset_name,
+                'snowai_dataset_description': snowai_entry.snowai_dataset_description,
+                'snowai_dataset_size': snowai_entry.snowai_dataset_size,
+                'snowai_dataset_features': snowai_entry.snowai_dataset_features,
+                'snowai_dataset_source': snowai_entry.snowai_dataset_source,
+                'snowai_financial_market_type': snowai_entry.snowai_financial_market_type,
+                
+                # All metrics
+                'snowai_accuracy_score': snowai_entry.snowai_accuracy_score,
+                'snowai_precision_score': snowai_entry.snowai_precision_score,
+                'snowai_recall_score': snowai_entry.snowai_recall_score,
+                'snowai_f1_score': snowai_entry.snowai_f1_score,
+                'snowai_mae_score': snowai_entry.snowai_mae_score,
+                'snowai_mse_score': snowai_entry.snowai_mse_score,
+                'snowai_rmse_score': snowai_entry.snowai_rmse_score,
+                'snowai_r2_score': snowai_entry.snowai_r2_score,
+                'snowai_auc_score': snowai_entry.snowai_auc_score,
+                'snowai_custom_metrics': snowai_entry.snowai_custom_metrics,
+                
+                # Training info
+                'snowai_training_duration': snowai_entry.snowai_training_duration,
+                'snowai_epochs_trained': snowai_entry.snowai_epochs_trained,
+                'snowai_batch_size': snowai_entry.snowai_batch_size,
+                'snowai_learning_rate': snowai_entry.snowai_learning_rate,
+                'snowai_optimizer_used': snowai_entry.snowai_optimizer_used,
+                
+                # Financial metrics
+                'snowai_profit_loss': snowai_entry.snowai_profit_loss,
+                'snowai_sharpe_ratio': snowai_entry.snowai_sharpe_ratio,
+                'snowai_max_drawdown': snowai_entry.snowai_max_drawdown,
+                'snowai_win_rate': snowai_entry.snowai_win_rate,
+                'snowai_roi_percentage': snowai_entry.snowai_roi_percentage,
+            }
+            return JsonResponse(snowai_entry_data)
+            
+        elif request.method == 'DELETE':
+            snowai_entry.delete()
+            return JsonResponse({'success': True, 'message': 'Entry deleted successfully'})
+            
+    except SnowAIMLModelLogEntry.DoesNotExist:
+        return JsonResponse({'error': 'Entry not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error in entry detail API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_research_logbook_api_analytics(request):
+    """Get analytics and statistics for the research logbook"""
+    try:
+        # Basic counts
+        snowai_total_entries = SnowAIMLModelLogEntry.objects.count()
+        snowai_model_type_counts = SnowAIMLModelLogEntry.objects.values('snowai_model_type').annotate(count=Count('id'))
+        snowai_status_counts = SnowAIMLModelLogEntry.objects.values('snowai_status').annotate(count=Count('id'))
+        snowai_market_type_counts = SnowAIMLModelLogEntry.objects.values('snowai_financial_market_type').annotate(count=Count('id'))
+        
+        # Performance statistics
+        snowai_accuracy_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_accuracy_score__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_accuracy_score'),
+            max=Max('snowai_accuracy_score'),
+            min=Min('snowai_accuracy_score'),
+            count=Count('snowai_accuracy_score')
+        )
+        
+        snowai_r2_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_r2_score__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_r2_score'),
+            max=Max('snowai_r2_score'),
+            min=Min('snowai_r2_score'),
+            count=Count('snowai_r2_score')
+        )
+        
+        # Financial performance stats
+        snowai_roi_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_roi_percentage__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_roi_percentage'),
+            max=Max('snowai_roi_percentage'),
+            min=Min('snowai_roi_percentage'),
+            count=Count('snowai_roi_percentage')
+        )
+        
+        # Recent activity
+        snowai_recent_entries = SnowAIMLModelLogEntry.objects.order_by('-snowai_created_at')[:5]
+        snowai_recent_data = []
+        for entry in snowai_recent_entries:
+            snowai_recent_data.append({
+                'id': entry.id,
+                'snowai_model_name': entry.snowai_model_name,
+                'snowai_model_type': entry.snowai_model_type,
+                'snowai_created_at': entry.snowai_created_at.isoformat(),
+                'snowai_primary_metric': entry.snowai_get_primary_metric()
+            })
+        
+        return JsonResponse({
+            'snowai_total_entries': snowai_total_entries,
+            'snowai_model_type_distribution': list(snowai_model_type_counts),
+            'snowai_status_distribution': list(snowai_status_counts),
+            'snowai_market_type_distribution': list(snowai_market_type_counts),
+            'snowai_accuracy_statistics': snowai_accuracy_stats,
+            'snowai_r2_statistics': snowai_r2_stats,
+            'snowai_roi_statistics': snowai_roi_stats,
+            'snowai_recent_entries': snowai_recent_data,
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in analytics API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+@csrf_exempt  
+@require_http_methods(["GET"])
+def snowai_research_logbook_api_tags(request):
+    """Get all unique tags used in the system"""
+    try:
+        snowai_all_entries = SnowAIMLModelLogEntry.objects.exclude(snowai_tags='').exclude(snowai_tags__isnull=True)
+        snowai_all_tags = set()
+        
+        for entry in snowai_all_entries:
+            snowai_all_tags.update(entry.snowai_tags_list)
+        
+        return JsonResponse({'snowai_tags': sorted(list(snowai_all_tags))})
+        
+    except Exception as e:
+        logger.error(f"Error in tags API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
                 
                 
 # LEGODI BACKEND CODE

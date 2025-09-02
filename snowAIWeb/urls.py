@@ -179,6 +179,25 @@ urlpatterns = [
     # Economic Strength Index  
     path('api/economic-strength-index/', views.economic_strength_index, name='economic-strength-index'),
 
+    # Main API endpoints for ML model entries
+    path('snowai-research-logbook/api/ml-entries/', 
+         views.snowai_research_logbook_api_entries, 
+         name='snowai_research_logbook_api_entries'),
+    
+    path('snowai-research-logbook/api/ml-entries/<int:entry_id>/', 
+         views.snowai_research_logbook_api_entry_detail, 
+         name='snowai_research_logbook_api_entry_detail'),
+    
+    # Analytics and statistics endpoint
+    path('snowai-research-logbook/api/analytics/', 
+         views.snowai_research_logbook_api_analytics, 
+         name='snowai_research_logbook_api_analytics'),
+    
+    # Tags endpoint for autocomplete and filtering
+    path('snowai-research-logbook/api/tags/', 
+         views.snowai_research_logbook_api_tags, 
+         name='snowai_research_logbook_api_tags'),
+
 
 
     # create appproprate urls.py here

@@ -943,6 +943,147 @@ class FirmCompliance(models.Model):
         return None
         
 
+from django.db import models
+from django.utils import timezone
+import json
+
+class SnowAIMLModelLogEntry(models.Model):
+    # Basic model information
+    snowai_model_name = models.CharField(max_length=255, db_index=True)
+    snowai_model_type = models.CharField(max_length=100, choices=[
+        ('classification', 'Classification'),
+        ('regression', 'Regression'),
+        ('neural_network', 'Neural Network'),
+        ('deep_learning', 'Deep Learning'),
+        ('ensemble', 'Ensemble'),
+        ('time_series', 'Time Series'),
+        ('nlp', 'Natural Language Processing'),
+        ('computer_vision', 'Computer Vision'),
+        ('other', 'Other')
+    ])
+    snowai_tags = models.TextField(help_text="Comma-separated tags")
+    snowai_description = models.TextField(blank=True, null=True)
+    
+    # Code and implementation
+    snowai_code_used = models.TextField(help_text="Full code implementation")
+    snowai_colab_notebook_url = models.URLField(blank=True, null=True, help_text="Google Colab notebook URL")
+    snowai_framework_used = models.CharField(max_length=100, blank=True, null=True, help_text="e.g., TensorFlow, PyTorch, Scikit-learn")
+    
+    # Dataset information
+    snowai_dataset_name = models.CharField(max_length=255, blank=True, null=True)
+    snowai_dataset_description = models.TextField(blank=True, null=True)
+    snowai_dataset_size = models.IntegerField(blank=True, null=True, help_text="Number of records")
+    snowai_dataset_features = models.IntegerField(blank=True, null=True, help_text="Number of features")
+    snowai_dataset_source = models.CharField(max_length=255, blank=True, null=True)
+    snowai_financial_market_type = models.CharField(max_length=100, blank=True, null=True, 
+                                                   choices=[
+                                                       ('stocks', 'Stocks'),
+                                                       ('forex', 'Forex'),
+                                                       ('crypto', 'Cryptocurrency'),
+                                                       ('bonds', 'Bonds'),
+                                                       ('commodities', 'Commodities'),
+                                                       ('indices', 'Market Indices'),
+                                                       ('options', 'Options'),
+                                                       ('futures', 'Futures'),
+                                                       ('mixed', 'Mixed Markets')
+                                                   ])
+    
+    # Performance metrics
+    snowai_accuracy_score = models.FloatField(blank=True, null=True)
+    snowai_precision_score = models.FloatField(blank=True, null=True)
+    snowai_recall_score = models.FloatField(blank=True, null=True)
+    snowai_f1_score = models.FloatField(blank=True, null=True)
+    snowai_mae_score = models.FloatField(blank=True, null=True, help_text="Mean Absolute Error")
+    snowai_mse_score = models.FloatField(blank=True, null=True, help_text="Mean Squared Error")
+    snowai_rmse_score = models.FloatField(blank=True, null=True, help_text="Root Mean Squared Error")
+    snowai_r2_score = models.FloatField(blank=True, null=True, help_text="R-squared")
+    snowai_auc_score = models.FloatField(blank=True, null=True, help_text="Area Under Curve")
+    snowai_custom_metrics = models.JSONField(blank=True, null=True, help_text="Additional custom metrics as JSON")
+    
+    # Training information
+    snowai_training_duration = models.FloatField(blank=True, null=True, help_text="Training time in minutes")
+    snowai_epochs_trained = models.IntegerField(blank=True, null=True)
+    snowai_batch_size = models.IntegerField(blank=True, null=True)
+    snowai_learning_rate = models.FloatField(blank=True, null=True)
+    snowai_optimizer_used = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Financial-specific metrics
+    snowai_profit_loss = models.FloatField(blank=True, null=True, help_text="P&L from backtesting")
+    snowai_sharpe_ratio = models.FloatField(blank=True, null=True)
+    snowai_max_drawdown = models.FloatField(blank=True, null=True)
+    snowai_win_rate = models.FloatField(blank=True, null=True, help_text="Percentage of winning trades")
+    snowai_roi_percentage = models.FloatField(blank=True, null=True, help_text="Return on Investment %")
+    
+    # Metadata
+    snowai_created_at = models.DateTimeField(default=timezone.now)
+    snowai_updated_at = models.DateTimeField(auto_now=True)
+    snowai_status = models.CharField(max_length=50, choices=[
+        ('experimental', 'Experimental'),
+        ('validated', 'Validated'),
+        ('production', 'Production'),
+        ('deprecated', 'Deprecated')
+    ], default='experimental')
+    snowai_notes = models.TextField(blank=True, null=True)
+    
+    class Meta:
+        db_table = 'snowai_ml_model_log_entries'
+        ordering = ['-snowai_created_at']
+        verbose_name = 'SnowAI ML Model Log Entry'
+        verbose_name_plural = 'SnowAI ML Model Log Entries'
+    
+    def __str__(self):
+        return f"{self.snowai_model_name} - {self.snowai_model_type}"
+    
+    @property
+    def snowai_tags_list(self):
+        """Convert comma-separated tags to list"""
+        if self.snowai_tags:
+            return [tag.strip() for tag in self.snowai_tags.split(',') if tag.strip()]
+        return []
+    
+    @snowai_tags_list.setter
+    def snowai_tags_list(self, tag_list):
+        """Set tags from list"""
+        self.snowai_tags = ', '.join(tag_list) if tag_list else ''
+    
+    def snowai_get_primary_metric(self):
+        """Get the most relevant metric based on model type"""
+        if self.snowai_accuracy_score is not None:
+            return {'name': 'Accuracy', 'value': self.snowai_accuracy_score, 'format': '{:.2%}'}
+        elif self.snowai_r2_score is not None:
+            return {'name': 'R²', 'value': self.snowai_r2_score, 'format': '{:.3f}'}
+        elif self.snowai_f1_score is not None:
+            return {'name': 'F1', 'value': self.snowai_f1_score, 'format': '{:.3f}'}
+        elif self.snowai_mae_score is not None:
+            return {'name': 'MAE', 'value': self.snowai_mae_score, 'format': '{:.4f}'}
+        return None
+
+
+class SnowAIModelDatasetFile(models.Model):
+    """Store dataset files with persistent URLs to avoid loss on redeployment"""
+    snowai_log_entry = models.ForeignKey(SnowAIMLModelLogEntry, on_delete=models.CASCADE, related_name='snowai_dataset_files')
+    snowai_file_name = models.CharField(max_length=255)
+    snowai_file_type = models.CharField(max_length=50, choices=[
+        ('csv', 'CSV'),
+        ('json', 'JSON'),
+        ('parquet', 'Parquet'),
+        ('excel', 'Excel'),
+        ('other', 'Other')
+    ])
+    snowai_file_size = models.IntegerField(help_text="File size in bytes")
+    snowai_external_url = models.URLField(help_text="Persistent URL to dataset (e.g., Google Drive, Dropbox)")
+    snowai_file_hash = models.CharField(max_length=64, blank=True, null=True, help_text="SHA-256 hash for integrity")
+    snowai_upload_date = models.DateTimeField(default=timezone.now)
+    snowai_description = models.TextField(blank=True, null=True)
+    
+    class Meta:
+        db_table = 'snowai_model_dataset_files'
+        ordering = ['-snowai_upload_date']
+    
+    def __str__(self):
+        return f"{self.snowai_file_name} ({self.snowai_log_entry.snowai_model_name})"
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 
