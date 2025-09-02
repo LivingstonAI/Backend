@@ -13164,7 +13164,7 @@ def merge_esi_and_forex_data(esi_data, forex_data):
 def economic_strength_index(request):
     """
     Calculate and return Economic Strength Index for selected currencies
-    Fixed to eliminate gaps in ESI data
+    Now with forex overlay capability
     """
     try:
         data = json.loads(request.body)
@@ -13185,13 +13185,6 @@ def economic_strength_index(request):
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
         
-        # Create complete date range - THIS IS THE KEY FIX
-        complete_date_range = []
-        current_date = start_date.date()
-        while current_date <= end_date.date():
-            complete_date_range.append(current_date.isoformat())
-            current_date += timedelta(days=1)
-        
         # Fetch economic events for selected currencies within date range
         events = EconomicEvent.objects.filter(
             currency__in=currencies,
@@ -13210,14 +13203,21 @@ def economic_strength_index(request):
             date_key = event.date_time.date().isoformat()
             currency_data[event.currency][date_key].append(event)
         
-        # Calculate daily ESI scores for each currency using COMPLETE date range
+        # Calculate daily ESI scores for each currency
         chart_data_dict = defaultdict(dict)
         
         for currency in currencies:
             daily_scores = []
+            dates = []
             
-            # Use complete date range instead of just dates with events
-            for date_str in complete_date_range:
+            # Get all unique dates across all currencies for consistency
+            all_dates = set()
+            for curr_data in currency_data.values():
+                all_dates.update(curr_data.keys())
+            
+            sorted_dates = sorted(all_dates)
+            
+            for date_str in sorted_dates:
                 events_for_date = currency_data[currency].get(date_str, [])
                 
                 if events_for_date:
@@ -13230,26 +13230,25 @@ def economic_strength_index(request):
                         weighted_deviations.append(deviation * weight)
                     
                     # Average weighted deviations for the day
-                    daily_score = np.mean(weighted_deviations)
-                    daily_scores.append(daily_score)
-                else:
-                    # No events for this day - carry forward last score or use neutral
-                    if daily_scores:
-                        # Use exponential decay from last score toward neutral (50)
-                        last_score = daily_scores[-1]
-                        decay_factor = 0.95  # Adjust this to control how quickly scores decay
-                        decayed_score = last_score * decay_factor
-                        daily_scores.append(decayed_score)
+                    if weighted_deviations:
+                        daily_score = np.mean(weighted_deviations)
+                        daily_scores.append(daily_score)
+                        dates.append(date_str)
                     else:
-                        # First day with no data - start at neutral
+                        # No events for this day - use neutral score
                         daily_scores.append(0)
+                        dates.append(date_str)
+                else:
+                    # No events for this currency on this date
+                    daily_scores.append(0)
+                    dates.append(date_str)
             
-            # Apply smoothing (3-day moving average) for cleaner visualization
-            if len(daily_scores) > 3:
+            # Apply smoothing (7-day moving average) for cleaner visualization
+            if len(daily_scores) > 7:
                 smoothed_scores = []
                 for i in range(len(daily_scores)):
-                    start_idx = max(0, i - 1)
-                    end_idx = min(len(daily_scores), i + 2)
+                    start_idx = max(0, i - 3)
+                    end_idx = min(len(daily_scores), i + 4)
                     window_scores = daily_scores[start_idx:end_idx]
                     smoothed_scores.append(np.mean(window_scores))
                 daily_scores = smoothed_scores
@@ -13257,8 +13256,8 @@ def economic_strength_index(request):
             # Normalize scores
             normalized_scores = normalize_esi_scores(daily_scores)
             
-            # Store in chart data structure using complete date range
-            for i, (date_str, score) in enumerate(zip(complete_date_range, normalized_scores)):
+            # Store in chart data structure
+            for i, (date_str, score) in enumerate(zip(dates, normalized_scores)):
                 if date_str not in chart_data_dict:
                     chart_data_dict[date_str] = {'date': date_str}
                 chart_data_dict[date_str][currency] = score
@@ -13278,10 +13277,30 @@ def economic_strength_index(request):
         # Fetch and merge forex data if requested
         if forex_pairs:
             try:
+                print(f"Fetching forex data for pairs: {forex_pairs}")
                 forex_data = get_forex_data(forex_pairs, date_range)
-                chart_data = merge_esi_and_forex_data(chart_data, forex_data)
+                print(f"Forex data fetched successfully: {bool(forex_data)}")
+                
+                if any(forex_data.values()):  # Check if any forex data was retrieved
+                    chart_data = merge_esi_and_forex_data(chart_data, forex_data)
+                    print(f"Data merged. Final chart_data length: {len(chart_data)}")
+                    
+                    # Debug: Check if forex prices are in the final data
+                    forex_keys_found = set()
+                    for point in chart_data:
+                        for key in point.keys():
+                            if '_price' in key:
+                                forex_keys_found.add(key)
+                    print(f"Forex price keys found in final data: {forex_keys_found}")
+                    
+                else:
+                    print("No forex data retrieved")
+                    
             except Exception as e:
                 print(f"Error fetching forex data: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+                # Continue without forex data if there's an error
         
         # Calculate summary statistics
         summary_stats = {}
@@ -13320,8 +13339,7 @@ def economic_strength_index(request):
                 'total_events_analyzed': events.count() if currencies else 0,
                 'forex_pairs_included': forex_pairs,
                 'date_range': f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
-                'currencies': currencies,
-                'total_data_points': len(chart_data)
+                'currencies': currencies
             }
         }
         
@@ -13335,6 +13353,7 @@ def economic_strength_index(request):
             'summary_stats': {}
         }, status=500)
         
+                
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
