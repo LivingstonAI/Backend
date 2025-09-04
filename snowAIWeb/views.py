@@ -13656,6 +13656,111 @@ def snowai_research_logbook_api_entry_detail(request, entry_id):
             }
             return JsonResponse(snowai_entry_data)
             
+        elif request.method == 'PUT':
+            try:
+                snowai_data = json.loads(request.body)
+                
+                # Update basic model information
+                if 'snowai_model_name' in snowai_data:
+                    snowai_entry.snowai_model_name = snowai_data['snowai_model_name']
+                if 'snowai_model_type' in snowai_data:
+                    snowai_entry.snowai_model_type = snowai_data['snowai_model_type']
+                if 'snowai_description' in snowai_data:
+                    snowai_entry.snowai_description = snowai_data['snowai_description']
+                if 'snowai_status' in snowai_data:
+                    snowai_entry.snowai_status = snowai_data['snowai_status']
+                if 'snowai_notes' in snowai_data:
+                    snowai_entry.snowai_notes = snowai_data['snowai_notes']
+                
+                # Update tags
+                if 'snowai_tags' in snowai_data:
+                    if isinstance(snowai_data['snowai_tags'], list):
+                        snowai_entry.snowai_tags = ', '.join(snowai_data['snowai_tags'])
+                    else:
+                        snowai_entry.snowai_tags = snowai_data['snowai_tags']
+                
+                # Update code and implementation
+                if 'snowai_code_used' in snowai_data:
+                    snowai_entry.snowai_code_used = snowai_data['snowai_code_used']
+                if 'snowai_colab_notebook_url' in snowai_data:
+                    snowai_entry.snowai_colab_notebook_url = snowai_data['snowai_colab_notebook_url']
+                if 'snowai_framework_used' in snowai_data:
+                    snowai_entry.snowai_framework_used = snowai_data['snowai_framework_used']
+                
+                # Update dataset information
+                if 'snowai_dataset_name' in snowai_data:
+                    snowai_entry.snowai_dataset_name = snowai_data['snowai_dataset_name']
+                if 'snowai_dataset_description' in snowai_data:
+                    snowai_entry.snowai_dataset_description = snowai_data['snowai_dataset_description']
+                if 'snowai_dataset_size' in snowai_data:
+                    snowai_entry.snowai_dataset_size = snowai_data['snowai_dataset_size']
+                if 'snowai_dataset_features' in snowai_data:
+                    snowai_entry.snowai_dataset_features = snowai_data['snowai_dataset_features']
+                if 'snowai_dataset_source' in snowai_data:
+                    snowai_entry.snowai_dataset_source = snowai_data['snowai_dataset_source']
+                if 'snowai_financial_market_type' in snowai_data:
+                    snowai_entry.snowai_financial_market_type = snowai_data['snowai_financial_market_type']
+                
+                # Update performance metrics
+                if 'snowai_accuracy_score' in snowai_data:
+                    snowai_entry.snowai_accuracy_score = snowai_data['snowai_accuracy_score'] if snowai_data['snowai_accuracy_score'] else None
+                if 'snowai_precision_score' in snowai_data:
+                    snowai_entry.snowai_precision_score = snowai_data['snowai_precision_score'] if snowai_data['snowai_precision_score'] else None
+                if 'snowai_recall_score' in snowai_data:
+                    snowai_entry.snowai_recall_score = snowai_data['snowai_recall_score'] if snowai_data['snowai_recall_score'] else None
+                if 'snowai_f1_score' in snowai_data:
+                    snowai_entry.snowai_f1_score = snowai_data['snowai_f1_score'] if snowai_data['snowai_f1_score'] else None
+                if 'snowai_mae_score' in snowai_data:
+                    snowai_entry.snowai_mae_score = snowai_data['snowai_mae_score'] if snowai_data['snowai_mae_score'] else None
+                if 'snowai_mse_score' in snowai_data:
+                    snowai_entry.snowai_mse_score = snowai_data['snowai_mse_score'] if snowai_data['snowai_mse_score'] else None
+                if 'snowai_rmse_score' in snowai_data:
+                    snowai_entry.snowai_rmse_score = snowai_data['snowai_rmse_score'] if snowai_data['snowai_rmse_score'] else None
+                if 'snowai_r2_score' in snowai_data:
+                    snowai_entry.snowai_r2_score = snowai_data['snowai_r2_score'] if snowai_data['snowai_r2_score'] else None
+                if 'snowai_auc_score' in snowai_data:
+                    snowai_entry.snowai_auc_score = snowai_data['snowai_auc_score'] if snowai_data['snowai_auc_score'] else None
+                if 'snowai_custom_metrics' in snowai_data:
+                    snowai_entry.snowai_custom_metrics = snowai_data['snowai_custom_metrics']
+                
+                # Update training information
+                if 'snowai_training_duration' in snowai_data:
+                    snowai_entry.snowai_training_duration = snowai_data['snowai_training_duration'] if snowai_data['snowai_training_duration'] else None
+                if 'snowai_epochs_trained' in snowai_data:
+                    snowai_entry.snowai_epochs_trained = snowai_data['snowai_epochs_trained'] if snowai_data['snowai_epochs_trained'] else None
+                if 'snowai_batch_size' in snowai_data:
+                    snowai_entry.snowai_batch_size = snowai_data['snowai_batch_size'] if snowai_data['snowai_batch_size'] else None
+                if 'snowai_learning_rate' in snowai_data:
+                    snowai_entry.snowai_learning_rate = snowai_data['snowai_learning_rate'] if snowai_data['snowai_learning_rate'] else None
+                if 'snowai_optimizer_used' in snowai_data:
+                    snowai_entry.snowai_optimizer_used = snowai_data['snowai_optimizer_used']
+                
+                # Update financial metrics
+                if 'snowai_profit_loss' in snowai_data:
+                    snowai_entry.snowai_profit_loss = snowai_data['snowai_profit_loss'] if snowai_data['snowai_profit_loss'] else None
+                if 'snowai_sharpe_ratio' in snowai_data:
+                    snowai_entry.snowai_sharpe_ratio = snowai_data['snowai_sharpe_ratio'] if snowai_data['snowai_sharpe_ratio'] else None
+                if 'snowai_max_drawdown' in snowai_data:
+                    snowai_entry.snowai_max_drawdown = snowai_data['snowai_max_drawdown'] if snowai_data['snowai_max_drawdown'] else None
+                if 'snowai_win_rate' in snowai_data:
+                    snowai_entry.snowai_win_rate = snowai_data['snowai_win_rate'] if snowai_data['snowai_win_rate'] else None
+                if 'snowai_roi_percentage' in snowai_data:
+                    snowai_entry.snowai_roi_percentage = snowai_data['snowai_roi_percentage'] if snowai_data['snowai_roi_percentage'] else None
+                
+                # Save the updated entry
+                snowai_entry.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': 'ML model entry updated successfully',
+                    'id': snowai_entry.id
+                })
+                
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+            except ValueError as e:
+                return JsonResponse({'error': f'Invalid data format: {str(e)}'}, status=400)
+            
         elif request.method == 'DELETE':
             snowai_entry.delete()
             return JsonResponse({'success': True, 'message': 'Entry deleted successfully'})
@@ -13666,6 +13771,7 @@ def snowai_research_logbook_api_entry_detail(request, entry_id):
         logger.error(f"Error in entry detail API: {str(e)}")
         return JsonResponse({'error': 'Internal server error'}, status=500)
 
+        
 @csrf_exempt
 @require_http_methods(["GET"])
 def snowai_research_logbook_api_analytics(request):
