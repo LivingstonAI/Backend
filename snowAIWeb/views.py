@@ -13862,7 +13862,7 @@ def snowai_research_logbook_api_tags(request):
 def check_fingerprint_status(request):
     """Check if fingerprint is registered in backend"""
     try:
-        email = request.GET.get('email', 'tlotlo.motingwe@example.com')
+        email = request.GET.get('email', 'butterrobot83@gmail')
         domain = request.GET.get('domain', '')
         
         fingerprint_status, created = FingerprintStatus.objects.get_or_create(
@@ -13884,7 +13884,7 @@ def register_fingerprint_backend(request):
     """Register fingerprint in backend after successful local registration"""
     try:
         data = json.loads(request.body)
-        email = data.get('email', 'tlotlo.motingwe@example.com')
+        email = data.get('email', 'butterrobot83@gmail')
         domain = data.get('domain', '')
         
         fingerprint_status, created = FingerprintStatus.objects.get_or_create(
@@ -13911,7 +13911,7 @@ def reset_fingerprint_backend(request):
     """Reset fingerprint registration in backend"""
     try:
         data = json.loads(request.body)
-        email = data.get('email', 'tlotlo.motingwe@example.com')
+        email = data.get('email', 'butterrobot83@gmail')
         
         fingerprint_status = FingerprintStatus.objects.get(user_email=email)
         fingerprint_status.is_registered = False
