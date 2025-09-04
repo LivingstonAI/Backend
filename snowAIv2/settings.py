@@ -46,8 +46,9 @@ DEBUG = True
 ALLOWED_HOSTS = [
     "http://localhost:5173",
     "backend-production-c0ab.up.railway.app",
-    "https://silencium-ascendio.vercel.app",
-    "https://crystal-mindforge.vercel.app",
+    # "https://silencium-ascendio.vercel.app",
+    # "https://crystal-mindforge.vercel.app",
+    "https://frontend-production-406b.up.railway.app",
 ]
 
 REST_FRAMEWORK = {
@@ -62,18 +63,20 @@ REST_FRAMEWORK = {
 
 CORS_ORIGIN_WHITELIST = (
     'http://localhost:5173',
-    'https://silencium-ascendio.vercel.app',
-    "https://crystal-mindforge.vercel.app",
-    "http://zinaida-production.up.railway.app"
+    # 'https://silencium-ascendio.vercel.app',
+    # "https://crystal-mindforge.vercel.app",
+    "http://zinaida-production.up.railway.app",
+    "https://frontend-production-406b.up.railway.app"
 )
 
 
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
     'https://backend-production-c0ab.up.railway.app',
-    'https://silencium-ascendio.vercel.app',
-    'https://crystal-mindforge.vercel.app',
-    'http://zinaida-production.up.railway.app'
+    # 'https://silencium-ascendio.vercel.app',
+    # 'https://crystal-mindforge.vercel.app',
+    'http://zinaida-production.up.railway.app',
+    "https://frontend-production-406b.up.railway.app",
     # 'https://www.metatrader5.com/en/trading-platform/web-trading',
 ]
 
@@ -202,11 +205,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # CORS_ALLOW_ALL_ORIGINS = True # If this is used then `CORS_ALLOWED_ORIGINS` will not have any effect
 # CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
-    "https://snowai.vercel.app",
+    # "https://snowai.vercel.app",
     "http://localhost:5173",
-    'https://silencium-ascendio.vercel.app',
-    'https://crystal-mindforge.vercel.app',
+    # 'https://silencium-ascendio.vercel.app',
+    # 'https://crystal-mindforge.vercel.app',
     'http://zinaida-production.up.railway.app',
+    "https://frontend-production-406b.up.railway.app",
     # "https://www.metatrader5.com/en/trading-platform/web-trading",
 ] # If this is used, then not need to use `CORS_ALLOW_ALL_ORIGINS = True`
 
