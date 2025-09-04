@@ -1084,6 +1084,17 @@ class SnowAIModelDatasetFile(models.Model):
         return f"{self.snowai_file_name} ({self.snowai_log_entry.snowai_model_name})"
 
 
+class FingerprintStatus(models.Model):
+    user_email = models.EmailField(unique=True, default='tlotlo.motingwe@example.com')
+    is_registered = models.BooleanField(default=False)
+    domain = models.CharField(max_length=255, blank=True, null=True)
+    registered_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.user_email} - Registered: {self.is_registered}"
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 

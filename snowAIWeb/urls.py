@@ -198,6 +198,10 @@ urlpatterns = [
          views.snowai_research_logbook_api_tags, 
          name='snowai_research_logbook_api_tags'),
 
+     path('check_fingerprint_status/', views.check_fingerprint_status, name='check_fingerprint_status'),
+     path('register_fingerprint/', views.register_fingerprint_backend, name='register_fingerprint_backend'),
+     path('reset_fingerprint/', views.reset_fingerprint_backend, name='reset_fingerprint_backend'),
+
 
 
     # create appproprate urls.py here

@@ -13856,6 +13856,78 @@ def snowai_research_logbook_api_tags(request):
         logger.error(f"Error in tags API: {str(e)}")
         return JsonResponse({'error': 'Internal server error'}, status=500)
                 
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def check_fingerprint_status(request):
+    """Check if fingerprint is registered in backend"""
+    try:
+        email = request.GET.get('email', 'tlotlo.motingwe@example.com')
+        domain = request.GET.get('domain', '')
+        
+        fingerprint_status, created = FingerprintStatus.objects.get_or_create(
+            user_email=email,
+            defaults={'is_registered': False, 'domain': domain}
+        )
+        
+        return JsonResponse({
+            'is_registered': fingerprint_status.is_registered,
+            'domain': fingerprint_status.domain,
+            'message': 'Fingerprint status retrieved successfully'
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def register_fingerprint_backend(request):
+    """Register fingerprint in backend after successful local registration"""
+    try:
+        data = json.loads(request.body)
+        email = data.get('email', 'tlotlo.motingwe@example.com')
+        domain = data.get('domain', '')
+        
+        fingerprint_status, created = FingerprintStatus.objects.get_or_create(
+            user_email=email,
+            defaults={'is_registered': True, 'domain': domain}
+        )
+        
+        if not created:
+            fingerprint_status.is_registered = True
+            fingerprint_status.domain = domain
+            fingerprint_status.save()
+        
+        return JsonResponse({
+            'success': True,
+            'is_registered': True,
+            'message': 'Fingerprint registered successfully in backend'
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def reset_fingerprint_backend(request):
+    """Reset fingerprint registration in backend"""
+    try:
+        data = json.loads(request.body)
+        email = data.get('email', 'tlotlo.motingwe@example.com')
+        
+        fingerprint_status = FingerprintStatus.objects.get(user_email=email)
+        fingerprint_status.is_registered = False
+        fingerprint_status.domain = ''
+        fingerprint_status.save()
+        
+        return JsonResponse({
+            'success': True,
+            'is_registered': False,
+            'message': 'Fingerprint registration reset successfully'
+        })
+    except FingerprintStatus.DoesNotExist:
+        return JsonResponse({'error': 'Fingerprint status not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
                 
 # LEGODI BACKEND CODE
 def send_simple_message():
