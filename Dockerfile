@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsm6 \
     libxext6 \
-    libffi-dev \            # Needed for cffi
-    libssl-dev \            # Helps with cryptography and secure packages
-    libpq-dev \             # Supports psycopg2 (PostgreSQL)
+    libffi-dev \
+    libssl-dev \
+    libpq-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
