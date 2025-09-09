@@ -6334,6 +6334,32 @@ def send_whatsapp_message(asset, message):
     print(f"{asset}: {message}")
 
 
+def is_stock_index(asset):
+    """
+    Determines if an asset is a stock index based on the asset name.
+    """
+    stock_indices = ['S&P 500', 'NASDAQ', 'DOW JONES']
+    return asset in stock_indices
+
+
+def get_latest_price(asset):
+    """
+    Gets the latest price for an asset, using appropriate data source.
+    Returns the latest closing price as a float.
+    """
+    if is_stock_index(asset):
+        # Use get_index_data for stock indices
+        data = get_index_data(asset, timeframe="1d", lookback_days=1)
+        if data is None or data.empty:
+            return None
+        return round(float(data["Close"].iloc[-1]), 2)
+    else:
+        # Use existing obtain_dataset function for Forex
+        data = obtain_dataset(asset, interval="1m", num_days=1)
+        if data.empty:
+            return None
+        return round(float(data["Close"].iloc[-1]), 5)
+
 
 def manage_alerts():
     """
@@ -6346,25 +6372,20 @@ def manage_alerts():
         try:
             asset = alert.asset
             target_price = alert.price
-            condition = alert.condition  # e.g., "greater_than" or "less_than"
+            condition = alert.condition  # e.g., ">" or "<"
 
-            # Fetch real-time data
-            data = obtain_dataset(asset, interval="1m", num_days=1)
+            # Get the latest price using appropriate data source
+            latest_price = get_latest_price(asset)
 
-            if data.empty:
+            if latest_price is None:
                 print(f"No data available for {asset}. Skipping...")
                 continue
-
-            # Get the most recent closing price (ensure it's a scalar value)
-            latest_price = round(float(data["Close"].iloc[-1]), 5)
 
             # Check the condition (compare scalar values only)
             condition_met = (
                 (condition == ">" and latest_price > float(target_price)) or
                 (condition == "<" and latest_price < float(target_price))
             )
-
-
 
             if condition_met:
                 # Send notification
@@ -6380,6 +6401,50 @@ def manage_alerts():
 
         except Exception as e:
             print(f"Error processing alert for {alert.asset}: {e}")
+
+
+# Import the required libraries and functions
+import yfinance as yf
+import pandas as pd
+
+def get_index_data(asset, timeframe, lookback_days):
+    """
+    Fetches historical data for a given index (S&P 500, Nasdaq, or Dow Jones).
+
+    Args:
+        asset (str): The index to fetch data for ('S&P 500', 'NASDAQ', or 'DOW JONES').
+        timeframe (str): The data interval (e.g., '1d', '1wk', '1mo').
+        lookback_days (int): The number of days to look back from the current date.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the historical data.
+                          Returns None if the asset is invalid.
+    """
+    # Define tickers for each index
+    tickers = {
+        'S&P 500': '^GSPC',
+        'NASDAQ': '^IXIC',
+        'DOW JONES': '^DJI'
+    }
+
+    # Get the ticker for the specified asset
+    ticker = tickers.get(asset.upper())
+
+    if ticker is None:
+        print(f"Invalid asset: {asset}. Please choose from 'S&P 500', 'NASDAQ', or 'DOW JONES'.")
+        return None
+
+    # Calculate start date based on lookback period
+    end_date = pd.to_datetime('today')
+    start_date = end_date - pd.Timedelta(days=lookback_days)
+
+    # Fetch data using yfinance
+    try:
+        data = yf.download(ticker, start=start_date, end=end_date, interval=timeframe)
+        return data
+    except Exception as e:
+        print(f"Error fetching data for {asset}: {e}")
+        return None
 
 
 # Schedule the alert_bot function to run every 5 minutes
