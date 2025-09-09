@@ -12845,6 +12845,16 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 import yfinance as yf
 
+import json
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+from collections import defaultdict
+from django.db.models import Q
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+import yfinance as yf
+
 def clean_numeric_value_esi(value_str):
     """
     Convert string values like '3.2%', '$50.4B', etc. to float values
@@ -12945,15 +12955,24 @@ def normalize_esi_scores(scores):
 
 def obtain_dataset(asset, interval, num_days):
     """
-    Your existing function - unchanged
+    Generic function to obtain data from yfinance
     """
     # Calculate the end and start dates
     end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     start_date = (datetime.now() - timedelta(days=num_days)).strftime("%Y-%m-%d")
 
-    # Download data using yfinance
-    forex_asset = f"{asset}=X"
-    data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+    # Download data using yfinance - handle both forex and stock indices
+    if '=' not in asset and asset.startswith('^'):
+        # Stock index (already has ^ symbol)
+        data = yf.download(asset, start=start_date, end=end_date, interval=interval)
+    elif '=' not in asset:
+        # Forex pair - add =X suffix
+        forex_asset = f"{asset}=X"
+        data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+    else:
+        # Already formatted
+        data = yf.download(asset, start=start_date, end=end_date, interval=interval)
+    
     return data
 
 def get_forex_data(forex_pairs, date_range):
@@ -12984,18 +13003,17 @@ def get_forex_data(forex_pairs, date_range):
         try:
             print(f"Fetching forex data for {pair} with {days} days, interval {interval}")
             
-            # Use your existing obtain_dataset function
+            # Use obtain_dataset function
             data = obtain_dataset(pair, interval, days)
             
             if not data.empty:
                 print(f"Got {len(data)} data points for {pair}")
-                print(f"Data columns: {data.columns.tolist()}")
-                print(f"Data index: {data.index.name}")
+                
+                # Process the data
+                forex_data[pair] = []
                 
                 # Handle MultiIndex columns - flatten them
                 if isinstance(data.columns, pd.MultiIndex):
-                    # For MultiIndex, we want to access the Close column
-                    # The structure is like ('Close', 'EURUSD=X')
                     close_col = None
                     for col in data.columns:
                         if col[0] == 'Close':
@@ -13008,10 +13026,8 @@ def get_forex_data(forex_pairs, date_range):
                         continue
                         
                     # Extract the close prices and dates
-                    forex_data[pair] = []
                     for date_idx, close_price in data[close_col].items():
                         try:
-                            # date_idx should be a timestamp from the index
                             if hasattr(date_idx, 'strftime'):
                                 date_str = date_idx.strftime('%Y-%m-%d')
                             else:
@@ -13028,9 +13044,8 @@ def get_forex_data(forex_pairs, date_range):
                             continue
                 
                 else:
-                    # Handle regular columns (fallback)
+                    # Handle regular columns
                     data_reset = data.reset_index()
-                    forex_data[pair] = []
                     
                     for _, row in data_reset.iterrows():
                         try:
@@ -13055,24 +13070,124 @@ def get_forex_data(forex_pairs, date_range):
                             continue
                 
                 print(f"Processed {len(forex_data[pair])} valid data points for {pair}")
-                if forex_data[pair]:
-                    print(f"Sample processed data for {pair}: {forex_data[pair][:2]}")
                         
         except Exception as e:
             print(f"Error fetching forex data for {pair}: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
             forex_data[pair] = []
-    
-    print(f"Final forex_data keys: {list(forex_data.keys())}")
-    for pair, data in forex_data.items():
-        print(f"{pair}: {len(data)} data points")
     
     return forex_data
 
-def merge_esi_and_forex_data(esi_data, forex_data):
+def get_stock_indices_data(stock_indices, date_range):
     """
-    Merge ESI data with forex price data
+    Fetch stock indices data for specified symbols and date range
+    """
+    range_days = {
+        '7d': 7,
+        '30d': 30,
+        '90d': 90,
+        '180d': 180,
+        '365d': 365
+    }
+    
+    days = range_days.get(date_range, 30)
+    
+    # Determine interval based on date range
+    if days <= 7:
+        interval = '1h'
+    elif days <= 30:
+        interval = '1d'
+    else:
+        interval = '1d'
+    
+    stock_data = {}
+    
+    for symbol in stock_indices:
+        try:
+            print(f"Fetching stock index data for {symbol} with {days} days, interval {interval}")
+            
+            # Use obtain_dataset function
+            data = obtain_dataset(symbol, interval, days)
+            
+            if not data.empty:
+                print(f"Got {len(data)} data points for {symbol}")
+                
+                # Process the data
+                stock_data[symbol] = []
+                
+                # Handle MultiIndex columns
+                if isinstance(data.columns, pd.MultiIndex):
+                    close_col = None
+                    for col in data.columns:
+                        if col[0] == 'Close':
+                            close_col = col
+                            break
+                    
+                    if close_col is None:
+                        print(f"No Close column found in MultiIndex columns for {symbol}")
+                        stock_data[symbol] = []
+                        continue
+                        
+                    # Extract the close prices and dates
+                    for date_idx, close_price in data[close_col].items():
+                        try:
+                            if hasattr(date_idx, 'strftime'):
+                                date_str = date_idx.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_idx)[:10]
+                            
+                            if pd.notna(close_price):
+                                stock_data[symbol].append({
+                                    'date': date_str,
+                                    'value': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing data point for {symbol}: {str(row_error)}")
+                            continue
+                
+                else:
+                    # Handle regular columns
+                    data_reset = data.reset_index()
+                    
+                    for _, row in data_reset.iterrows():
+                        try:
+                            # Get date
+                            date_value = row['Date'] if 'Date' in row else row.index[0]
+                            if hasattr(date_value, 'strftime'):
+                                date_str = date_value.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_value)[:10]
+                            
+                            # Get close price
+                            close_price = row['Close'] if 'Close' in row else None
+                            
+                            if close_price is not None and pd.notna(close_price):
+                                stock_data[symbol].append({
+                                    'date': date_str,
+                                    'value': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing row for {symbol}: {str(row_error)}")
+                            continue
+                
+                print(f"Processed {len(stock_data[symbol])} valid data points for {symbol}")
+                        
+        except Exception as e:
+            print(f"Error fetching stock index data for {symbol}: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            stock_data[symbol] = []
+    
+    print(f"Final stock_data keys: {list(stock_data.keys())}")
+    for symbol, data in stock_data.items():
+        print(f"{symbol}: {len(data)} data points")
+    
+    return stock_data
+
+def merge_multi_asset_data(esi_data, forex_data, stock_data):
+    """
+    Merge ESI data with forex price data and stock indices data
     """
     # Create a comprehensive date-based dictionary using YYYY-MM-DD as keys
     merged_data = {}
@@ -13085,7 +13200,6 @@ def merge_esi_and_forex_data(esi_data, forex_data):
         
         # Try to convert MM/DD to YYYY-MM-DD for matching
         try:
-            # Assume current year for MM/DD format
             current_year = datetime.now().year
             if '/' in display_date:
                 month_day = display_date
@@ -13119,38 +13233,39 @@ def merge_esi_and_forex_data(esi_data, forex_data):
             # Fallback: use original date as key
             merged_data[display_date] = point.copy()
     
-    # Create a complete date range for forex data interpolation
-    all_forex_dates = set()
+    # Create a complete date range for asset data interpolation
+    all_asset_dates = set()
+    
+    # Add forex dates
     for pair, price_data in forex_data.items():
         for price_point in price_data:
-            all_forex_dates.add(price_point['date'])
+            all_asset_dates.add(price_point['date'])
+    
+    # Add stock index dates
+    for symbol, index_data in stock_data.items():
+        for index_point in index_data:
+            all_asset_dates.add(index_point['date'])
     
     # Sort dates for interpolation
-    sorted_forex_dates = sorted(all_forex_dates)
+    sorted_asset_dates = sorted(all_asset_dates)
     
     # Add forex data with interpolation for missing values
     for pair, price_data in forex_data.items():
-        # Create a dictionary of forex prices by date
         forex_prices_by_date = {point['date']: point['price'] for point in price_data}
         
-        # Get all dates in our merged data
         all_merged_dates = list(merged_data.keys())
         
-        # For each date in our data, try to get forex price or interpolate
         for date_key in all_merged_dates:
             try:
                 if date_key in forex_prices_by_date:
-                    # Direct match
                     merged_data[date_key][f"{pair}_price"] = forex_prices_by_date[date_key]
                 else:
-                    # Try to interpolate or use nearest value
-                    # Convert date_key to datetime for comparison
+                    # Interpolation logic for forex (same as before)
                     try:
                         target_date = datetime.strptime(date_key, '%Y-%m-%d')
                     except:
                         continue
                         
-                    # Find the closest forex dates
                     closest_before = None
                     closest_after = None
                     closest_before_price = None
@@ -13174,7 +13289,6 @@ def merge_esi_and_forex_data(esi_data, forex_data):
                     
                     # Use interpolation or nearest value
                     if closest_before_price is not None and closest_after_price is not None and closest_before != closest_after:
-                        # Linear interpolation
                         time_diff = (closest_after - closest_before).days
                         target_diff = (target_date - closest_before).days
                         
@@ -13185,17 +13299,15 @@ def merge_esi_and_forex_data(esi_data, forex_data):
                         else:
                             merged_data[date_key][f"{pair}_price"] = closest_before_price
                     elif closest_before_price is not None:
-                        # Use closest before value
                         merged_data[date_key][f"{pair}_price"] = closest_before_price
                     elif closest_after_price is not None:
-                        # Use closest after value
                         merged_data[date_key][f"{pair}_price"] = closest_after_price
                         
             except Exception as e:
                 print(f"Error processing forex data for {date_key}: {str(e)}")
                 continue
         
-        # Also add forex-only dates if they don't exist in ESI data
+        # Add forex-only dates
         for forex_date_str, price in forex_prices_by_date.items():
             if forex_date_str not in merged_data:
                 try:
@@ -13210,6 +13322,79 @@ def merge_esi_and_forex_data(esi_data, forex_data):
                     print(f"Error adding forex-only date {forex_date_str}: {str(e)}")
                     continue
     
+    # Add stock index data with interpolation
+    for symbol, index_data in stock_data.items():
+        stock_values_by_date = {point['date']: point['value'] for point in index_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in stock_values_by_date:
+                    merged_data[date_key][f"{symbol}_index"] = stock_values_by_date[date_key]
+                else:
+                    # Interpolation logic for stock indices
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_value = None
+                    closest_after_value = None
+                    
+                    for stock_date_str, value in stock_values_by_date.items():
+                        try:
+                            stock_date = datetime.strptime(stock_date_str, '%Y-%m-%d')
+                            
+                            if stock_date <= target_date:
+                                if closest_before is None or stock_date > closest_before:
+                                    closest_before = stock_date
+                                    closest_before_value = value
+                            
+                            if stock_date >= target_date:
+                                if closest_after is None or stock_date < closest_after:
+                                    closest_after = stock_date
+                                    closest_after_value = value
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_value is not None and closest_after_value is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_value = closest_before_value + (closest_after_value - closest_before_value) * weight
+                            merged_data[date_key][f"{symbol}_index"] = interpolated_value
+                        else:
+                            merged_data[date_key][f"{symbol}_index"] = closest_before_value
+                    elif closest_before_value is not None:
+                        merged_data[date_key][f"{symbol}_index"] = closest_before_value
+                    elif closest_after_value is not None:
+                        merged_data[date_key][f"{symbol}_index"] = closest_after_value
+                        
+            except Exception as e:
+                print(f"Error processing stock index data for {date_key}: {str(e)}")
+                continue
+        
+        # Add stock-index-only dates
+        for stock_date_str, value in stock_values_by_date.items():
+            if stock_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(stock_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[stock_date_str] = {
+                        'date': display_date,
+                        f"{symbol}_index": value
+                    }
+                except Exception as e:
+                    print(f"Error adding stock-index-only date {stock_date_str}: {str(e)}")
+                    continue
+    
     # Convert back to list format and sort by actual date
     merged_list = []
     sorted_dates = sorted(merged_data.keys(), key=lambda x: datetime.strptime(x, '%Y-%m-%d') if x.count('-') == 2 else datetime.now())
@@ -13222,6 +13407,8 @@ def merge_esi_and_forex_data(esi_data, forex_data):
     print(f"Merged data sample: {merged_list[:3] if merged_list else 'No data'}")
     if forex_data:
         print(f"Forex data sample: {list(forex_data.items())[0] if forex_data else 'No forex data'}")
+    if stock_data:
+        print(f"Stock data sample: {list(stock_data.items())[0] if stock_data else 'No stock data'}")
     
     return merged_list
 
@@ -13229,13 +13416,16 @@ def merge_esi_and_forex_data(esi_data, forex_data):
 def economic_strength_index(request):
     """
     Calculate and return Economic Strength Index for selected currencies
-    Now with forex overlay capability
+    Now with forex and stock indices overlay capability
     """
     try:
         data = json.loads(request.body)
         currencies = data.get('currencies', ['USD'])
         forex_pairs = data.get('forex_pairs', [])
+        stock_indices = data.get('stock_indices', [])
         date_range = data.get('date_range', '30d')
+        
+        print(f"Received request: currencies={currencies}, forex={forex_pairs}, stocks={stock_indices}, range={date_range}")
         
         # Calculate date range
         range_days = {
@@ -13307,11 +13497,9 @@ def economic_strength_index(request):
                         daily_scores.append(daily_score)
                         dates.append(date_str)
                     else:
-                        # No valid events for this day - use None for now
                         daily_scores.append(None)
                         dates.append(date_str)
                 else:
-                    # No events for this currency on this date - use None for now
                     daily_scores.append(None)
                     dates.append(date_str)
             
@@ -13343,20 +13531,16 @@ def economic_strength_index(request):
                     
                     # Interpolate or use nearest value
                     if before_score is not None and after_score is not None:
-                        # Linear interpolation
                         distance_total = after_idx - before_idx
                         distance_from_before = i - before_idx
                         weight = distance_from_before / distance_total if distance_total > 0 else 0
                         interpolated_score = before_score + (after_score - before_score) * weight
                         filled_scores.append(interpolated_score)
                     elif before_score is not None:
-                        # Use last known value
                         filled_scores.append(before_score)
                     elif after_score is not None:
-                        # Use next known value
                         filled_scores.append(after_score)
                     else:
-                        # No data available, use neutral score
                         filled_scores.append(0)
             
             daily_scores = filled_scores
@@ -13393,32 +13577,45 @@ def economic_strength_index(request):
             chart_data.append(data_point)
         
         # Fetch and merge forex data if requested
+        forex_data = {}
         if forex_pairs:
             try:
                 print(f"Fetching forex data for pairs: {forex_pairs}")
                 forex_data = get_forex_data(forex_pairs, date_range)
                 print(f"Forex data fetched successfully: {bool(forex_data)}")
-                
-                if any(forex_data.values()):  # Check if any forex data was retrieved
-                    chart_data = merge_esi_and_forex_data(chart_data, forex_data)
-                    print(f"Data merged. Final chart_data length: {len(chart_data)}")
-                    
-                    # Debug: Check if forex prices are in the final data
-                    forex_keys_found = set()
-                    for point in chart_data:
-                        for key in point.keys():
-                            if '_price' in key:
-                                forex_keys_found.add(key)
-                    print(f"Forex price keys found in final data: {forex_keys_found}")
-                    
-                else:
-                    print("No forex data retrieved")
-                    
             except Exception as e:
                 print(f"Error fetching forex data: {str(e)}")
+        
+        # Fetch and merge stock indices data if requested
+        stock_data = {}
+        if stock_indices:
+            try:
+                print(f"Fetching stock indices data for symbols: {stock_indices}")
+                stock_data = get_stock_indices_data(stock_indices, date_range)
+                print(f"Stock indices data fetched successfully: {bool(stock_data)}")
+            except Exception as e:
+                print(f"Error fetching stock indices data: {str(e)}")
                 import traceback
                 print(traceback.format_exc())
-                # Continue without forex data if there's an error
+        
+        # Merge all data if any asset data was retrieved
+        if any(forex_data.values()) or any(stock_data.values()):
+            try:
+                chart_data = merge_multi_asset_data(chart_data, forex_data, stock_data)
+                print(f"Data merged. Final chart_data length: {len(chart_data)}")
+                
+                # Debug: Check if asset prices are in the final data
+                asset_keys_found = set()
+                for point in chart_data:
+                    for key in point.keys():
+                        if '_price' in key or '_index' in key:
+                            asset_keys_found.add(key)
+                print(f"Asset price/index keys found in final data: {asset_keys_found}")
+                
+            except Exception as e:
+                print(f"Error merging asset data: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
         
         # Calculate summary statistics
         summary_stats = {}
@@ -13449,6 +13646,18 @@ def economic_strength_index(request):
                     'trend': 'bullish' if price_change > 0 else 'bearish'
                 }
         
+        # Add stock indices summary stats
+        for symbol in stock_indices:
+            index_key = f"{symbol}_index"
+            index_values = [point.get(index_key) for point in chart_data if point.get(index_key) is not None]
+            if index_values:
+                index_change = ((index_values[-1] - index_values[0]) / index_values[0]) * 100
+                summary_stats[f"{symbol}_stock"] = {
+                    'current_value': index_values[-1],
+                    'value_change_percent': index_change,
+                    'trend': 'bullish' if index_change > 0 else 'bearish'
+                }
+        
         response_data = {
             'success': True,
             'chart_data': chart_data,
@@ -13456,6 +13665,7 @@ def economic_strength_index(request):
             'metadata': {
                 'total_events_analyzed': events.count() if currencies else 0,
                 'forex_pairs_included': forex_pairs,
+                'stock_indices_included': stock_indices,
                 'date_range': f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
                 'currencies': currencies
             }
@@ -13464,6 +13674,9 @@ def economic_strength_index(request):
         return Response(response_data)
         
     except Exception as e:
+        print(f"Error in economic_strength_index: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return Response({
             'success': False,
             'error': str(e),
@@ -13471,6 +13684,7 @@ def economic_strength_index(request):
             'summary_stats': {}
         }, status=500)
 
+        
 from django.shortcuts import render
 from django.core.paginator import Paginator
 from django.db.models import Q, Count, Avg, Max, Min
