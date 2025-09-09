@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.10-slim
 
 # Install system dependencies including build tools
 RUN apt-get update && apt-get install -y \
@@ -15,7 +15,7 @@ WORKDIR /usr/src/app
 # Copy application files
 COPY . .
 
-# Upgrade pip, setuptools, and wheel (wheel helps with binary installs)
+# Upgrade pip, setuptools, and wheel
 RUN pip install --upgrade pip setuptools wheel
 
 # Install Python dependencies
