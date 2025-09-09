@@ -37,7 +37,7 @@ import pandas as pd
 import numpy as np
 np.NaN = np.nan
 
-import pandas_ta as ta
+# import pandas_ta as ta
 # import MetaTrader5 as mt
 from datetime import datetime
 # from matplotlib import pyplot as plt
