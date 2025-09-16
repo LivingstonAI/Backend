@@ -216,6 +216,11 @@ urlpatterns = [
      path('research_gpt_summary/', snowai_research_gpt_summary_endpoint, name='snowai_research_gpt_summary'),
      path('research_gpt_chat/', snowai_research_gpt_chat_endpoint, name='snowai_research_gpt_chat'),
 
+     path('get_existing_summary/<str:gpt_type>/', get_existing_summary, name='get_existing_summary'),
+    
+     # Optional: Manual trigger endpoint for testing
+     path('trigger_summaries/', manual_trigger_summaries, name='manual_trigger_summaries'),
+
 
 
     # create appproprate urls.py here
