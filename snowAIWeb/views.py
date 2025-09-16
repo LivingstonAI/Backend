@@ -16442,14 +16442,3 @@ def get_csrf_token(request):
         return JsonResponse({'csrfToken': csrf_token})
     except Exception as e:
         return JsonResponse({'error': str(e)})
-
-
-Hey! So, I have a slight issue here. It seems that whenever I log into my component, I trigger the different GPT endpoints. But I don't really want that. I want it such that it doesnt trigger the endpoints to run the analysis, but rather only checks if summaries for the different GPTs are present and then displays them. It should use the Background scheduler:
-
-scheduler = BackgroundScheduler()
-scheduler.start()
-
-and scheduler.add_job() to run every 24 hours. 
-
-The chat function works fine for now.
-
