@@ -15482,18 +15482,31 @@ def snowai_paper_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        # Get actual paper data
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:10]
+        
+        # Serialize the data to provide full context
+        papers_data = []
+        for paper in recent_papers:
+            paper_dict = {}
+            for field in paper._meta.fields:
+                field_value = getattr(paper, field.name)
+                # Convert non-serializable types to strings
+                if hasattr(field_value, 'isoformat'):
+                    paper_dict[field.name] = field_value.isoformat()
+                else:
+                    paper_dict[field.name] = str(field_value) if field_value is not None else None
+            papers_data.append(paper_dict)
         
         context_prompt = f"""
         You are PaperGPT, an AI assistant who specializes in research paper analysis, academic literature synthesis, and research methodology. 
         You are having a natural conversation with a user.
         
-        Available research context (use only when relevant to the conversation):
-        - Total papers in collection: {PaperGPT.objects.count()}
-        - Recent papers: {recent_papers.count()}
+        Available research papers data (use only when relevant to the conversation):
+        Total papers in collection: {PaperGPT.objects.count()}
         
-        Sample recent papers:
-        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
+        Recent papers data:
+        {json.dumps(papers_data, indent=2)}
         
         User: {user_message}
         
@@ -15503,6 +15516,7 @@ def snowai_paper_gpt_chat_endpoint(request):
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing paper-related content
         - Be helpful and friendly while staying true to your research expertise
         - Only reference the research data when it's actually relevant to what the user is asking
+        - You have access to the full paper data including all fields and content
         """
         
         ai_response = chat_gpt(context_prompt)
@@ -15529,18 +15543,47 @@ def snowai_backtesting_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        recent_results = BacktestResult.objects.order_by('-created_at')[:5]
+        # Get actual backtesting data
+        recent_results = BacktestResult.objects.order_by('-created_at')[:10]
+        backtest_models = BacktestModels.objects.all()[:10]
+        
+        # Serialize results data
+        results_data = []
+        for result in recent_results:
+            result_dict = {}
+            for field in result._meta.fields:
+                field_value = getattr(result, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    result_dict[field.name] = field_value.isoformat()
+                else:
+                    result_dict[field.name] = str(field_value) if field_value is not None else None
+            results_data.append(result_dict)
+        
+        # Serialize models data
+        models_data = []
+        for model in backtest_models:
+            model_dict = {}
+            for field in model._meta.fields:
+                field_value = getattr(model, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    model_dict[field.name] = field_value.isoformat()
+                else:
+                    model_dict[field.name] = str(field_value) if field_value is not None else None
+            models_data.append(model_dict)
         
         context_prompt = f"""
         You are BacktestingGPT, an AI assistant who specializes in quantitative strategy analysis, backtesting methodology, and trading system optimization.
         You are having a natural conversation with a user.
         
-        Available backtesting context (use only when relevant to the conversation):
-        - Total backtests: {BacktestModels.objects.count()}
-        - Total results: {BacktestResult.objects.count()}
+        Available backtesting data (use only when relevant to the conversation):
+        Total backtests: {BacktestModels.objects.count()}
+        Total results: {BacktestResult.objects.count()}
         
-        Recent performance:
-        {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
+        Recent backtest results:
+        {json.dumps(results_data, indent=2)}
+        
+        Backtest models data:
+        {json.dumps(models_data, indent=2)}
         
         User: {user_message}
         
@@ -15550,6 +15593,7 @@ def snowai_backtesting_gpt_chat_endpoint(request):
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing backtesting-related content
         - Be helpful and friendly while staying true to your quantitative expertise
         - Only reference the backtesting data when it's actually relevant to what the user is asking
+        - You have access to full backtest results and model configuration data
         """
         
         ai_response = chat_gpt(context_prompt)
@@ -15576,30 +15620,39 @@ def snowai_research_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
-        recent_models = SnowAIMLModelLogEntry.objects.order_by('-snowai_created_at')[:3]
+        # Get actual research data
+        ml_models = SnowAIMLModelLogEntry.objects.all()[:10]
+        
+        # Serialize ML models data
+        ml_models_data = []
+        for model in ml_models:
+            model_dict = {}
+            for field in model._meta.fields:
+                field_value = getattr(model, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    model_dict[field.name] = field_value.isoformat()
+                else:
+                    model_dict[field.name] = str(field_value) if field_value is not None else None
+            ml_models_data.append(model_dict)
         
         context_prompt = f"""
         You are ResearchGPT, an AI assistant who specializes in comprehensive research analysis, cross-disciplinary synthesis, and strategic research planning.
         You are having a natural conversation with a user.
         
-        Available research ecosystem context (use only when relevant to the conversation):
-        - Total papers: {PaperGPT.objects.count()}
-        - Total ML models: {SnowAIMLModelLogEntry.objects.count()}
-        - Total backtests: {BacktestModels.objects.count()}
+        Available research ecosystem data (use only when relevant to the conversation):
+        Total ML models: {SnowAIMLModelLogEntry.objects.count()}
         
-        Recent research activity:
-        Papers: {chr(10).join([f"- {paper.title}" for paper in recent_papers])}
-        Models: {chr(10).join([f"- {model.snowai_model_name}" for model in recent_models])}
+        ML Models data:
+        {json.dumps(ml_models_data, indent=2)}
         
         User: {user_message}
         
         Instructions:
         - Have a natural, conversational response
         - Only provide detailed research analysis or comprehensive summaries if the user specifically asks about research insights, cross-disciplinary analysis, or strategic planning
-        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing research-related content
         - Be helpful and friendly while staying true to your research expertise
         - Only reference the research ecosystem data when it's actually relevant to what the user is asking
+        - You have access to full ML model data and research context
         """
         
         ai_response = chat_gpt(context_prompt)
@@ -15626,16 +15679,30 @@ def snowai_trader_history_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        # Get recent trading context
-        recent_trades = AccountTrades.objects.all()[:50]  # Last 50 trades for context
+        # Get actual trading data
+        recent_trades = AccountTrades.objects.all()[:50]
+        
+        # Serialize trades data
+        trades_data = []
+        for trade in recent_trades:
+            trade_dict = {}
+            for field in trade._meta.fields:
+                field_value = getattr(trade, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    trade_dict[field.name] = field_value.isoformat()
+                else:
+                    trade_dict[field.name] = str(field_value) if field_value is not None else None
+            trades_data.append(trade_dict)
         
         context_prompt = f"""
         You are TraderHistoryGPT, an AI assistant who specializes in analyzing trading performance and providing trading insights.
         You are having a natural conversation with a user.
         
-        Available trading context (use only when relevant to the conversation):
-        - Total trades in system: {AccountTrades.objects.count()}
-        - Recent activity: {recent_trades.count()} recent trades available
+        Available trading data (use only when relevant to the conversation):
+        Total trades in system: {AccountTrades.objects.count()}
+        
+        Recent trades data:
+        {json.dumps(trades_data, indent=2)}
         
         User: {user_message}
         
@@ -15645,12 +15712,12 @@ def snowai_trader_history_gpt_chat_endpoint(request):
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing trading-related content
         - Be helpful and friendly while staying true to your trading expertise
         - Only reference the trading data when it's actually relevant to what the user is asking
-        - If the user asks about specific metrics, then calculate them from the available data context
+        - You have access to full trade data including all fields and can calculate any metrics from this data
+        - If the user asks about specific metrics, calculate them from the available trade data
         """
         
         ai_response = chat_gpt(context_prompt)
         
-        # Save conversation
         SnowAIConversationHistory.objects.create(
             gpt_system='TraderHistoryGPT',
             user_message=user_message,
@@ -15673,18 +15740,30 @@ def snowai_idea_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        recent_ideas = IdeaModel.objects.order_by('-created_at')[:10]
+        # Get actual ideas data
+        recent_ideas = IdeaModel.objects.order_by('-created_at')[:20]
+        
+        # Serialize ideas data
+        ideas_data = []
+        for idea in recent_ideas:
+            idea_dict = {}
+            for field in idea._meta.fields:
+                field_value = getattr(idea, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    idea_dict[field.name] = field_value.isoformat()
+                else:
+                    idea_dict[field.name] = str(field_value) if field_value is not None else None
+            ideas_data.append(idea_dict)
         
         context_prompt = f"""
         You are IdeaGPT, an AI assistant who specializes in idea management, creativity enhancement, and innovation strategy.
         You are having a natural conversation with a user.
         
-        Available ideas context (use only when relevant to the conversation):
-        - Total ideas in system: {IdeaModel.objects.count()}
-        - Recent ideas: {recent_ideas.count()}
+        Available ideas data (use only when relevant to the conversation):
+        Total ideas in system: {IdeaModel.objects.count()}
         
-        Sample recent ideas:
-        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:3]])}
+        Recent ideas data:
+        {json.dumps(ideas_data, indent=2)}
         
         User: {user_message}
         
@@ -15694,6 +15773,7 @@ def snowai_idea_gpt_chat_endpoint(request):
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing idea-related content
         - Be helpful and friendly while staying true to your creativity and innovation expertise
         - Only reference the ideas data when it's actually relevant to what the user is asking
+        - You have access to full idea data including all fields and content
         """
         
         ai_response = chat_gpt(context_prompt)
@@ -15720,27 +15800,32 @@ def snowai_macro_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        # Get recent macro context with more detailed information
-        recent_events = EconomicEvent.objects.filter(date_time__gte=datetime.now() - timedelta(days=7))
-        high_impact_recent = recent_events.filter(impact='high')
+        # Get actual economic data - PAST EVENTS FROM LAST 30 DAYS
+        past_events = EconomicEvent.objects.filter(
+            date_time__gte=datetime.now() - timedelta(days=30),
+            date_time__lt=datetime.now()
+        ).order_by('-date_time')
         
-        # Get some upcoming events too
-        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:5]
+        # Serialize past events data
+        past_events_data = []
+        for event in past_events:
+            event_dict = {}
+            for field in event._meta.fields:
+                field_value = getattr(event, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    event_dict[field.name] = field_value.isoformat()
+                else:
+                    event_dict[field.name] = str(field_value) if field_value is not None else None
+            past_events_data.append(event_dict)
         
         context_prompt = f"""
         You are MacroGPT, an AI assistant who specializes in macro economic analysis, market trends, and economic event impact assessment.
         You are having a natural conversation with a user.
         
-        Available economic context (use only when relevant to the conversation):
-        Recent economic context (Last 7 days):
-        - Total events: {recent_events.count()}
-        - High impact events: {high_impact_recent.count()}
+        Available economic data (use only when relevant to the conversation):
         
-        Recent high-impact events:
-        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.impact} impact) - {event.date_time.strftime('%Y-%m-%d')}" for event in high_impact_recent[:5]])}
-        
-        Upcoming events:
-        {chr(10).join([f"- {event.currency}: {event.event_name} - {event.date_time.strftime('%Y-%m-%d %H:%M')}" for event in upcoming_events])}
+        Past economic events (Last 30 days):
+        {json.dumps(past_events_data, indent=2)}
         
         User: {user_message}
         
@@ -15750,7 +15835,8 @@ def snowai_macro_gpt_chat_endpoint(request):
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing economic content
         - Be helpful and friendly while staying true to your macro economic expertise
         - Only reference the economic data when it's actually relevant to what the user is asking
-        - If the user asks about specific currencies or events, then reference the available data context
+        - You have access to past economic event data including all fields and details
+        - If the user asks about specific currencies or past events, reference the available data context
         """
         
         ai_response = chat_gpt(context_prompt)
@@ -15771,84 +15857,6 @@ def snowai_macro_gpt_chat_endpoint(request):
         print(f'Error in MacroGPT chat function: {e}')
         return JsonResponse({'status': 'error', 'message': str(e)})
 
-
-# # Add scheduler jobs (add this to your main application or scheduler setup)
-# def setup_snowai_gpt_scheduler_jobs():
-#     """
-#     Setup scheduler jobs for SnowAI GPT summaries to run every 48 hours
-#     """
-#     from django_apscheduler.jobstores import DjangoJobStore
-#     from apscheduler.schedulers.background import BackgroundScheduler
-#     import requests
-    
-#     scheduler = BackgroundScheduler()
-#     scheduler.add_jobstore(DjangoJobStore(), "default")
-    
-#     base_url = 'https://backend-production-c0ab.up.railway.app'  # Replace with your actual URL
-    
-#     def trigger_gpt_summary_generation(endpoint_name):
-#         """Helper function to trigger GPT summary generation"""
-#         try:
-#             response = requests.get(f"{base_url}/{endpoint_name}/")
-#             print(f"SnowAI GPT Summary generated for {endpoint_name}: {response.status_code}")
-#         except Exception as e:
-#             print(f"Error generating summary for {endpoint_name}: {str(e)}")
-    
-#     # Add jobs for each GPT system to run every 48 hours
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_trader_history_gpt_summary'),
-#         'interval',
-#         hours=48,
-#         id='snowai_trader_history_gpt_job',
-#         replace_existing=True
-#     )
-    
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_macro_gpt_summary'),
-#         'interval',
-#         hours=48,
-#         id='snowai_macro_gpt_job',
-#         replace_existing=True
-#     )
-    
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_idea_gpt_summary'),
-#         'interval',
-#         hours=48,
-#         id='snowai_idea_gpt_job',
-#         replace_existing=True
-#     )
-    
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_backtesting_gpt_summary'),
-#         'interval',
-#         hours=48,
-#         id='snowai_backtesting_gpt_job',
-#         replace_existing=True
-#     )
-    
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_paper_gpt_summary'),
-#         'interval',
-#         hours=48,
-#         id='snowai_paper_gpt_job',
-#         replace_existing=True
-#     )
-    
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_research_gpt_summary'),
-#         'interval',
-#         hours=48,
-#         id='snowai_research_gpt_job',
-#         replace_existing=True
-#     )
-    
-#     scheduler.start()
-#     print("SnowAI GPT Scheduler jobs setup completed - All summaries will update every 48 hours")
-
-
-# # Add this to your Django app's apps.py ready() method or main scheduler initialization
-# setup_snowai_gpt_scheduler_jobs()
         
 
 def init_scheduler():
