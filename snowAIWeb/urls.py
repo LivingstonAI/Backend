@@ -203,18 +203,18 @@ urlpatterns = [
      path('reset_fingerprint/', views.reset_fingerprint_backend, name='reset_fingerprint_backend'),
 
 
-     path('snowai_trader_history_gpt_summary/', snowai_trader_history_gpt_summary_endpoint, name='snowai_trader_history_gpt_summary'),
-     path('snowai_trader_history_gpt_chat/', snowai_trader_history_gpt_chat_endpoint, name='snowai_trader_history_gpt_chat'),
-     path('snowai_macro_gpt_summary/', snowai_macro_gpt_summary_endpoint, name='snowai_macro_gpt_summary'),
-     path('snowai_macro_gpt_chat/', snowai_macro_gpt_chat_endpoint, name='snowai_macro_gpt_chat'),
-     path('snowai_idea_gpt_summary/', snowai_idea_gpt_summary_endpoint, name='snowai_idea_gpt_summary'),
-     path('snowai_idea_gpt_chat/', snowai_idea_gpt_chat_endpoint, name='snowai_idea_gpt_chat'),
-     path('snowai_backtesting_gpt_summary/', snowai_backtesting_gpt_summary_endpoint, name='snowai_backtesting_gpt_summary'),
-     path('snowai_backtesting_gpt_chat/', snowai_backtesting_gpt_chat_endpoint, name='snowai_backtesting_gpt_chat'),
-     path('snowai_paper_gpt_summary/', snowai_paper_gpt_summary_endpoint, name='snowai_paper_gpt_summary'),
-     path('snowai_paper_gpt_chat/', snowai_paper_gpt_chat_endpoint, name='snowai_paper_gpt_chat'),
-     path('snowai_research_gpt_summary/', snowai_research_gpt_summary_endpoint, name='snowai_research_gpt_summary'),
-     path('snowai_research_gpt_chat/', snowai_research_gpt_chat_endpoint, name='snowai_research_gpt_chat'),
+     path('trader_history_gpt_summary/', snowai_trader_history_gpt_summary_endpoint, name='snowai_trader_history_gpt_summary'),
+     path('trader_history_gpt_chat/', snowai_trader_history_gpt_chat_endpoint, name='snowai_trader_history_gpt_chat'),
+     path('macro_gpt_summary/', snowai_macro_gpt_summary_endpoint, name='snowai_macro_gpt_summary'),
+     path('macro_gpt_chat/', snowai_macro_gpt_chat_endpoint, name='snowai_macro_gpt_chat'),
+     path('idea_gpt_summary/', snowai_idea_gpt_summary_endpoint, name='snowai_idea_gpt_summary'),
+     path('idea_gpt_chat/', snowai_idea_gpt_chat_endpoint, name='snowai_idea_gpt_chat'),
+     path('backtesting_gpt_summary/', snowai_backtesting_gpt_summary_endpoint, name='snowai_backtesting_gpt_summary'),
+     path('backtesting_gpt_chat/', snowai_backtesting_gpt_chat_endpoint, name='snowai_backtesting_gpt_chat'),
+     path('paper_gpt_summary/', snowai_paper_gpt_summary_endpoint, name='snowai_paper_gpt_summary'),
+     path('paper_gpt_chat/', snowai_paper_gpt_chat_endpoint, name='snowai_paper_gpt_chat'),
+     path('research_gpt_summary/', snowai_research_gpt_summary_endpoint, name='snowai_research_gpt_summary'),
+     path('research_gpt_chat/', snowai_research_gpt_chat_endpoint, name='snowai_research_gpt_chat'),
 
 
 
