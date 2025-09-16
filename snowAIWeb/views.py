@@ -16550,7 +16550,7 @@ def generate_research_gpt_summary():
         profitable_models = ml_models.filter(snowai_sharpe_ratio__gte=1.0).count()
 
         # Training data analysis
-        avg_training_samples = ml_models.exclude(snowai_training_samples__isnull=True).aggregate(Avg('snowai_training_samples'))['snowai_training_samples__avg'] or 0
+        avg_training_samples = ml_models.exclude(snowai_dataset_size__isnull=True).aggregate(Avg('snowai_dataset_size'))['snowai_dataset_size__avg'] or 0
 
         # Prompt for GPT summary focusing on ML research
         prompt = f"""
@@ -16560,9 +16560,9 @@ def generate_research_gpt_summary():
         - Total ML Models: {total_ml_models}
         - High-Performing Models (>70% accuracy): {high_performing_models}
         - Profitable Models (Sharpe >1.0): {profitable_models}
-        - Average Model Accuracy: {avg_accuracy:.3f}
-        - Average Sharpe Ratio: {avg_sharpe:.3f}
-        - Average Training Samples: {avg_training_samples:.0f}
+        - Average Model Accuracy: {avg_accuracy}
+        - Average Sharpe Ratio: {avg_sharpe}
+        - Average Training Samples: {avg_training_samples}
 
         MODEL TYPE DISTRIBUTION:
         {chr(10).join([f"- {mt['snowai_model_type']}: {mt['count']} models" for mt in model_types[:10]])}
@@ -16592,7 +16592,7 @@ def generate_research_gpt_summary():
 
         # Generate ML-specific knowledge gaps
         gaps_prompt = f"""
-        Based on {total_ml_models} ML models with average accuracy of {avg_accuracy:.3f}, 
+        Based on {total_ml_models} ML models with average accuracy of {avg_accuracy}, 
         identify 3-5 specific knowledge gaps in our ML research that could significantly improve model performance.
         Focus on algorithmic gaps, data gaps, and methodology gaps.
         """
@@ -16663,7 +16663,7 @@ def generate_research_gpt_summary():
         
 # OPTIONAL: Manual trigger endpoint for testing
 @csrf_exempt
-# @require_http_methods(["GET"])
+# @require_http_methods(["POST"])
 def manual_trigger_summaries(request):
     """Manually trigger summary generation - useful for testing"""
     try:
