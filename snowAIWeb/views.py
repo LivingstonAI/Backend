@@ -14248,6 +14248,1044 @@ def debug_fingerprint_status(request):
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_trader_history_gpt_summary_endpoint(request):
+    try:
+        # Get news data for major assets
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'XAUUSD']
+        news_data = fetch_news_data(major_assets, 'system@snowai.com')
+        
+        # Upcoming events
+        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:10]
+        
+        # Create comprehensive prompt
+        prompt = f"""
+        Analyze this comprehensive macro economic data and provide a detailed market analysis:
+
+        ECONOMIC EVENTS ANALYSIS (Last 30 Days):
+        - Total Economic Events: {total_events}
+        - High Impact Events: {high_impact_events}
+        - Medium Impact Events: {medium_impact_events}  
+        - Low Impact Events: {low_impact_events}
+        - Most Active Currency: {most_active_currency}
+        
+        RECENT HIGH IMPACT EVENTS:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d')})" for event in recent_events.filter(impact='high')[:10]])}
+        
+        UPCOMING EVENTS PREVIEW:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d %H:%M')})" for event in upcoming_events])}
+        
+        NEWS THEMES FROM MAJOR ASSETS:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:10]])}
+
+        Please provide:
+        1. Comprehensive macro economic assessment
+        2. Key market themes and trends
+        3. Currency strength analysis
+        4. Risk assessment for upcoming events
+        5. Trading opportunities and recommendations
+        6. Market sentiment analysis
+        7. Geopolitical impact assessment
+        8. Central bank policy implications
+
+        Format as a professional macro economic briefing with actionable market insights.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAIMacroGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_economic_events': total_events,
+                'high_impact_events_count': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'key_market_themes': ', '.join([item['title'][:50] for item in news_data.get('message', [])[:5]]),
+                'upcoming_events_preview': ', '.join([f"{event.currency}: {event.event_name}" for event in upcoming_events[:5]]),
+                'market_sentiment': 'Mixed' if high_impact_events > 5 else 'Stable',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_economic_events = total_events
+            summary_obj.high_impact_events_count = high_impact_events
+            summary_obj.most_active_currency = most_active_currency
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_events': total_events,
+                'high_impact_events': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'upcoming_events': len(upcoming_events),
+                'news_items': len(news_data.get('message', []))
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_macro_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent macro context
+        recent_events = EconomicEvent.objects.filter(date_time__gte=datetime.now() - timedelta(days=7))[:20]
+        
+        context_prompt = f"""
+        You are MacroGPT, an AI specialized in macro economic analysis, market trends, and economic event impact assessment.
+        
+        Recent economic context (Last 7 days):
+        - Total events: {recent_events.count()}
+        - High impact events: {recent_events.filter(impact='high').count()}
+        
+        Recent events:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.impact} impact)" for event in recent_events[:5]])}
+        
+        User question: {user_message}
+        
+        Provide expert macro economic analysis and insights based on current market conditions and economic data.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='MacroGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_idea_gpt_summary_endpoint(request):
+    try:
+        all_ideas = IdeaModel.objects.all()
+        trade_ideas = TradeIdea.objects.all()
+        
+        if not all_ideas.exists() and not trade_ideas.exists():
+            return JsonResponse({
+                'status': 'No ideas available',
+                'summary': 'No ideas found in the system to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate metrics for regular ideas
+        total_ideas = all_ideas.count()
+        pending_ideas = all_ideas.filter(idea_tracker='Pending').count()
+        in_progress_ideas = all_ideas.filter(idea_tracker='In Progress').count()
+        completed_ideas = all_ideas.filter(idea_tracker='Completed').count()
+        
+        completion_rate = (completed_ideas / total_ideas * 100) if total_ideas > 0 else 0
+        
+        # Category analysis
+        categories = all_ideas.values('idea_category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['idea_category'] if categories else 'N/A'
+        
+        # Trade ideas metrics
+        total_trade_ideas = trade_ideas.count()
+        pending_trade_ideas = trade_ideas.filter(trade_status='pending').count()
+        executed_trade_ideas = trade_ideas.filter(trade_status='executed').count()
+        
+        # Get recent ideas for context
+        recent_ideas = all_ideas.order_by('-created_at')[:10]
+        recent_trade_ideas = trade_ideas.order_by('-date_created')[:5]
+        
+        oldest_pending = all_ideas.filter(idea_tracker='Pending').order_by('created_at').first()
+        newest_idea = all_ideas.order_by('-created_at').first()
+        
+        prompt = f"""
+        Analyze this comprehensive idea management data and provide detailed insights:
+
+        GENERAL IDEAS ANALYSIS:
+        - Total Ideas: {total_ideas}
+        - Pending Ideas: {pending_ideas}
+        - In Progress Ideas: {in_progress_ideas}
+        - Completed Ideas: {completed_ideas}
+        - Completion Rate: {completion_rate:.2f}%
+        - Most Common Category: {most_common_category}
+
+        TRADE IDEAS ANALYSIS:
+        - Total Trade Ideas: {total_trade_ideas}
+        - Pending Trade Ideas: {pending_trade_ideas}
+        - Executed Trade Ideas: {executed_trade_ideas}
+
+        RECENT IDEAS SAMPLE:
+        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:5]])}
+
+        RECENT TRADE IDEAS:
+        {chr(10).join([f"- [{trade.trade_status}] {trade.asset}: {trade.heading}" for trade in recent_trade_ideas])}
+
+        Please provide:
+        1. Comprehensive idea pipeline analysis
+        2. Productivity and execution assessment
+        3. Category-wise performance breakdown
+        4. Bottleneck identification
+        5. Recommendations for better idea management
+        6. Trading idea conversion analysis
+        7. Strategic prioritization suggestions
+        8. Innovation and creativity assessment
+
+        Format as a professional idea management report with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIIdeaGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_ideas': total_ideas,
+                'pending_ideas': pending_ideas,
+                'in_progress_ideas': in_progress_ideas,
+                'completed_ideas': completed_ideas,
+                'most_common_category': most_common_category,
+                'completion_rate': completion_rate,
+                'oldest_pending_idea': oldest_pending.idea_text[:200] if oldest_pending else 'N/A',
+                'newest_idea': newest_idea.idea_text[:200] if newest_idea else 'N/A',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_ideas = total_ideas
+            summary_obj.pending_ideas = pending_ideas
+            summary_obj.in_progress_ideas = in_progress_ideas
+            summary_obj.completed_ideas = completed_ideas
+            summary_obj.completion_rate = completion_rate
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_ideas': total_ideas,
+                'completion_rate': f"{completion_rate:.2f}%",
+                'most_common_category': most_common_category,
+                'pending_ideas': pending_ideas,
+                'trade_ideas': total_trade_ideas
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_idea_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_ideas = IdeaModel.objects.order_by('-created_at')[:10]
+        
+        context_prompt = f"""
+        You are IdeaGPT, an AI specialized in idea management, creativity enhancement, and innovation strategy.
+        
+        Recent ideas context:
+        - Total ideas in system: {IdeaModel.objects.count()}
+        - Recent ideas: {recent_ideas.count()}
+        
+        Sample recent ideas:
+        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:3]])}
+        
+        User question: {user_message}
+        
+        Provide creative and strategic insights for idea management, development, and execution.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='IdeaGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_backtesting_gpt_summary_endpoint(request):
+    try:
+        all_backtests = BacktestModels.objects.all()
+        all_results = BacktestResult.objects.all()
+        
+        if not all_backtests.exists():
+            return JsonResponse({
+                'status': 'No backtesting data available',
+                'summary': 'No backtesting history found to analyze.',
+                'metrics': {}
+            })
+        
+        total_backtests = all_backtests.count()
+        successful_backtests = all_backtests.filter(model_backtested=True).count()
+        
+        # Results analysis
+        if all_results.exists():
+            avg_sharpe = all_results.aggregate(Avg('sharpe_ratio'))['sharpe_ratio__avg'] or 0
+            avg_annual_return = all_results.aggregate(Avg('annual_return'))['annual_return__avg'] or 0
+            avg_max_drawdown = all_results.aggregate(Avg('max_drawdown'))['max_drawdown__avg'] or 0
+            best_sharpe = all_results.aggregate(Max('sharpe_ratio'))['sharpe_ratio__max'] or 0
+            worst_sharpe = all_results.aggregate(Min('sharpe_ratio'))['sharpe_ratio__min'] or 0
+            
+            best_result = all_results.filter(sharpe_ratio=best_sharpe).first()
+            worst_result = all_results.filter(sharpe_ratio=worst_sharpe).first()
+        else:
+            avg_sharpe = avg_annual_return = avg_max_drawdown = 0
+            best_result = worst_result = None
+        
+        # Dataset analysis
+        datasets = all_backtests.values('chosen_dataset').annotate(count=Count('id')).order_by('-count')
+        most_used_dataset = datasets.first()['chosen_dataset'] if datasets else 'N/A'
+        
+        # Recent backtests
+        recent_backtests = all_backtests.order_by('-id')[:5]
+        
+        prompt = f"""
+        Analyze this comprehensive backtesting performance data:
+
+        BACKTESTING OVERVIEW:
+        - Total Backtests: {total_backtests}
+        - Successful Backtests: {successful_backtests}
+        - Success Rate: {(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%
+        - Most Used Dataset: {most_used_dataset}
+
+        PERFORMANCE METRICS:
+        - Average Sharpe Ratio: {avg_sharpe:.3f}
+        - Average Annual Return: {avg_annual_return:.2f}%
+        - Average Max Drawdown: {avg_max_drawdown:.2f}%
+        - Best Sharpe Ratio: {best_sharpe:.3f}
+        - Worst Sharpe Ratio: {worst_sharpe:.3f}
+
+        RECENT BACKTESTS:
+        {chr(10).join([f"- Dataset: {bt.chosen_dataset} | Period: {bt.dataset_start} to {bt.dataset_end} | Capital: ${bt.initial_capital:,.2f}" for bt in recent_backtests])}
+
+        BEST PERFORMING STRATEGY:
+        {f"Sharpe: {best_result.sharpe_ratio:.3f} | Annual Return: {best_result.annual_return:.2f}% | Drawdown: {best_result.max_drawdown:.2f}%" if best_result else "No results available"}
+
+        WORST PERFORMING STRATEGY:
+        {f"Sharpe: {worst_result.sharpe_ratio:.3f} | Annual Return: {worst_result.annual_return:.2f}% | Drawdown: {worst_result.max_drawdown:.2f}%" if worst_result else "No results available"}
+
+        Please provide:
+        1. Comprehensive backtesting performance assessment
+        2. Strategy effectiveness analysis
+        3. Risk-adjusted returns evaluation
+        4. Dataset utilization insights
+        5. Performance consistency analysis
+        6. Recommendations for strategy improvement
+        7. Risk management effectiveness
+        8. Future backtesting suggestions
+
+        Format as a professional quantitative analysis report.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIBacktestingGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_backtests': total_backtests,
+                'successful_backtests': successful_backtests,
+                'average_sharpe_ratio': avg_sharpe,
+                'average_annual_return': avg_annual_return,
+                'average_max_drawdown': avg_max_drawdown,
+                'best_performing_strategy': f"Sharpe: {best_sharpe:.3f}" if best_result else 'N/A',
+                'worst_performing_strategy': f"Sharpe: {worst_sharpe:.3f}" if worst_result else 'N/A',
+                'most_used_dataset': most_used_dataset,
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_backtests = total_backtests
+            summary_obj.successful_backtests = successful_backtests
+            summary_obj.average_sharpe_ratio = avg_sharpe
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_backtests': total_backtests,
+                'success_rate': f"{(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%",
+                'avg_sharpe_ratio': f"{avg_sharpe:.3f}",
+                'avg_annual_return': f"{avg_annual_return:.2f}%",
+                'most_used_dataset': most_used_dataset
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_backtesting_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_results = BacktestResult.objects.order_by('-created_at')[:5]
+        
+        context_prompt = f"""
+        You are BacktestingGPT, an AI specialized in quantitative strategy analysis, backtesting methodology, and trading system optimization.
+        
+        Recent backtesting context:
+        - Total backtests: {BacktestModels.objects.count()}
+        - Total results: {BacktestResult.objects.count()}
+        
+        Recent performance:
+        {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
+        
+        User question: {user_message}
+        
+        Provide expert quantitative analysis and backtesting insights based on the available strategy performance data.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='BacktestingGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_paper_gpt_summary_endpoint(request):
+    try:
+        all_papers = PaperGPT.objects.all()
+        
+        if not all_papers.exists():
+            return JsonResponse({
+                'status': 'No research papers available',
+                'summary': 'No research papers found in the system to analyze.',
+                'metrics': {}
+            })
+        
+        total_papers = all_papers.count()
+        total_file_size = sum([paper.file_size for paper in all_papers]) / (1024 * 1024)  # Convert to MB
+        
+        # Category analysis
+        categories = all_papers.exclude(category__isnull=True).exclude(category='').values('category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['category'] if categories else 'Uncategorized'
+        
+        # Length analysis (approximate based on extracted text)
+        avg_length = all_papers.aggregate(Avg('extracted_text'))
+        avg_paper_length = len(avg_length['extracted_text__avg'] or '') if avg_length['extracted_text__avg'] else 0
+        
+        # Recent uploads
+        recent_papers = all_papers.order_by('-upload_date')[:5]
+        latest_upload = recent_papers.first()
+        
+        # Get AI summaries for analysis
+        paper_summaries = [paper.ai_summary[:200] + "..." for paper in all_papers if paper.ai_summary][:10]
+        personal_notes = [paper.personal_notes[:100] + "..." for paper in all_papers if paper.personal_notes][:5]
+        
+        prompt = f"""
+        Analyze this comprehensive research paper collection and provide insights:
+
+        PAPER COLLECTION OVERVIEW:
+        - Total Papers: {total_papers}
+        - Total File Size: {total_file_size:.2f} MB
+        - Most Common Category: {most_common_category}
+        - Average Paper Length: ~{avg_paper_length:,} characters
+
+        RECENT UPLOADS:
+        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'} | Size: {paper.file_size/(1024*1024):.1f}MB" for paper in recent_papers])}
+
+        EXISTING AI SUMMARIES SAMPLE:
+        {chr(10).join([f"- {summary}" for summary in paper_summaries[:5]])}
+
+        PERSONAL NOTES SAMPLE:
+        {chr(10).join([f"- {note}" for note in personal_notes])}
+
+        CATEGORY BREAKDOWN:
+        {chr(10).join([f"- {cat['category']}: {cat['count']} papers" for cat in categories[:5]])}
+
+        Please provide:
+        1. Comprehensive research collection assessment
+        2. Knowledge domain analysis
+        3. Research gap identification
+        4. Cross-paper insight synthesis
+        5. Future research recommendations
+        6. Practical application opportunities
+        7. Knowledge management suggestions
+        8. Research methodology insights
+        9. Literature review conclusions
+        10. Strategic research directions
+
+        Format as a comprehensive research portfolio analysis with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Generate research recommendations
+        recommendations_prompt = f"""
+        Based on the {total_papers} research papers in categories like {most_common_category}, provide specific future research applications and recommendations:
+
+        1. Identify 3-5 key research themes
+        2. Suggest practical applications for trading/finance
+        3. Recommend next research directions
+        4. Identify knowledge gaps that need filling
+
+        Keep recommendations specific and actionable.
+        """
+        
+        research_recommendations = chat_gpt(recommendations_prompt)
+        
+        summary_obj, created = SnowAIPaperGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_papers': total_papers,
+                'most_common_category': most_common_category,
+                'total_file_size_mb': total_file_size,
+                'average_paper_length': avg_paper_length,
+                'latest_upload': latest_upload.title if latest_upload else 'N/A',
+                'research_recommendations': research_recommendations,
+                'key_insights': ', '.join([summary[:50] for summary in paper_summaries[:3]]),
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_papers = total_papers
+            summary_obj.research_recommendations = research_recommendations
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_papers': total_papers,
+                'total_size_mb': f"{total_file_size:.2f} MB",
+                'most_common_category': most_common_category,
+                'categories_count': len(categories),
+                'avg_length': f"{avg_paper_length:,} chars"
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_paper_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        
+        context_prompt = f"""
+        You are PaperGPT, an AI specialized in research paper analysis, academic literature synthesis, and research methodology.
+        
+        Research paper context:
+        - Total papers in collection: {PaperGPT.objects.count()}
+        - Recent papers: {recent_papers.count()}
+        
+        Sample recent papers:
+        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
+        
+        User question: {user_message}
+        
+        Provide expert academic and research insights based on the available paper collection and research methodology expertise.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='PaperGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_research_gpt_summary_endpoint(request):
+    try:
+        # Combine all research sources
+        all_papers = PaperGPT.objects.all()
+        ml_models = SnowAIMLModelLogEntry.objects.all()
+        backtests = BacktestModels.objects.all()
+        
+        if not any([all_papers.exists(), ml_models.exists(), backtests.exists()]):
+            return JsonResponse({
+                'status': 'No research data available',
+                'summary': 'No research data found across papers, ML models, or backtests.',
+                'metrics': {}
+            })
+        
+        total_papers = all_papers.count()
+        total_ml_models = ml_models.count()
+        total_backtests = backtests.count()
+        total_research_entries = total_papers + total_ml_models + total_backtests
+        
+        # ML Model analysis
+        model_types = ml_models.values('snowai_model_type').annotate(count=Count('id')).order_by('-count')
+        financial_markets = ml_models.values('snowai_financial_market_type').annotate(count=Count('id')).order_by('-count')
+        
+        # Paper categories
+        paper_categories = all_papers.exclude(category__isnull=True).values('category').annotate(count=Count('id')).order_by('-count')
+        
+        # Recent research activity
+        recent_papers = all_papers.order_by('-upload_date')[:3]
+        recent_models = ml_models.order_by('-snowai_created_at')[:3]
+        
+        # Performance metrics from ML models
+        avg_accuracy = ml_models.exclude(snowai_accuracy_score__isnull=True).aggregate(Avg('snowai_accuracy_score'))['snowai_accuracy_score__avg'] or 0
+        avg_sharpe = ml_models.exclude(snowai_sharpe_ratio__isnull=True).aggregate(Avg('snowai_sharpe_ratio'))['snowai_sharpe_ratio__avg'] or 0
+        
+        prompt = f"""
+        Analyze this comprehensive research ecosystem and provide strategic insights:
+
+        RESEARCH PORTFOLIO OVERVIEW:
+        - Total Research Entries: {total_research_entries}
+        - Research Papers: {total_papers}
+        - ML Models: {total_ml_models}  
+        - Backtesting Strategies: {total_backtests}
+
+        ML MODEL RESEARCH:
+        - Most Common Model Type: {model_types.first()['snowai_model_type'] if model_types else 'N/A'}
+        - Primary Financial Market: {financial_markets.first()['snowai_financial_market_type'] if financial_markets else 'N/A'}
+        - Average Model Accuracy: {avg_accuracy:.3f}
+        - Average Sharpe Ratio: {avg_sharpe:.3f}
+
+        PAPER RESEARCH:
+        - Primary Research Category: {paper_categories.first()['category'] if paper_categories else 'N/A'}
+        - Category Distribution: {len(paper_categories)} different categories
+
+        RECENT RESEARCH ACTIVITY:
+        Papers: {chr(10).join([f"- {paper.title}" for paper in recent_papers])}
+        
+        Models: {chr(10).join([f"- {model.snowai_model_name} ({model.snowai_model_type})" for model in recent_models])}
+
+        MODEL TYPE DISTRIBUTION:
+        {chr(10).join([f"- {mt['snowai_model_type']}: {mt['count']} models" for mt in model_types[:5]])}
+
+        FINANCIAL MARKET FOCUS:
+        {chr(10).join([f"- {fm['snowai_financial_market_type']}: {fm['count']} models" for fm in financial_markets[:5]])}
+
+        Please provide:
+        1. Comprehensive research ecosystem analysis
+        2. Cross-disciplinary knowledge synthesis
+        3. Research methodology assessment
+        4. Knowledge gap identification and prioritization  
+        5. Future research direction recommendations
+        6. Practical application opportunities
+        7. Research ROI analysis
+        8. Strategic research roadmap
+        9. Innovation potential assessment
+        10. Academic-industry bridge recommendations
+
+        Format as a strategic research portfolio review with actionable insights.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Generate specific research directions
+        directions_prompt = f"""
+        Based on {total_research_entries} research entries including {total_ml_models} ML models and {total_papers} papers, 
+        provide 5 specific future research directions that bridge theory and practical trading applications.
+        Focus on unexplored combinations and high-impact opportunities.
+        """
+        
+        future_directions = chat_gpt(directions_prompt)
+        
+        # Identify knowledge gaps
+        gaps_prompt = f"""
+        Analyzing the research portfolio with focus on {model_types all trading data
+        all_trades = AccountTrades.objects.all()
+        accounts_data = Account.objects.all()
+        
+        if not all_trades.exists():
+            return JsonResponse({
+                'status': 'No trading data available',
+                'summary': 'No trading history found to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate metrics
+        total_trades = all_trades.count()
+        profit_trades = all_trades.filter(outcome='Profit').count()
+        loss_trades = all_trades.filter(outcome='Loss').count()
+        win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        total_pnl = all_trades.aggregate(Sum('amount'))['amount__sum'] or 0
+        avg_trade_amount = all_trades.aggregate(Avg('amount'))['amount__avg'] or 0
+        best_trade = all_trades.aggregate(Max('amount'))['amount__max'] or 0
+        worst_trade = all_trades.aggregate(Min('amount'))['amount__min'] or 0
+        
+        # Strategy analysis
+        strategy_performance = all_trades.values('strategy').annotate(
+            total_trades=Count('id'),
+            total_pnl=Sum('amount')
+        ).order_by('-total_pnl')
+        
+        best_strategy = strategy_performance.first()['strategy'] if strategy_performance else 'N/A'
+        worst_strategy = strategy_performance.last()['strategy'] if strategy_performance else 'N/A'
+        
+        # Asset analysis
+        asset_counts = all_trades.values('asset').annotate(count=Count('id')).order_by('-count')
+        most_traded_asset = asset_counts.first()['asset'] if asset_counts else 'N/A'
+        
+        # Create comprehensive prompt for GPT
+        prompt = f"""
+        Analyze this comprehensive trading performance data and provide a detailed, professional summary:
+
+        TRADING PERFORMANCE METRICS:
+        - Total Trades: {total_trades}
+        - Win Rate: {win_rate:.2f}%
+        - Total P&L: ${total_pnl:,.2f}
+        - Average Trade Size: ${avg_trade_amount:,.2f}
+        - Best Trade: ${best_trade:,.2f}
+        - Worst Trade: ${worst_trade:,.2f}
+        - Most Traded Asset: {most_traded_asset}
+        - Best Performing Strategy: {best_strategy}
+        - Worst Performing Strategy: {worst_strategy}
+
+        DETAILED BREAKDOWN:
+        - Profitable Trades: {profit_trades}
+        - Losing Trades: {loss_trades}
+
+        Please provide:
+        1. A comprehensive performance assessment
+        2. Key strengths and weaknesses in the trading approach
+        3. Risk management analysis
+        4. Recommendations for improvement
+        5. Strategic insights based on the data
+        6. Asset allocation observations
+        7. Future trading suggestions
+
+        Format the response as a professional trading report with clear sections and actionable insights.
+        """
+        
+        # Get AI summary
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAITraderHistoryGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'total_profit_loss': total_pnl,
+                'best_performing_strategy': best_strategy,
+                'worst_performing_strategy': worst_strategy,
+                'most_traded_asset': most_traded_asset,
+                'average_trade_amount': avg_trade_amount,
+            }
+        )
+        
+        if not created:
+            # Update existing summary
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_trades = total_trades
+            summary_obj.win_rate = win_rate
+            summary_obj.total_profit_loss = total_pnl
+            summary_obj.best_performing_strategy = best_strategy
+            summary_obj.worst_performing_strategy = worst_strategy
+            summary_obj.most_traded_asset = most_traded_asset
+            summary_obj.average_trade_amount = avg_trade_amount
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_trades': total_trades,
+                'win_rate': f"{win_rate:.2f}%",
+                'total_pnl': f"${total_pnl:,.2f}",
+                'avg_trade_amount': f"${avg_trade_amount:,.2f}",
+                'most_traded_asset': most_traded_asset,
+                'best_strategy': best_strategy
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trader_history_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent trading context
+        recent_trades = AccountTrades.objects.all()[:50]  # Last 50 trades for context
+        
+        context_prompt = f"""
+        You are TraderHistoryGPT, an AI specialized in analyzing trading performance and providing trading insights.
+        
+        Current trading context:
+        - Total trades in system: {AccountTrades.objects.count()}
+        - Recent activity: {recent_trades.count()} recent trades available
+        
+        User question: {user_message}
+        
+        Provide a helpful, accurate response based on the available trading data and your expertise in trading analysis.
+        If the user asks about specific metrics, calculate them from the available data context.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        # Save conversation
+        SnowAIConversationHistory.objects.create(
+            gpt_system='TraderHistoryGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_macro_gpt_summary_endpoint(request):
+    try:
+        # Get economic events from the last month
+        one_month_ago = datetime.now() - timedelta(days=30)
+        recent_events = EconomicEvent.objects.filter(date_time__gte=one_month_ago)
+        
+        if not recent_events.exists():
+            return JsonResponse({
+                'status': 'No recent economic data available',
+                'summary': 'No economic events found in the last month to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate metrics
+        total_events = recent_events.count()
+        high_impact_events = recent_events.filter(impact='high').count()
+        medium_impact_events = recent_events.filter(impact='medium').count()
+        low_impact_events = recent_events.filter(impact='low').count()
+        
+        # Currency analysis
+        currency_counts = recent_events.values('currency').annotate(count=Count('id')).order_by('-count')
+        most_active_currency = currency_counts.first()['currency'] if currency_counts else 'N/A'
+        
+        # Get
+        # Get recent news data
+        all_trades = AccountTrades.objects.all()
+        accounts_data = Account.objects.all()
+        
+        if not all_trades.exists():
+            return JsonResponse({
+                'status': 'No trading data available',
+                'summary': 'No trading history found to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate metrics
+        total_trades = all_trades.count()
+        profit_trades = all_trades.filter(outcome='Profit').count()
+        loss_trades = all_trades.filter(outcome='Loss').count()
+        win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        total_pnl = all_trades.aggregate(Sum('amount'))['amount__sum'] or 0
+        avg_trade_amount = all_trades.aggregate(Avg('amount'))['amount__avg'] or 0
+        best_trade = all_trades.aggregate(Max('amount'))['amount__max'] or 0
+        worst_trade = all_trades.aggregate(Min('amount'))['amount__min'] or 0
+        
+        # Strategy analysis
+        strategy_performance = all_trades.values('strategy').annotate(
+            total_trades=Count('id'),
+            total_pnl=Sum('amount')
+        ).order_by('-total_pnl')
+        
+        best_strategy = strategy_performance.first()['strategy'] if strategy_performance else 'N/A'
+        worst_strategy = strategy_performance.last()['strategy'] if strategy_performance else 'N/A'
+        
+        # Asset analysis
+        asset_counts = all_trades.values('asset').annotate(count=Count('id')).order_by('-count')
+        most_traded_asset = asset_counts.first()['asset'] if asset_counts else 'N/A'
+        
+        # Create comprehensive prompt for GPT
+        prompt = f"""
+        Analyze this comprehensive trading performance data and provide a detailed, professional summary:
+
+        TRADING PERFORMANCE METRICS:
+        - Total Trades: {total_trades}
+        - Win Rate: {win_rate:.2f}%
+        - Total P&L: ${total_pnl:,.2f}
+        - Average Trade Size: ${avg_trade_amount:,.2f}
+        - Best Trade: ${best_trade:,.2f}
+        - Worst Trade: ${worst_trade:,.2f}
+        - Most Traded Asset: {most_traded_asset}
+        - Best Performing Strategy: {best_strategy}
+        - Worst Performing Strategy: {worst_strategy}
+
+        DETAILED BREAKDOWN:
+        - Profitable Trades: {profit_trades}
+        - Losing Trades: {loss_trades}
+
+        Please provide:
+        1. A comprehensive performance assessment
+        2. Key strengths and weaknesses in the trading approach
+        3. Risk management analysis
+        4. Recommendations for improvement
+        5. Strategic insights based on the data
+        6. Asset allocation observations
+        7. Future trading suggestions
+
+        Format the response as a professional trading report with clear sections and actionable insights.
+        """
+        
+        # Get AI summary
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAITraderHistoryGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'total_profit_loss': total_pnl,
+                'best_performing_strategy': best_strategy,
+                'worst_performing_strategy': worst_strategy,
+                'most_traded_asset': most_traded_asset,
+                'average_trade_amount': avg_trade_amount,
+            }
+        )
+        
+        if not created:
+            # Update existing summary
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_trades = total_trades
+            summary_obj.win_rate = win_rate
+            summary_obj.total_profit_loss = total_pnl
+            summary_obj.best_performing_strategy = best_strategy
+            summary_obj.worst_performing_strategy = worst_strategy
+            summary_obj.most_traded_asset = most_traded_asset
+            summary_obj.average_trade_amount = avg_trade_amount
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_trades': total_trades,
+                'win_rate': f"{win_rate:.2f}%",
+                'total_pnl': f"${total_pnl:,.2f}",
+                'avg_trade_amount': f"${avg_trade_amount:,.2f}",
+                'most_traded_asset': most_traded_asset,
+                'best_strategy': best_strategy
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_research_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        recent_models = SnowAIMLModelLogEntry.objects.order_by('-snowai_created_at')[:3]
+        
+        context_prompt = f"""
+        You are ResearchGPT, an AI specialized in comprehensive research analysis, cross-disciplinary synthesis, and strategic research planning.
+        
+        Research ecosystem context:
+        - Total papers: {PaperGPT.objects.count()}
+        - Total ML models: {SnowAIMLModelLogEntry.objects.count()}
+        - Total backtests: {BacktestModels.objects.count()}
+        
+        Recent research activity:
+        Papers: {chr(10).join([f"- {paper.title}" for paper in recent_papers])}
+        Models: {chr(10).join([f"- {model.snowai_model_name}" for model in recent_models])}
+        
+        User question: {user_message}
+        
+        Provide comprehensive research insights that bridge theoretical knowledge with practical applications across the entire research portfolio.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='ResearchGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
         
                 
 # LEGODI BACKEND CODE

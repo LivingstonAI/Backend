@@ -1095,6 +1095,155 @@ class FingerprintStatus(models.Model):
         return f"{self.user_email} - Registered: {self.is_registered}"
 
 
+
+class SnowAITraderHistoryGPTSummary(models.Model):
+    summary_text = models.TextField()
+    total_trades = models.IntegerField(default=0)
+    win_rate = models.FloatField(default=0.0)
+    total_profit_loss = models.FloatField(default=0.0)
+    best_performing_strategy = models.CharField(max_length=200, blank=True)
+    worst_performing_strategy = models.CharField(max_length=200, blank=True)
+    most_traded_asset = models.CharField(max_length=100, blank=True)
+    average_trade_amount = models.FloatField(default=0.0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Trader History Summary - {self.created_at.strftime('%Y-%m-%d')}"
+
+
+class SnowAIMacroGPTSummary(models.Model):
+    summary_text = models.TextField()
+    total_economic_events = models.IntegerField(default=0)
+    high_impact_events_count = models.IntegerField(default=0)
+    most_active_currency = models.CharField(max_length=10, blank=True)
+    key_market_themes = models.TextField(blank=True)
+    upcoming_events_preview = models.TextField(blank=True)
+    market_sentiment = models.CharField(max_length=50, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Macro Summary - {self.created_at.strftime('%Y-%m-%d')}"
+
+
+class SnowAIIdeaGPTSummary(models.Model):
+    summary_text = models.TextField()
+    total_ideas = models.IntegerField(default=0)
+    pending_ideas = models.IntegerField(default=0)
+    in_progress_ideas = models.IntegerField(default=0)
+    completed_ideas = models.IntegerField(default=0)
+    most_common_category = models.CharField(max_length=200, blank=True)
+    completion_rate = models.FloatField(default=0.0)
+    oldest_pending_idea = models.CharField(max_length=500, blank=True)
+    newest_idea = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Ideas Summary - {self.created_at.strftime('%Y-%m-%d')}"
+
+
+class SnowAIBacktestingGPTSummary(models.Model):
+    summary_text = models.TextField()
+    total_backtests = models.IntegerField(default=0)
+    successful_backtests = models.IntegerField(default=0)
+    average_sharpe_ratio = models.FloatField(default=0.0)
+    average_annual_return = models.FloatField(default=0.0)
+    average_max_drawdown = models.FloatField(default=0.0)
+    best_performing_strategy = models.CharField(max_length=500, blank=True)
+    worst_performing_strategy = models.CharField(max_length=500, blank=True)
+    most_used_dataset = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Backtesting Summary - {self.created_at.strftime('%Y-%m-%d')}"
+
+
+class SnowAIPaperGPTSummary(models.Model):
+    summary_text = models.TextField()
+    total_papers = models.IntegerField(default=0)
+    most_common_category = models.CharField(max_length=200, blank=True)
+    total_file_size_mb = models.FloatField(default=0.0)
+    average_paper_length = models.IntegerField(default=0)
+    latest_upload = models.CharField(max_length=500, blank=True)
+    research_recommendations = models.TextField(blank=True)
+    key_insights = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Paper Summary - {self.created_at.strftime('%Y-%m-%d')}"
+
+
+class SnowAIResearchGPTSummary(models.Model):
+    summary_text = models.TextField()
+    total_research_entries = models.IntegerField(default=0)
+    total_papers_analyzed = models.IntegerField(default=0)
+    knowledge_gaps_identified = models.TextField(blank=True)
+    future_research_directions = models.TextField(blank=True)
+    cross_paper_insights = models.TextField(blank=True)
+    practical_applications = models.TextField(blank=True)
+    research_methodology_suggestions = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Research Summary - {self.created_at.strftime('%Y-%m-%d')}"
+
+
+class SnowAIConversationHistory(models.Model):
+    GPT_CHOICES = [
+        ('TraderHistoryGPT', 'TraderHistoryGPT'),
+        ('MacroGPT', 'MacroGPT'),
+        ('IdeaGPT', 'IdeaGPT'),
+        ('BacktestingGPT', 'BacktestingGPT'),
+        ('PaperGPT', 'PaperGPT'),
+        ('ResearchGPT', 'ResearchGPT'),
+    ]
+    
+    gpt_system = models.CharField(max_length=50, choices=GPT_CHOICES)
+    user_message = models.TextField()
+    ai_response = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-timestamp']
+    
+    def __str__(self):
+        return f"{self.gpt_system} - {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
+
+
+
+
+
+
+
+
+
+
+
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 
