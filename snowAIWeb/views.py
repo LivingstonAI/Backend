@@ -14779,20 +14779,20 @@ def snowai_backtesting_gpt_summary_endpoint(request):
         - Most Used Dataset: {most_used_dataset}
 
         PERFORMANCE METRICS:
-        - Average Sharpe Ratio: {avg_sharpe:.3f}
-        - Average Annual Return: {avg_annual_return:.2f}%
-        - Average Max Drawdown: {avg_max_drawdown:.2f}%
-        - Best Sharpe Ratio: {best_sharpe:.3f}
-        - Worst Sharpe Ratio: {worst_sharpe:.3f}
+        - Average Sharpe Ratio: {avg_sharpe}
+        - Average Annual Return: {avg_annual_return}%
+        - Average Max Drawdown: {avg_max_drawdown}%
+        - Best Sharpe Ratio: {best_sharpe}
+        - Worst Sharpe Ratio: {worst_sharpe}
 
         RECENT BACKTESTS:
-        {chr(10).join([f"- Dataset: {bt.chosen_dataset} | Period: {bt.dataset_start} to {bt.dataset_end} | Capital: ${bt.initial_capital:,.2f}" for bt in recent_backtests])}
+        {chr(10).join([f"- Dataset: {bt.chosen_dataset} | Period: {bt.dataset_start} to {bt.dataset_end} | Capital: ${bt.initial_capital}" for bt in recent_backtests])}
 
         BEST PERFORMING STRATEGY:
-        {f"Sharpe: {best_result.sharpe_ratio:.3f} | Annual Return: {best_result.annual_return:.2f}% | Drawdown: {best_result.max_drawdown:.2f}%" if best_result else "No results available"}
+        {f"Sharpe: {best_result.sharpe_ratio} | Annual Return: {best_result.annual_return}% | Drawdown: {best_result.max_drawdown}%" if best_result else "No results available"}
 
         WORST PERFORMING STRATEGY:
-        {f"Sharpe: {worst_result.sharpe_ratio:.3f} | Annual Return: {worst_result.annual_return:.2f}% | Drawdown: {worst_result.max_drawdown:.2f}%" if worst_result else "No results available"}
+        {f"Sharpe: {worst_result.sharpe_ratio} | Annual Return: {worst_result.annual_return}% | Drawdown: {worst_result.max_drawdown}%" if worst_result else "No results available"}
 
         Please provide:
         1. Comprehensive backtesting performance assessment
@@ -14818,8 +14818,8 @@ def snowai_backtesting_gpt_summary_endpoint(request):
                 'average_sharpe_ratio': avg_sharpe,
                 'average_annual_return': avg_annual_return,
                 'average_max_drawdown': avg_max_drawdown,
-                'best_performing_strategy': f"Sharpe: {best_sharpe:.3f}" if best_result else 'N/A',
-                'worst_performing_strategy': f"Sharpe: {worst_sharpe:.3f}" if worst_result else 'N/A',
+                'best_performing_strategy': f"Sharpe: {best_sharpe}" if best_result else 'N/A',
+                'worst_performing_strategy': f"Sharpe: {worst_sharpe}" if worst_result else 'N/A',
                 'most_used_dataset': most_used_dataset,
             }
         )
@@ -14838,8 +14838,8 @@ def snowai_backtesting_gpt_summary_endpoint(request):
             'metrics': {
                 'total_backtests': total_backtests,
                 'success_rate': f"{(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%",
-                'avg_sharpe_ratio': f"{avg_sharpe:.3f}",
-                'avg_annual_return': f"{avg_annual_return:.2f}%",
+                'avg_sharpe_ratio': f"{avg_sharpe}",
+                'avg_annual_return': f"{avg_annual_return}%",
                 'most_used_dataset': most_used_dataset
             }
         })
@@ -14926,9 +14926,9 @@ def snowai_paper_gpt_summary_endpoint(request):
 
         PAPER COLLECTION OVERVIEW:
         - Total Papers: {total_papers}
-        - Total File Size: {total_file_size:.2f} MB
+        - Total File Size: {total_file_size} MB
         - Most Common Category: {most_common_category}
-        - Average Paper Length: ~{avg_paper_length:,} characters
+        - Average Paper Length: ~{avg_paper_length} characters
 
         RECENT UPLOADS:
         {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'} | Size: {paper.file_size/(1024*1024):.1f}MB" for paper in recent_papers])}
@@ -14999,10 +14999,10 @@ def snowai_paper_gpt_summary_endpoint(request):
             'summary': ai_summary,
             'metrics': {
                 'total_papers': total_papers,
-                'total_size_mb': f"{total_file_size:.2f} MB",
+                'total_size_mb': f"{total_file_size} MB",
                 'most_common_category': most_common_category,
                 'categories_count': len(categories),
-                'avg_length': f"{avg_paper_length:,} chars"
+                'avg_length': f"{avg_paper_length} chars"
             }
         })
         
@@ -15247,9 +15247,9 @@ def snowai_research_gpt_summary_endpoint(request):
             'summary': ai_summary,
             'metrics': {
                 'total_trades': total_trades,
-                'win_rate': f"{win_rate:.2f}%",
-                'total_pnl': f"${total_pnl:,.2f}",
-                'avg_trade_amount': f"${avg_trade_amount:,.2f}",
+                'win_rate': f"{win_rate}%",
+                'total_pnl': f"${total_pnl}",
+                'avg_trade_amount': f"${avg_trade_amount}",
                 'most_traded_asset': most_traded_asset,
                 'best_strategy': best_strategy
             }
@@ -15367,11 +15367,11 @@ def snowai_macro_gpt_summary_endpoint(request):
 
         TRADING PERFORMANCE METRICS:
         - Total Trades: {total_trades}
-        - Win Rate: {win_rate:.2f}%
-        - Total P&L: ${total_pnl:,.2f}
-        - Average Trade Size: ${avg_trade_amount:,.2f}
-        - Best Trade: ${best_trade:,.2f}
-        - Worst Trade: ${worst_trade:,.2f}
+        - Win Rate: {win_rate}%
+        - Total P&L: ${total_pnl}
+        - Average Trade Size: ${avg_trade_amount}
+        - Best Trade: ${best_trade}
+        - Worst Trade: ${worst_trade}
         - Most Traded Asset: {most_traded_asset}
         - Best Performing Strategy: {best_strategy}
         - Worst Performing Strategy: {worst_strategy}
@@ -15428,9 +15428,9 @@ def snowai_macro_gpt_summary_endpoint(request):
             'summary': ai_summary,
             'metrics': {
                 'total_trades': total_trades,
-                'win_rate': f"{win_rate:.2f}%",
-                'total_pnl': f"${total_pnl:,.2f}",
-                'avg_trade_amount': f"${avg_trade_amount:,.2f}",
+                'win_rate': f"{win_rate}%",
+                'total_pnl': f"${total_pnl}",
+                'avg_trade_amount': f"${avg_trade_amount}",
                 'most_traded_asset': most_traded_asset,
                 'best_strategy': best_strategy
             }
@@ -15509,7 +15509,7 @@ def setup_snowai_gpt_scheduler_jobs():
     scheduler.add_job(
         lambda: trigger_gpt_summary_generation('snowai_trader_history_gpt_summary'),
         'interval',
-        hours=48,
+        hours=24,
         id='snowai_trader_history_gpt_job',
         replace_existing=True
     )
@@ -15517,7 +15517,7 @@ def setup_snowai_gpt_scheduler_jobs():
     scheduler.add_job(
         lambda: trigger_gpt_summary_generation('snowai_macro_gpt_summary'),
         'interval',
-        hours=48,
+        hours=24,
         id='snowai_macro_gpt_job',
         replace_existing=True
     )
@@ -15525,7 +15525,7 @@ def setup_snowai_gpt_scheduler_jobs():
     scheduler.add_job(
         lambda: trigger_gpt_summary_generation('snowai_idea_gpt_summary'),
         'interval',
-        hours=48,
+        hours=24,
         id='snowai_idea_gpt_job',
         replace_existing=True
     )
@@ -15533,7 +15533,7 @@ def setup_snowai_gpt_scheduler_jobs():
     scheduler.add_job(
         lambda: trigger_gpt_summary_generation('snowai_backtesting_gpt_summary'),
         'interval',
-        hours=48,
+        hours=24,
         id='snowai_backtesting_gpt_job',
         replace_existing=True
     )
@@ -15541,7 +15541,7 @@ def setup_snowai_gpt_scheduler_jobs():
     scheduler.add_job(
         lambda: trigger_gpt_summary_generation('snowai_paper_gpt_summary'),
         'interval',
-        hours=48,
+        hours=24,
         id='snowai_paper_gpt_job',
         replace_existing=True
     )
@@ -15549,13 +15549,13 @@ def setup_snowai_gpt_scheduler_jobs():
     scheduler.add_job(
         lambda: trigger_gpt_summary_generation('snowai_research_gpt_summary'),
         'interval',
-        hours=48,
+        hours=24,
         id='snowai_research_gpt_job',
         replace_existing=True
     )
     
     scheduler.start()
-    print("SnowAI GPT Scheduler jobs setup completed - All summaries will update every 48 hours")
+    print("SnowAI GPT Scheduler jobs setup completed - All summaries will update every 24 hours")
 
 
 # Add this to your Django app's apps.py ready() method or main scheduler initialization
