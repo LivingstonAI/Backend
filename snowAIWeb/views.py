@@ -16633,41 +16633,33 @@ def generate_research_gpt_summary():
 
         methodology_suggestions = chat_gpt(methodology_prompt)
 
-        # Save to database with correct field names
-        summary_obj, created = SnowAIResearchGPTSummary.objects.get_or_create(
-            created_at__date=datetime.now().date(),
+        # SIMPLE FIX: Use update_or_create instead of get_or_create
+        # and get today's date at the start of the day
+        today = datetime.now().date()
+        today_start = datetime.combine(today, datetime.min.time())
+        today_end = datetime.combine(today, datetime.max.time())
+
+        summary_obj, created = SnowAIResearchGPTSummary.objects.update_or_create(
+            created_at__range=[today_start, today_end],
             defaults={
                 'summary_text': ai_summary,
-                'total_research_entries': total_ml_models,  # Using total_ml_models for total_research_entries
-                'total_papers_analyzed': 0,  # Set to 0 since we're not analyzing papers
+                'total_research_entries': total_ml_models,
+                'total_papers_analyzed': 0,
                 'knowledge_gaps_identified': knowledge_gaps,
                 'future_research_directions': future_directions,
-                'cross_paper_insights': cross_insights,  # Repurposing for cross-model insights
+                'cross_paper_insights': cross_insights,
                 'practical_applications': practical_apps,
                 'research_methodology_suggestions': methodology_suggestions,
             }
         )
-        
-        if not created:
-            # Update existing record
-            summary_obj.summary_text = ai_summary
-            summary_obj.total_research_entries = total_ml_models
-            summary_obj.total_papers_analyzed = 0
-            summary_obj.knowledge_gaps_identified = knowledge_gaps
-            summary_obj.future_research_directions = future_directions
-            summary_obj.cross_paper_insights = cross_insights
-            summary_obj.practical_applications = practical_apps
-            summary_obj.research_methodology_suggestions = methodology_suggestions
-            summary_obj.updated_at = datetime.now()
-            summary_obj.save()
 
-        logger.info(f'ResearchGPT summary generated successfully for {total_ml_models} ML models')
+        logger.info(f'ResearchGPT summary {"created" if created else "updated"} successfully for {total_ml_models} ML models')
         return True
 
     except Exception as e:
         logger.error(f'Error in generate_research_gpt_summary: {str(e)}')
         return False
-
+        
         
 # OPTIONAL: Manual trigger endpoint for testing
 @csrf_exempt
