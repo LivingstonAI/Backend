@@ -14452,67 +14452,110 @@ def debug_fingerprint_status(request):
 @require_http_methods(["GET"])
 def snowai_trader_history_gpt_summary_endpoint(request):
     try:
-        # Get news data for major assets
+        # Get trading data (not economic events)
+        all_trades = AccountTrades.objects.all()
+        accounts_data = Account.objects.all()
+        
+        if not all_trades.exists():
+            return JsonResponse({
+                'status': 'No trading data available',
+                'summary': 'No trading history found to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate trading metrics
+        total_trades = all_trades.count()
+        profit_trades = all_trades.filter(outcome='Profit').count()
+        loss_trades = all_trades.filter(outcome='Loss').count()
+        win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        total_pnl = all_trades.aggregate(Sum('amount'))['amount__sum'] or 0
+        avg_trade_amount = all_trades.aggregate(Avg('amount'))['amount__avg'] or 0
+        best_trade = all_trades.aggregate(Max('amount'))['amount__max'] or 0
+        worst_trade = all_trades.aggregate(Min('amount'))['amount__min'] or 0
+        
+        # Strategy analysis
+        strategy_performance = all_trades.values('strategy').annotate(
+            total_trades=Count('id'),
+            total_pnl=Sum('amount')
+        ).order_by('-total_pnl')
+        
+        best_strategy = strategy_performance.first()['strategy'] if strategy_performance else 'N/A'
+        worst_strategy = strategy_performance.last()['strategy'] if strategy_performance else 'N/A'
+        
+        # Asset analysis
+        asset_counts = all_trades.values('asset').annotate(count=Count('id')).order_by('-count')
+        most_traded_asset = asset_counts.first()['asset'] if asset_counts else 'N/A'
+        
+        # Get news data for context (if needed)
         major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
-        news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        try:
+            news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        except:
+            news_data = {'message': []}
         
-        # Upcoming events
-        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:10]
-        
-        # Create comprehensive prompt
+        # Create comprehensive prompt for GPT
         prompt = f"""
-        Analyze this comprehensive macro economic data and provide a detailed market analysis:
+        Analyze this comprehensive trading performance data and provide a detailed, professional summary:
 
-        ECONOMIC EVENTS ANALYSIS (Last 30 Days):
-        - Total Economic Events: {total_events}
-        - High Impact Events: {high_impact_events}
-        - Medium Impact Events: {medium_impact_events}  
-        - Low Impact Events: {low_impact_events}
-        - Most Active Currency: {most_active_currency}
-        
-        RECENT HIGH IMPACT EVENTS:
-        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d')})" for event in recent_events.filter(impact='high')[:10]])}
-        
-        UPCOMING EVENTS PREVIEW:
-        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d %H:%M')})" for event in upcoming_events])}
-        
-        NEWS THEMES FROM MAJOR ASSETS:
-        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:10]])}
+        TRADING PERFORMANCE METRICS:
+        - Total Trades: {total_trades}
+        - Win Rate: {win_rate:.2f}%
+        - Total P&L: ${total_pnl:,.2f}
+        - Average Trade Size: ${avg_trade_amount:,.2f}
+        - Best Trade: ${best_trade:,.2f}
+        - Worst Trade: ${worst_trade:,.2f}
+        - Most Traded Asset: {most_traded_asset}
+        - Best Performing Strategy: {best_strategy}
+        - Worst Performing Strategy: {worst_strategy}
+
+        DETAILED BREAKDOWN:
+        - Profitable Trades: {profit_trades}
+        - Losing Trades: {loss_trades}
+
+        RECENT MARKET NEWS THEMES:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:5]])}
 
         Please provide:
-        1. Comprehensive macro economic assessment
-        2. Key market themes and trends
-        3. Currency strength analysis
-        4. Risk assessment for upcoming events
-        5. Trading opportunities and recommendations
-        6. Market sentiment analysis
-        7. Geopolitical impact assessment
-        8. Central bank policy implications
+        1. A comprehensive performance assessment
+        2. Key strengths and weaknesses in the trading approach
+        3. Risk management analysis
+        4. Recommendations for improvement
+        5. Strategic insights based on the data
+        6. Asset allocation observations
+        7. Future trading suggestions
 
-        Format as a professional macro economic briefing with actionable market insights.
+        Format the response as a professional trading report with clear sections and actionable insights.
         """
         
+        # Get AI summary
         ai_summary = chat_gpt(prompt)
         
         # Save to database
-        summary_obj, created = SnowAIMacroGPTSummary.objects.get_or_create(
+        summary_obj, created = SnowAITraderHistoryGPTSummary.objects.get_or_create(
             created_at__date=datetime.now().date(),
             defaults={
                 'summary_text': ai_summary,
-                'total_economic_events': total_events,
-                'high_impact_events_count': high_impact_events,
-                'most_active_currency': most_active_currency,
-                'key_market_themes': ', '.join([item['title'][:50] for item in news_data.get('message', [])[:5]]),
-                'upcoming_events_preview': ', '.join([f"{event.currency}: {event.event_name}" for event in upcoming_events[:5]]),
-                'market_sentiment': 'Mixed' if high_impact_events > 5 else 'Stable',
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'total_profit_loss': total_pnl,
+                'best_performing_strategy': best_strategy,
+                'worst_performing_strategy': worst_strategy,
+                'most_traded_asset': most_traded_asset,
+                'average_trade_amount': avg_trade_amount,
             }
         )
         
         if not created:
+            # Update existing summary
             summary_obj.summary_text = ai_summary
-            summary_obj.total_economic_events = total_events
-            summary_obj.high_impact_events_count = high_impact_events
-            summary_obj.most_active_currency = most_active_currency
+            summary_obj.total_trades = total_trades
+            summary_obj.win_rate = win_rate
+            summary_obj.total_profit_loss = total_pnl
+            summary_obj.best_performing_strategy = best_strategy
+            summary_obj.worst_performing_strategy = worst_strategy
+            summary_obj.most_traded_asset = most_traded_asset
+            summary_obj.average_trade_amount = avg_trade_amount
             summary_obj.updated_at = datetime.now()
             summary_obj.save()
         
@@ -14520,16 +14563,17 @@ def snowai_trader_history_gpt_summary_endpoint(request):
             'status': 'success',
             'summary': ai_summary,
             'metrics': {
-                'total_events': total_events,
-                'high_impact_events': high_impact_events,
-                'most_active_currency': most_active_currency,
-                'upcoming_events': len(upcoming_events),
-                'news_items': len(news_data.get('message', []))
+                'total_trades': total_trades,
+                'win_rate': f"{win_rate:.2f}%",
+                'total_pnl': f"${total_pnl:,.2f}",
+                'avg_trade_amount': f"${avg_trade_amount:,.2f}",
+                'most_traded_asset': most_traded_asset,
+                'best_strategy': best_strategy
             }
         })
         
     except Exception as e:
-        print(f'error occured in Trader History GPT Endpoint: {e}')
+        print(f'Error in Trader History GPT Endpoint: {e}')
         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
@@ -14543,25 +14587,38 @@ def snowai_macro_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        # Get recent macro context
-        recent_events = EconomicEvent.objects.filter(date_time__gte=datetime.now() - timedelta(days=7))[:20]
+        # Get recent macro context with more detailed information
+        recent_events = EconomicEvent.objects.filter(date_time__gte=datetime.now() - timedelta(days=7))
+        high_impact_recent = recent_events.filter(impact='high')
+        
+        # Get some upcoming events too
+        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:5]
         
         context_prompt = f"""
         You are MacroGPT, an AI specialized in macro economic analysis, market trends, and economic event impact assessment.
         
         Recent economic context (Last 7 days):
         - Total events: {recent_events.count()}
-        - High impact events: {recent_events.filter(impact='high').count()}
+        - High impact events: {high_impact_recent.count()}
         
-        Recent events:
-        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.impact} impact)" for event in recent_events[:5]])}
+        Recent high-impact events:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.impact} impact) - {event.date_time.strftime('%Y-%m-%d')}" for event in high_impact_recent[:5]])}
+        
+        Upcoming events:
+        {chr(10).join([f"- {event.currency}: {event.event_name} - {event.date_time.strftime('%Y-%m-%d %H:%M')}" for event in upcoming_events])}
         
         User question: {user_message}
         
-        Provide expert macro economic analysis and insights based on current market conditions and economic data.
+        Provide expert macro economic analysis and insights based on current market conditions and economic data. 
+        Be specific and actionable in your response. If the user asks about specific currencies or events, 
+        reference the available data context above.
         """
         
         ai_response = chat_gpt(context_prompt)
+        
+        # Ensure we have a response
+        if not ai_response or ai_response.strip() == '':
+            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question about macro economic analysis."
         
         SnowAIConversationHistory.objects.create(
             gpt_system='MacroGPT',
@@ -14572,7 +14629,7 @@ def snowai_macro_gpt_chat_endpoint(request):
         return JsonResponse({'status': 'success', 'response': ai_response})
         
     except Exception as e:
-        print(f'error in MacroGPT chat function: {e}')
+        print(f'Error in MacroGPT chat function: {e}')
         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
@@ -14905,35 +14962,52 @@ def snowai_paper_gpt_summary_endpoint(request):
             })
         
         total_papers = all_papers.count()
-        total_file_size = sum([paper.file_size for paper in all_papers]) / (1024 * 1024)  # Convert to MB
+        
+        # Calculate total file size safely
+        total_file_size = 0
+        for paper in all_papers:
+            if paper.file_size:
+                total_file_size += paper.file_size
+        total_file_size_mb = total_file_size / (1024 * 1024)  # Convert to MB
         
         # Category analysis
         categories = all_papers.exclude(category__isnull=True).exclude(category='').values('category').annotate(count=Count('id')).order_by('-count')
         most_common_category = categories.first()['category'] if categories else 'Uncategorized'
         
         # Length analysis (approximate based on extracted text)
-        avg_length = all_papers.aggregate(Avg('extracted_text'))
-        avg_paper_length = len(avg_length['extracted_text__avg'] or '') if avg_length['extracted_text__avg'] else 0
+        papers_with_text = all_papers.exclude(extracted_text__isnull=True).exclude(extracted_text='')
+        avg_paper_length = 0
+        if papers_with_text.exists():
+            total_length = sum([len(paper.extracted_text) for paper in papers_with_text])
+            avg_paper_length = total_length / papers_with_text.count()
         
         # Recent uploads
         recent_papers = all_papers.order_by('-upload_date')[:5]
         latest_upload = recent_papers.first()
         
         # Get AI summaries for analysis
-        paper_summaries = [paper.ai_summary[:200] + "..." for paper in all_papers if paper.ai_summary][:10]
-        personal_notes = [paper.personal_notes[:100] + "..." for paper in all_papers if paper.personal_notes][:5]
+        papers_with_summaries = all_papers.exclude(ai_summary__isnull=True).exclude(ai_summary='')
+        paper_summaries = []
+        if papers_with_summaries.exists():
+            paper_summaries = [paper.ai_summary[:200] + "..." for paper in papers_with_summaries[:10]]
+        
+        # Get personal notes
+        papers_with_notes = all_papers.exclude(personal_notes__isnull=True).exclude(personal_notes='')
+        personal_notes = []
+        if papers_with_notes.exists():
+            personal_notes = [paper.personal_notes[:100] + "..." for paper in papers_with_notes[:5]]
         
         prompt = f"""
         Analyze this comprehensive research paper collection and provide insights:
 
         PAPER COLLECTION OVERVIEW:
         - Total Papers: {total_papers}
-        - Total File Size: {total_file_size} MB
+        - Total File Size: {total_file_size_mb:.2f} MB
         - Most Common Category: {most_common_category}
-        - Average Paper Length: ~{avg_paper_length} characters
+        - Average Paper Length: ~{avg_paper_length:.0f} characters
 
         RECENT UPLOADS:
-        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'} | Size: {paper.file_size/(1024*1024):.1f}MB" for paper in recent_papers])}
+        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'} | Size: {(paper.file_size/(1024*1024)):.1f}MB" for paper in recent_papers if paper.file_size])}
 
         EXISTING AI SUMMARIES SAMPLE:
         {chr(10).join([f"- {summary}" for summary in paper_summaries[:5]])}
@@ -14981,7 +15055,7 @@ def snowai_paper_gpt_summary_endpoint(request):
                 'summary_text': ai_summary,
                 'total_papers': total_papers,
                 'most_common_category': most_common_category,
-                'total_file_size_mb': total_file_size,
+                'total_file_size_mb': total_file_size_mb,
                 'average_paper_length': avg_paper_length,
                 'latest_upload': latest_upload.title if latest_upload else 'N/A',
                 'research_recommendations': research_recommendations,
@@ -15001,17 +15075,16 @@ def snowai_paper_gpt_summary_endpoint(request):
             'summary': ai_summary,
             'metrics': {
                 'total_papers': total_papers,
-                'total_size_mb': f"{total_file_size} MB",
+                'total_size_mb': f"{total_file_size_mb:.2f} MB",
                 'most_common_category': most_common_category,
                 'categories_count': len(categories),
-                'avg_length': f"{avg_paper_length} chars"
+                'avg_length': f"{avg_paper_length:.0f} chars"
             }
         })
         
     except Exception as e:
         print(f'Error in paper_gpt function: {e}')
         return JsonResponse({'status': 'error', 'message': str(e)})
-
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -15213,7 +15286,7 @@ def snowai_trader_history_gpt_chat_endpoint(request):
 @require_http_methods(["GET"])
 def snowai_macro_gpt_summary_endpoint(request):
     try:
-        # Get economic events from the last month
+        # Get economic events from the last month (NOT trading data)
         one_month_ago = datetime.now() - timedelta(days=30)
         recent_events = EconomicEvent.objects.filter(date_time__gte=one_month_ago)
         
@@ -15224,7 +15297,7 @@ def snowai_macro_gpt_summary_endpoint(request):
                 'metrics': {}
             })
         
-        # Calculate metrics
+        # Calculate economic event metrics
         total_events = recent_events.count()
         high_impact_events = recent_events.filter(impact='high').count()
         medium_impact_events = recent_events.filter(impact='medium').count()
@@ -15234,101 +15307,70 @@ def snowai_macro_gpt_summary_endpoint(request):
         currency_counts = recent_events.values('currency').annotate(count=Count('id')).order_by('-count')
         most_active_currency = currency_counts.first()['currency'] if currency_counts else 'N/A'
         
-        # Get
-        # Get recent news data
-        all_trades = AccountTrades.objects.all()
-        accounts_data = Account.objects.all()
+        # Get news data for major assets
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
+        try:
+            news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        except:
+            news_data = {'message': []}
         
-        if not all_trades.exists():
-            return JsonResponse({
-                'status': 'No trading data available',
-                'summary': 'No trading history found to analyze.',
-                'metrics': {}
-            })
+        # Upcoming events
+        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:10]
         
-        # Calculate metrics
-        total_trades = all_trades.count()
-        profit_trades = all_trades.filter(outcome='Profit').count()
-        loss_trades = all_trades.filter(outcome='Loss').count()
-        win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
-        
-        total_pnl = all_trades.aggregate(Sum('amount'))['amount__sum'] or 0
-        avg_trade_amount = all_trades.aggregate(Avg('amount'))['amount__avg'] or 0
-        best_trade = all_trades.aggregate(Max('amount'))['amount__max'] or 0
-        worst_trade = all_trades.aggregate(Min('amount'))['amount__min'] or 0
-        
-        # Strategy analysis
-        strategy_performance = all_trades.values('strategy').annotate(
-            total_trades=Count('id'),
-            total_pnl=Sum('amount')
-        ).order_by('-total_pnl')
-        
-        best_strategy = strategy_performance.first()['strategy'] if strategy_performance else 'N/A'
-        worst_strategy = strategy_performance.last()['strategy'] if strategy_performance else 'N/A'
-        
-        # Asset analysis
-        asset_counts = all_trades.values('asset').annotate(count=Count('id')).order_by('-count')
-        most_traded_asset = asset_counts.first()['asset'] if asset_counts else 'N/A'
-        
-        # Create comprehensive prompt for GPT
+        # Create comprehensive prompt
         prompt = f"""
-        Analyze this comprehensive trading performance data and provide a detailed, professional summary:
+        Analyze this comprehensive macro economic data and provide a detailed market analysis:
 
-        TRADING PERFORMANCE METRICS:
-        - Total Trades: {total_trades}
-        - Win Rate: {win_rate}%
-        - Total P&L: ${total_pnl}
-        - Average Trade Size: ${avg_trade_amount}
-        - Best Trade: ${best_trade}
-        - Worst Trade: ${worst_trade}
-        - Most Traded Asset: {most_traded_asset}
-        - Best Performing Strategy: {best_strategy}
-        - Worst Performing Strategy: {worst_strategy}
-
-        DETAILED BREAKDOWN:
-        - Profitable Trades: {profit_trades}
-        - Losing Trades: {loss_trades}
+        ECONOMIC EVENTS ANALYSIS (Last 30 Days):
+        - Total Economic Events: {total_events}
+        - High Impact Events: {high_impact_events}
+        - Medium Impact Events: {medium_impact_events}  
+        - Low Impact Events: {low_impact_events}
+        - Most Active Currency: {most_active_currency}
+        
+        RECENT HIGH IMPACT EVENTS:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d')})" for event in recent_events.filter(impact='high')[:10]])}
+        
+        UPCOMING EVENTS PREVIEW:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d %H:%M')})" for event in upcoming_events])}
+        
+        NEWS THEMES FROM MAJOR ASSETS:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:10]])}
 
         Please provide:
-        1. A comprehensive performance assessment
-        2. Key strengths and weaknesses in the trading approach
-        3. Risk management analysis
-        4. Recommendations for improvement
-        5. Strategic insights based on the data
-        6. Asset allocation observations
-        7. Future trading suggestions
+        1. Comprehensive macro economic assessment
+        2. Key market themes and trends
+        3. Currency strength analysis
+        4. Risk assessment for upcoming events
+        5. Trading opportunities and recommendations
+        6. Market sentiment analysis
+        7. Geopolitical impact assessment
+        8. Central bank policy implications
 
-        Format the response as a professional trading report with clear sections and actionable insights.
+        Format as a professional macro economic briefing with actionable market insights.
         """
         
-        # Get AI summary
         ai_summary = chat_gpt(prompt)
         
         # Save to database
-        summary_obj, created = SnowAITraderHistoryGPTSummary.objects.get_or_create(
+        summary_obj, created = SnowAIMacroGPTSummary.objects.get_or_create(
             created_at__date=datetime.now().date(),
             defaults={
                 'summary_text': ai_summary,
-                'total_trades': total_trades,
-                'win_rate': win_rate,
-                'total_profit_loss': total_pnl,
-                'best_performing_strategy': best_strategy,
-                'worst_performing_strategy': worst_strategy,
-                'most_traded_asset': most_traded_asset,
-                'average_trade_amount': avg_trade_amount,
+                'total_economic_events': total_events,
+                'high_impact_events_count': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'key_market_themes': ', '.join([item['title'][:50] for item in news_data.get('message', [])[:5]]),
+                'upcoming_events_preview': ', '.join([f"{event.currency}: {event.event_name}" for event in upcoming_events[:5]]),
+                'market_sentiment': 'Mixed' if high_impact_events > 5 else 'Stable',
             }
         )
         
         if not created:
-            # Update existing summary
             summary_obj.summary_text = ai_summary
-            summary_obj.total_trades = total_trades
-            summary_obj.win_rate = win_rate
-            summary_obj.total_profit_loss = total_pnl
-            summary_obj.best_performing_strategy = best_strategy
-            summary_obj.worst_performing_strategy = worst_strategy
-            summary_obj.most_traded_asset = most_traded_asset
-            summary_obj.average_trade_amount = avg_trade_amount
+            summary_obj.total_economic_events = total_events
+            summary_obj.high_impact_events_count = high_impact_events
+            summary_obj.most_active_currency = most_active_currency
             summary_obj.updated_at = datetime.now()
             summary_obj.save()
         
@@ -15336,17 +15378,18 @@ def snowai_macro_gpt_summary_endpoint(request):
             'status': 'success',
             'summary': ai_summary,
             'metrics': {
-                'total_trades': total_trades,
-                'win_rate': f"{win_rate}%",
-                'total_pnl': f"${total_pnl}",
-                'avg_trade_amount': f"${avg_trade_amount}",
-                'most_traded_asset': most_traded_asset,
-                'best_strategy': best_strategy
+                'total_events': total_events,
+                'high_impact_events': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'upcoming_events': len(upcoming_events),
+                'news_items': len(news_data.get('message', []))
             }
         })
         
     except Exception as e:
+        print(f'Error in Macro GPT Endpoint: {e}')
         return JsonResponse({'status': 'error', 'message': str(e)})
+
 
 
 @csrf_exempt
@@ -15391,6 +15434,8 @@ def snowai_research_gpt_chat_endpoint(request):
         
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
 
 # # Add scheduler jobs (add this to your main application or scheduler setup)
 # def setup_snowai_gpt_scheduler_jobs():
