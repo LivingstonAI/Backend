@@ -14780,19 +14780,19 @@ def snowai_backtesting_gpt_summary_endpoint(request):
 
         PERFORMANCE METRICS:
         - Average Sharpe Ratio: {avg_sharpe}
-        - Average Annual Return: {avg_annual_return}%
-        - Average Max Drawdown: {avg_max_drawdown}%
-        - Best Sharpe Ratio: {best_sharpe}
-        - Worst Sharpe Ratio: {worst_sharpe}
+        - Average Annual Return: {avg_annual_return:.2f}%
+        - Average Max Drawdown: {avg_max_drawdown:.2f}%
+        - Best Sharpe Ratio: {best_sharpe:.3f}
+        - Worst Sharpe Ratio: {worst_sharpe:.3f}
 
         RECENT BACKTESTS:
-        {chr(10).join([f"- Dataset: {bt.chosen_dataset} | Period: {bt.dataset_start} to {bt.dataset_end} | Capital: ${bt.initial_capital}" for bt in recent_backtests])}
+        {chr(10).join([f"- Dataset: {bt.chosen_dataset} | Period: {bt.dataset_start} to {bt.dataset_end} | Capital: ${bt.initial_capital:,.2f}" for bt in recent_backtests])}
 
         BEST PERFORMING STRATEGY:
-        {f"Sharpe: {best_result.sharpe_ratio} | Annual Return: {best_result.annual_return}% | Drawdown: {best_result.max_drawdown}%" if best_result else "No results available"}
+        {f"Sharpe: {best_result.sharpe_ratio:.3f} | Annual Return: {best_result.annual_return:.2f}% | Drawdown: {best_result.max_drawdown:.2f}%" if best_result else "No results available"}
 
         WORST PERFORMING STRATEGY:
-        {f"Sharpe: {worst_result.sharpe_ratio} | Annual Return: {worst_result.annual_return}% | Drawdown: {worst_result.max_drawdown}%" if worst_result else "No results available"}
+        {f"Sharpe: {worst_result.sharpe_ratio:.3f} | Annual Return: {worst_result.annual_return:.2f}% | Drawdown: {worst_result.max_drawdown:.2f}%" if worst_result else "No results available"}
 
         Please provide:
         1. Comprehensive backtesting performance assessment
@@ -14818,8 +14818,8 @@ def snowai_backtesting_gpt_summary_endpoint(request):
                 'average_sharpe_ratio': avg_sharpe,
                 'average_annual_return': avg_annual_return,
                 'average_max_drawdown': avg_max_drawdown,
-                'best_performing_strategy': f"Sharpe: {best_sharpe}" if best_result else 'N/A',
-                'worst_performing_strategy': f"Sharpe: {worst_sharpe}" if worst_result else 'N/A',
+                'best_performing_strategy': f"Sharpe: {best_sharpe:.3f}" if best_result else 'N/A',
+                'worst_performing_strategy': f"Sharpe: {worst_sharpe:.3f}" if worst_result else 'N/A',
                 'most_used_dataset': most_used_dataset,
             }
         )
@@ -14838,8 +14838,8 @@ def snowai_backtesting_gpt_summary_endpoint(request):
             'metrics': {
                 'total_backtests': total_backtests,
                 'success_rate': f"{(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%",
-                'avg_sharpe_ratio': f"{avg_sharpe}",
-                'avg_annual_return': f"{avg_annual_return}%",
+                'avg_sharpe_ratio': f"{avg_sharpe:.3f}",
+                'avg_annual_return': f"{avg_annual_return:.2f}%",
                 'most_used_dataset': most_used_dataset
             }
         })
@@ -14926,9 +14926,9 @@ def snowai_paper_gpt_summary_endpoint(request):
 
         PAPER COLLECTION OVERVIEW:
         - Total Papers: {total_papers}
-        - Total File Size: {total_file_size} MB
+        - Total File Size: {total_file_size:.2f} MB
         - Most Common Category: {most_common_category}
-        - Average Paper Length: ~{avg_paper_length} characters
+        - Average Paper Length: ~{avg_paper_length:,} characters
 
         RECENT UPLOADS:
         {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'} | Size: {paper.file_size/(1024*1024):.1f}MB" for paper in recent_papers])}
@@ -14999,10 +14999,10 @@ def snowai_paper_gpt_summary_endpoint(request):
             'summary': ai_summary,
             'metrics': {
                 'total_papers': total_papers,
-                'total_size_mb': f"{total_file_size} MB",
+                'total_size_mb': f"{total_file_size:.2f} MB",
                 'most_common_category': most_common_category,
                 'categories_count': len(categories),
-                'avg_length': f"{avg_paper_length} chars"
+                'avg_length': f"{avg_paper_length:,} chars"
             }
         })
         
@@ -15059,57 +15059,60 @@ def snowai_research_gpt_summary_endpoint(request):
         all_papers = PaperGPT.objects.all()
         ml_models = SnowAIMLModelLogEntry.objects.all()
         backtests = BacktestModels.objects.all()
-        
+
         if not any([all_papers.exists(), ml_models.exists(), backtests.exists()]):
             return JsonResponse({
                 'status': 'No research data available',
                 'summary': 'No research data found across papers, ML models, or backtests.',
                 'metrics': {}
             })
-        
+
         total_papers = all_papers.count()
         total_ml_models = ml_models.count()
         total_backtests = backtests.count()
         total_research_entries = total_papers + total_ml_models + total_backtests
-        
+
         # ML Model analysis
         model_types = ml_models.values('snowai_model_type').annotate(count=Count('id')).order_by('-count')
         financial_markets = ml_models.values('snowai_financial_market_type').annotate(count=Count('id')).order_by('-count')
-        
+
         # Paper categories
         paper_categories = all_papers.exclude(category__isnull=True).values('category').annotate(count=Count('id')).order_by('-count')
-        
+
         # Recent research activity
         recent_papers = all_papers.order_by('-upload_date')[:3]
         recent_models = ml_models.order_by('-snowai_created_at')[:3]
-        
+
         # Performance metrics from ML models
         avg_accuracy = ml_models.exclude(snowai_accuracy_score__isnull=True).aggregate(Avg('snowai_accuracy_score'))['snowai_accuracy_score__avg'] or 0
         avg_sharpe = ml_models.exclude(snowai_sharpe_ratio__isnull=True).aggregate(Avg('snowai_sharpe_ratio'))['snowai_sharpe_ratio__avg'] or 0
-        
+
+        # Prompt for GPT summary
         prompt = f"""
         Analyze this comprehensive research ecosystem and provide strategic insights:
 
         RESEARCH PORTFOLIO OVERVIEW:
         - Total Research Entries: {total_research_entries}
         - Research Papers: {total_papers}
-        - ML Models: {total_ml_models}  
+        - ML Models: {total_ml_models}
         - Backtesting Strategies: {total_backtests}
 
         ML MODEL RESEARCH:
-        - Most Common Model Type: {model_types.first()['snowai_model_type'] if model_types else 'N/A'}
-        - Primary Financial Market: {financial_markets.first()['snowai_financial_market_type'] if financial_markets else 'N/A'}
+        - Most Common Model Type: {model_types[0]['snowai_model_type'] if model_types else 'N/A'}
+        - Primary Financial Market: {financial_markets[0]['snowai_financial_market_type'] if financial_markets else 'N/A'}
         - Average Model Accuracy: {avg_accuracy:.3f}
         - Average Sharpe Ratio: {avg_sharpe:.3f}
 
         PAPER RESEARCH:
-        - Primary Research Category: {paper_categories.first()['category'] if paper_categories else 'N/A'}
+        - Primary Research Category: {paper_categories[0]['category'] if paper_categories else 'N/A'}
         - Category Distribution: {len(paper_categories)} different categories
 
         RECENT RESEARCH ACTIVITY:
-        Papers: {chr(10).join([f"- {paper.title}" for paper in recent_papers])}
-        
-        Models: {chr(10).join([f"- {model.snowai_model_name} ({model.snowai_model_type})" for model in recent_models])}
+        Papers:
+        {chr(10).join([f"- {paper.title}" for paper in recent_papers])}
+
+        Models:
+        {chr(10).join([f"- {model.snowai_model_name} ({model.snowai_model_type})" for model in recent_models])}
 
         MODEL TYPE DISTRIBUTION:
         {chr(10).join([f"- {mt['snowai_model_type']}: {mt['count']} models" for mt in model_types[:5]])}
@@ -15121,7 +15124,7 @@ def snowai_research_gpt_summary_endpoint(request):
         1. Comprehensive research ecosystem analysis
         2. Cross-disciplinary knowledge synthesis
         3. Research methodology assessment
-        4. Knowledge gap identification and prioritization  
+        4. Knowledge gap identification and prioritization
         5. Future research direction recommendations
         6. Practical application opportunities
         7. Research ROI analysis
@@ -15131,130 +15134,33 @@ def snowai_research_gpt_summary_endpoint(request):
 
         Format as a strategic research portfolio review with actionable insights.
         """
-        
+
         ai_summary = chat_gpt(prompt)
-        
+
         # Generate specific research directions
         directions_prompt = f"""
-        Based on {total_research_entries} research entries including {total_ml_models} ML models and {total_papers} papers, 
+        Based on {total_research_entries} research entries including {total_ml_models} ML models and {total_papers} papers,
         provide 5 specific future research directions that bridge theory and practical trading applications.
         Focus on unexplored combinations and high-impact opportunities.
         """
-        
+
         future_directions = chat_gpt(directions_prompt)
-        
-        # Identify knowledge gaps
-        gaps_prompt = f"""
-        Analyzing the research portfolio with focus on {model_types all trading data
-        all_trades = AccountTrades.objects.all()
-        accounts_data = Account.objects.all()
-        
-        if not all_trades.exists():
-            return JsonResponse({
-                'status': 'No trading data available',
-                'summary': 'No trading history found to analyze.',
-                'metrics': {}
-            })
-        
-        # Calculate metrics
-        total_trades = all_trades.count()
-        profit_trades = all_trades.filter(outcome='Profit').count()
-        loss_trades = all_trades.filter(outcome='Loss').count()
-        win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
-        
-        total_pnl = all_trades.aggregate(Sum('amount'))['amount__sum'] or 0
-        avg_trade_amount = all_trades.aggregate(Avg('amount'))['amount__avg'] or 0
-        best_trade = all_trades.aggregate(Max('amount'))['amount__max'] or 0
-        worst_trade = all_trades.aggregate(Min('amount'))['amount__min'] or 0
-        
-        # Strategy analysis
-        strategy_performance = all_trades.values('strategy').annotate(
-            total_trades=Count('id'),
-            total_pnl=Sum('amount')
-        ).order_by('-total_pnl')
-        
-        best_strategy = strategy_performance.first()['strategy'] if strategy_performance else 'N/A'
-        worst_strategy = strategy_performance.last()['strategy'] if strategy_performance else 'N/A'
-        
-        # Asset analysis
-        asset_counts = all_trades.values('asset').annotate(count=Count('id')).order_by('-count')
-        most_traded_asset = asset_counts.first()['asset'] if asset_counts else 'N/A'
-        
-        # Create comprehensive prompt for GPT
-        prompt = f"""
-        Analyze this comprehensive trading performance data and provide a detailed, professional summary:
 
-        TRADING PERFORMANCE METRICS:
-        - Total Trades: {total_trades}
-        - Win Rate: {win_rate}%
-        - Total P&L: ${total_pnl}
-        - Average Trade Size: ${avg_trade_amount}
-        - Best Trade: ${best_trade}
-        - Worst Trade: ${worst_trade}
-        - Most Traded Asset: {most_traded_asset}
-        - Best Performing Strategy: {best_strategy}
-        - Worst Performing Strategy: {worst_strategy}
+        # You can optionally include future_directions in the response or save it
 
-        DETAILED BREAKDOWN:
-        - Profitable Trades: {profit_trades}
-        - Losing Trades: {loss_trades}
-
-        Please provide:
-        1. A comprehensive performance assessment
-        2. Key strengths and weaknesses in the trading approach
-        3. Risk management analysis
-        4. Recommendations for improvement
-        5. Strategic insights based on the data
-        6. Asset allocation observations
-        7. Future trading suggestions
-
-        Format the response as a professional trading report with clear sections and actionable insights.
-        """
-        
-        # Get AI summary
-        ai_summary = chat_gpt(prompt)
-        
-        # Save to database
-        summary_obj, created = SnowAITraderHistoryGPTSummary.objects.get_or_create(
-            created_at__date=datetime.now().date(),
-            defaults={
-                'summary_text': ai_summary,
-                'total_trades': total_trades,
-                'win_rate': win_rate,
-                'total_profit_loss': total_pnl,
-                'best_performing_strategy': best_strategy,
-                'worst_performing_strategy': worst_strategy,
-                'most_traded_asset': most_traded_asset,
-                'average_trade_amount': avg_trade_amount,
-            }
-        )
-        
-        if not created:
-            # Update existing summary
-            summary_obj.summary_text = ai_summary
-            summary_obj.total_trades = total_trades
-            summary_obj.win_rate = win_rate
-            summary_obj.total_profit_loss = total_pnl
-            summary_obj.best_performing_strategy = best_strategy
-            summary_obj.worst_performing_strategy = worst_strategy
-            summary_obj.most_traded_asset = most_traded_asset
-            summary_obj.average_trade_amount = avg_trade_amount
-            summary_obj.updated_at = datetime.now()
-            summary_obj.save()
-        
         return JsonResponse({
             'status': 'success',
             'summary': ai_summary,
+            'future_directions': future_directions,
             'metrics': {
-                'total_trades': total_trades,
-                'win_rate': f"{win_rate}%",
-                'total_pnl': f"${total_pnl}",
-                'avg_trade_amount': f"${avg_trade_amount}",
-                'most_traded_asset': most_traded_asset,
-                'best_strategy': best_strategy
+                'total_papers': total_papers,
+                'total_ml_models': total_ml_models,
+                'total_backtests': total_backtests,
+                'avg_accuracy': round(avg_accuracy, 3),
+                'avg_sharpe': round(avg_sharpe, 3)
             }
         })
-        
+
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)})
 
@@ -15483,83 +15389,83 @@ def snowai_research_gpt_chat_endpoint(request):
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)})
 
-# # Add scheduler jobs (add this to your main application or scheduler setup)
-# def setup_snowai_gpt_scheduler_jobs():
-#     """
-#     Setup scheduler jobs for SnowAI GPT summaries to run every 48 hours
-#     """
-#     from django_apscheduler.jobstores import DjangoJobStore
-#     from apscheduler.schedulers.background import BackgroundScheduler
-#     import requests
+# Add scheduler jobs (add this to your main application or scheduler setup)
+def setup_snowai_gpt_scheduler_jobs():
+    """
+    Setup scheduler jobs for SnowAI GPT summaries to run every 48 hours
+    """
+    from django_apscheduler.jobstores import DjangoJobStore
+    from apscheduler.schedulers.background import BackgroundScheduler
+    import requests
     
-#     scheduler = BackgroundScheduler()
-#     scheduler.add_jobstore(DjangoJobStore(), "default")
+    scheduler = BackgroundScheduler()
+    scheduler.add_jobstore(DjangoJobStore(), "default")
     
-#     base_url = 'https://backend-production-c0ab.up.railway.app'  # Replace with your actual URL
+    base_url = 'https://backend-production-c0ab.up.railway.app'  # Replace with your actual URL
     
-#     def trigger_gpt_summary_generation(endpoint_name):
-#         # """Helper function to trigger GPT summary generation"""
-#         try:
-#             response = requests.get(f"{base_url}/{endpoint_name}/")
-#             print(f"SnowAI GPT Summary generated for {endpoint_name}: {response.status_code}")
-#         except Exception as e:
-#             print(f"Error generating summary for {endpoint_name}: {str(e)}")
+    def trigger_gpt_summary_generation(endpoint_name):
+        """Helper function to trigger GPT summary generation"""
+        try:
+            response = requests.get(f"{base_url}/{endpoint_name}/")
+            print(f"SnowAI GPT Summary generated for {endpoint_name}: {response.status_code}")
+        except Exception as e:
+            print(f"Error generating summary for {endpoint_name}: {str(e)}")
     
-#     # Add jobs for each GPT system to run every 24 hours
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_trader_history_gpt_summary'),
-#         'interval',
-#         hours=24,
-#         id='snowai_trader_history_gpt_job',
-#         replace_existing=True
-#     )
+    # Add jobs for each GPT system to run every 48 hours
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_trader_history_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_trader_history_gpt_job',
+        replace_existing=True
+    )
     
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_macro_gpt_summary'),
-#         'interval',
-#         hours=24,
-#         id='snowai_macro_gpt_job',
-#         replace_existing=True
-#     )
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_macro_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_macro_gpt_job',
+        replace_existing=True
+    )
     
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_idea_gpt_summary'),
-#         'interval',
-#         hours=24,
-#         id='snowai_idea_gpt_job',
-#         replace_existing=True
-#     )
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_idea_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_idea_gpt_job',
+        replace_existing=True
+    )
     
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_backtesting_gpt_summary'),
-#         'interval',
-#         hours=24,
-#         id='snowai_backtesting_gpt_job',
-#         replace_existing=True
-#     )
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_backtesting_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_backtesting_gpt_job',
+        replace_existing=True
+    )
     
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_paper_gpt_summary'),
-#         'interval',
-#         hours=24,
-#         id='snowai_paper_gpt_job',
-#         replace_existing=True
-#     )
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_paper_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_paper_gpt_job',
+        replace_existing=True
+    )
     
-#     scheduler.add_job(
-#         lambda: trigger_gpt_summary_generation('snowai_research_gpt_summary'),
-#         'interval',
-#         hours=24,
-#         id='snowai_research_gpt_job',
-#         replace_existing=True
-#     )
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_research_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_research_gpt_job',
+        replace_existing=True
+    )
     
-#     scheduler.start()
-#     print("SnowAI GPT Scheduler jobs setup completed - All summaries will update every 24 hours")
+    scheduler.start()
+    print("SnowAI GPT Scheduler jobs setup completed - All summaries will update every 48 hours")
 
 
-# # Add this to your Django app's apps.py ready() method or main scheduler initialization
-# setup_snowai_gpt_scheduler_jobs()
+# Add this to your Django app's apps.py ready() method or main scheduler initialization
+setup_snowai_gpt_scheduler_jobs()
         
                 
 # LEGODI BACKEND CODE
