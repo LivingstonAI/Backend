@@ -12834,17 +12834,6 @@ def firm_compliance_detail(request, compliance_id):
                 'message': f'Error deleting record: {str(e)}'
             }, status=500)
 
-
-import json
-import numpy as np
-import pandas as pd
-from datetime import datetime, timedelta
-from collections import defaultdict
-from django.db.models import Q
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-import yfinance as yf
-
 import json
 import numpy as np
 import pandas as pd
@@ -12974,6 +12963,169 @@ def obtain_dataset(asset, interval, num_days):
         data = yf.download(asset, start=start_date, end=end_date, interval=interval)
     
     return data
+
+def calculate_relative_volume(volume_data, lookback_period=20):
+    """
+    Calculate relative volume as current volume / average volume over lookback period
+    """
+    if len(volume_data) < lookback_period:
+        return [1.0] * len(volume_data)  # Return neutral ratio if insufficient data
+    
+    relative_volumes = []
+    for i in range(len(volume_data)):
+        if i < lookback_period:
+            # Use available data for early points
+            avg_volume = np.mean(volume_data[:i+1]) if i > 0 else volume_data[0]
+        else:
+            # Use rolling window
+            avg_volume = np.mean(volume_data[i-lookback_period:i])
+        
+        current_volume = volume_data[i]
+        
+        if avg_volume > 0:
+            relative_volume = current_volume / avg_volume
+        else:
+            relative_volume = 1.0
+        
+        relative_volumes.append(relative_volume)
+    
+    return relative_volumes
+
+def get_volume_data(assets, date_range):
+    """
+    Fetch volume data for specified assets and calculate relative volume ratios
+    """
+    range_days = {
+        '7d': 7,
+        '30d': 30,
+        '90d': 90,
+        '180d': 180,
+        '365d': 365
+    }
+    
+    days = range_days.get(date_range, 30)
+    
+    # Add extra days for volume calculation lookback
+    volume_lookback_days = days + 25  # Extra days for better volume average calculation
+    
+    # Determine interval based on date range
+    if days <= 7:
+        interval = '1h'
+    elif days <= 30:
+        interval = '1d'
+    else:
+        interval = '1d'
+    
+    volume_data = {}
+    
+    for asset_id in assets:
+        try:
+            print(f"Fetching volume data for {asset_id} with {volume_lookback_days} days, interval {interval}")
+            
+            # Use obtain_dataset function
+            data = obtain_dataset(asset_id, interval, volume_lookback_days)
+            
+            if not data.empty:
+                print(f"Got {len(data)} data points for volume calculation on {asset_id}")
+                
+                # Process the volume data
+                volume_entries = []
+                
+                # Handle MultiIndex columns
+                if isinstance(data.columns, pd.MultiIndex):
+                    volume_col = None
+                    close_col = None
+                    
+                    for col in data.columns:
+                        if col[0] == 'Volume':
+                            volume_col = col
+                        if col[0] == 'Close':
+                            close_col = col
+                    
+                    if volume_col is None:
+                        print(f"No Volume column found for {asset_id}")
+                        volume_data[asset_id] = []
+                        continue
+                        
+                    # Extract volume and close data
+                    for date_idx, volume in data[volume_col].items():
+                        try:
+                            if hasattr(date_idx, 'strftime'):
+                                date_str = date_idx.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_idx)[:10]
+                            
+                            if pd.notna(volume) and volume > 0:
+                                close_price = data[close_col].loc[date_idx] if close_col else None
+                                volume_entries.append({
+                                    'date': date_str,
+                                    'volume': float(volume),
+                                    'close_price': float(close_price) if pd.notna(close_price) else None
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing volume data point for {asset_id}: {str(row_error)}")
+                            continue
+                
+                else:
+                    # Handle regular columns
+                    data_reset = data.reset_index()
+                    
+                    for _, row in data_reset.iterrows():
+                        try:
+                            # Get date
+                            date_value = row['Date'] if 'Date' in row else row.index[0]
+                            if hasattr(date_value, 'strftime'):
+                                date_str = date_value.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_value)[:10]
+                            
+                            # Get volume and close price
+                            volume = row['Volume'] if 'Volume' in row else None
+                            close_price = row['Close'] if 'Close' in row else None
+                            
+                            if volume is not None and pd.notna(volume) and volume > 0:
+                                volume_entries.append({
+                                    'date': date_str,
+                                    'volume': float(volume),
+                                    'close_price': float(close_price) if pd.notna(close_price) else None
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing volume row for {asset_id}: {str(row_error)}")
+                            continue
+                
+                # Sort by date for proper calculation
+                volume_entries.sort(key=lambda x: x['date'])
+                
+                # Calculate relative volumes
+                volumes_only = [entry['volume'] for entry in volume_entries]
+                relative_volumes = calculate_relative_volume(volumes_only, lookback_period=20)
+                
+                # Filter to requested date range (remove extra lookback days)
+                current_date = datetime.now()
+                cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+                
+                filtered_data = []
+                for i, entry in enumerate(volume_entries):
+                    if entry['date'] >= cutoff_date:
+                        filtered_data.append({
+                            'date': entry['date'],
+                            'volume': entry['volume'],
+                            'volume_ratio': relative_volumes[i],
+                            'close_price': entry['close_price']
+                        })
+                
+                volume_data[asset_id] = filtered_data
+                print(f"Processed {len(filtered_data)} volume data points for {asset_id}")
+                        
+        except Exception as e:
+            print(f"Error fetching volume data for {asset_id}: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            volume_data[asset_id] = []
+    
+    return volume_data
 
 def get_forex_data(forex_pairs, date_range):
     """
@@ -13185,9 +13337,9 @@ def get_stock_indices_data(stock_indices, date_range):
     
     return stock_data
 
-def merge_multi_asset_data(esi_data, forex_data, stock_data):
+def merge_multi_asset_data(esi_data, forex_data, stock_data, volume_data):
     """
-    Merge ESI data with forex price data and stock indices data
+    Merge ESI data with forex price data, stock indices data, and volume data
     """
     # Create a comprehensive date-based dictionary using YYYY-MM-DD as keys
     merged_data = {}
@@ -13245,6 +13397,11 @@ def merge_multi_asset_data(esi_data, forex_data, stock_data):
     for symbol, index_data in stock_data.items():
         for index_point in index_data:
             all_asset_dates.add(index_point['date'])
+    
+    # Add volume dates
+    for asset_id, vol_data in volume_data.items():
+        for vol_point in vol_data:
+            all_asset_dates.add(vol_point['date'])
     
     # Sort dates for interpolation
     sorted_asset_dates = sorted(all_asset_dates)
@@ -13333,7 +13490,7 @@ def merge_multi_asset_data(esi_data, forex_data, stock_data):
                 if date_key in stock_values_by_date:
                     merged_data[date_key][f"{symbol}_index"] = stock_values_by_date[date_key]
                 else:
-                    # Interpolation logic for stock indices
+                    # Interpolation logic for stock indices (similar to forex)
                     try:
                         target_date = datetime.strptime(date_key, '%Y-%m-%d')
                     except:
@@ -13395,6 +13552,79 @@ def merge_multi_asset_data(esi_data, forex_data, stock_data):
                     print(f"Error adding stock-index-only date {stock_date_str}: {str(e)}")
                     continue
     
+    # Add volume data with interpolation
+    for asset_id, vol_data in volume_data.items():
+        volume_ratios_by_date = {point['date']: point['volume_ratio'] for point in vol_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in volume_ratios_by_date:
+                    merged_data[date_key][f"{asset_id}_volume_ratio"] = volume_ratios_by_date[date_key]
+                else:
+                    # Interpolation logic for volume ratios
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_ratio = None
+                    closest_after_ratio = None
+                    
+                    for vol_date_str, ratio in volume_ratios_by_date.items():
+                        try:
+                            vol_date = datetime.strptime(vol_date_str, '%Y-%m-%d')
+                            
+                            if vol_date <= target_date:
+                                if closest_before is None or vol_date > closest_before:
+                                    closest_before = vol_date
+                                    closest_before_ratio = ratio
+                            
+                            if vol_date >= target_date:
+                                if closest_after is None or vol_date < closest_after:
+                                    closest_after = vol_date
+                                    closest_after_ratio = ratio
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_ratio is not None and closest_after_ratio is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_ratio = closest_before_ratio + (closest_after_ratio - closest_before_ratio) * weight
+                            merged_data[date_key][f"{asset_id}_volume_ratio"] = interpolated_ratio
+                        else:
+                            merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_before_ratio
+                    elif closest_before_ratio is not None:
+                        merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_before_ratio
+                    elif closest_after_ratio is not None:
+                        merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_after_ratio
+                        
+            except Exception as e:
+                print(f"Error processing volume data for {date_key}: {str(e)}")
+                continue
+        
+        # Add volume-only dates
+        for vol_date_str, ratio in volume_ratios_by_date.items():
+            if vol_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(vol_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[vol_date_str] = {
+                        'date': display_date,
+                        f"{asset_id}_volume_ratio": ratio
+                    }
+                except Exception as e:
+                    print(f"Error adding volume-only date {vol_date_str}: {str(e)}")
+                    continue
+    
     # Convert back to list format and sort by actual date
     merged_list = []
     sorted_dates = sorted(merged_data.keys(), key=lambda x: datetime.strptime(x, '%Y-%m-%d') if x.count('-') == 2 else datetime.now())
@@ -13405,10 +13635,8 @@ def merge_multi_asset_data(esi_data, forex_data, stock_data):
     
     # Debug: Print sample of merged data
     print(f"Merged data sample: {merged_list[:3] if merged_list else 'No data'}")
-    if forex_data:
-        print(f"Forex data sample: {list(forex_data.items())[0] if forex_data else 'No forex data'}")
-    if stock_data:
-        print(f"Stock data sample: {list(stock_data.items())[0] if stock_data else 'No stock data'}")
+    if volume_data:
+        print(f"Volume data sample: {list(volume_data.items())[0] if volume_data else 'No volume data'}")
     
     return merged_list
 
@@ -13416,16 +13644,17 @@ def merge_multi_asset_data(esi_data, forex_data, stock_data):
 def economic_strength_index(request):
     """
     Calculate and return Economic Strength Index for selected currencies
-    Now with forex and stock indices overlay capability
+    Now with forex, stock indices, and volume overlay capability
     """
     try:
         data = json.loads(request.body)
         currencies = data.get('currencies', ['USD'])
         forex_pairs = data.get('forex_pairs', [])
         stock_indices = data.get('stock_indices', [])
+        volume_assets = data.get('volume_assets', [])
         date_range = data.get('date_range', '30d')
         
-        print(f"Received request: currencies={currencies}, forex={forex_pairs}, stocks={stock_indices}, range={date_range}")
+        print(f"Received request: currencies={currencies}, forex={forex_pairs}, stocks={stock_indices}, volume={volume_assets}, range={date_range}")
         
         # Calculate date range
         range_days = {
@@ -13555,135 +13784,104 @@ def economic_strength_index(request):
                     smoothed_scores.append(np.mean(window_scores))
                 daily_scores = smoothed_scores
             
-            # Normalize scores
-            normalized_scores = normalize_esi_scores(daily_scores)
-            
-            # Store in chart data structure
-            for i, (date_str, score) in enumerate(zip(dates, normalized_scores)):
-                if date_str not in chart_data_dict:
-                    chart_data_dict[date_str] = {'date': date_str}
-                chart_data_dict[date_str][currency] = score
+            # Store data for each currency with dates
+            for i, date_str in enumerate(dates):
+                if i < len(daily_scores):
+                    chart_data_dict[date_str][currency] = daily_scores[i]
         
-        # Convert to list format for chart
+        # Convert to chart format with proper date handling
         chart_data = []
-        for date_str in sorted(chart_data_dict.keys()):
-            data_point = chart_data_dict[date_str].copy()
-            # Format date for better display
-            try:
-                date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-                data_point['date'] = date_obj.strftime('%m/%d')
-            except:
-                data_point['date'] = date_str
-            chart_data.append(data_point)
+        for date_str in sorted_dates:
+            point = {'date': datetime.strptime(date_str, '%Y-%m-%d').strftime('%m/%d')}
+            
+            # Add ESI scores for each currency
+            for currency in currencies:
+                if currency in chart_data_dict[date_str]:
+                    point[currency] = chart_data_dict[date_str][currency]
+                else:
+                    point[currency] = None
+            
+            chart_data.append(point)
         
-        # Fetch and merge forex data if requested
+        # Normalize ESI scores across all currencies to 0-100 scale
+        all_scores = []
+        for point in chart_data:
+            for currency in currencies:
+                if point.get(currency) is not None:
+                    all_scores.append(point[currency])
+        
+        if all_scores:
+            normalized_scores = normalize_esi_scores(all_scores)
+            score_idx = 0
+            
+            for point in chart_data:
+                for currency in currencies:
+                    if point.get(currency) is not None:
+                        point[currency] = normalized_scores[score_idx]
+                        score_idx += 1
+        
+        print(f"Generated {len(chart_data)} ESI data points")
+        
+        # Fetch forex data if requested
         forex_data = {}
         if forex_pairs:
-            try:
-                print(f"Fetching forex data for pairs: {forex_pairs}")
-                forex_data = get_forex_data(forex_pairs, date_range)
-                print(f"Forex data fetched successfully: {bool(forex_data)}")
-            except Exception as e:
-                print(f"Error fetching forex data: {str(e)}")
+            forex_data = get_forex_data(forex_pairs, date_range)
+            print(f"Fetched forex data for {len(forex_pairs)} pairs")
         
-        # Fetch and merge stock indices data if requested
+        # Fetch stock indices data if requested
         stock_data = {}
         if stock_indices:
-            try:
-                print(f"Fetching stock indices data for symbols: {stock_indices}")
-                stock_data = get_stock_indices_data(stock_indices, date_range)
-                print(f"Stock indices data fetched successfully: {bool(stock_data)}")
-            except Exception as e:
-                print(f"Error fetching stock indices data: {str(e)}")
-                import traceback
-                print(traceback.format_exc())
+            stock_data = get_stock_indices_data(stock_indices, date_range)
+            print(f"Fetched stock data for {len(stock_indices)} indices")
         
-        # Merge all data if any asset data was retrieved
-        if any(forex_data.values()) or any(stock_data.values()):
-            try:
-                chart_data = merge_multi_asset_data(chart_data, forex_data, stock_data)
-                print(f"Data merged. Final chart_data length: {len(chart_data)}")
-                
-                # Debug: Check if asset prices are in the final data
-                asset_keys_found = set()
-                for point in chart_data:
-                    for key in point.keys():
-                        if '_price' in key or '_index' in key:
-                            asset_keys_found.add(key)
-                print(f"Asset price/index keys found in final data: {asset_keys_found}")
-                
-            except Exception as e:
-                print(f"Error merging asset data: {str(e)}")
-                import traceback
-                print(traceback.format_exc())
+        # Fetch volume data if requested
+        volume_data = {}
+        if volume_assets:
+            volume_data = get_volume_data(volume_assets, date_range)
+            print(f"Fetched volume data for {len(volume_assets)} assets")
+        
+        # Merge ESI data with forex, stock indices, and volume data
+        if forex_data or stock_data or volume_data:
+            merged_data = merge_multi_asset_data(chart_data, forex_data, stock_data, volume_data)
+            print(f"Merged data contains {len(merged_data)} points")
+        else:
+            merged_data = chart_data
         
         # Calculate summary statistics
         summary_stats = {}
         for currency in currencies:
-            currency_scores = [point.get(currency, 50) for point in chart_data if currency in point]
+            currency_scores = [point.get(currency) for point in merged_data if point.get(currency) is not None]
             if currency_scores:
                 summary_stats[currency] = {
-                    'current_esi': currency_scores[-1] if currency_scores else 50,
-                    'average_esi': np.mean(currency_scores),
-                    'trend': 'positive' if currency_scores[-1] > np.mean(currency_scores) else 'negative'
-                }
-            else:
-                summary_stats[currency] = {
-                    'current_esi': 50,
-                    'average_esi': 50,
-                    'trend': 'neutral'
+                    'average': np.mean(currency_scores),
+                    'current': currency_scores[-1] if currency_scores else None,
+                    'trend': 'positive' if len(currency_scores) > 1 and currency_scores[-1] > currency_scores[0] else 'negative',
+                    'volatility': np.std(currency_scores)
                 }
         
-        # Add forex summary stats
-        for pair in forex_pairs:
-            price_key = f"{pair}_price"
-            forex_prices = [point.get(price_key) for point in chart_data if point.get(price_key) is not None]
-            if forex_prices:
-                price_change = ((forex_prices[-1] - forex_prices[0]) / forex_prices[0]) * 100
-                summary_stats[f"{pair}_forex"] = {
-                    'current_price': forex_prices[-1],
-                    'price_change_percent': price_change,
-                    'trend': 'bullish' if price_change > 0 else 'bearish'
-                }
-        
-        # Add stock indices summary stats
-        for symbol in stock_indices:
-            index_key = f"{symbol}_index"
-            index_values = [point.get(index_key) for point in chart_data if point.get(index_key) is not None]
-            if index_values:
-                index_change = ((index_values[-1] - index_values[0]) / index_values[0]) * 100
-                summary_stats[f"{symbol}_stock"] = {
-                    'current_value': index_values[-1],
-                    'value_change_percent': index_change,
-                    'trend': 'bullish' if index_change > 0 else 'bearish'
-                }
-        
-        response_data = {
+        return Response({
             'success': True,
-            'chart_data': chart_data,
-            'summary_stats': summary_stats,
+            'chart_data': merged_data,
+            'summary': summary_stats,
             'metadata': {
-                'total_events_analyzed': events.count() if currencies else 0,
-                'forex_pairs_included': forex_pairs,
-                'stock_indices_included': stock_indices,
-                'date_range': f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}",
-                'currencies': currencies
+                'date_range': date_range,
+                'currencies': currencies,
+                'forex_pairs': forex_pairs,
+                'stock_indices': stock_indices,
+                'volume_assets': volume_assets,
+                'data_points': len(merged_data),
+                'events_processed': events.count()
             }
-        }
-        
-        return Response(response_data)
+        })
         
     except Exception as e:
         print(f"Error in economic_strength_index: {str(e)}")
         import traceback
         print(traceback.format_exc())
         return Response({
-            'success': False,
             'error': str(e),
-            'chart_data': [],
-            'summary_stats': {}
+            'success': False
         }, status=500)
-
         
 from django.shortcuts import render
 from django.core.paginator import Paginator
@@ -15285,7 +15483,83 @@ def snowai_research_gpt_chat_endpoint(request):
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)})
 
+# Add scheduler jobs (add this to your main application or scheduler setup)
+def setup_snowai_gpt_scheduler_jobs():
+    """
+    Setup scheduler jobs for SnowAI GPT summaries to run every 48 hours
+    """
+    from django_apscheduler.jobstores import DjangoJobStore
+    from apscheduler.schedulers.background import BackgroundScheduler
+    import requests
+    
+    scheduler = BackgroundScheduler()
+    scheduler.add_jobstore(DjangoJobStore(), "default")
+    
+    base_url = 'https://backend-production-c0ab.up.railway.app'  # Replace with your actual URL
+    
+    def trigger_gpt_summary_generation(endpoint_name):
+        """Helper function to trigger GPT summary generation"""
+        try:
+            response = requests.get(f"{base_url}/{endpoint_name}/")
+            print(f"SnowAI GPT Summary generated for {endpoint_name}: {response.status_code}")
+        except Exception as e:
+            print(f"Error generating summary for {endpoint_name}: {str(e)}")
+    
+    # Add jobs for each GPT system to run every 48 hours
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_trader_history_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_trader_history_gpt_job',
+        replace_existing=True
+    )
+    
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_macro_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_macro_gpt_job',
+        replace_existing=True
+    )
+    
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_idea_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_idea_gpt_job',
+        replace_existing=True
+    )
+    
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_backtesting_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_backtesting_gpt_job',
+        replace_existing=True
+    )
+    
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_paper_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_paper_gpt_job',
+        replace_existing=True
+    )
+    
+    scheduler.add_job(
+        lambda: trigger_gpt_summary_generation('snowai_research_gpt_summary'),
+        'interval',
+        hours=48,
+        id='snowai_research_gpt_job',
+        replace_existing=True
+    )
+    
+    scheduler.start()
+    print("SnowAI GPT Scheduler jobs setup completed - All summaries will update every 48 hours")
 
+
+# Add this to your Django app's apps.py ready() method or main scheduler initialization
+setup_snowai_gpt_scheduler_jobs()
         
                 
 # LEGODI BACKEND CODE
