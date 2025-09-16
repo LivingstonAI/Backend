@@ -13253,4 +13253,2334 @@ def get_stock_indices_data(stock_indices, date_range):
     
     stock_data = {}
     
-    for symbol
+    for symbol in stock_indices:
+        try:
+            print(f"Fetching stock index data for {symbol} with {days} days, interval {interval}")
+            
+            # Use obtain_dataset function
+            data = obtain_dataset(symbol, interval, days)
+            
+            if not data.empty:
+                print(f"Got {len(data)} data points for {symbol}")
+                
+                # Process the data
+                stock_data[symbol] = []
+                
+                # Handle MultiIndex columns
+                if isinstance(data.columns, pd.MultiIndex):
+                    close_col = None
+                    for col in data.columns:
+                        if col[0] == 'Close':
+                            close_col = col
+                            break
+                    
+                    if close_col is None:
+                        print(f"No Close column found in MultiIndex columns for {symbol}")
+                        stock_data[symbol] = []
+                        continue
+                        
+                    # Extract the close prices and dates
+                    for date_idx, close_price in data[close_col].items():
+                        try:
+                            if hasattr(date_idx, 'strftime'):
+                                date_str = date_idx.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_idx)[:10]
+                            
+                            if pd.notna(close_price):
+                                stock_data[symbol].append({
+                                    'date': date_str,
+                                    'value': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing data point for {symbol}: {str(row_error)}")
+                            continue
+                
+                else:
+                    # Handle regular columns
+                    data_reset = data.reset_index()
+                    
+                    for _, row in data_reset.iterrows():
+                        try:
+                            # Get date
+                            date_value = row['Date'] if 'Date' in row else row.index[0]
+                            if hasattr(date_value, 'strftime'):
+                                date_str = date_value.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_value)[:10]
+                            
+                            # Get close price
+                            close_price = row['Close'] if 'Close' in row else None
+                            
+                            if close_price is not None and pd.notna(close_price):
+                                stock_data[symbol].append({
+                                    'date': date_str,
+                                    'value': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing row for {symbol}: {str(row_error)}")
+                            continue
+                
+                print(f"Processed {len(stock_data[symbol])} valid data points for {symbol}")
+                        
+        except Exception as e:
+            print(f"Error fetching stock index data for {symbol}: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            stock_data[symbol] = []
+    
+    print(f"Final stock_data keys: {list(stock_data.keys())}")
+    for symbol, data in stock_data.items():
+        print(f"{symbol}: {len(data)} data points")
+    
+    return stock_data
+
+def merge_multi_asset_data(esi_data, forex_data, stock_data, volume_data):
+    """
+    Merge ESI data with forex price data, stock indices data, and volume data
+    """
+    # Create a comprehensive date-based dictionary using YYYY-MM-DD as keys
+    merged_data = {}
+    
+    # First, convert ESI dates to YYYY-MM-DD format for consistent matching
+    esi_date_map = {}  # Maps YYYY-MM-DD to MM/DD display format
+    
+    for point in esi_data:
+        display_date = point['date']  # This is MM/DD format
+        
+        # Try to convert MM/DD to YYYY-MM-DD for matching
+        try:
+            current_year = datetime.now().year
+            if '/' in display_date:
+                month_day = display_date
+                # Try current year first, then previous year if needed
+                for year_offset in [0, -1]:
+                    try:
+                        test_year = current_year + year_offset
+                        full_date_str = f"{month_day}/{test_year}"
+                        date_obj = datetime.strptime(full_date_str, '%m/%d/%Y')
+                        iso_date = date_obj.strftime('%Y-%m-%d')
+                        
+                        # Store the mapping
+                        esi_date_map[iso_date] = display_date
+                        
+                        # Store ESI data
+                        if iso_date not in merged_data:
+                            merged_data[iso_date] = {'date': display_date}
+                        
+                        # Add all ESI values
+                        for key, value in point.items():
+                            if key != 'date':
+                                merged_data[iso_date][key] = value
+                        break
+                    except ValueError:
+                        continue
+            else:
+                # If it's already in a different format, store as-is
+                merged_data[display_date] = point.copy()
+        except Exception as e:
+            print(f"Error processing ESI date {display_date}: {str(e)}")
+            # Fallback: use original date as key
+            merged_data[display_date] = point.copy()
+    
+    # Create a complete date range for asset data interpolation
+    all_asset_dates = set()
+    
+    # Add forex dates
+    for pair, price_data in forex_data.items():
+        for price_point in price_data:
+            all_asset_dates.add(price_point['date'])
+    
+    # Add stock index dates
+    for symbol, index_data in stock_data.items():
+        for index_point in index_data:
+            all_asset_dates.add(index_point['date'])
+    
+    # Add volume dates
+    for asset_id, vol_data in volume_data.items():
+        for vol_point in vol_data:
+            all_asset_dates.add(vol_point['date'])
+    
+    # Sort dates for interpolation
+    sorted_asset_dates = sorted(all_asset_dates)
+    
+    # Add forex data with interpolation for missing values
+    for pair, price_data in forex_data.items():
+        forex_prices_by_date = {point['date']: point['price'] for point in price_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in forex_prices_by_date:
+                    merged_data[date_key][f"{pair}_price"] = forex_prices_by_date[date_key]
+                else:
+                    # Interpolation logic for forex (same as before)
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_price = None
+                    closest_after_price = None
+                    
+                    for forex_date_str, price in forex_prices_by_date.items():
+                        try:
+                            forex_date = datetime.strptime(forex_date_str, '%Y-%m-%d')
+                            
+                            if forex_date <= target_date:
+                                if closest_before is None or forex_date > closest_before:
+                                    closest_before = forex_date
+                                    closest_before_price = price
+                            
+                            if forex_date >= target_date:
+                                if closest_after is None or forex_date < closest_after:
+                                    closest_after = forex_date
+                                    closest_after_price = price
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_price is not None and closest_after_price is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_price = closest_before_price + (closest_after_price - closest_before_price) * weight
+                            merged_data[date_key][f"{pair}_price"] = interpolated_price
+                        else:
+                            merged_data[date_key][f"{pair}_price"] = closest_before_price
+                    elif closest_before_price is not None:
+                        merged_data[date_key][f"{pair}_price"] = closest_before_price
+                    elif closest_after_price is not None:
+                        merged_data[date_key][f"{pair}_price"] = closest_after_price
+                        
+            except Exception as e:
+                print(f"Error processing forex data for {date_key}: {str(e)}")
+                continue
+        
+        # Add forex-only dates
+        for forex_date_str, price in forex_prices_by_date.items():
+            if forex_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(forex_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[forex_date_str] = {
+                        'date': display_date,
+                        f"{pair}_price": price
+                    }
+                except Exception as e:
+                    print(f"Error adding forex-only date {forex_date_str}: {str(e)}")
+                    continue
+    
+    # Add stock index data with interpolation
+    for symbol, index_data in stock_data.items():
+        stock_values_by_date = {point['date']: point['value'] for point in index_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in stock_values_by_date:
+                    merged_data[date_key][f"{symbol}_index"] = stock_values_by_date[date_key]
+                else:
+                    # Interpolation logic for stock indices (similar to forex)
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_value = None
+                    closest_after_value = None
+                    
+                    for stock_date_str, value in stock_values_by_date.items():
+                        try:
+                            stock_date = datetime.strptime(stock_date_str, '%Y-%m-%d')
+                            
+                            if stock_date <= target_date:
+                                if closest_before is None or stock_date > closest_before:
+                                    closest_before = stock_date
+                                    closest_before_value = value
+                            
+                            if stock_date >= target_date:
+                                if closest_after is None or stock_date < closest_after:
+                                    closest_after = stock_date
+                                    closest_after_value = value
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_value is not None and closest_after_value is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_value = closest_before_value + (closest_after_value - closest_before_value) * weight
+                            merged_data[date_key][f"{symbol}_index"] = interpolated_value
+                        else:
+                            merged_data[date_key][f"{symbol}_index"] = closest_before_value
+                    elif closest_before_value is not None:
+                        merged_data[date_key][f"{symbol}_index"] = closest_before_value
+                    elif closest_after_value is not None:
+                        merged_data[date_key][f"{symbol}_index"] = closest_after_value
+                        
+            except Exception as e:
+                print(f"Error processing stock index data for {date_key}: {str(e)}")
+                continue
+        
+        # Add stock-index-only dates
+        for stock_date_str, value in stock_values_by_date.items():
+            if stock_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(stock_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[stock_date_str] = {
+                        'date': display_date,
+                        f"{symbol}_index": value
+                    }
+                except Exception as e:
+                    print(f"Error adding stock-index-only date {stock_date_str}: {str(e)}")
+                    continue
+    
+    # Add volume data with interpolation
+    for asset_id, vol_data in volume_data.items():
+        volume_ratios_by_date = {point['date']: point['volume_ratio'] for point in vol_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in volume_ratios_by_date:
+                    merged_data[date_key][f"{asset_id}_volume_ratio"] = volume_ratios_by_date[date_key]
+                else:
+                    # Interpolation logic for volume ratios
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_ratio = None
+                    closest_after_ratio = None
+                    
+                    for vol_date_str, ratio in volume_ratios_by_date.items():
+                        try:
+                            vol_date = datetime.strptime(vol_date_str, '%Y-%m-%d')
+                            
+                            if vol_date <= target_date:
+                                if closest_before is None or vol_date > closest_before:
+                                    closest_before = vol_date
+                                    closest_before_ratio = ratio
+                            
+                            if vol_date >= target_date:
+                                if closest_after is None or vol_date < closest_after:
+                                    closest_after = vol_date
+                                    closest_after_ratio = ratio
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_ratio is not None and closest_after_ratio is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_ratio = closest_before_ratio + (closest_after_ratio - closest_before_ratio) * weight
+                            merged_data[date_key][f"{asset_id}_volume_ratio"] = interpolated_ratio
+                        else:
+                            merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_before_ratio
+                    elif closest_before_ratio is not None:
+                        merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_before_ratio
+                    elif closest_after_ratio is not None:
+                        merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_after_ratio
+                        
+            except Exception as e:
+                print(f"Error processing volume data for {date_key}: {str(e)}")
+                continue
+        
+        # Add volume-only dates
+        for vol_date_str, ratio in volume_ratios_by_date.items():
+            if vol_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(vol_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[vol_date_str] = {
+                        'date': display_date,
+                        f"{asset_id}_volume_ratio": ratio
+                    }
+                except Exception as e:
+                    print(f"Error adding volume-only date {vol_date_str}: {str(e)}")
+                    continue
+    
+    # Convert back to list format and sort by actual date
+    merged_list = []
+    sorted_dates = sorted(merged_data.keys(), key=lambda x: datetime.strptime(x, '%Y-%m-%d') if x.count('-') == 2 else datetime.now())
+    
+    for date_key in sorted_dates:
+        data_point = merged_data[date_key].copy()
+        merged_list.append(data_point)
+    
+    # Debug: Print sample of merged data
+    print(f"Merged data sample: {merged_list[:3] if merged_list else 'No data'}")
+    if volume_data:
+        print(f"Volume data sample: {list(volume_data.items())[0] if volume_data else 'No volume data'}")
+    
+    return merged_list
+
+@api_view(['POST'])
+def economic_strength_index(request):
+    """
+    Calculate and return Economic Strength Index for selected currencies
+    Now with forex, stock indices, and volume overlay capability
+    """
+    try:
+        data = json.loads(request.body)
+        currencies = data.get('currencies', ['USD'])
+        forex_pairs = data.get('forex_pairs', [])
+        stock_indices = data.get('stock_indices', [])
+        volume_assets = data.get('volume_assets', [])
+        date_range = data.get('date_range', '30d')
+        
+        print(f"Received request: currencies={currencies}, forex={forex_pairs}, stocks={stock_indices}, volume={volume_assets}, range={date_range}")
+        
+        # Calculate date range
+        range_days = {
+            '7d': 7,
+            '30d': 30,
+            '90d': 90,
+            '180d': 180,
+            '365d': 365
+        }
+        
+        days = range_days.get(date_range, 30)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        # Fetch economic events for selected currencies within date range
+        events = EconomicEvent.objects.filter(
+            currency__in=currencies,
+            date_time__gte=start_date,
+            date_time__lte=end_date,
+            actual__isnull=False,
+            forecast__isnull=False
+        ).exclude(
+            Q(actual='') | Q(forecast='')
+        ).order_by('date_time')
+        
+        # Group events by currency and date
+        currency_data = defaultdict(lambda: defaultdict(list))
+        
+        for event in events:
+            date_key = event.date_time.date().isoformat()
+            currency_data[event.currency][date_key].append(event)
+        
+        # Calculate daily ESI scores for each currency
+        chart_data_dict = defaultdict(dict)
+        
+        # Get all unique dates across all currencies for consistency
+        all_dates = set()
+        for curr_data in currency_data.values():
+            all_dates.update(curr_data.keys())
+        
+        # If no ESI dates, create a basic date range
+        if not all_dates:
+            current_date = start_date
+            while current_date <= end_date:
+                all_dates.add(current_date.strftime('%Y-%m-%d'))
+                current_date += timedelta(days=1)
+        
+        sorted_dates = sorted(all_dates)
+        
+        for currency in currencies:
+            daily_scores = []
+            dates = []
+            
+            for date_str in sorted_dates:
+                events_for_date = currency_data[currency].get(date_str, [])
+                
+                if events_for_date:
+                    # Calculate weighted ESI score for this date
+                    weighted_deviations = []
+                    
+                    for event in events_for_date:
+                        deviation = calculate_percentage_deviation(event.actual, event.forecast)
+                        weight = get_impact_weight(event.impact)
+                        weighted_deviations.append(deviation * weight)
+                    
+                    # Average weighted deviations for the day
+                    if weighted_deviations:
+                        daily_score = np.mean(weighted_deviations)
+                        daily_scores.append(daily_score)
+                        dates.append(date_str)
+                    else:
+                        daily_scores.append(None)
+                        dates.append(date_str)
+                else:
+                    daily_scores.append(None)
+                    dates.append(date_str)
+            
+            # Fill gaps with interpolation BEFORE smoothing and normalization
+            filled_scores = []
+            for i, score in enumerate(daily_scores):
+                if score is not None:
+                    filled_scores.append(score)
+                else:
+                    # Find nearest non-null values for interpolation
+                    before_idx = None
+                    after_idx = None
+                    before_score = None
+                    after_score = None
+                    
+                    # Look backwards for nearest score
+                    for j in range(i - 1, -1, -1):
+                        if daily_scores[j] is not None:
+                            before_idx = j
+                            before_score = daily_scores[j]
+                            break
+                    
+                    # Look forwards for nearest score
+                    for j in range(i + 1, len(daily_scores)):
+                        if daily_scores[j] is not None:
+                            after_idx = j
+                            after_score = daily_scores[j]
+                            break
+                    
+                    # Interpolate or use nearest value
+                    if before_score is not None and after_score is not None:
+                        distance_total = after_idx - before_idx
+                        distance_from_before = i - before_idx
+                        weight = distance_from_before / distance_total if distance_total > 0 else 0
+                        interpolated_score = before_score + (after_score - before_score) * weight
+                        filled_scores.append(interpolated_score)
+                    elif before_score is not None:
+                        filled_scores.append(before_score)
+                    elif after_score is not None:
+                        filled_scores.append(after_score)
+                    else:
+                        filled_scores.append(0)
+            
+            daily_scores = filled_scores
+            
+            # Apply smoothing (7-day moving average) for cleaner visualization
+            if len(daily_scores) > 7:
+                smoothed_scores = []
+                for i in range(len(daily_scores)):
+                    start_idx = max(0, i - 3)
+                    end_idx = min(len(daily_scores), i + 4)
+                    window_scores = daily_scores[start_idx:end_idx]
+                    smoothed_scores.append(np.mean(window_scores))
+                daily_scores = smoothed_scores
+            
+            # Store data for each currency with dates
+            for i, date_str in enumerate(dates):
+                if i < len(daily_scores):
+                    chart_data_dict[date_str][currency] = daily_scores[i]
+        
+        # Convert to chart format with proper date handling
+        chart_data = []
+        for date_str in sorted_dates:
+            point = {'date': datetime.strptime(date_str, '%Y-%m-%d').strftime('%m/%d')}
+            
+            # Add ESI scores for each currency
+            for currency in currencies:
+                if currency in chart_data_dict[date_str]:
+                    point[currency] = chart_data_dict[date_str][currency]
+                else:
+                    point[currency] = None
+            
+            chart_data.append(point)
+        
+        # Normalize ESI scores across all currencies to 0-100 scale
+        all_scores = []
+        for point in chart_data:
+            for currency in currencies:
+                if point.get(currency) is not None:
+                    all_scores.append(point[currency])
+        
+        if all_scores:
+            normalized_scores = normalize_esi_scores(all_scores)
+            score_idx = 0
+            
+            for point in chart_data:
+                for currency in currencies:
+                    if point.get(currency) is not None:
+                        point[currency] = normalized_scores[score_idx]
+                        score_idx += 1
+        
+        print(f"Generated {len(chart_data)} ESI data points")
+        
+        # Fetch forex data if requested
+        forex_data = {}
+        if forex_pairs:
+            forex_data = get_forex_data(forex_pairs, date_range)
+            print(f"Fetched forex data for {len(forex_pairs)} pairs")
+        
+        # Fetch stock indices data if requested
+        stock_data = {}
+        if stock_indices:
+            stock_data = get_stock_indices_data(stock_indices, date_range)
+            print(f"Fetched stock data for {len(stock_indices)} indices")
+        
+        # Fetch volume data if requested
+        volume_data = {}
+        if volume_assets:
+            volume_data = get_volume_data(volume_assets, date_range)
+            print(f"Fetched volume data for {len(volume_assets)} assets")
+        
+        # Merge ESI data with forex, stock indices, and volume data
+        if forex_data or stock_data or volume_data:
+            merged_data = merge_multi_asset_data(chart_data, forex_data, stock_data, volume_data)
+            print(f"Merged data contains {len(merged_data)} points")
+        else:
+            merged_data = chart_data
+        
+        # Calculate summary statistics
+        summary_stats = {}
+        for currency in currencies:
+            currency_scores = [point.get(currency) for point in merged_data if point.get(currency) is not None]
+            if currency_scores:
+                summary_stats[currency] = {
+                    'average': np.mean(currency_scores),
+                    'current': currency_scores[-1] if currency_scores else None,
+                    'trend': 'positive' if len(currency_scores) > 1 and currency_scores[-1] > currency_scores[0] else 'negative',
+                    'volatility': np.std(currency_scores)
+                }
+        
+        return Response({
+            'success': True,
+            'chart_data': merged_data,
+            'summary': summary_stats,
+            'metadata': {
+                'date_range': date_range,
+                'currencies': currencies,
+                'forex_pairs': forex_pairs,
+                'stock_indices': stock_indices,
+                'volume_assets': volume_assets,
+                'data_points': len(merged_data),
+                'events_processed': events.count()
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error in economic_strength_index: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return Response({
+            'error': str(e),
+            'success': False
+        }, status=500)
+        
+from django.shortcuts import render
+from django.core.paginator import Paginator
+from django.db.models import Q, Count, Avg, Max, Min
+
+logger = logging.getLogger(__name__)
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def snowai_research_logbook_api_entries(request):
+    """
+    GET: Retrieve ML model entries with filtering and pagination
+    POST: Create new ML model entry
+    """
+    try:
+        if request.method == 'GET':
+            return snowai_get_ml_entries(request)
+        elif request.method == 'POST':
+            return snowai_create_ml_entry(request)
+    except Exception as e:
+        logger.error(f"SnowAI Research Logbook API error: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+def snowai_get_ml_entries(request):
+    """Get ML entries with filtering and search"""
+    # Get query parameters
+    snowai_search_query = request.GET.get('search', '').strip()
+    snowai_model_type = request.GET.get('model_type', '')
+    snowai_status = request.GET.get('status', '')
+    snowai_market_type = request.GET.get('market_type', '')
+    snowai_tags_filter = request.GET.get('tags', '')
+    snowai_page = int(request.GET.get('page', 1))
+    snowai_per_page = int(request.GET.get('per_page', 12))
+    snowai_sort_by = request.GET.get('sort_by', '-snowai_created_at')
+    
+    # Build queryset
+    queryset = SnowAIMLModelLogEntry.objects.all()
+    
+    # Apply filters
+    if snowai_search_query:
+        queryset = queryset.filter(
+            Q(snowai_model_name__icontains=snowai_search_query) |
+            Q(snowai_description__icontains=snowai_search_query) |
+            Q(snowai_tags__icontains=snowai_search_query) |
+            Q(snowai_notes__icontains=snowai_search_query)
+        )
+    
+    if snowai_model_type:
+        queryset = queryset.filter(snowai_model_type=snowai_model_type)
+    
+    if snowai_status:
+        queryset = queryset.filter(snowai_status=snowai_status)
+    
+    if snowai_market_type:
+        queryset = queryset.filter(snowai_financial_market_type=snowai_market_type)
+    
+    if snowai_tags_filter:
+        for tag in snowai_tags_filter.split(','):
+            queryset = queryset.filter(snowai_tags__icontains=tag.strip())
+    
+    # Apply sorting
+    if snowai_sort_by in ['snowai_created_at', '-snowai_created_at', 'snowai_model_name', '-snowai_model_name', 
+                         'snowai_accuracy_score', '-snowai_accuracy_score', 'snowai_r2_score', '-snowai_r2_score']:
+        queryset = queryset.order_by(snowai_sort_by)
+    
+    # Paginate
+    paginator = Paginator(queryset, snowai_per_page)
+    snowai_page_obj = paginator.get_page(snowai_page)
+    
+    # Serialize data
+    snowai_entries = []
+    for entry in snowai_page_obj:
+        snowai_entry_data = {
+            'id': entry.id,
+            'snowai_model_name': entry.snowai_model_name,
+            'snowai_model_type': entry.snowai_model_type,
+            'snowai_tags': entry.snowai_tags_list,
+            'snowai_description': entry.snowai_description,
+            'snowai_created_at': entry.snowai_created_at.isoformat(),
+            'snowai_updated_at': entry.snowai_updated_at.isoformat(),
+            'snowai_status': entry.snowai_status,
+            'snowai_financial_market_type': entry.snowai_financial_market_type,
+            'snowai_dataset_name': entry.snowai_dataset_name,
+            'snowai_framework_used': entry.snowai_framework_used,
+            
+            # Metrics
+            'snowai_accuracy_score': entry.snowai_accuracy_score,
+            'snowai_precision_score': entry.snowai_precision_score,
+            'snowai_recall_score': entry.snowai_recall_score,
+            'snowai_f1_score': entry.snowai_f1_score,
+            'snowai_mae_score': entry.snowai_mae_score,
+            'snowai_mse_score': entry.snowai_mse_score,
+            'snowai_rmse_score': entry.snowai_rmse_score,
+            'snowai_r2_score': entry.snowai_r2_score,
+            'snowai_auc_score': entry.snowai_auc_score,
+            
+            # Financial metrics
+            'snowai_profit_loss': entry.snowai_profit_loss,
+            'snowai_sharpe_ratio': entry.snowai_sharpe_ratio,
+            'snowai_max_drawdown': entry.snowai_max_drawdown,
+            'snowai_win_rate': entry.snowai_win_rate,
+            'snowai_roi_percentage': entry.snowai_roi_percentage,
+            
+            # Training info
+            'snowai_training_duration': entry.snowai_training_duration,
+            'snowai_epochs_trained': entry.snowai_epochs_trained,
+            
+            # Primary metric for display
+            'snowai_primary_metric': entry.snowai_get_primary_metric(),
+        }
+        snowai_entries.append(snowai_entry_data)
+    
+    return JsonResponse({
+        'entries': snowai_entries,
+        'pagination': {
+            'current_page': snowai_page_obj.number,
+            'total_pages': paginator.num_pages,
+            'total_entries': paginator.count,
+            'has_next': snowai_page_obj.has_next(),
+            'has_previous': snowai_page_obj.has_previous(),
+        }
+    })
+
+def snowai_create_ml_entry(request):
+    """Create new ML model entry"""
+    try:
+        snowai_data = json.loads(request.body)
+        
+        # Create new entry
+        snowai_entry = SnowAIMLModelLogEntry.objects.create(
+            snowai_model_name=snowai_data.get('snowai_model_name', ''),
+            snowai_model_type=snowai_data.get('snowai_model_type', 'other'),
+            snowai_tags=', '.join(snowai_data.get('snowai_tags', [])) if snowai_data.get('snowai_tags') else '',
+            snowai_description=snowai_data.get('snowai_description', ''),
+            snowai_code_used=snowai_data.get('snowai_code_used', ''),
+            snowai_colab_notebook_url=snowai_data.get('snowai_colab_notebook_url', ''),
+            snowai_framework_used=snowai_data.get('snowai_framework_used', ''),
+            
+            # Dataset info
+            snowai_dataset_name=snowai_data.get('snowai_dataset_name', ''),
+            snowai_dataset_description=snowai_data.get('snowai_dataset_description', ''),
+            snowai_dataset_size=snowai_data.get('snowai_dataset_size'),
+            snowai_dataset_features=snowai_data.get('snowai_dataset_features'),
+            snowai_dataset_source=snowai_data.get('snowai_dataset_source', ''),
+            snowai_financial_market_type=snowai_data.get('snowai_financial_market_type', ''),
+            
+            # Metrics
+            snowai_accuracy_score=snowai_data.get('snowai_accuracy_score'),
+            snowai_precision_score=snowai_data.get('snowai_precision_score'),
+            snowai_recall_score=snowai_data.get('snowai_recall_score'),
+            snowai_f1_score=snowai_data.get('snowai_f1_score'),
+            snowai_mae_score=snowai_data.get('snowai_mae_score'),
+            snowai_mse_score=snowai_data.get('snowai_mse_score'),
+            snowai_rmse_score=snowai_data.get('snowai_rmse_score'),
+            snowai_r2_score=snowai_data.get('snowai_r2_score'),
+            snowai_auc_score=snowai_data.get('snowai_auc_score'),
+            snowai_custom_metrics=snowai_data.get('snowai_custom_metrics'),
+            
+            # Training info
+            snowai_training_duration=snowai_data.get('snowai_training_duration'),
+            snowai_epochs_trained=snowai_data.get('snowai_epochs_trained'),
+            snowai_batch_size=snowai_data.get('snowai_batch_size'),
+            snowai_learning_rate=snowai_data.get('snowai_learning_rate'),
+            snowai_optimizer_used=snowai_data.get('snowai_optimizer_used', ''),
+            
+            # Financial metrics
+            snowai_profit_loss=snowai_data.get('snowai_profit_loss'),
+            snowai_sharpe_ratio=snowai_data.get('snowai_sharpe_ratio'),
+            snowai_max_drawdown=snowai_data.get('snowai_max_drawdown'),
+            snowai_win_rate=snowai_data.get('snowai_win_rate'),
+            snowai_roi_percentage=snowai_data.get('snowai_roi_percentage'),
+            
+            # Metadata
+            snowai_status=snowai_data.get('snowai_status', 'experimental'),
+            snowai_notes=snowai_data.get('snowai_notes', ''),
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'id': snowai_entry.id,
+            'message': 'ML model entry created successfully'
+        }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error creating ML entry: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT", "DELETE"])
+def snowai_research_logbook_api_entry_detail(request, entry_id):
+    """
+    GET: Retrieve single ML model entry
+    PUT: Update ML model entry
+    DELETE: Delete ML model entry
+    """
+    try:
+        snowai_entry = SnowAIMLModelLogEntry.objects.get(id=entry_id)
+        
+        if request.method == 'GET':
+            snowai_entry_data = {
+                'id': snowai_entry.id,
+                'snowai_model_name': snowai_entry.snowai_model_name,
+                'snowai_model_type': snowai_entry.snowai_model_type,
+                'snowai_tags': snowai_entry.snowai_tags_list,
+                'snowai_description': snowai_entry.snowai_description,
+                'snowai_code_used': snowai_entry.snowai_code_used,
+                'snowai_colab_notebook_url': snowai_entry.snowai_colab_notebook_url,
+                'snowai_framework_used': snowai_entry.snowai_framework_used,
+                'snowai_created_at': snowai_entry.snowai_created_at.isoformat(),
+                'snowai_updated_at': snowai_entry.snowai_updated_at.isoformat(),
+                'snowai_status': snowai_entry.snowai_status,
+                'snowai_notes': snowai_entry.snowai_notes,
+                
+                # Dataset info
+                'snowai_dataset_name': snowai_entry.snowai_dataset_name,
+                'snowai_dataset_description': snowai_entry.snowai_dataset_description,
+                'snowai_dataset_size': snowai_entry.snowai_dataset_size,
+                'snowai_dataset_features': snowai_entry.snowai_dataset_features,
+                'snowai_dataset_source': snowai_entry.snowai_dataset_source,
+                'snowai_financial_market_type': snowai_entry.snowai_financial_market_type,
+                
+                # All metrics
+                'snowai_accuracy_score': snowai_entry.snowai_accuracy_score,
+                'snowai_precision_score': snowai_entry.snowai_precision_score,
+                'snowai_recall_score': snowai_entry.snowai_recall_score,
+                'snowai_f1_score': snowai_entry.snowai_f1_score,
+                'snowai_mae_score': snowai_entry.snowai_mae_score,
+                'snowai_mse_score': snowai_entry.snowai_mse_score,
+                'snowai_rmse_score': snowai_entry.snowai_rmse_score,
+                'snowai_r2_score': snowai_entry.snowai_r2_score,
+                'snowai_auc_score': snowai_entry.snowai_auc_score,
+                'snowai_custom_metrics': snowai_entry.snowai_custom_metrics,
+                
+                # Training info
+                'snowai_training_duration': snowai_entry.snowai_training_duration,
+                'snowai_epochs_trained': snowai_entry.snowai_epochs_trained,
+                'snowai_batch_size': snowai_entry.snowai_batch_size,
+                'snowai_learning_rate': snowai_entry.snowai_learning_rate,
+                'snowai_optimizer_used': snowai_entry.snowai_optimizer_used,
+                
+                # Financial metrics
+                'snowai_profit_loss': snowai_entry.snowai_profit_loss,
+                'snowai_sharpe_ratio': snowai_entry.snowai_sharpe_ratio,
+                'snowai_max_drawdown': snowai_entry.snowai_max_drawdown,
+                'snowai_win_rate': snowai_entry.snowai_win_rate,
+                'snowai_roi_percentage': snowai_entry.snowai_roi_percentage,
+            }
+            return JsonResponse(snowai_entry_data)
+            
+        elif request.method == 'PUT':
+            try:
+                snowai_data = json.loads(request.body)
+                
+                # Update basic model information
+                if 'snowai_model_name' in snowai_data:
+                    snowai_entry.snowai_model_name = snowai_data['snowai_model_name']
+                if 'snowai_model_type' in snowai_data:
+                    snowai_entry.snowai_model_type = snowai_data['snowai_model_type']
+                if 'snowai_description' in snowai_data:
+                    snowai_entry.snowai_description = snowai_data['snowai_description']
+                if 'snowai_status' in snowai_data:
+                    snowai_entry.snowai_status = snowai_data['snowai_status']
+                if 'snowai_notes' in snowai_data:
+                    snowai_entry.snowai_notes = snowai_data['snowai_notes']
+                
+                # Update tags
+                if 'snowai_tags' in snowai_data:
+                    if isinstance(snowai_data['snowai_tags'], list):
+                        snowai_entry.snowai_tags = ', '.join(snowai_data['snowai_tags'])
+                    else:
+                        snowai_entry.snowai_tags = snowai_data['snowai_tags']
+                
+                # Update code and implementation
+                if 'snowai_code_used' in snowai_data:
+                    snowai_entry.snowai_code_used = snowai_data['snowai_code_used']
+                if 'snowai_colab_notebook_url' in snowai_data:
+                    snowai_entry.snowai_colab_notebook_url = snowai_data['snowai_colab_notebook_url']
+                if 'snowai_framework_used' in snowai_data:
+                    snowai_entry.snowai_framework_used = snowai_data['snowai_framework_used']
+                
+                # Update dataset information
+                if 'snowai_dataset_name' in snowai_data:
+                    snowai_entry.snowai_dataset_name = snowai_data['snowai_dataset_name']
+                if 'snowai_dataset_description' in snowai_data:
+                    snowai_entry.snowai_dataset_description = snowai_data['snowai_dataset_description']
+                if 'snowai_dataset_size' in snowai_data:
+                    snowai_entry.snowai_dataset_size = snowai_data['snowai_dataset_size']
+                if 'snowai_dataset_features' in snowai_data:
+                    snowai_entry.snowai_dataset_features = snowai_data['snowai_dataset_features']
+                if 'snowai_dataset_source' in snowai_data:
+                    snowai_entry.snowai_dataset_source = snowai_data['snowai_dataset_source']
+                if 'snowai_financial_market_type' in snowai_data:
+                    snowai_entry.snowai_financial_market_type = snowai_data['snowai_financial_market_type']
+                
+                # Update performance metrics
+                if 'snowai_accuracy_score' in snowai_data:
+                    snowai_entry.snowai_accuracy_score = snowai_data['snowai_accuracy_score'] if snowai_data['snowai_accuracy_score'] else None
+                if 'snowai_precision_score' in snowai_data:
+                    snowai_entry.snowai_precision_score = snowai_data['snowai_precision_score'] if snowai_data['snowai_precision_score'] else None
+                if 'snowai_recall_score' in snowai_data:
+                    snowai_entry.snowai_recall_score = snowai_data['snowai_recall_score'] if snowai_data['snowai_recall_score'] else None
+                if 'snowai_f1_score' in snowai_data:
+                    snowai_entry.snowai_f1_score = snowai_data['snowai_f1_score'] if snowai_data['snowai_f1_score'] else None
+                if 'snowai_mae_score' in snowai_data:
+                    snowai_entry.snowai_mae_score = snowai_data['snowai_mae_score'] if snowai_data['snowai_mae_score'] else None
+                if 'snowai_mse_score' in snowai_data:
+                    snowai_entry.snowai_mse_score = snowai_data['snowai_mse_score'] if snowai_data['snowai_mse_score'] else None
+                if 'snowai_rmse_score' in snowai_data:
+                    snowai_entry.snowai_rmse_score = snowai_data['snowai_rmse_score'] if snowai_data['snowai_rmse_score'] else None
+                if 'snowai_r2_score' in snowai_data:
+                    snowai_entry.snowai_r2_score = snowai_data['snowai_r2_score'] if snowai_data['snowai_r2_score'] else None
+                if 'snowai_auc_score' in snowai_data:
+                    snowai_entry.snowai_auc_score = snowai_data['snowai_auc_score'] if snowai_data['snowai_auc_score'] else None
+                if 'snowai_custom_metrics' in snowai_data:
+                    snowai_entry.snowai_custom_metrics = snowai_data['snowai_custom_metrics']
+                
+                # Update training information
+                if 'snowai_training_duration' in snowai_data:
+                    snowai_entry.snowai_training_duration = snowai_data['snowai_training_duration'] if snowai_data['snowai_training_duration'] else None
+                if 'snowai_epochs_trained' in snowai_data:
+                    snowai_entry.snowai_epochs_trained = snowai_data['snowai_epochs_trained'] if snowai_data['snowai_epochs_trained'] else None
+                if 'snowai_batch_size' in snowai_data:
+                    snowai_entry.snowai_batch_size = snowai_data['snowai_batch_size'] if snowai_data['snowai_batch_size'] else None
+                if 'snowai_learning_rate' in snowai_data:
+                    snowai_entry.snowai_learning_rate = snowai_data['snowai_learning_rate'] if snowai_data['snowai_learning_rate'] else None
+                if 'snowai_optimizer_used' in snowai_data:
+                    snowai_entry.snowai_optimizer_used = snowai_data['snowai_optimizer_used']
+                
+                # Update financial metrics
+                if 'snowai_profit_loss' in snowai_data:
+                    snowai_entry.snowai_profit_loss = snowai_data['snowai_profit_loss'] if snowai_data['snowai_profit_loss'] else None
+                if 'snowai_sharpe_ratio' in snowai_data:
+                    snowai_entry.snowai_sharpe_ratio = snowai_data['snowai_sharpe_ratio'] if snowai_data['snowai_sharpe_ratio'] else None
+                if 'snowai_max_drawdown' in snowai_data:
+                    snowai_entry.snowai_max_drawdown = snowai_data['snowai_max_drawdown'] if snowai_data['snowai_max_drawdown'] else None
+                if 'snowai_win_rate' in snowai_data:
+                    snowai_entry.snowai_win_rate = snowai_data['snowai_win_rate'] if snowai_data['snowai_win_rate'] else None
+                if 'snowai_roi_percentage' in snowai_data:
+                    snowai_entry.snowai_roi_percentage = snowai_data['snowai_roi_percentage'] if snowai_data['snowai_roi_percentage'] else None
+                
+                # Save the updated entry
+                snowai_entry.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': 'ML model entry updated successfully',
+                    'id': snowai_entry.id
+                })
+                
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+            except ValueError as e:
+                return JsonResponse({'error': f'Invalid data format: {str(e)}'}, status=400)
+            
+        elif request.method == 'DELETE':
+            snowai_entry.delete()
+            return JsonResponse({'success': True, 'message': 'Entry deleted successfully'})
+            
+    except SnowAIMLModelLogEntry.DoesNotExist:
+        return JsonResponse({'error': 'Entry not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error in entry detail API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+        
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_research_logbook_api_analytics(request):
+    """Get analytics and statistics for the research logbook"""
+    try:
+        # Basic counts
+        snowai_total_entries = SnowAIMLModelLogEntry.objects.count()
+        snowai_model_type_counts = SnowAIMLModelLogEntry.objects.values('snowai_model_type').annotate(count=Count('id'))
+        snowai_status_counts = SnowAIMLModelLogEntry.objects.values('snowai_status').annotate(count=Count('id'))
+        snowai_market_type_counts = SnowAIMLModelLogEntry.objects.values('snowai_financial_market_type').annotate(count=Count('id'))
+        
+        # Performance statistics
+        snowai_accuracy_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_accuracy_score__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_accuracy_score'),
+            max=Max('snowai_accuracy_score'),
+            min=Min('snowai_accuracy_score'),
+            count=Count('snowai_accuracy_score')
+        )
+        
+        snowai_r2_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_r2_score__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_r2_score'),
+            max=Max('snowai_r2_score'),
+            min=Min('snowai_r2_score'),
+            count=Count('snowai_r2_score')
+        )
+        
+        # Financial performance stats
+        snowai_roi_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_roi_percentage__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_roi_percentage'),
+            max=Max('snowai_roi_percentage'),
+            min=Min('snowai_roi_percentage'),
+            count=Count('snowai_roi_percentage')
+        )
+        
+        # Recent activity
+        snowai_recent_entries = SnowAIMLModelLogEntry.objects.order_by('-snowai_created_at')[:5]
+        snowai_recent_data = []
+        for entry in snowai_recent_entries:
+            snowai_recent_data.append({
+                'id': entry.id,
+                'snowai_model_name': entry.snowai_model_name,
+                'snowai_model_type': entry.snowai_model_type,
+                'snowai_created_at': entry.snowai_created_at.isoformat(),
+                'snowai_primary_metric': entry.snowai_get_primary_metric()
+            })
+        
+        return JsonResponse({
+            'snowai_total_entries': snowai_total_entries,
+            'snowai_model_type_distribution': list(snowai_model_type_counts),
+            'snowai_status_distribution': list(snowai_status_counts),
+            'snowai_market_type_distribution': list(snowai_market_type_counts),
+            'snowai_accuracy_statistics': snowai_accuracy_stats,
+            'snowai_r2_statistics': snowai_r2_stats,
+            'snowai_roi_statistics': snowai_roi_stats,
+            'snowai_recent_entries': snowai_recent_data,
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in analytics API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+@csrf_exempt  
+@require_http_methods(["GET"])
+def snowai_research_logbook_api_tags(request):
+    """Get all unique tags used in the system"""
+    try:
+        snowai_all_entries = SnowAIMLModelLogEntry.objects.exclude(snowai_tags='').exclude(snowai_tags__isnull=True)
+        snowai_all_tags = set()
+        
+        for entry in snowai_all_entries:
+            snowai_all_tags.update(entry.snowai_tags_list)
+        
+        return JsonResponse({'snowai_tags': sorted(list(snowai_all_tags))})
+        
+    except Exception as e:
+        logger.error(f"Error in tags API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+                
+
+# Fixed Django Views - Remove the email override
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def check_fingerprint_status(request):
+    """Check if fingerprint is registered in backend"""
+    try:
+        # Get email from request, fallback to your actual email
+        email = request.GET.get('email', 'butterrobot83@gmail.com')
+        # Remove this line that was overriding the email:
+        # email = 'butterrobot83@gmail'
+        
+        domain = request.GET.get('domain', '')
+        
+        fingerprint_status, created = FingerprintStatus.objects.get_or_create(
+            user_email=email,
+            defaults={'is_registered': False, 'domain': domain}
+        )
+        
+        # Add debugging info
+        print(f"Checking fingerprint status for: {email}, Domain: {domain}, Registered: {fingerprint_status.is_registered}")
+        
+        return JsonResponse({
+            'is_registered': fingerprint_status.is_registered,
+            'domain': fingerprint_status.domain,
+            'email_used': email,  # Add this for debugging
+            'message': 'Fingerprint status retrieved successfully'
+        })
+    except Exception as e:
+        print(f"Error checking fingerprint status: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def register_fingerprint_backend(request):
+    """Register fingerprint in backend after successful local registration"""
+    try:
+        data = json.loads(request.body)
+        # Get email from request data, fallback to your actual email
+        email = data.get('email', 'butterrobot83@gmail.com')
+        # Remove this line that was overriding the email:
+        # email = 'butterrobot83@gmail'
+        
+        domain = data.get('domain', '')
+        
+        fingerprint_status, created = FingerprintStatus.objects.get_or_create(
+            user_email=email,
+            defaults={'is_registered': True, 'domain': domain}
+        )
+        
+        if not created:
+            fingerprint_status.is_registered = True
+            fingerprint_status.domain = domain
+            fingerprint_status.save()
+        
+        print(f"Fingerprint registered for: {email}, Domain: {domain}, Created: {created}")
+        
+        return JsonResponse({
+            'success': True,
+            'is_registered': True,
+            'email_used': email,  # Add this for debugging
+            'message': 'Fingerprint registered successfully in backend'
+        })
+    except Exception as e:
+        print(f"Error registering fingerprint: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def reset_fingerprint_backend(request):
+    """Reset fingerprint registration in backend"""
+    try:
+        data = json.loads(request.body)
+        # Get email from request data, fallback to your actual email
+        email = data.get('email', 'butterrobot83@gmail.com')
+        # Remove this line that was overriding the email:
+        # email = 'butterrobot83@gmail'
+        
+        try:
+            fingerprint_status = FingerprintStatus.objects.get(user_email=email)
+            fingerprint_status.is_registered = False
+            fingerprint_status.domain = ''
+            fingerprint_status.save()
+            
+            print(f"Fingerprint reset for: {email}")
+            
+            return JsonResponse({
+                'success': True,
+                'is_registered': False,
+                'message': 'Fingerprint registration reset successfully'
+            })
+        except FingerprintStatus.DoesNotExist:
+            print(f"No fingerprint status found for: {email}")
+            return JsonResponse({'error': f'Fingerprint status not found for {email}'}, status=404)
+            
+    except Exception as e:
+        print(f"Error resetting fingerprint: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+# Add this new endpoint for debugging
+@csrf_exempt
+@require_http_methods(["GET"])
+def debug_fingerprint_status(request):
+    """Debug endpoint to see all fingerprint statuses"""
+    try:
+        all_statuses = FingerprintStatus.objects.all().values()
+        return JsonResponse({
+            'all_statuses': list(all_statuses),
+            'count': len(all_statuses)
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_trader_history_gpt_summary_endpoint(request):
+    try:
+        # Get news data for major assets
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
+        news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        
+        # Upcoming events
+        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:10]
+        
+        # Create comprehensive prompt
+        prompt = f"""
+        Analyze this comprehensive macro economic data and provide a detailed market analysis:
+
+        ECONOMIC EVENTS ANALYSIS (Last 30 Days):
+        - Total Economic Events: {total_events}
+        - High Impact Events: {high_impact_events}
+        - Medium Impact Events: {medium_impact_events}  
+        - Low Impact Events: {low_impact_events}
+        - Most Active Currency: {most_active_currency}
+        
+        RECENT HIGH IMPACT EVENTS:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d')})" for event in recent_events.filter(impact='high')[:10]])}
+        
+        UPCOMING EVENTS PREVIEW:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d %H:%M')})" for event in upcoming_events])}
+        
+        NEWS THEMES FROM MAJOR ASSETS:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:10]])}
+
+        Please provide:
+        1. Comprehensive macro economic assessment
+        2. Key market themes and trends
+        3. Currency strength analysis
+        4. Risk assessment for upcoming events
+        5. Trading opportunities and recommendations
+        6. Market sentiment analysis
+        7. Geopolitical impact assessment
+        8. Central bank policy implications
+
+        Format as a professional macro economic briefing with actionable market insights.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAIMacroGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_economic_events': total_events,
+                'high_impact_events_count': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'key_market_themes': ', '.join([item['title'][:50] for item in news_data.get('message', [])[:5]]),
+                'upcoming_events_preview': ', '.join([f"{event.currency}: {event.event_name}" for event in upcoming_events[:5]]),
+                'market_sentiment': 'Mixed' if high_impact_events > 5 else 'Stable',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_economic_events = total_events
+            summary_obj.high_impact_events_count = high_impact_events
+            summary_obj.most_active_currency = most_active_currency
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_events': total_events,
+                'high_impact_events': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'upcoming_events': len(upcoming_events),
+                'news_items': len(news_data.get('message', []))
+            }
+        })
+        
+    except Exception as e:
+        print(f'error occured in Trader History GPT Endpoint: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_macro_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent macro context
+        recent_events = EconomicEvent.objects.filter(date_time__gte=datetime.now() - timedelta(days=7))[:20]
+        
+        context_prompt = f"""
+        You are MacroGPT, an AI specialized in macro economic analysis, market trends, and economic event impact assessment.
+        
+        Recent economic context (Last 7 days):
+        - Total events: {recent_events.count()}
+        - High impact events: {recent_events.filter(impact='high').count()}
+        
+        Recent events:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.impact} impact)" for event in recent_events[:5]])}
+        
+        User question: {user_message}
+        
+        Provide expert macro economic analysis and insights based on current market conditions and economic data.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='MacroGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        print(f'error in MacroGPT chat function: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_idea_gpt_summary_endpoint(request):
+    try:
+        all_ideas = IdeaModel.objects.all()
+        trade_ideas = TradeIdea.objects.all()
+        
+        if not all_ideas.exists() and not trade_ideas.exists():
+            return JsonResponse({
+                'status': 'No ideas available',
+                'summary': 'No ideas found in the system to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate metrics for regular ideas
+        total_ideas = all_ideas.count()
+        pending_ideas = all_ideas.filter(idea_tracker='Pending').count()
+        in_progress_ideas = all_ideas.filter(idea_tracker='In Progress').count()
+        completed_ideas = all_ideas.filter(idea_tracker='Completed').count()
+        
+        completion_rate = (completed_ideas / total_ideas * 100) if total_ideas > 0 else 0
+        
+        # Category analysis
+        categories = all_ideas.values('idea_category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['idea_category'] if categories else 'N/A'
+        
+        # Trade ideas metrics
+        total_trade_ideas = trade_ideas.count()
+        pending_trade_ideas = trade_ideas.filter(trade_status='pending').count()
+        executed_trade_ideas = trade_ideas.filter(trade_status='executed').count()
+        
+        # Get recent ideas for context
+        recent_ideas = all_ideas.order_by('-created_at')[:10]
+        recent_trade_ideas = trade_ideas.order_by('-date_created')[:5]
+        
+        oldest_pending = all_ideas.filter(idea_tracker='Pending').order_by('created_at').first()
+        newest_idea = all_ideas.order_by('-created_at').first()
+        
+        prompt = f"""
+        Analyze this comprehensive idea management data and provide detailed insights:
+
+        GENERAL IDEAS ANALYSIS:
+        - Total Ideas: {total_ideas}
+        - Pending Ideas: {pending_ideas}
+        - In Progress Ideas: {in_progress_ideas}
+        - Completed Ideas: {completed_ideas}
+        - Completion Rate: {completion_rate:.2f}%
+        - Most Common Category: {most_common_category}
+
+        TRADE IDEAS ANALYSIS:
+        - Total Trade Ideas: {total_trade_ideas}
+        - Pending Trade Ideas: {pending_trade_ideas}
+        - Executed Trade Ideas: {executed_trade_ideas}
+
+        RECENT IDEAS SAMPLE:
+        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:5]])}
+
+        RECENT TRADE IDEAS:
+        {chr(10).join([f"- [{trade.trade_status}] {trade.asset}: {trade.heading}" for trade in recent_trade_ideas])}
+
+        Please provide:
+        1. Comprehensive idea pipeline analysis
+        2. Productivity and execution assessment
+        3. Category-wise performance breakdown
+        4. Bottleneck identification
+        5. Recommendations for better idea management
+        6. Trading idea conversion analysis
+        7. Strategic prioritization suggestions
+        8. Innovation and creativity assessment
+
+        Format as a professional idea management report with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIIdeaGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_ideas': total_ideas,
+                'pending_ideas': pending_ideas,
+                'in_progress_ideas': in_progress_ideas,
+                'completed_ideas': completed_ideas,
+                'most_common_category': most_common_category,
+                'completion_rate': completion_rate,
+                'oldest_pending_idea': oldest_pending.idea_text[:200] if oldest_pending else 'N/A',
+                'newest_idea': newest_idea.idea_text[:200] if newest_idea else 'N/A',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_ideas = total_ideas
+            summary_obj.pending_ideas = pending_ideas
+            summary_obj.in_progress_ideas = in_progress_ideas
+            summary_obj.completed_ideas = completed_ideas
+            summary_obj.completion_rate = completion_rate
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_ideas': total_ideas,
+                'completion_rate': f"{completion_rate:.2f}%",
+                'most_common_category': most_common_category,
+                'pending_ideas': pending_ideas,
+                'trade_ideas': total_trade_ideas
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_idea_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_ideas = IdeaModel.objects.order_by('-created_at')[:10]
+        
+        context_prompt = f"""
+        You are IdeaGPT, an AI specialized in idea management, creativity enhancement, and innovation strategy.
+        
+        Recent ideas context:
+        - Total ideas in system: {IdeaModel.objects.count()}
+        - Recent ideas: {recent_ideas.count()}
+        
+        Sample recent ideas:
+        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:3]])}
+        
+        User question: {user_message}
+        
+        Provide creative and strategic insights for idea management, development, and execution.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='IdeaGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_backtesting_gpt_summary_endpoint(request):
+    try:
+        all_backtests = BacktestModels.objects.all()
+        all_results = BacktestResult.objects.all()
+        
+        if not all_backtests.exists():
+            return JsonResponse({
+                'status': 'No backtesting data available',
+                'summary': 'No backtesting history found to analyze.',
+                'metrics': {}
+            })
+        
+        total_backtests = all_backtests.count()
+        successful_backtests = all_backtests.filter(model_backtested=True).count()
+        
+        # Results analysis
+        if all_results.exists():
+            avg_sharpe = all_results.aggregate(Avg('sharpe_ratio'))['sharpe_ratio__avg'] or 0
+            avg_annual_return = all_results.aggregate(Avg('annual_return'))['annual_return__avg'] or 0
+            avg_max_drawdown = all_results.aggregate(Avg('max_drawdown'))['max_drawdown__avg'] or 0
+            best_sharpe = all_results.aggregate(Max('sharpe_ratio'))['sharpe_ratio__max'] or 0
+            worst_sharpe = all_results.aggregate(Min('sharpe_ratio'))['sharpe_ratio__min'] or 0
+            
+            best_result = all_results.filter(sharpe_ratio=best_sharpe).first()
+            worst_result = all_results.filter(sharpe_ratio=worst_sharpe).first()
+        else:
+            avg_sharpe = avg_annual_return = avg_max_drawdown = 0
+            best_result = worst_result = None
+        
+        # Dataset analysis
+        datasets = all_backtests.values('chosen_dataset').annotate(count=Count('id')).order_by('-count')
+        most_used_dataset = datasets.first()['chosen_dataset'] if datasets else 'N/A'
+        
+        # Recent backtests
+        recent_backtests = all_backtests.order_by('-id')[:5]
+        
+        prompt = f"""
+        Analyze this comprehensive backtesting performance data:
+
+        BACKTESTING OVERVIEW:
+        - Total Backtests: {total_backtests}
+        - Successful Backtests: {successful_backtests}
+        - Success Rate: {(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%
+        - Most Used Dataset: {most_used_dataset}
+
+        PERFORMANCE METRICS:
+        - Average Sharpe Ratio: {avg_sharpe:.3f}
+        - Average Annual Return: {avg_annual_return:.2f}%
+        - Average Max Drawdown: {avg_max_drawdown:.2f}%
+        - Best Sharpe Ratio: {best_sharpe:.3f}
+        - Worst Sharpe Ratio: {worst_sharpe:.3f}
+
+        RECENT BACKTESTS:
+        {chr(10).join([f"- Dataset: {bt.chosen_dataset} | Period: {bt.dataset_start} to {bt.dataset_end} | Capital: ${bt.initial_capital:,.2f}" for bt in recent_backtests])}
+
+        BEST PERFORMING STRATEGY:
+        {f"Sharpe: {best_result.sharpe_ratio:.3f} | Annual Return: {best_result.annual_return:.2f}% | Drawdown: {best_result.max_drawdown:.2f}%" if best_result else "No results available"}
+
+        WORST PERFORMING STRATEGY:
+        {f"Sharpe: {worst_result.sharpe_ratio:.3f} | Annual Return: {worst_result.annual_return:.2f}% | Drawdown: {worst_result.max_drawdown:.2f}%" if worst_result else "No results available"}
+
+        Please provide:
+        1. Comprehensive backtesting performance assessment
+        2. Strategy effectiveness analysis
+        3. Risk-adjusted returns evaluation
+        4. Dataset utilization insights
+        5. Performance consistency analysis
+        6. Recommendations for strategy improvement
+        7. Risk management effectiveness
+        8. Future backtesting suggestions
+
+        Format as a professional quantitative analysis report.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIBacktestingGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_backtests': total_backtests,
+                'successful_backtests': successful_backtests,
+                'average_sharpe_ratio': avg_sharpe,
+                'average_annual_return': avg_annual_return,
+                'average_max_drawdown': avg_max_drawdown,
+                'best_performing_strategy': f"Sharpe: {best_sharpe:.3f}" if best_result else 'N/A',
+                'worst_performing_strategy': f"Sharpe: {worst_sharpe:.3f}" if worst_result else 'N/A',
+                'most_used_dataset': most_used_dataset,
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_backtests = total_backtests
+            summary_obj.successful_backtests = successful_backtests
+            summary_obj.average_sharpe_ratio = avg_sharpe
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_backtests': total_backtests,
+                'success_rate': f"{(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%",
+                'avg_sharpe_ratio': f"{avg_sharpe:.3f}",
+                'avg_annual_return': f"{avg_annual_return:.2f}%",
+                'most_used_dataset': most_used_dataset
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_backtesting_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_results = BacktestResult.objects.order_by('-created_at')[:5]
+        
+        context_prompt = f"""
+        You are BacktestingGPT, an AI specialized in quantitative strategy analysis, backtesting methodology, and trading system optimization.
+        
+        Recent backtesting context:
+        - Total backtests: {BacktestModels.objects.count()}
+        - Total results: {BacktestResult.objects.count()}
+        
+        Recent performance:
+        {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
+        
+        User question: {user_message}
+        
+        Provide expert quantitative analysis and backtesting insights based on the available strategy performance data.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='BacktestingGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_paper_gpt_summary_endpoint(request):
+    try:
+        all_papers = PaperGPT.objects.all()
+        
+        if not all_papers.exists():
+            return JsonResponse({
+                'status': 'No research papers available',
+                'summary': 'No research papers found in the system to analyze.',
+                'metrics': {}
+            })
+        
+        total_papers = all_papers.count()
+        total_file_size = sum([paper.file_size for paper in all_papers]) / (1024 * 1024)  # Convert to MB
+        
+        # Category analysis
+        categories = all_papers.exclude(category__isnull=True).exclude(category='').values('category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['category'] if categories else 'Uncategorized'
+        
+        # Length analysis (approximate based on extracted text)
+        avg_length = all_papers.aggregate(Avg('extracted_text'))
+        avg_paper_length = len(avg_length['extracted_text__avg'] or '') if avg_length['extracted_text__avg'] else 0
+        
+        # Recent uploads
+        recent_papers = all_papers.order_by('-upload_date')[:5]
+        latest_upload = recent_papers.first()
+        
+        # Get AI summaries for analysis
+        paper_summaries = [paper.ai_summary[:200] + "..." for paper in all_papers if paper.ai_summary][:10]
+        personal_notes = [paper.personal_notes[:100] + "..." for paper in all_papers if paper.personal_notes][:5]
+        
+        prompt = f"""
+        Analyze this comprehensive research paper collection and provide insights:
+
+        PAPER COLLECTION OVERVIEW:
+        - Total Papers: {total_papers}
+        - Total File Size: {total_file_size} MB
+        - Most Common Category: {most_common_category}
+        - Average Paper Length: ~{avg_paper_length} characters
+
+        RECENT UPLOADS:
+        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'} | Size: {paper.file_size/(1024*1024):.1f}MB" for paper in recent_papers])}
+
+        EXISTING AI SUMMARIES SAMPLE:
+        {chr(10).join([f"- {summary}" for summary in paper_summaries[:5]])}
+
+        PERSONAL NOTES SAMPLE:
+        {chr(10).join([f"- {note}" for note in personal_notes])}
+
+        CATEGORY BREAKDOWN:
+        {chr(10).join([f"- {cat['category']}: {cat['count']} papers" for cat in categories[:5]])}
+
+        Please provide:
+        1. Comprehensive research collection assessment
+        2. Knowledge domain analysis
+        3. Research gap identification
+        4. Cross-paper insight synthesis
+        5. Future research recommendations
+        6. Practical application opportunities
+        7. Knowledge management suggestions
+        8. Research methodology insights
+        9. Literature review conclusions
+        10. Strategic research directions
+
+        Format as a comprehensive research portfolio analysis with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Generate research recommendations
+        recommendations_prompt = f"""
+        Based on the {total_papers} research papers in categories like {most_common_category}, provide specific future research applications and recommendations:
+
+        1. Identify 3-5 key research themes
+        2. Suggest practical applications for trading/finance
+        3. Recommend next research directions
+        4. Identify knowledge gaps that need filling
+
+        Keep recommendations specific and actionable.
+        """
+        
+        research_recommendations = chat_gpt(recommendations_prompt)
+        
+        summary_obj, created = SnowAIPaperGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_papers': total_papers,
+                'most_common_category': most_common_category,
+                'total_file_size_mb': total_file_size,
+                'average_paper_length': avg_paper_length,
+                'latest_upload': latest_upload.title if latest_upload else 'N/A',
+                'research_recommendations': research_recommendations,
+                'key_insights': ', '.join([summary[:50] for summary in paper_summaries[:3]]),
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_papers = total_papers
+            summary_obj.research_recommendations = research_recommendations
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_papers': total_papers,
+                'total_size_mb': f"{total_file_size} MB",
+                'most_common_category': most_common_category,
+                'categories_count': len(categories),
+                'avg_length': f"{avg_paper_length} chars"
+            }
+        })
+        
+    except Exception as e:
+        print(f'Error in paper_gpt function: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_paper_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        
+        context_prompt = f"""
+        You are PaperGPT, an AI specialized in research paper analysis, academic literature synthesis, and research methodology.
+        
+        Research paper context:
+        - Total papers in collection: {PaperGPT.objects.count()}
+        - Recent papers: {recent_papers.count()}
+        
+        Sample recent papers:
+        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
+        
+        User question: {user_message}
+        
+        Provide expert academic and research insights based on the available paper collection and research methodology expertise.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='PaperGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_research_gpt_summary_endpoint(request):
+    try:
+        # Combine all research sources
+        all_papers = PaperGPT.objects.all()
+        ml_models = SnowAIMLModelLogEntry.objects.all()
+        backtests = BacktestModels.objects.all()
+
+        if not any([all_papers.exists(), ml_models.exists(), backtests.exists()]):
+            return JsonResponse({
+                'status': 'No research data available',
+                'summary': 'No research data found across papers, ML models, or backtests.',
+                'metrics': {}
+            })
+
+        total_papers = all_papers.count()
+        total_ml_models = ml_models.count()
+        total_backtests = backtests.count()
+        total_research_entries = total_papers + total_ml_models + total_backtests
+
+        # ML Model analysis
+        model_types = ml_models.values('snowai_model_type').annotate(count=Count('id')).order_by('-count')
+        financial_markets = ml_models.values('snowai_financial_market_type').annotate(count=Count('id')).order_by('-count')
+
+        # Paper categories
+        paper_categories = all_papers.exclude(category__isnull=True).values('category').annotate(count=Count('id')).order_by('-count')
+
+        # Recent research activity
+        recent_papers = all_papers.order_by('-upload_date')[:3]
+        recent_models = ml_models.order_by('-snowai_created_at')[:3]
+
+        # Performance metrics from ML models
+        avg_accuracy = ml_models.exclude(snowai_accuracy_score__isnull=True).aggregate(Avg('snowai_accuracy_score'))['snowai_accuracy_score__avg'] or 0
+        avg_sharpe = ml_models.exclude(snowai_sharpe_ratio__isnull=True).aggregate(Avg('snowai_sharpe_ratio'))['snowai_sharpe_ratio__avg'] or 0
+
+        # Prompt for GPT summary
+        prompt = f"""
+        Analyze this comprehensive research ecosystem and provide strategic insights:
+
+        RESEARCH PORTFOLIO OVERVIEW:
+        - Total Research Entries: {total_research_entries}
+        - Research Papers: {total_papers}
+        - ML Models: {total_ml_models}
+        - Backtesting Strategies: {total_backtests}
+
+        ML MODEL RESEARCH:
+        - Most Common Model Type: {model_types[0]['snowai_model_type'] if model_types else 'N/A'}
+        - Primary Financial Market: {financial_markets[0]['snowai_financial_market_type'] if financial_markets else 'N/A'}
+        - Average Model Accuracy: {avg_accuracy:.3f}
+        - Average Sharpe Ratio: {avg_sharpe:.3f}
+
+        PAPER RESEARCH:
+        - Primary Research Category: {paper_categories[0]['category'] if paper_categories else 'N/A'}
+        - Category Distribution: {len(paper_categories)} different categories
+
+        RECENT RESEARCH ACTIVITY:
+        Papers:
+        {chr(10).join([f"- {paper.title}" for paper in recent_papers])}
+
+        Models:
+        {chr(10).join([f"- {model.snowai_model_name} ({model.snowai_model_type})" for model in recent_models])}
+
+        MODEL TYPE DISTRIBUTION:
+        {chr(10).join([f"- {mt['snowai_model_type']}: {mt['count']} models" for mt in model_types[:5]])}
+
+        FINANCIAL MARKET FOCUS:
+        {chr(10).join([f"- {fm['snowai_financial_market_type']}: {fm['count']} models" for fm in financial_markets[:5]])}
+
+        Please provide:
+        1. Comprehensive research ecosystem analysis
+        2. Cross-disciplinary knowledge synthesis
+        3. Research methodology assessment
+        4. Knowledge gap identification and prioritization
+        5. Future research direction recommendations
+        6. Practical application opportunities
+        7. Research ROI analysis
+        8. Strategic research roadmap
+        9. Innovation potential assessment
+        10. Academic-industry bridge recommendations
+
+        Format as a strategic research portfolio review with actionable insights.
+        """
+
+        ai_summary = chat_gpt(prompt)
+
+        # Generate specific research directions
+        directions_prompt = f"""
+        Based on {total_research_entries} research entries including {total_ml_models} ML models and {total_papers} papers,
+        provide 5 specific future research directions that bridge theory and practical trading applications.
+        Focus on unexplored combinations and high-impact opportunities.
+        """
+
+        future_directions = chat_gpt(directions_prompt)
+
+        # You can optionally include future_directions in the response or save it
+
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'future_directions': future_directions,
+            'metrics': {
+                'total_papers': total_papers,
+                'total_ml_models': total_ml_models,
+                'total_backtests': total_backtests,
+                'avg_accuracy': round(avg_accuracy, 3),
+                'avg_sharpe': round(avg_sharpe, 3)
+            }
+        })
+
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trader_history_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent trading context
+        recent_trades = AccountTrades.objects.all()[:50]  # Last 50 trades for context
+        
+        context_prompt = f"""
+        You are TraderHistoryGPT, an AI specialized in analyzing trading performance and providing trading insights.
+        
+        Current trading context:
+        - Total trades in system: {AccountTrades.objects.count()}
+        - Recent activity: {recent_trades.count()} recent trades available
+        
+        User question: {user_message}
+        
+        Provide a helpful, accurate response based on the available trading data and your expertise in trading analysis.
+        If the user asks about specific metrics, calculate them from the available data context.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        # Save conversation
+        SnowAIConversationHistory.objects.create(
+            gpt_system='TraderHistoryGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_macro_gpt_summary_endpoint(request):
+    try:
+        # Get economic events from the last month
+        one_month_ago = datetime.now() - timedelta(days=30)
+        recent_events = EconomicEvent.objects.filter(date_time__gte=one_month_ago)
+        
+        if not recent_events.exists():
+            return JsonResponse({
+                'status': 'No recent economic data available',
+                'summary': 'No economic events found in the last month to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate metrics
+        total_events = recent_events.count()
+        high_impact_events = recent_events.filter(impact='high').count()
+        medium_impact_events = recent_events.filter(impact='medium').count()
+        low_impact_events = recent_events.filter(impact='low').count()
+        
+        # Currency analysis
+        currency_counts = recent_events.values('currency').annotate(count=Count('id')).order_by('-count')
+        most_active_currency = currency_counts.first()['currency'] if currency_counts else 'N/A'
+        
+        # Get
+        # Get recent news data
+        all_trades = AccountTrades.objects.all()
+        accounts_data = Account.objects.all()
+        
+        if not all_trades.exists():
+            return JsonResponse({
+                'status': 'No trading data available',
+                'summary': 'No trading history found to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate metrics
+        total_trades = all_trades.count()
+        profit_trades = all_trades.filter(outcome='Profit').count()
+        loss_trades = all_trades.filter(outcome='Loss').count()
+        win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        total_pnl = all_trades.aggregate(Sum('amount'))['amount__sum'] or 0
+        avg_trade_amount = all_trades.aggregate(Avg('amount'))['amount__avg'] or 0
+        best_trade = all_trades.aggregate(Max('amount'))['amount__max'] or 0
+        worst_trade = all_trades.aggregate(Min('amount'))['amount__min'] or 0
+        
+        # Strategy analysis
+        strategy_performance = all_trades.values('strategy').annotate(
+            total_trades=Count('id'),
+            total_pnl=Sum('amount')
+        ).order_by('-total_pnl')
+        
+        best_strategy = strategy_performance.first()['strategy'] if strategy_performance else 'N/A'
+        worst_strategy = strategy_performance.last()['strategy'] if strategy_performance else 'N/A'
+        
+        # Asset analysis
+        asset_counts = all_trades.values('asset').annotate(count=Count('id')).order_by('-count')
+        most_traded_asset = asset_counts.first()['asset'] if asset_counts else 'N/A'
+        
+        # Create comprehensive prompt for GPT
+        prompt = f"""
+        Analyze this comprehensive trading performance data and provide a detailed, professional summary:
+
+        TRADING PERFORMANCE METRICS:
+        - Total Trades: {total_trades}
+        - Win Rate: {win_rate}%
+        - Total P&L: ${total_pnl}
+        - Average Trade Size: ${avg_trade_amount}
+        - Best Trade: ${best_trade}
+        - Worst Trade: ${worst_trade}
+        - Most Traded Asset: {most_traded_asset}
+        - Best Performing Strategy: {best_strategy}
+        - Worst Performing Strategy: {worst_strategy}
+
+        DETAILED BREAKDOWN:
+        - Profitable Trades: {profit_trades}
+        - Losing Trades: {loss_trades}
+
+        Please provide:
+        1. A comprehensive performance assessment
+        2. Key strengths and weaknesses in the trading approach
+        3. Risk management analysis
+        4. Recommendations for improvement
+        5. Strategic insights based on the data
+        6. Asset allocation observations
+        7. Future trading suggestions
+
+        Format the response as a professional trading report with clear sections and actionable insights.
+        """
+        
+        # Get AI summary
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAITraderHistoryGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'total_profit_loss': total_pnl,
+                'best_performing_strategy': best_strategy,
+                'worst_performing_strategy': worst_strategy,
+                'most_traded_asset': most_traded_asset,
+                'average_trade_amount': avg_trade_amount,
+            }
+        )
+        
+        if not created:
+            # Update existing summary
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_trades = total_trades
+            summary_obj.win_rate = win_rate
+            summary_obj.total_profit_loss = total_pnl
+            summary_obj.best_performing_strategy = best_strategy
+            summary_obj.worst_performing_strategy = worst_strategy
+            summary_obj.most_traded_asset = most_traded_asset
+            summary_obj.average_trade_amount = avg_trade_amount
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_trades': total_trades,
+                'win_rate': f"{win_rate}%",
+                'total_pnl': f"${total_pnl}",
+                'avg_trade_amount': f"${avg_trade_amount}",
+                'most_traded_asset': most_traded_asset,
+                'best_strategy': best_strategy
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_research_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        recent_models = SnowAIMLModelLogEntry.objects.order_by('-snowai_created_at')[:3]
+        
+        context_prompt = f"""
+        You are ResearchGPT, an AI specialized in comprehensive research analysis, cross-disciplinary synthesis, and strategic research planning.
+        
+        Research ecosystem context:
+        - Total papers: {PaperGPT.objects.count()}
+        - Total ML models: {SnowAIMLModelLogEntry.objects.count()}
+        - Total backtests: {BacktestModels.objects.count()}
+        
+        Recent research activity:
+        Papers: {chr(10).join([f"- {paper.title}" for paper in recent_papers])}
+        Models: {chr(10).join([f"- {model.snowai_model_name}" for model in recent_models])}
+        
+        User question: {user_message}
+        
+        Provide comprehensive research insights that bridge theoretical knowledge with practical applications across the entire research portfolio.
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='ResearchGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# # Add scheduler jobs (add this to your main application or scheduler setup)
+# def setup_snowai_gpt_scheduler_jobs():
+#     """
+#     Setup scheduler jobs for SnowAI GPT summaries to run every 48 hours
+#     """
+#     from django_apscheduler.jobstores import DjangoJobStore
+#     from apscheduler.schedulers.background import BackgroundScheduler
+#     import requests
+    
+#     scheduler = BackgroundScheduler()
+#     scheduler.add_jobstore(DjangoJobStore(), "default")
+    
+#     base_url = 'https://backend-production-c0ab.up.railway.app'  # Replace with your actual URL
+    
+#     def trigger_gpt_summary_generation(endpoint_name):
+#         """Helper function to trigger GPT summary generation"""
+#         try:
+#             response = requests.get(f"{base_url}/{endpoint_name}/")
+#             print(f"SnowAI GPT Summary generated for {endpoint_name}: {response.status_code}")
+#         except Exception as e:
+#             print(f"Error generating summary for {endpoint_name}: {str(e)}")
+    
+#     # Add jobs for each GPT system to run every 48 hours
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_trader_history_gpt_summary'),
+#         'interval',
+#         hours=48,
+#         id='snowai_trader_history_gpt_job',
+#         replace_existing=True
+#     )
+    
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_macro_gpt_summary'),
+#         'interval',
+#         hours=48,
+#         id='snowai_macro_gpt_job',
+#         replace_existing=True
+#     )
+    
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_idea_gpt_summary'),
+#         'interval',
+#         hours=48,
+#         id='snowai_idea_gpt_job',
+#         replace_existing=True
+#     )
+    
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_backtesting_gpt_summary'),
+#         'interval',
+#         hours=48,
+#         id='snowai_backtesting_gpt_job',
+#         replace_existing=True
+#     )
+    
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_paper_gpt_summary'),
+#         'interval',
+#         hours=48,
+#         id='snowai_paper_gpt_job',
+#         replace_existing=True
+#     )
+    
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_research_gpt_summary'),
+#         'interval',
+#         hours=48,
+#         id='snowai_research_gpt_job',
+#         replace_existing=True
+#     )
+    
+#     scheduler.start()
+#     print("SnowAI GPT Scheduler jobs setup completed - All summaries will update every 48 hours")
+
+
+# # Add this to your Django app's apps.py ready() method or main scheduler initialization
+# setup_snowai_gpt_scheduler_jobs()
+        
+                
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
