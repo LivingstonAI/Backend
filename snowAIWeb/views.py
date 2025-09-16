@@ -16663,7 +16663,7 @@ def generate_research_gpt_summary():
         
 # OPTIONAL: Manual trigger endpoint for testing
 @csrf_exempt
-@require_http_methods(["POST"])
+# @require_http_methods(["GET"])
 def manual_trigger_summaries(request):
     """Manually trigger summary generation - useful for testing"""
     try:
