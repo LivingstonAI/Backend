@@ -14577,60 +14577,60 @@ def snowai_trader_history_gpt_summary_endpoint(request):
         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def snowai_macro_gpt_chat_endpoint(request):
-    try:
-        data = json.loads(request.body)
-        user_message = data.get('message', '')
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_macro_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
         
-        if not user_message:
-            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        # Get recent macro context with more detailed information
-        recent_events = EconomicEvent.objects.filter(date_time__gte=datetime.now() - timedelta(days=7))
-        high_impact_recent = recent_events.filter(impact='high')
+#         # Get recent macro context with more detailed information
+#         recent_events = EconomicEvent.objects.filter(date_time__gte=datetime.now() - timedelta(days=7))
+#         high_impact_recent = recent_events.filter(impact='high')
         
-        # Get some upcoming events too
-        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:5]
+#         # Get some upcoming events too
+#         upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:5]
         
-        context_prompt = f"""
-        You are MacroGPT, an AI specialized in macro economic analysis, market trends, and economic event impact assessment.
+#         context_prompt = f"""
+#         You are MacroGPT, an AI specialized in macro economic analysis, market trends, and economic event impact assessment.
         
-        Recent economic context (Last 7 days):
-        - Total events: {recent_events.count()}
-        - High impact events: {high_impact_recent.count()}
+#         Recent economic context (Last 7 days):
+#         - Total events: {recent_events.count()}
+#         - High impact events: {high_impact_recent.count()}
         
-        Recent high-impact events:
-        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.impact} impact) - {event.date_time.strftime('%Y-%m-%d')}" for event in high_impact_recent[:5]])}
+#         Recent high-impact events:
+#         {chr(10).join([f"- {event.currency}: {event.event_name} ({event.impact} impact) - {event.date_time.strftime('%Y-%m-%d')}" for event in high_impact_recent[:5]])}
         
-        Upcoming events:
-        {chr(10).join([f"- {event.currency}: {event.event_name} - {event.date_time.strftime('%Y-%m-%d %H:%M')}" for event in upcoming_events])}
+#         Upcoming events:
+#         {chr(10).join([f"- {event.currency}: {event.event_name} - {event.date_time.strftime('%Y-%m-%d %H:%M')}" for event in upcoming_events])}
         
-        User question: {user_message}
+#         User question: {user_message}
         
-        Provide expert macro economic analysis and insights based on current market conditions and economic data. 
-        Be specific and actionable in your response. If the user asks about specific currencies or events, 
-        reference the available data context above.
-        """
+#         Provide expert macro economic analysis and insights based on current market conditions and economic data. 
+#         Be specific and actionable in your response. If the user asks about specific currencies or events, 
+#         reference the available data context above.
+#         """
         
-        ai_response = chat_gpt(context_prompt)
+#         ai_response = chat_gpt(context_prompt)
         
-        # Ensure we have a response
-        if not ai_response or ai_response.strip() == '':
-            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question about macro economic analysis."
+#         # Ensure we have a response
+#         if not ai_response or ai_response.strip() == '':
+#             ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question about macro economic analysis."
         
-        SnowAIConversationHistory.objects.create(
-            gpt_system='MacroGPT',
-            user_message=user_message,
-            ai_response=ai_response
-        )
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='MacroGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
         
-        return JsonResponse({'status': 'success', 'response': ai_response})
+#         return JsonResponse({'status': 'success', 'response': ai_response})
         
-    except Exception as e:
-        print(f'Error in MacroGPT chat function: {e}')
-        return JsonResponse({'status': 'error', 'message': str(e)})
+#     except Exception as e:
+#         print(f'Error in MacroGPT chat function: {e}')
+#         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
 @csrf_exempt
@@ -14749,45 +14749,45 @@ def snowai_idea_gpt_summary_endpoint(request):
         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def snowai_idea_gpt_chat_endpoint(request):
-    try:
-        data = json.loads(request.body)
-        user_message = data.get('message', '')
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_idea_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
         
-        if not user_message:
-            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        recent_ideas = IdeaModel.objects.order_by('-created_at')[:10]
+#         recent_ideas = IdeaModel.objects.order_by('-created_at')[:10]
         
-        context_prompt = f"""
-        You are IdeaGPT, an AI specialized in idea management, creativity enhancement, and innovation strategy.
+#         context_prompt = f"""
+#         You are IdeaGPT, an AI specialized in idea management, creativity enhancement, and innovation strategy.
         
-        Recent ideas context:
-        - Total ideas in system: {IdeaModel.objects.count()}
-        - Recent ideas: {recent_ideas.count()}
+#         Recent ideas context:
+#         - Total ideas in system: {IdeaModel.objects.count()}
+#         - Recent ideas: {recent_ideas.count()}
         
-        Sample recent ideas:
-        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:3]])}
+#         Sample recent ideas:
+#         {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:3]])}
         
-        User question: {user_message}
+#         User question: {user_message}
         
-        Provide creative and strategic insights for idea management, development, and execution.
-        """
+#         Provide creative and strategic insights for idea management, development, and execution.
+#         """
         
-        ai_response = chat_gpt(context_prompt)
+#         ai_response = chat_gpt(context_prompt)
         
-        SnowAIConversationHistory.objects.create(
-            gpt_system='IdeaGPT',
-            user_message=user_message,
-            ai_response=ai_response
-        )
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='IdeaGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
         
-        return JsonResponse({'status': 'success', 'response': ai_response})
+#         return JsonResponse({'status': 'success', 'response': ai_response})
         
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)})
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
 @csrf_exempt
@@ -14907,45 +14907,45 @@ def snowai_backtesting_gpt_summary_endpoint(request):
         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def snowai_backtesting_gpt_chat_endpoint(request):
-    try:
-        data = json.loads(request.body)
-        user_message = data.get('message', '')
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_backtesting_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
         
-        if not user_message:
-            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        recent_results = BacktestResult.objects.order_by('-created_at')[:5]
+#         recent_results = BacktestResult.objects.order_by('-created_at')[:5]
         
-        context_prompt = f"""
-        You are BacktestingGPT, an AI specialized in quantitative strategy analysis, backtesting methodology, and trading system optimization.
+#         context_prompt = f"""
+#         You are BacktestingGPT, an AI specialized in quantitative strategy analysis, backtesting methodology, and trading system optimization.
         
-        Recent backtesting context:
-        - Total backtests: {BacktestModels.objects.count()}
-        - Total results: {BacktestResult.objects.count()}
+#         Recent backtesting context:
+#         - Total backtests: {BacktestModels.objects.count()}
+#         - Total results: {BacktestResult.objects.count()}
         
-        Recent performance:
-        {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
+#         Recent performance:
+#         {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
         
-        User question: {user_message}
+#         User question: {user_message}
         
-        Provide expert quantitative analysis and backtesting insights based on the available strategy performance data.
-        """
+#         Provide expert quantitative analysis and backtesting insights based on the available strategy performance data.
+#         """
         
-        ai_response = chat_gpt(context_prompt)
+#         ai_response = chat_gpt(context_prompt)
         
-        SnowAIConversationHistory.objects.create(
-            gpt_system='BacktestingGPT',
-            user_message=user_message,
-            ai_response=ai_response
-        )
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='BacktestingGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
         
-        return JsonResponse({'status': 'success', 'response': ai_response})
+#         return JsonResponse({'status': 'success', 'response': ai_response})
         
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)})
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
 @csrf_exempt
@@ -15086,45 +15086,45 @@ def snowai_paper_gpt_summary_endpoint(request):
         print(f'Error in paper_gpt function: {e}')
         return JsonResponse({'status': 'error', 'message': str(e)})
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def snowai_paper_gpt_chat_endpoint(request):
-    try:
-        data = json.loads(request.body)
-        user_message = data.get('message', '')
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_paper_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
         
-        if not user_message:
-            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+#         recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
         
-        context_prompt = f"""
-        You are PaperGPT, an AI specialized in research paper analysis, academic literature synthesis, and research methodology.
+#         context_prompt = f"""
+#         You are PaperGPT, an AI specialized in research paper analysis, academic literature synthesis, and research methodology.
         
-        Research paper context:
-        - Total papers in collection: {PaperGPT.objects.count()}
-        - Recent papers: {recent_papers.count()}
+#         Research paper context:
+#         - Total papers in collection: {PaperGPT.objects.count()}
+#         - Recent papers: {recent_papers.count()}
         
-        Sample recent papers:
-        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
+#         Sample recent papers:
+#         {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
         
-        User question: {user_message}
+#         User question: {user_message}
         
-        Provide expert academic and research insights based on the available paper collection and research methodology expertise.
-        """
+#         Provide expert academic and research insights based on the available paper collection and research methodology expertise.
+#         """
         
-        ai_response = chat_gpt(context_prompt)
+#         ai_response = chat_gpt(context_prompt)
         
-        SnowAIConversationHistory.objects.create(
-            gpt_system='PaperGPT',
-            user_message=user_message,
-            ai_response=ai_response
-        )
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='PaperGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
         
-        return JsonResponse({'status': 'success', 'response': ai_response})
+#         return JsonResponse({'status': 'success', 'response': ai_response})
         
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)})
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
 @csrf_exempt
@@ -15240,46 +15240,127 @@ def snowai_research_gpt_summary_endpoint(request):
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)})
 
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_paper_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        
+#         context_prompt = f"""
+#         You are PaperGPT, an AI specialized in research paper analysis, academic literature synthesis, and research methodology.
+        
+#         Research paper context:
+#         - Total papers in collection: {PaperGPT.objects.count()}
+#         - Recent papers: {recent_papers.count()}
+        
+#         Sample recent papers:
+#         {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
+        
+#         User question: {user_message}
+        
+#         Provide expert academic and research insights based on the available paper collection and research methodology expertise.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='PaperGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def snowai_trader_history_gpt_chat_endpoint(request):
-    try:
-        data = json.loads(request.body)
-        user_message = data.get('message', '')
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_backtesting_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
         
-        if not user_message:
-            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
-        # Get recent trading context
-        recent_trades = AccountTrades.objects.all()[:50]  # Last 50 trades for context
+#         recent_results = BacktestResult.objects.order_by('-created_at')[:5]
         
-        context_prompt = f"""
-        You are TraderHistoryGPT, an AI specialized in analyzing trading performance and providing trading insights.
+#         context_prompt = f"""
+#         You are BacktestingGPT, an AI specialized in quantitative strategy analysis, backtesting methodology, and trading system optimization.
         
-        Current trading context:
-        - Total trades in system: {AccountTrades.objects.count()}
-        - Recent activity: {recent_trades.count()} recent trades available
+#         Recent backtesting context:
+#         - Total backtests: {BacktestModels.objects.count()}
+#         - Total results: {BacktestResult.objects.count()}
         
-        User question: {user_message}
+#         Recent performance:
+#         {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
         
-        Provide a helpful, accurate response based on the available trading data and your expertise in trading analysis.
-        If the user asks about specific metrics, calculate them from the available data context.
-        """
+#         User question: {user_message}
         
-        ai_response = chat_gpt(context_prompt)
+#         Provide expert quantitative analysis and backtesting insights based on the available strategy performance data.
+#         """
         
-        # Save conversation
-        SnowAIConversationHistory.objects.create(
-            gpt_system='TraderHistoryGPT',
-            user_message=user_message,
-            ai_response=ai_response
-        )
+#         ai_response = chat_gpt(context_prompt)
         
-        return JsonResponse({'status': 'success', 'response': ai_response})
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='BacktestingGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
         
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)})
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_trader_history_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         # Get recent trading context
+#         recent_trades = AccountTrades.objects.all()[:50]  # Last 50 trades for context
+        
+#         context_prompt = f"""
+#         You are TraderHistoryGPT, an AI specialized in analyzing trading performance and providing trading insights.
+        
+#         Current trading context:
+#         - Total trades in system: {AccountTrades.objects.count()}
+#         - Recent activity: {recent_trades.count()} recent trades available
+        
+#         User question: {user_message}
+        
+#         Provide a helpful, accurate response based on the available trading data and your expertise in trading analysis.
+#         If the user asks about specific metrics, calculate them from the available data context.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         # Save conversation
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='TraderHistoryGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
 @csrf_exempt
@@ -15391,6 +15472,99 @@ def snowai_macro_gpt_summary_endpoint(request):
         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_paper_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        
+        context_prompt = f"""
+        You are PaperGPT, an AI assistant who specializes in research paper analysis, academic literature synthesis, and research methodology. 
+        You are having a natural conversation with a user.
+        
+        Available research context (use only when relevant to the conversation):
+        - Total papers in collection: {PaperGPT.objects.count()}
+        - Recent papers: {recent_papers.count()}
+        
+        Sample recent papers:
+        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
+        
+        User: {user_message}
+        
+        Instructions:
+        - Have a natural, conversational response
+        - Only provide detailed paper analysis or summaries if the user specifically asks for research insights, paper analysis, or academic information
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing paper-related content
+        - Be helpful and friendly while staying true to your research expertise
+        - Only reference the research data when it's actually relevant to what the user is asking
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='PaperGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_backtesting_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_results = BacktestResult.objects.order_by('-created_at')[:5]
+        
+        context_prompt = f"""
+        You are BacktestingGPT, an AI assistant who specializes in quantitative strategy analysis, backtesting methodology, and trading system optimization.
+        You are having a natural conversation with a user.
+        
+        Available backtesting context (use only when relevant to the conversation):
+        - Total backtests: {BacktestModels.objects.count()}
+        - Total results: {BacktestResult.objects.count()}
+        
+        Recent performance:
+        {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
+        
+        User: {user_message}
+        
+        Instructions:
+        - Have a natural, conversational response
+        - Only provide detailed backtesting analysis or performance summaries if the user specifically asks about trading strategies, backtesting, or quantitative analysis
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing backtesting-related content
+        - Be helpful and friendly while staying true to your quantitative expertise
+        - Only reference the backtesting data when it's actually relevant to what the user is asking
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='BacktestingGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -15406,9 +15580,10 @@ def snowai_research_gpt_chat_endpoint(request):
         recent_models = SnowAIMLModelLogEntry.objects.order_by('-snowai_created_at')[:3]
         
         context_prompt = f"""
-        You are ResearchGPT, an AI specialized in comprehensive research analysis, cross-disciplinary synthesis, and strategic research planning.
+        You are ResearchGPT, an AI assistant who specializes in comprehensive research analysis, cross-disciplinary synthesis, and strategic research planning.
+        You are having a natural conversation with a user.
         
-        Research ecosystem context:
+        Available research ecosystem context (use only when relevant to the conversation):
         - Total papers: {PaperGPT.objects.count()}
         - Total ML models: {SnowAIMLModelLogEntry.objects.count()}
         - Total backtests: {BacktestModels.objects.count()}
@@ -15417,9 +15592,14 @@ def snowai_research_gpt_chat_endpoint(request):
         Papers: {chr(10).join([f"- {paper.title}" for paper in recent_papers])}
         Models: {chr(10).join([f"- {model.snowai_model_name}" for model in recent_models])}
         
-        User question: {user_message}
+        User: {user_message}
         
-        Provide comprehensive research insights that bridge theoretical knowledge with practical applications across the entire research portfolio.
+        Instructions:
+        - Have a natural, conversational response
+        - Only provide detailed research analysis or comprehensive summaries if the user specifically asks about research insights, cross-disciplinary analysis, or strategic planning
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing research-related content
+        - Be helpful and friendly while staying true to your research expertise
+        - Only reference the research ecosystem data when it's actually relevant to what the user is asking
         """
         
         ai_response = chat_gpt(context_prompt)
@@ -15435,6 +15615,161 @@ def snowai_research_gpt_chat_endpoint(request):
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)})
 
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trader_history_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent trading context
+        recent_trades = AccountTrades.objects.all()[:50]  # Last 50 trades for context
+        
+        context_prompt = f"""
+        You are TraderHistoryGPT, an AI assistant who specializes in analyzing trading performance and providing trading insights.
+        You are having a natural conversation with a user.
+        
+        Available trading context (use only when relevant to the conversation):
+        - Total trades in system: {AccountTrades.objects.count()}
+        - Recent activity: {recent_trades.count()} recent trades available
+        
+        User: {user_message}
+        
+        Instructions:
+        - Have a natural, conversational response
+        - Only provide detailed trading analysis or performance summaries if the user specifically asks about trading performance, metrics, or trading-related questions
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing trading-related content
+        - Be helpful and friendly while staying true to your trading expertise
+        - Only reference the trading data when it's actually relevant to what the user is asking
+        - If the user asks about specific metrics, then calculate them from the available data context
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        # Save conversation
+        SnowAIConversationHistory.objects.create(
+            gpt_system='TraderHistoryGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_idea_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        recent_ideas = IdeaModel.objects.order_by('-created_at')[:10]
+        
+        context_prompt = f"""
+        You are IdeaGPT, an AI assistant who specializes in idea management, creativity enhancement, and innovation strategy.
+        You are having a natural conversation with a user.
+        
+        Available ideas context (use only when relevant to the conversation):
+        - Total ideas in system: {IdeaModel.objects.count()}
+        - Recent ideas: {recent_ideas.count()}
+        
+        Sample recent ideas:
+        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:3]])}
+        
+        User: {user_message}
+        
+        Instructions:
+        - Have a natural, conversational response
+        - Only provide detailed idea analysis or creativity insights if the user specifically asks about ideas, creativity, innovation, or brainstorming
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing idea-related content
+        - Be helpful and friendly while staying true to your creativity and innovation expertise
+        - Only reference the ideas data when it's actually relevant to what the user is asking
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='IdeaGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_macro_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent macro context with more detailed information
+        recent_events = EconomicEvent.objects.filter(date_time__gte=datetime.now() - timedelta(days=7))
+        high_impact_recent = recent_events.filter(impact='high')
+        
+        # Get some upcoming events too
+        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:5]
+        
+        context_prompt = f"""
+        You are MacroGPT, an AI assistant who specializes in macro economic analysis, market trends, and economic event impact assessment.
+        You are having a natural conversation with a user.
+        
+        Available economic context (use only when relevant to the conversation):
+        Recent economic context (Last 7 days):
+        - Total events: {recent_events.count()}
+        - High impact events: {high_impact_recent.count()}
+        
+        Recent high-impact events:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.impact} impact) - {event.date_time.strftime('%Y-%m-%d')}" for event in high_impact_recent[:5]])}
+        
+        Upcoming events:
+        {chr(10).join([f"- {event.currency}: {event.event_name} - {event.date_time.strftime('%Y-%m-%d %H:%M')}" for event in upcoming_events])}
+        
+        User: {user_message}
+        
+        Instructions:
+        - Have a natural, conversational response
+        - Only provide detailed macro economic analysis or market insights if the user specifically asks about economic events, market trends, or macro analysis
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing economic content
+        - Be helpful and friendly while staying true to your macro economic expertise
+        - Only reference the economic data when it's actually relevant to what the user is asking
+        - If the user asks about specific currencies or events, then reference the available data context
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        # Ensure we have a response
+        if not ai_response or ai_response.strip() == '':
+            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question."
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='MacroGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        print(f'Error in MacroGPT chat function: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
 
 
 # # Add scheduler jobs (add this to your main application or scheduler setup)
@@ -16442,3 +16777,4 @@ def get_csrf_token(request):
         return JsonResponse({'csrfToken': csrf_token})
     except Exception as e:
         return JsonResponse({'error': str(e)})
+
