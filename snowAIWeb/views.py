@@ -15498,14 +15498,14 @@ def setup_snowai_gpt_scheduler_jobs():
     base_url = 'https://backend-production-c0ab.up.railway.app'  # Replace with your actual URL
     
     def trigger_gpt_summary_generation(endpoint_name):
-        """Helper function to trigger GPT summary generation"""
+        # """Helper function to trigger GPT summary generation"""
         try:
             response = requests.get(f"{base_url}/{endpoint_name}/")
             print(f"SnowAI GPT Summary generated for {endpoint_name}: {response.status_code}")
         except Exception as e:
             print(f"Error generating summary for {endpoint_name}: {str(e)}")
     
-    # Add jobs for each GPT system to run every 48 hours
+    # Add jobs for each GPT system to run every 24 hours
     scheduler.add_job(
         lambda: trigger_gpt_summary_generation('snowai_trader_history_gpt_summary'),
         'interval',
