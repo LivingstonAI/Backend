@@ -15186,11 +15186,11 @@ def snowai_research_gpt_summary_endpoint(request):
 
         TRADING PERFORMANCE METRICS:
         - Total Trades: {total_trades}
-        - Win Rate: {win_rate:.2f}%
-        - Total P&L: ${total_pnl:,.2f}
-        - Average Trade Size: ${avg_trade_amount:,.2f}
-        - Best Trade: ${best_trade:,.2f}
-        - Worst Trade: ${worst_trade:,.2f}
+        - Win Rate: {win_rate}%
+        - Total P&L: ${total_pnl}
+        - Average Trade Size: ${avg_trade_amount}
+        - Best Trade: ${best_trade}
+        - Worst Trade: ${worst_trade}
         - Most Traded Asset: {most_traded_asset}
         - Best Performing Strategy: {best_strategy}
         - Worst Performing Strategy: {worst_strategy}
