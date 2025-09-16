@@ -15483,83 +15483,83 @@ def snowai_research_gpt_chat_endpoint(request):
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)})
 
-# Add scheduler jobs (add this to your main application or scheduler setup)
-def setup_snowai_gpt_scheduler_jobs():
-    """
-    Setup scheduler jobs for SnowAI GPT summaries to run every 48 hours
-    """
-    from django_apscheduler.jobstores import DjangoJobStore
-    from apscheduler.schedulers.background import BackgroundScheduler
-    import requests
+# # Add scheduler jobs (add this to your main application or scheduler setup)
+# def setup_snowai_gpt_scheduler_jobs():
+#     """
+#     Setup scheduler jobs for SnowAI GPT summaries to run every 48 hours
+#     """
+#     from django_apscheduler.jobstores import DjangoJobStore
+#     from apscheduler.schedulers.background import BackgroundScheduler
+#     import requests
     
-    scheduler = BackgroundScheduler()
-    scheduler.add_jobstore(DjangoJobStore(), "default")
+#     scheduler = BackgroundScheduler()
+#     scheduler.add_jobstore(DjangoJobStore(), "default")
     
-    base_url = 'https://backend-production-c0ab.up.railway.app'  # Replace with your actual URL
+#     base_url = 'https://backend-production-c0ab.up.railway.app'  # Replace with your actual URL
     
-    def trigger_gpt_summary_generation(endpoint_name):
-        # """Helper function to trigger GPT summary generation"""
-        try:
-            response = requests.get(f"{base_url}/{endpoint_name}/")
-            print(f"SnowAI GPT Summary generated for {endpoint_name}: {response.status_code}")
-        except Exception as e:
-            print(f"Error generating summary for {endpoint_name}: {str(e)}")
+#     def trigger_gpt_summary_generation(endpoint_name):
+#         # """Helper function to trigger GPT summary generation"""
+#         try:
+#             response = requests.get(f"{base_url}/{endpoint_name}/")
+#             print(f"SnowAI GPT Summary generated for {endpoint_name}: {response.status_code}")
+#         except Exception as e:
+#             print(f"Error generating summary for {endpoint_name}: {str(e)}")
     
-    # Add jobs for each GPT system to run every 24 hours
-    scheduler.add_job(
-        lambda: trigger_gpt_summary_generation('snowai_trader_history_gpt_summary'),
-        'interval',
-        hours=24,
-        id='snowai_trader_history_gpt_job',
-        replace_existing=True
-    )
+#     # Add jobs for each GPT system to run every 24 hours
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_trader_history_gpt_summary'),
+#         'interval',
+#         hours=24,
+#         id='snowai_trader_history_gpt_job',
+#         replace_existing=True
+#     )
     
-    scheduler.add_job(
-        lambda: trigger_gpt_summary_generation('snowai_macro_gpt_summary'),
-        'interval',
-        hours=24,
-        id='snowai_macro_gpt_job',
-        replace_existing=True
-    )
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_macro_gpt_summary'),
+#         'interval',
+#         hours=24,
+#         id='snowai_macro_gpt_job',
+#         replace_existing=True
+#     )
     
-    scheduler.add_job(
-        lambda: trigger_gpt_summary_generation('snowai_idea_gpt_summary'),
-        'interval',
-        hours=24,
-        id='snowai_idea_gpt_job',
-        replace_existing=True
-    )
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_idea_gpt_summary'),
+#         'interval',
+#         hours=24,
+#         id='snowai_idea_gpt_job',
+#         replace_existing=True
+#     )
     
-    scheduler.add_job(
-        lambda: trigger_gpt_summary_generation('snowai_backtesting_gpt_summary'),
-        'interval',
-        hours=24,
-        id='snowai_backtesting_gpt_job',
-        replace_existing=True
-    )
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_backtesting_gpt_summary'),
+#         'interval',
+#         hours=24,
+#         id='snowai_backtesting_gpt_job',
+#         replace_existing=True
+#     )
     
-    scheduler.add_job(
-        lambda: trigger_gpt_summary_generation('snowai_paper_gpt_summary'),
-        'interval',
-        hours=24,
-        id='snowai_paper_gpt_job',
-        replace_existing=True
-    )
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_paper_gpt_summary'),
+#         'interval',
+#         hours=24,
+#         id='snowai_paper_gpt_job',
+#         replace_existing=True
+#     )
     
-    scheduler.add_job(
-        lambda: trigger_gpt_summary_generation('snowai_research_gpt_summary'),
-        'interval',
-        hours=24,
-        id='snowai_research_gpt_job',
-        replace_existing=True
-    )
+#     scheduler.add_job(
+#         lambda: trigger_gpt_summary_generation('snowai_research_gpt_summary'),
+#         'interval',
+#         hours=24,
+#         id='snowai_research_gpt_job',
+#         replace_existing=True
+#     )
     
-    scheduler.start()
-    print("SnowAI GPT Scheduler jobs setup completed - All summaries will update every 24 hours")
+#     scheduler.start()
+#     print("SnowAI GPT Scheduler jobs setup completed - All summaries will update every 24 hours")
 
 
-# Add this to your Django app's apps.py ready() method or main scheduler initialization
-setup_snowai_gpt_scheduler_jobs()
+# # Add this to your Django app's apps.py ready() method or main scheduler initialization
+# setup_snowai_gpt_scheduler_jobs()
         
                 
 # LEGODI BACKEND CODE
