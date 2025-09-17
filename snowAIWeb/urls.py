@@ -234,6 +234,15 @@ urlpatterns = [
     path('idea_gpt_chat/', views.snowai_idea_gpt_chat_endpoint, name='idea_gpt_chat'),
     path('macro_gpt_chat/', views.snowai_macro_gpt_chat_endpoint, name='macro_gpt_chat'),
 
+    # Custom interest rates endpoints with unique names to avoid conflicts
+    path('api/v2024/custom-global-interest-rates-database/', 
+         views.fetch_custom_global_interest_rates_data_v2024, 
+         name='custom_global_interest_rates_v2024'),
+    
+    path('api/v2024/custom-global-interest-rates-extended-cny/', 
+         views.fetch_custom_global_interest_rates_extended_cny_v2024, 
+         name='custom_global_interest_rates_extended_cny_v2024'),
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

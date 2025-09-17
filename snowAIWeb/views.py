@@ -16857,6 +16857,212 @@ def manual_trigger_summaries(request):
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)})
 
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_custom_global_interest_rates_data_v2024(request):
+    """
+    Fetch interest rates data from local database instead of external API
+    Returns data in the same format as the original API for frontend compatibility
+    """
+    try:
+        # Define the mapping of currencies to their interest rate event names
+        interest_rate_mappings = {
+            'USD': 'Federal Funds Rate',
+            'EUR': 'Main Refinancing Rate', 
+            'GBP': 'Official Bank Rate',
+            'JPY': 'BOJ Policy Rate',
+            'AUD': 'Cash Rate',
+            'CAD': 'Overnight Rate',
+            'CHF': 'SNB Policy Rate',
+            'CNY': '1-y Loan Prime Rate',  # Using 1-year as primary, you can change this
+        }
+        
+        # Define central bank names for display
+        central_bank_names = {
+            'USD': 'Federal Reserve (USA)',
+            'EUR': 'European Central Bank',
+            'GBP': 'Bank of England',
+            'JPY': 'Bank of Japan',
+            'AUD': 'Reserve Bank of Australia', 
+            'CAD': 'Bank of Canada',
+            'CHF': 'Swiss National Bank',
+            'CNY': 'People\'s Bank of China',
+        }
+        
+        central_bank_rates = []
+        
+        for currency, event_name in interest_rate_mappings.items():
+            try:
+                # Get the most recent interest rate data for each currency
+                latest_event = EconomicEvent.objects.filter(
+                    currency=currency,
+                    event_name=event_name,
+                    actual__isnull=False
+                ).exclude(
+                    actual=''
+                ).order_by('-date_time').first()
+                
+                if latest_event:
+                    # Clean and convert the actual rate to float
+                    actual_rate = latest_event.actual.strip()
+                    
+                    # Handle percentage signs and convert to float
+                    if '%' in actual_rate:
+                        rate_value = float(actual_rate.replace('%', ''))
+                    else:
+                        rate_value = float(actual_rate)
+                    
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency, f'{currency} Central Bank'),
+                        'currency': currency,
+                        'rate_pct': rate_value,
+                        'event_name': event_name,
+                        'last_updated': latest_event.date_time.isoformat()
+                    })
+                else:
+                    # If no data found, add with 0 rate or skip
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency, f'{currency} Central Bank'),
+                        'currency': currency,
+                        'rate_pct': 0.0,
+                        'event_name': event_name,
+                        'last_updated': None
+                    })
+                    
+            except (ValueError, TypeError) as e:
+                # Handle conversion errors
+                print(f"Error processing {currency} rate: {e}")
+                central_bank_rates.append({
+                    'central_bank': central_bank_names.get(currency, f'{currency} Central Bank'),
+                    'currency': currency,
+                    'rate_pct': 0.0,
+                    'event_name': event_name,
+                    'last_updated': None
+                })
+        
+        # Sort by rate for better visualization
+        central_bank_rates.sort(key=lambda x: x['rate_pct'], reverse=True)
+        
+        # Format response to match the original API structure
+        response_data = {
+            'Interest Rates': json.dumps({
+                'central_bank_rates': central_bank_rates,
+                'data_source': 'local_database',
+                'total_banks': len(central_bank_rates)
+            })
+        }
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': 'Failed to fetch interest rates data',
+            'message': str(e)
+        }, status=500)
+
+
+# Alternative view if you want to include both 1-year and 5-year CNY rates
+@csrf_exempt 
+@require_http_methods(["GET"])
+def fetch_custom_global_interest_rates_extended_cny_v2024(request):
+    """
+    Extended version that includes both CNY 1-year and 5-year rates
+    """
+    try:
+        # Extended mapping including both CNY rates
+        interest_rate_mappings = {
+            'USD': 'Federal Funds Rate',
+            'EUR': 'Main Refinancing Rate',
+            'GBP': 'Official Bank Rate', 
+            'JPY': 'BOJ Policy Rate',
+            'AUD': 'Cash Rate',
+            'CAD': 'Overnight Rate',
+            'CHF': 'SNB Policy Rate',
+            'CNY_1Y': '1-y Loan Prime Rate',
+            'CNY_5Y': '5-y Loan Prime Rate',
+        }
+        
+        central_bank_names = {
+            'USD': 'Federal Reserve (USA)',
+            'EUR': 'European Central Bank',
+            'GBP': 'Bank of England',
+            'JPY': 'Bank of Japan', 
+            'AUD': 'Reserve Bank of Australia',
+            'CAD': 'Bank of Canada',
+            'CHF': 'Swiss National Bank',
+            'CNY_1Y': 'People\'s Bank of China (1Y)',
+            'CNY_5Y': 'People\'s Bank of China (5Y)',
+        }
+        
+        central_bank_rates = []
+        
+        for currency_key, event_name in interest_rate_mappings.items():
+            try:
+                # Extract base currency (handle CNY_1Y, CNY_5Y cases)
+                base_currency = currency_key.split('_')[0] if '_' in currency_key else currency_key
+                
+                latest_event = EconomicEvent.objects.filter(
+                    currency=base_currency,
+                    event_name=event_name,
+                    actual__isnull=False
+                ).exclude(
+                    actual=''
+                ).order_by('-date_time').first()
+                
+                if latest_event:
+                    actual_rate = latest_event.actual.strip()
+                    
+                    if '%' in actual_rate:
+                        rate_value = float(actual_rate.replace('%', ''))
+                    else:
+                        rate_value = float(actual_rate)
+                    
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency_key, f'{base_currency} Central Bank'),
+                        'currency': base_currency,
+                        'rate_pct': rate_value,
+                        'event_name': event_name,
+                        'last_updated': latest_event.date_time.isoformat()
+                    })
+                else:
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency_key, f'{base_currency} Central Bank'),
+                        'currency': base_currency, 
+                        'rate_pct': 0.0,
+                        'event_name': event_name,
+                        'last_updated': None
+                    })
+                    
+            except (ValueError, TypeError) as e:
+                print(f"Error processing {currency_key} rate: {e}")
+                base_currency = currency_key.split('_')[0] if '_' in currency_key else currency_key
+                central_bank_rates.append({
+                    'central_bank': central_bank_names.get(currency_key, f'{base_currency} Central Bank'),
+                    'currency': base_currency,
+                    'rate_pct': 0.0,
+                    'event_name': event_name,
+                    'last_updated': None
+                })
+        
+        central_bank_rates.sort(key=lambda x: x['rate_pct'], reverse=True)
+        
+        response_data = {
+            'Interest Rates': json.dumps({
+                'central_bank_rates': central_bank_rates,
+                'data_source': 'local_database',
+                'total_banks': len(central_bank_rates)
+            })
+        }
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': 'Failed to fetch interest rates data',
+            'message': str(e)
+        }, status=500)
+
                 
 # LEGODI BACKEND CODE
 def send_simple_message():
