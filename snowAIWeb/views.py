@@ -15472,6 +15472,65 @@ def snowai_macro_gpt_summary_endpoint(request):
         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
+# Add these new endpoints to your Django views.py
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.core.paginator import Paginator
+import json
+from datetime import datetime, timedelta
+
+# Endpoint to get conversation history for a specific GPT
+@csrf_exempt 
+@require_http_methods(["GET"])
+def get_conversation_history(request, gpt_system):
+    try:
+        # Get conversation history for the specific GPT system
+        conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system=gpt_system
+        ).order_by('timestamp')[:50]  # Get last 50 conversations
+        
+        # Convert to list of dictionaries
+        conversation_data = []
+        for conv in conversations:
+            conversation_data.append({
+                'gpt_system': conv.gpt_system,
+                'user_message': conv.user_message,
+                'ai_response': conv.ai_response,
+                'timestamp': conv.timestamp.isoformat()
+            })
+        
+        return JsonResponse({
+            'status': 'success',
+            'conversation_history': conversation_data,
+            'total_messages': len(conversation_data)
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# Endpoint to clear conversation history for a specific GPT
+@csrf_exempt
+@require_http_methods(["POST"])
+def clear_conversation_history(request, gpt_system):
+    try:
+        # Delete all conversation history for the specific GPT system
+        deleted_count, _ = SnowAIConversationHistory.objects.filter(
+            gpt_system=gpt_system
+        ).delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Cleared {deleted_count} messages for {gpt_system}',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# Updated chat endpoints with conversation memory context
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def snowai_paper_gpt_chat_endpoint(request):
@@ -15481,6 +15540,18 @@ def snowai_paper_gpt_chat_endpoint(request):
         
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context (last 10 exchanges)
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='PaperGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
         
         # Get actual paper data
         recent_papers = PaperGPT.objects.order_by('-upload_date')[:10]
@@ -15500,7 +15571,9 @@ def snowai_paper_gpt_chat_endpoint(request):
         
         context_prompt = f"""
         You are PaperGPT, an AI assistant who specializes in research paper analysis, academic literature synthesis, and research methodology. 
-        You are having a natural conversation with a user.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
         
         Available research papers data (use only when relevant to the conversation):
         Total papers in collection: {PaperGPT.objects.count()}
@@ -15508,14 +15581,15 @@ def snowai_paper_gpt_chat_endpoint(request):
         Recent papers data:
         {json.dumps(papers_data, indent=2)}
         
-        User: {user_message}
+        Current user message: {user_message}
         
         Instructions:
-        - Have a natural, conversational response
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
         - Only provide detailed paper analysis or summaries if the user specifically asks for research insights, paper analysis, or academic information
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing paper-related content
         - Be helpful and friendly while staying true to your research expertise
-        - Only reference the research data when it's actually relevant to what the user is asking
+        - Reference the research data when it's actually relevant to what the user is asking
         - You have access to the full paper data including all fields and content
         """
         
@@ -15542,6 +15616,18 @@ def snowai_backtesting_gpt_chat_endpoint(request):
         
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='BacktestingGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
         
         # Get actual backtesting data
         recent_results = BacktestResult.objects.order_by('-created_at')[:10]
@@ -15573,7 +15659,9 @@ def snowai_backtesting_gpt_chat_endpoint(request):
         
         context_prompt = f"""
         You are BacktestingGPT, an AI assistant who specializes in quantitative strategy analysis, backtesting methodology, and trading system optimization.
-        You are having a natural conversation with a user.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
         
         Available backtesting data (use only when relevant to the conversation):
         Total backtests: {BacktestModels.objects.count()}
@@ -15585,14 +15673,15 @@ def snowai_backtesting_gpt_chat_endpoint(request):
         Backtest models data:
         {json.dumps(models_data, indent=2)}
         
-        User: {user_message}
+        Current user message: {user_message}
         
         Instructions:
-        - Have a natural, conversational response
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
         - Only provide detailed backtesting analysis or performance summaries if the user specifically asks about trading strategies, backtesting, or quantitative analysis
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing backtesting-related content
         - Be helpful and friendly while staying true to your quantitative expertise
-        - Only reference the backtesting data when it's actually relevant to what the user is asking
+        - Reference the backtesting data when it's actually relevant to what the user is asking
         - You have access to full backtest results and model configuration data
         """
         
@@ -15620,6 +15709,18 @@ def snowai_research_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='ResearchGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
         # Get actual research data
         ml_models = SnowAIMLModelLogEntry.objects.all()[:10]
         
@@ -15637,7 +15738,9 @@ def snowai_research_gpt_chat_endpoint(request):
         
         context_prompt = f"""
         You are ResearchGPT, an AI assistant who specializes in comprehensive research analysis, cross-disciplinary synthesis, and strategic research planning.
-        You are having a natural conversation with a user.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
         
         Available research ecosystem data (use only when relevant to the conversation):
         Total ML models: {SnowAIMLModelLogEntry.objects.count()}
@@ -15645,13 +15748,14 @@ def snowai_research_gpt_chat_endpoint(request):
         ML Models data:
         {json.dumps(ml_models_data, indent=2)}
         
-        User: {user_message}
+        Current user message: {user_message}
         
         Instructions:
-        - Have a natural, conversational response
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
         - Only provide detailed research analysis or comprehensive summaries if the user specifically asks about research insights, cross-disciplinary analysis, or strategic planning
         - Be helpful and friendly while staying true to your research expertise
-        - Only reference the research ecosystem data when it's actually relevant to what the user is asking
+        - Reference the research ecosystem data when it's actually relevant to what the user is asking
         - You have access to full ML model data and research context
         """
         
@@ -15679,6 +15783,18 @@ def snowai_trader_history_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='TraderHistoryGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
         # Get actual trading data
         recent_trades = AccountTrades.objects.all()[:50]
         
@@ -15696,7 +15812,9 @@ def snowai_trader_history_gpt_chat_endpoint(request):
         
         context_prompt = f"""
         You are TraderHistoryGPT, an AI assistant who specializes in analyzing trading performance and providing trading insights.
-        You are having a natural conversation with a user.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
         
         Available trading data (use only when relevant to the conversation):
         Total trades in system: {AccountTrades.objects.count()}
@@ -15704,14 +15822,15 @@ def snowai_trader_history_gpt_chat_endpoint(request):
         Recent trades data:
         {json.dumps(trades_data, indent=2)}
         
-        User: {user_message}
+        Current user message: {user_message}
         
         Instructions:
-        - Have a natural, conversational response
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
         - Only provide detailed trading analysis or performance summaries if the user specifically asks about trading performance, metrics, or trading-related questions
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing trading-related content
         - Be helpful and friendly while staying true to your trading expertise
-        - Only reference the trading data when it's actually relevant to what the user is asking
+        - Reference the trading data when it's actually relevant to what the user is asking
         - You have access to full trade data including all fields and can calculate any metrics from this data
         - If the user asks about specific metrics, calculate them from the available trade data
         """
@@ -15740,6 +15859,18 @@ def snowai_idea_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='IdeaGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
         # Get actual ideas data
         recent_ideas = IdeaModel.objects.order_by('-created_at')[:20]
         
@@ -15757,7 +15888,9 @@ def snowai_idea_gpt_chat_endpoint(request):
         
         context_prompt = f"""
         You are IdeaGPT, an AI assistant who specializes in idea management, creativity enhancement, and innovation strategy.
-        You are having a natural conversation with a user.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
         
         Available ideas data (use only when relevant to the conversation):
         Total ideas in system: {IdeaModel.objects.count()}
@@ -15765,14 +15898,15 @@ def snowai_idea_gpt_chat_endpoint(request):
         Recent ideas data:
         {json.dumps(ideas_data, indent=2)}
         
-        User: {user_message}
+        Current user message: {user_message}
         
         Instructions:
-        - Have a natural, conversational response
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
         - Only provide detailed idea analysis or creativity insights if the user specifically asks about ideas, creativity, innovation, or brainstorming
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing idea-related content
         - Be helpful and friendly while staying true to your creativity and innovation expertise
-        - Only reference the ideas data when it's actually relevant to what the user is asking
+        - Reference the ideas data when it's actually relevant to what the user is asking
         - You have access to full idea data including all fields and content
         """
         
@@ -15800,6 +15934,18 @@ def snowai_macro_gpt_chat_endpoint(request):
         if not user_message:
             return JsonResponse({'status': 'error', 'message': 'No message provided'})
         
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='MacroGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
         # Get actual economic data - PAST EVENTS FROM LAST 30 DAYS
         past_events = EconomicEvent.objects.filter(
             date_time__gte=datetime.now() - timedelta(days=30),
@@ -15820,21 +15966,24 @@ def snowai_macro_gpt_chat_endpoint(request):
         
         context_prompt = f"""
         You are MacroGPT, an AI assistant who specializes in macro economic analysis, market trends, and economic event impact assessment.
-        You are having a natural conversation with a user.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
         
         Available economic data (use only when relevant to the conversation):
         
         Past economic events (Last 30 days):
         {json.dumps(past_events_data, indent=2)}
         
-        User: {user_message}
+        Current user message: {user_message}
         
         Instructions:
-        - Have a natural, conversational response
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
         - Only provide detailed macro economic analysis or market insights if the user specifically asks about economic events, market trends, or macro analysis
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing economic content
         - Be helpful and friendly while staying true to your macro economic expertise
-        - Only reference the economic data when it's actually relevant to what the user is asking
+        - Reference the economic data when it's actually relevant to what the user is asking
         - You have access to past economic event data including all fields and details
         - If the user asks about specific currencies or past events, reference the available data context
         """
@@ -15856,7 +16005,6 @@ def snowai_macro_gpt_chat_endpoint(request):
     except Exception as e:
         print(f'Error in MacroGPT chat function: {e}')
         return JsonResponse({'status': 'error', 'message': str(e)})
-
         
 
 def init_scheduler():

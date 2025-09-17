@@ -222,6 +222,18 @@ urlpatterns = [
      path('trigger_summaries/', views.manual_trigger_summaries, name='manual_trigger_summaries'),
 
 
+     # Conversation memory endpoints
+    path('get_conversation_history/<str:gpt_system>/', views.get_conversation_history, name='get_conversation_history'),
+    path('clear_conversation_history/<str:gpt_system>/', views.clear_conversation_history, name='clear_conversation_history'),
+    
+    # Updated chat endpoints (replace your existing ones)
+    path('paper_gpt_chat/', views.snowai_paper_gpt_chat_endpoint, name='paper_gpt_chat'),
+    path('backtesting_gpt_chat/', views.snowai_backtesting_gpt_chat_endpoint, name='backtesting_gpt_chat'),
+    path('research_gpt_chat/', views.snowai_research_gpt_chat_endpoint, name='research_gpt_chat'),
+    path('trader_history_gpt_chat/', views.snowai_trader_history_gpt_chat_endpoint, name='trader_history_gpt_chat'),
+    path('idea_gpt_chat/', views.snowai_idea_gpt_chat_endpoint, name='idea_gpt_chat'),
+    path('macro_gpt_chat/', views.snowai_macro_gpt_chat_endpoint, name='macro_gpt_chat'),
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
