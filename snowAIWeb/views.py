@@ -15553,21 +15553,23 @@ def snowai_paper_gpt_chat_endpoint(request):
                 conversation_context += f"User: {conv.user_message}\n"
                 conversation_context += f"Assistant: {conv.ai_response}\n\n"
         
-        # Get actual paper data
+        # Get paper data with limited fields to avoid large payloads
         recent_papers = PaperGPT.objects.order_by('-upload_date')[:10]
+        total_papers = PaperGPT.objects.count()
         
-        # Serialize the data to provide full context
-        papers_data = []
+        # Create lightweight paper summaries (avoid large text fields)
+        papers_summary = []
         for paper in recent_papers:
-            paper_dict = {}
-            for field in paper._meta.fields:
-                field_value = getattr(paper, field.name)
-                # Convert non-serializable types to strings
-                if hasattr(field_value, 'isoformat'):
-                    paper_dict[field.name] = field_value.isoformat()
-                else:
-                    paper_dict[field.name] = str(field_value) if field_value is not None else None
-            papers_data.append(paper_dict)
+            paper_info = {
+                'title': paper.title,
+                'category': paper.category,
+                'upload_date': paper.upload_date.isoformat(),
+                'file_name': paper.file_name,
+                'summary_preview': paper.ai_summary[:200] + "..." if paper.ai_summary and len(paper.ai_summary) > 200 else paper.ai_summary,
+                'has_notes': bool(paper.personal_notes),
+                'text_length': len(paper.extracted_text) if paper.extracted_text else 0
+            }
+            papers_summary.append(paper_info)
         
         context_prompt = f"""
         You are PaperGPT, an AI assistant who specializes in research paper analysis, academic literature synthesis, and research methodology. 
@@ -15576,10 +15578,10 @@ def snowai_paper_gpt_chat_endpoint(request):
         {conversation_context}
         
         Available research papers data (use only when relevant to the conversation):
-        Total papers in collection: {PaperGPT.objects.count()}
+        Total papers in collection: {total_papers}
         
-        Recent papers data:
-        {json.dumps(papers_data, indent=2)}
+        Recent papers summary:
+        {json.dumps(papers_summary, indent=2)}
         
         Current user message: {user_message}
         
@@ -15590,10 +15592,14 @@ def snowai_paper_gpt_chat_endpoint(request):
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing paper-related content
         - Be helpful and friendly while staying true to your research expertise
         - Reference the research data when it's actually relevant to what the user is asking
-        - You have access to the full paper data including all fields and content
+        - You have access to paper metadata and summaries; if full text is needed, acknowledge the limitation
         """
         
         ai_response = chat_gpt(context_prompt)
+        
+        # Ensure we have a valid response
+        if not ai_response or ai_response.strip() == '':
+            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question."
         
         SnowAIConversationHistory.objects.create(
             gpt_system='PaperGPT',
@@ -15604,6 +15610,9 @@ def snowai_paper_gpt_chat_endpoint(request):
         return JsonResponse({'status': 'success', 'response': ai_response})
         
     except Exception as e:
+        print(f'Error in PaperGPT chat function: {e}')
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
@@ -15629,33 +15638,43 @@ def snowai_backtesting_gpt_chat_endpoint(request):
                 conversation_context += f"User: {conv.user_message}\n"
                 conversation_context += f"Assistant: {conv.ai_response}\n\n"
         
-        # Get actual backtesting data
+        # Get backtest data with essential fields only
         recent_results = BacktestResult.objects.order_by('-created_at')[:10]
         backtest_models = BacktestModels.objects.all()[:10]
         
-        # Serialize results data
-        results_data = []
-        for result in recent_results:
-            result_dict = {}
-            for field in result._meta.fields:
-                field_value = getattr(result, field.name)
-                if hasattr(field_value, 'isoformat'):
-                    result_dict[field.name] = field_value.isoformat()
-                else:
-                    result_dict[field.name] = str(field_value) if field_value is not None else None
-            results_data.append(result_dict)
+        total_results = BacktestResult.objects.count()
+        total_models = BacktestModels.objects.count()
         
-        # Serialize models data
-        models_data = []
+        # Create lightweight summaries (avoid JSON field which might be large)
+        results_summary = []
+        for result in recent_results:
+            result_info = {
+                'start': result.start.isoformat(),
+                'end': result.end.isoformat(),
+                'duration': result.duration,
+                'return_percent': result.return_percent,
+                'annual_return': result.annual_return,
+                'sharpe_ratio': result.sharpe_ratio,
+                'max_drawdown': result.max_drawdown,
+                'num_trades': result.num_trades,
+                'win_rate': result.win_rate,
+                'equity_final': result.equity_final,
+                'created_at': result.created_at.isoformat()
+            }
+            results_summary.append(result_info)
+        
+        # Serialize models data with essential fields including generated code
+        models_summary = []
         for model in backtest_models:
-            model_dict = {}
-            for field in model._meta.fields:
-                field_value = getattr(model, field.name)
-                if hasattr(field_value, 'isoformat'):
-                    model_dict[field.name] = field_value.isoformat()
-                else:
-                    model_dict[field.name] = str(field_value) if field_value is not None else None
-            models_data.append(model_dict)
+            model_info = {
+                'chosen_dataset': model.chosen_dataset,
+                'dataset_start': model.dataset_start,
+                'dataset_end': model.dataset_end,
+                'initial_capital': model.initial_capital,
+                'model_backtested': model.model_backtested,
+                'generated_code': model.generated_code[:2000] + "..." if model.generated_code and len(model.generated_code) > 2000 else model.generated_code
+            }
+            models_summary.append(model_info)
         
         context_prompt = f"""
         You are BacktestingGPT, an AI assistant who specializes in quantitative strategy analysis, backtesting methodology, and trading system optimization.
@@ -15664,14 +15683,14 @@ def snowai_backtesting_gpt_chat_endpoint(request):
         {conversation_context}
         
         Available backtesting data (use only when relevant to the conversation):
-        Total backtests: {BacktestModels.objects.count()}
-        Total results: {BacktestResult.objects.count()}
+        Total backtests: {total_models}
+        Total results: {total_results}
         
-        Recent backtest results:
-        {json.dumps(results_data, indent=2)}
+        Recent backtest results summary:
+        {json.dumps(results_summary, indent=2)}
         
-        Backtest models data:
-        {json.dumps(models_data, indent=2)}
+        Backtest models summary:
+        {json.dumps(models_summary, indent=2)}
         
         Current user message: {user_message}
         
@@ -15682,10 +15701,14 @@ def snowai_backtesting_gpt_chat_endpoint(request):
         - For casual conversation (greetings, thanks, general questions), respond naturally without forcing backtesting-related content
         - Be helpful and friendly while staying true to your quantitative expertise
         - Reference the backtesting data when it's actually relevant to what the user is asking
-        - You have access to full backtest results and model configuration data
+        - You have access to backtest results and model configuration summaries
         """
         
         ai_response = chat_gpt(context_prompt)
+        
+        # Ensure we have a valid response
+        if not ai_response or ai_response.strip() == '':
+            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question."
         
         SnowAIConversationHistory.objects.create(
             gpt_system='BacktestingGPT',
@@ -15696,8 +15719,10 @@ def snowai_backtesting_gpt_chat_endpoint(request):
         return JsonResponse({'status': 'success', 'response': ai_response})
         
     except Exception as e:
+        print(f'Error in BacktestingGPT chat function: {e}')
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'status': 'error', 'message': str(e)})
-
 
 @csrf_exempt
 @require_http_methods(["POST"])
