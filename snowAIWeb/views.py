@@ -17063,6 +17063,266 @@ def fetch_custom_global_interest_rates_extended_cny_v2024(request):
             'message': str(e)
         }, status=500)
 
+
+# Country to currency mapping
+COUNTRY_CURRENCY_MAPPING = {
+    'United States': 'USD',
+    'USA': 'USD',
+    'US': 'USD',
+    'Canada': 'CAD',
+    'United Kingdom': 'GBP',
+    'UK': 'GBP',
+    'Britain': 'GBP',
+    'European Union': 'EUR',
+    'Germany': 'EUR',
+    'France': 'EUR',
+    'Italy': 'EUR',
+    'Spain': 'EUR',
+    'Netherlands': 'EUR',
+    'Belgium': 'EUR',
+    'Austria': 'EUR',
+    'Portugal': 'EUR',
+    'Ireland': 'EUR',
+    'Greece': 'EUR',
+    'Finland': 'EUR',
+    'Japan': 'JPY',
+    'Australia': 'AUD',
+    'Switzerland': 'CHF',
+    'China': 'CNY',
+    'Brazil': 'BRL',
+    'Mexico': 'MXN',
+    'South Africa': 'ZAR',
+    'India': 'INR',
+    'Russia': 'RUB',
+    'South Korea': 'KRW',
+    'Sweden': 'SEK',
+    'Norway': 'NOK',
+    'Denmark': 'DKK',
+    'Poland': 'PLN',
+    'Czech Republic': 'CZK',
+    'Hungary': 'HUF',
+    'Turkey': 'TRY',
+    'Singapore': 'SGD',
+    'Hong Kong': 'HKD',
+    'New Zealand': 'NZD',
+    'Thailand': 'THB',
+    'Malaysia': 'MYR',
+    'Indonesia': 'IDR',
+    'Philippines': 'PHP',
+    'Taiwan': 'TWD',
+    'Israel': 'ILS',
+    'Chile': 'CLP',
+    'Colombia': 'COP',
+    'Peru': 'PEN',
+    'Argentina': 'ARS',
+    'Egypt': 'EGP',
+    'Saudi Arabia': 'SAR',
+    'UAE': 'AED',
+    'Kuwait': 'KWD',
+    'Qatar': 'QAR'
+}
+
+def get_currency_from_country(country_name):
+    """Convert country name to currency code"""
+    # Try direct match first
+    if country_name in COUNTRY_CURRENCY_MAPPING:
+        return COUNTRY_CURRENCY_MAPPING[country_name]
+    
+    # Try partial matches (case insensitive)
+    country_lower = country_name.lower()
+    for country, currency in COUNTRY_CURRENCY_MAPPING.items():
+        if country.lower() in country_lower or country_lower in country.lower():
+            return currency
+    
+    return None
+
+def chat_gpt_economic_analysis(economic_data, country_name, currency):
+    """Generate AI analysis of economic data"""
+    
+    # Prepare the data for AI analysis
+    events_summary = []
+    for event in economic_data:
+        events_summary.append({
+            'date': event.date_time.strftime('%Y-%m-%d'),
+            'event': event.event_name,
+            'impact': event.impact,
+            'actual': event.actual,
+            'forecast': event.forecast,
+            'previous': event.previous
+        })
+    
+    prompt = f"""
+    Analyze the following economic data for {country_name} ({currency}) over the last 30 days and provide a comprehensive economic summary.
+    
+    Economic Events:
+    {json.dumps(events_summary, indent=2)}
+    
+    Please provide your analysis in the following JSON format (no markdown, just pure JSON):
+    {{
+        "country": "{country_name}",
+        "currency": "{currency}",
+        "analysis_period": "Last 30 days",
+        "overall_sentiment": "positive/negative/neutral",
+        "key_highlights": [
+            "highlight 1",
+            "highlight 2",
+            "highlight 3"
+        ],
+        "economic_outlook": "Brief outlook summary",
+        "major_events": [
+            {{
+                "event_name": "Event name",
+                "impact_level": "high/medium/low",
+                "summary": "Brief event summary"
+            }}
+        ],
+        "risk_factors": [
+            "risk factor 1",
+            "risk factor 2"
+        ],
+        "opportunities": [
+            "opportunity 1",
+            "opportunity 2"
+        ],
+        "summary": "Overall economic summary in 2-3 sentences"
+    }}
+    
+    Ensure the response is valid JSON only, no additional text or formatting.
+    """
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+        
+        ai_response = response.choices[0].message['content'].strip()
+        
+        # Try to parse as JSON to validate
+        try:
+            json.loads(ai_response)
+            return ai_response
+        except json.JSONDecodeError:
+            # If parsing fails, return a structured error response
+            return json.dumps({
+                "country": country_name,
+                "currency": currency,
+                "analysis_period": "Last 30 days",
+                "overall_sentiment": "neutral",
+                "key_highlights": ["Analysis could not be completed due to formatting issues"],
+                "economic_outlook": "Unable to generate outlook",
+                "major_events": [],
+                "risk_factors": ["Analysis incomplete"],
+                "opportunities": [],
+                "summary": "Economic analysis could not be completed due to technical issues."
+            })
+            
+    except Exception as e:
+        return json.dumps({
+            "country": country_name,
+            "currency": currency,
+            "analysis_period": "Last 30 days",
+            "overall_sentiment": "neutral",
+            "key_highlights": [f"Error generating analysis: {str(e)}"],
+            "economic_outlook": "Analysis unavailable",
+            "major_events": [],
+            "risk_factors": ["Analysis service unavailable"],
+            "opportunities": [],
+            "summary": "Economic analysis is currently unavailable due to technical issues."
+        })
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def get_country_economic_data(request):
+    """Get economic data and AI analysis for a specific country"""
+    try:
+        data = json.loads(request.body)
+        country_name = data.get('country_name', '').strip()
+        
+        if not country_name:
+            return JsonResponse({
+                'success': False,
+                'error': 'Country name is required'
+            }, status=400)
+        
+        # Get currency code from country name
+        currency_code = get_currency_from_country(country_name)
+        
+        if not currency_code:
+            return JsonResponse({
+                'success': True,
+                'has_data': False,
+                'message': f'No economic data available for {country_name}',
+                'country': country_name,
+                'currency': None,
+                'ai_analysis': json.dumps({
+                    "country": country_name,
+                    "currency": "N/A",
+                    "analysis_period": "Last 30 days",
+                    "overall_sentiment": "neutral",
+                    "key_highlights": [f"No economic data tracking available for {country_name}"],
+                    "economic_outlook": "Economic data not tracked for this region",
+                    "major_events": [],
+                    "risk_factors": ["Limited economic data availability"],
+                    "opportunities": ["Economic data tracking could be expanded"],
+                    "summary": f"Currently, we do not track economic indicators for {country_name}. Economic analysis is not available for this region."
+                })
+            })
+        
+        # Query economic events for the last 30 days
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        economic_events = EconomicEvent.objects.filter(
+            currency=currency_code,
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
+        
+        if not economic_events.exists():
+            return JsonResponse({
+                'success': True,
+                'has_data': False,
+                'message': f'No recent economic data found for {country_name} ({currency_code})',
+                'country': country_name,
+                'currency': currency_code,
+                'ai_analysis': json.dumps({
+                    "country": country_name,
+                    "currency": currency_code,
+                    "analysis_period": "Last 30 days",
+                    "overall_sentiment": "neutral",
+                    "key_highlights": [f"No economic events recorded for {currency_code} in the last 30 days"],
+                    "economic_outlook": "No recent data available for analysis",
+                    "major_events": [],
+                    "risk_factors": ["Limited recent economic data"],
+                    "opportunities": ["Economic monitoring could be enhanced"],
+                    "summary": f"No economic events have been recorded for {country_name} ({currency_code}) in the past 30 days."
+                })
+            })
+        
+        # Generate AI analysis
+        ai_analysis = chat_gpt_economic_analysis(economic_events, country_name, currency_code)
+        
+        return JsonResponse({
+            'success': True,
+            'has_data': True,
+            'message': f'Economic data found for {country_name} ({currency_code})',
+            'country': country_name,
+            'currency': currency_code,
+            'events_count': economic_events.count(),
+            'ai_analysis': ai_analysis
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON data'
+        }, status=400)
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'An error occurred: {str(e)}'
+        }, status=500)
+        
                 
 # LEGODI BACKEND CODE
 def send_simple_message():

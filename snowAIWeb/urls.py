@@ -243,6 +243,9 @@ urlpatterns = [
          views.fetch_custom_global_interest_rates_extended_cny_v2024, 
          name='custom_global_interest_rates_extended_cny_v2024'),
 
+     path('api/economic-data-map/', views.get_country_economic_data, name='get_country_economic_data'),
+
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
