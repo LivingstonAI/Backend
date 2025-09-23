@@ -249,6 +249,10 @@ urlpatterns = [
      path('trigger_manual_gpt_discussion/', views.trigger_manual_gpt_discussion, name='trigger_manual_gpt_discussion'),
      path('get_current_gpt_discussion/', views.get_current_gpt_discussion, name='get_current_gpt_discussion'),
 
+     path('api/snowai-accounts-deep-analysis/', views.fetch_snowai_accounts_for_deep_analysis, name='fetch_snowai_accounts_for_deep_analysis'),
+     path('api/deep-account-diagnostics/<int:account_id>/', views.calculate_deep_account_performance_metrics, name='calculate_deep_account_performance_metrics'),
+     path('api/ai-enhanced-diagnostics/<int:account_id>/', views.generate_ai_enhanced_account_diagnostics, name='generate_ai_enhanced_account_diagnostics'),
+
 
 
     # create appproprate urls.py here

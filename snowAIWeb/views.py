@@ -17845,6 +17845,528 @@ ResearchGPT Data Context:
 
 
 
+import pytz
+import statistics
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_snowai_accounts_for_deep_analysis(request):
+    """Fetch all account names for selection"""
+    try:
+        accounts = Account.objects.all().values('id', 'account_name', 'main_assets', 'initial_capital')
+        accounts_list = list(accounts)
+        
+        return JsonResponse({
+            'success': True,
+            'accounts': accounts_list
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def calculate_deep_account_performance_metrics(request, account_id):
+    """Calculate comprehensive diagnostics for a specific account"""
+    try:
+        # Get South African timezone
+        sa_tz = pytz.timezone('Africa/Johannesburg')
+        current_time = timezone.now().astimezone(sa_tz)
+        
+        # Get account and all trades
+        account = Account.objects.get(id=account_id)
+        all_trades = AccountTrades.objects.filter(account=account)
+        
+        # Basic Performance Metrics
+        total_trades = all_trades.count()
+        profitable_trades = all_trades.filter(outcome='Profit').count()
+        losing_trades = all_trades.filter(outcome='Loss').count()
+        
+        win_rate = (profitable_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        # Calculate total P&L
+        total_profit = sum(trade.amount for trade in all_trades.filter(outcome='Profit'))
+        total_loss = sum(abs(trade.amount) for trade in all_trades.filter(outcome='Loss'))
+        net_pnl = total_profit - total_loss
+        
+        # Average trade metrics
+        avg_win = total_profit / profitable_trades if profitable_trades > 0 else 0
+        avg_loss = total_loss / losing_trades if losing_trades > 0 else 0
+        
+        # Risk-Reward Ratio
+        risk_reward_ratio = avg_win / avg_loss if avg_loss > 0 else 0
+        
+        # Profit Factor
+        profit_factor = total_profit / total_loss if total_loss > 0 else float('inf')
+        
+        # Time-based Analysis
+        current_day = current_time.strftime('%A')
+        current_hour = current_time.hour
+        current_session = get_trading_session_advanced(current_hour)
+        
+        # Performance by current day
+        day_trades = all_trades.filter(day_of_week_entered=current_day)
+        day_performance = calculate_day_performance_probability(day_trades)
+        
+        # Performance by current session
+        session_trades = all_trades.filter(trading_session_entered=current_session)
+        session_performance = calculate_session_performance_probability(session_trades)
+        
+        # Combined probability for current time
+        time_based_win_probability = calculate_time_based_win_probability(
+            day_performance, session_performance, win_rate
+        )
+        
+        # Asset Performance Analysis
+        asset_performance = analyze_asset_performance(all_trades)
+        
+        # Strategy Performance Analysis
+        strategy_performance = analyze_strategy_performance(all_trades)
+        
+        # Emotional Bias Analysis
+        emotional_analysis = analyze_emotional_patterns(all_trades)
+        
+        # Streaks Analysis
+        streaks_data = analyze_winning_losing_streaks(all_trades)
+        
+        # Monthly Performance Trend
+        monthly_performance = calculate_monthly_performance_trend(all_trades)
+        
+        # Drawdown Analysis
+        drawdown_analysis = calculate_drawdown_metrics(all_trades, account.initial_capital)
+        
+        # Risk Metrics
+        risk_metrics = calculate_advanced_risk_metrics(all_trades, account.initial_capital)
+        
+        return JsonResponse({
+            'success': True,
+            'account_info': {
+                'name': account.account_name,
+                'main_assets': account.main_assets,
+                'initial_capital': account.initial_capital
+            },
+            'basic_metrics': {
+                'total_trades': total_trades,
+                'profitable_trades': profitable_trades,
+                'losing_trades': losing_trades,
+                'win_rate': round(win_rate, 2),
+                'net_pnl': round(net_pnl, 2),
+                'avg_win': round(avg_win, 2),
+                'avg_loss': round(avg_loss, 2),
+                'risk_reward_ratio': round(risk_reward_ratio, 2),
+                'profit_factor': round(profit_factor, 2)
+            },
+            'time_analysis': {
+                'current_day': current_day,
+                'current_session': current_session,
+                'current_time': current_time.strftime('%H:%M %Z'),
+                'time_based_win_probability': round(time_based_win_probability, 2),
+                'day_performance': day_performance,
+                'session_performance': session_performance
+            },
+            'asset_performance': asset_performance,
+            'strategy_performance': strategy_performance,
+            'emotional_analysis': emotional_analysis,
+            'streaks_data': streaks_data,
+            'monthly_performance': monthly_performance,
+            'drawdown_analysis': drawdown_analysis,
+            'risk_metrics': risk_metrics
+        })
+        
+    except Account.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Account not found'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def generate_ai_enhanced_account_diagnostics(request, account_id):
+    """Generate AI-powered diagnostic insights using GPT-4o-mini"""
+    try:
+        data = json.loads(request.body)
+        performance_data = data.get('performance_data', {})
+        
+        # Set up OpenAI API key
+        openai.api_key = os.getenv('OPENAI_API_KEY')
+        
+        # Create comprehensive prompt for AI analysis
+        prompt = create_ai_diagnostic_prompt(account_id, performance_data)
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert trading performance analyst with deep expertise in risk management, behavioral finance, and trading psychology. Provide actionable insights and recommendations."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_tokens=1500,
+            temperature=0.7
+        )
+        
+        ai_insights = response.choices[0].message.content
+        
+        return JsonResponse({
+            'success': True,
+            'ai_insights': ai_insights,
+            'generated_at': timezone.now().isoformat()
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+# Helper Functions
+
+def get_trading_session_advanced(hour):
+    """Determine trading session based on hour (SA time)"""
+    if 9 <= hour < 17:
+        return "London"
+    elif 15 <= hour < 23:
+        return "NY"
+    elif 2 <= hour < 10:
+        return "Asian"
+    else:
+        return "Off-Hours"
+
+def calculate_day_performance_probability(day_trades):
+    """Calculate win probability for specific day"""
+    if not day_trades.exists():
+        return {'win_rate': 0, 'trade_count': 0, 'confidence': 'Low'}
+    
+    total = day_trades.count()
+    wins = day_trades.filter(outcome='Profit').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    confidence = 'High' if total >= 10 else 'Medium' if total >= 5 else 'Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'confidence': confidence
+    }
+
+def calculate_session_performance_probability(session_trades):
+    """Calculate win probability for specific session"""
+    if not session_trades.exists():
+        return {'win_rate': 0, 'trade_count': 0, 'confidence': 'Low'}
+    
+    total = session_trades.count()
+    wins = session_trades.filter(outcome='Profit').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    confidence = 'High' if total >= 15 else 'Medium' if total >= 8 else 'Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'confidence': confidence
+    }
+
+def calculate_time_based_win_probability(day_perf, session_perf, overall_win_rate):
+    """Combine day and session performance with overall win rate"""
+    weights = {
+        'day': 0.3,
+        'session': 0.3,
+        'overall': 0.4
+    }
+    
+    day_rate = day_perf['win_rate'] if day_perf['trade_count'] > 0 else overall_win_rate
+    session_rate = session_perf['win_rate'] if session_perf['trade_count'] > 0 else overall_win_rate
+    
+    weighted_probability = (
+        day_rate * weights['day'] +
+        session_rate * weights['session'] +
+        overall_win_rate * weights['overall']
+    )
+    
+    return weighted_probability
+
+def analyze_asset_performance(trades):
+    """Analyze performance by asset"""
+    asset_stats = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total_pnl': 0})
+    
+    for trade in trades:
+        asset_stats[trade.asset]['total_pnl'] += trade.amount
+        if trade.outcome == 'Profit':
+            asset_stats[trade.asset]['wins'] += 1
+        else:
+            asset_stats[trade.asset]['losses'] += 1
+    
+    result = []
+    for asset, stats in asset_stats.items():
+        total_trades = stats['wins'] + stats['losses']
+        win_rate = (stats['wins'] / total_trades * 100) if total_trades > 0 else 0
+        
+        result.append({
+            'asset': asset,
+            'total_trades': total_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(stats['total_pnl'], 2),
+            'wins': stats['wins'],
+            'losses': stats['losses']
+        })
+    
+    return sorted(result, key=lambda x: x['total_pnl'], reverse=True)
+
+def analyze_strategy_performance(trades):
+    """Analyze performance by strategy"""
+    strategy_stats = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total_pnl': 0})
+    
+    for trade in trades:
+        strategy_stats[trade.strategy]['total_pnl'] += trade.amount
+        if trade.outcome == 'Profit':
+            strategy_stats[trade.strategy]['wins'] += 1
+        else:
+            strategy_stats[trade.strategy]['losses'] += 1
+    
+    result = []
+    for strategy, stats in strategy_stats.items():
+        total_trades = stats['wins'] + stats['losses']
+        win_rate = (stats['wins'] / total_trades * 100) if total_trades > 0 else 0
+        
+        result.append({
+            'strategy': strategy,
+            'total_trades': total_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(stats['total_pnl'], 2),
+            'wins': stats['wins'],
+            'losses': stats['losses']
+        })
+    
+    return sorted(result, key=lambda x: x['win_rate'], reverse=True)
+
+def analyze_emotional_patterns(trades):
+    """Analyze emotional bias patterns"""
+    trades_with_emotion = trades.exclude(emotional_bias__isnull=True).exclude(emotional_bias='')
+    
+    if not trades_with_emotion.exists():
+        return {'has_data': False, 'message': 'No emotional bias data available'}
+    
+    emotion_performance = defaultdict(lambda: {'count': 0, 'wins': 0, 'total_pnl': 0})
+    
+    for trade in trades_with_emotion:
+        emotion = trade.emotional_bias.lower()
+        emotion_performance[emotion]['count'] += 1
+        emotion_performance[emotion]['total_pnl'] += trade.amount
+        if trade.outcome == 'Profit':
+            emotion_performance[emotion]['wins'] += 1
+    
+    result = []
+    for emotion, stats in emotion_performance.items():
+        win_rate = (stats['wins'] / stats['count'] * 100) if stats['count'] > 0 else 0
+        result.append({
+            'emotion': emotion.title(),
+            'trade_count': stats['count'],
+            'win_rate': round(win_rate, 2),
+            'avg_pnl': round(stats['total_pnl'] / stats['count'], 2)
+        })
+    
+    return {
+        'has_data': True,
+        'patterns': sorted(result, key=lambda x: x['trade_count'], reverse=True)
+    }
+
+def analyze_winning_losing_streaks(trades):
+    """Analyze winning and losing streaks"""
+    if not trades.exists():
+        return {'max_winning_streak': 0, 'max_losing_streak': 0, 'current_streak': 0}
+    
+    # Order trades by date
+    ordered_trades = trades.order_by('date_entered')
+    
+    max_winning_streak = 0
+    max_losing_streak = 0
+    current_streak = 0
+    current_streak_type = None
+    
+    temp_winning = 0
+    temp_losing = 0
+    
+    for trade in ordered_trades:
+        if trade.outcome == 'Profit':
+            temp_winning += 1
+            temp_losing = 0
+            max_winning_streak = max(max_winning_streak, temp_winning)
+            
+            if current_streak_type == 'win':
+                current_streak += 1
+            else:
+                current_streak = 1
+                current_streak_type = 'win'
+        else:
+            temp_losing += 1
+            temp_winning = 0
+            max_losing_streak = max(max_losing_streak, temp_losing)
+            
+            if current_streak_type == 'loss':
+                current_streak += 1
+            else:
+                current_streak = 1
+                current_streak_type = 'loss'
+    
+    return {
+        'max_winning_streak': max_winning_streak,
+        'max_losing_streak': max_losing_streak,
+        'current_streak': current_streak,
+        'current_streak_type': current_streak_type or 'none'
+    }
+
+def calculate_monthly_performance_trend(trades):
+    """Calculate monthly performance trend"""
+    monthly_data = defaultdict(lambda: {'pnl': 0, 'trades': 0, 'wins': 0})
+    
+    for trade in trades:
+        if trade.date_entered:
+            month_key = trade.date_entered.strftime('%Y-%m')
+            monthly_data[month_key]['pnl'] += trade.amount
+            monthly_data[month_key]['trades'] += 1
+            if trade.outcome == 'Profit':
+                monthly_data[month_key]['wins'] += 1
+    
+    result = []
+    for month, data in sorted(monthly_data.items()):
+        win_rate = (data['wins'] / data['trades'] * 100) if data['trades'] > 0 else 0
+        result.append({
+            'month': month,
+            'pnl': round(data['pnl'], 2),
+            'trades': data['trades'],
+            'win_rate': round(win_rate, 2)
+        })
+    
+    return result
+
+def calculate_drawdown_metrics(trades, initial_capital):
+    """Calculate drawdown metrics"""
+    if not trades.exists():
+        return {'max_drawdown': 0, 'current_drawdown': 0, 'drawdown_periods': []}
+    
+    # Order trades by date and calculate running balance
+    ordered_trades = trades.order_by('date_entered')
+    running_balance = initial_capital
+    peak_balance = initial_capital
+    max_drawdown = 0
+    drawdowns = []
+    
+    for trade in ordered_trades:
+        running_balance += trade.amount
+        
+        if running_balance > peak_balance:
+            peak_balance = running_balance
+        
+        drawdown_pct = ((peak_balance - running_balance) / peak_balance * 100) if peak_balance > 0 else 0
+        max_drawdown = max(max_drawdown, drawdown_pct)
+        
+        if drawdown_pct > 5:  # Track significant drawdowns
+            drawdowns.append({
+                'date': trade.date_entered.strftime('%Y-%m-%d') if trade.date_entered else 'Unknown',
+                'drawdown_pct': round(drawdown_pct, 2),
+                'balance': round(running_balance, 2)
+            })
+    
+    current_drawdown = ((peak_balance - running_balance) / peak_balance * 100) if peak_balance > 0 else 0
+    
+    return {
+        'max_drawdown': round(max_drawdown, 2),
+        'current_drawdown': round(current_drawdown, 2),
+        'current_balance': round(running_balance, 2),
+        'peak_balance': round(peak_balance, 2),
+        'significant_drawdowns': drawdowns[-5:]  # Last 5 significant drawdowns
+    }
+
+def calculate_advanced_risk_metrics(trades, initial_capital):
+    """Calculate advanced risk metrics"""
+    if not trades.exists():
+        return {}
+    
+    returns = [trade.amount / initial_capital * 100 for trade in trades]
+    
+    # Calculate Sharpe-like ratio (simplified)
+    avg_return = statistics.mean(returns) if returns else 0
+    return_std = statistics.stdev(returns) if len(returns) > 1 else 0
+    sharpe_ratio = avg_return / return_std if return_std > 0 else 0
+    
+    # Calculate Value at Risk (VaR) - 95% confidence
+    sorted_returns = sorted(returns)
+    var_95 = sorted_returns[int(0.05 * len(sorted_returns))] if len(sorted_returns) > 20 else min(returns) if returns else 0
+    
+    # Calculate Maximum Consecutive Losses
+    max_consecutive_losses = 0
+    consecutive_losses = 0
+    
+    for trade in trades.order_by('date_entered'):
+        if trade.outcome == 'Loss':
+            consecutive_losses += 1
+            max_consecutive_losses = max(max_consecutive_losses, consecutive_losses)
+        else:
+            consecutive_losses = 0
+    
+    return {
+        'sharpe_ratio': round(sharpe_ratio, 3),
+        'var_95': round(var_95, 2),
+        'volatility': round(return_std, 2),
+        'max_consecutive_losses': max_consecutive_losses,
+        'avg_return_pct': round(avg_return, 2)
+    }
+
+def create_ai_diagnostic_prompt(account_id, performance_data):
+    """Create comprehensive prompt for AI analysis"""
+    prompt = f"""
+    Please analyze the following trading account performance data and provide expert insights:
+
+    ACCOUNT OVERVIEW:
+    - Account: {performance_data.get('account_info', {}).get('name', 'Unknown')}
+    - Initial Capital: ${performance_data.get('account_info', {}).get('initial_capital', 0):,.2f}
+    - Main Assets: {performance_data.get('account_info', {}).get('main_assets', 'Unknown')}
+
+    PERFORMANCE METRICS:
+    - Total Trades: {performance_data.get('basic_metrics', {}).get('total_trades', 0)}
+    - Win Rate: {performance_data.get('basic_metrics', {}).get('win_rate', 0)}%
+    - Net P&L: ${performance_data.get('basic_metrics', {}).get('net_pnl', 0):,.2f}
+    - Risk/Reward Ratio: {performance_data.get('basic_metrics', {}).get('risk_reward_ratio', 0)}
+    - Profit Factor: {performance_data.get('basic_metrics', {}).get('profit_factor', 0)}
+
+    CURRENT TIME ANALYSIS:
+    - Current Day: {performance_data.get('time_analysis', {}).get('current_day', 'Unknown')}
+    - Current Session: {performance_data.get('time_analysis', {}).get('current_session', 'Unknown')}
+    - Time-based Win Probability: {performance_data.get('time_analysis', {}).get('time_based_win_probability', 0)}%
+
+    RISK METRICS:
+    - Max Drawdown: {performance_data.get('drawdown_analysis', {}).get('max_drawdown', 0)}%
+    - Sharpe Ratio: {performance_data.get('risk_metrics', {}).get('sharpe_ratio', 0)}
+    - Volatility: {performance_data.get('risk_metrics', {}).get('volatility', 0)}%
+
+    Based on this data, please provide:
+    1. Overall performance assessment
+    2. Key strengths and weaknesses
+    3. Risk management evaluation
+    4. Specific actionable recommendations
+    5. Psychological/behavioral insights
+    6. Market timing analysis
+    7. Strategic improvements for better performance
+
+    Keep the analysis concise but comprehensive, focusing on actionable insights.
+    """
+    
+    return prompt
+
+
+
+
+
 
 
 
