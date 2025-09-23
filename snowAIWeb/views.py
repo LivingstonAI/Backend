@@ -17318,70 +17318,8 @@ def get_country_economic_data(request):
         }, status=500)
         
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def trigger_manual_gpt_discussion(request):
-    """Manually trigger a GPT discussion"""
-    try:
-        result = initiate_gpt_discussion(trigger_type='manual')
-        return JsonResponse({
-            'status': 'success', 
-            'message': 'GPT discussion initiated successfully',
-            'discussion_id': result.get('discussion_id'),
-            'total_messages': result.get('total_messages', 0)
-        })
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)})
-
-@csrf_exempt
-@require_http_methods(["GET"])
-def get_current_gpt_discussion(request):
-    """Get the current GPT discussion and all messages"""
-    try:
-        # Get the current discussion
-        discussion = GPTDiscussion.objects.filter(discussion_id='current_discussion').first()
-        
-        if not discussion:
-            return JsonResponse({
-                'status': 'success',
-                'discussion': None,
-                'messages': []
-            })
-        
-        # Get all messages for this discussion
-        messages = GPTDiscussionMessage.objects.filter(discussion=discussion).order_by('timestamp')
-        
-        messages_data = []
-        for msg in messages:
-            messages_data.append({
-                'gpt_system': msg.gpt_system,
-                'message': msg.message,
-                'timestamp': msg.timestamp.isoformat(),
-                'turn_number': msg.turn_number
-            })
-        
-        discussion_data = {
-            'discussion_id': discussion.discussion_id,
-            'started_at': discussion.started_at.isoformat(),
-            'completed_at': discussion.completed_at.isoformat() if discussion.completed_at else None,
-            'is_active': discussion.is_active,
-            'total_messages': discussion.total_messages,
-            'central_gpt_summary': discussion.central_gpt_summary,
-            'discussion_metrics': discussion.discussion_metrics,
-            'trigger_type': discussion.trigger_type
-        }
-        
-        return JsonResponse({
-            'status': 'success',
-            'discussion': discussion_data,
-            'messages': messages_data
-        })
-        
-    except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)})
-
 def initiate_gpt_discussion(trigger_type='scheduled'):
-    """Main function to orchestrate GPT discussion"""
+    """Main function to orchestrate GPT discussion with model data access"""
     try:
         # Delete any existing discussion
         GPTDiscussion.objects.filter(discussion_id='current_discussion').delete()
@@ -17403,17 +17341,21 @@ def initiate_gpt_discussion(trigger_type='scheduled'):
             'ResearchGPT': {'specialty': 'comprehensive analysis', 'tone': 'insightful'}
         }
         
-        # Generate discussion topic using IdeaGPT instead of CentralGPT
-        topic_prompt = """
+        # Generate discussion topic using IdeaGPT with its data context
+        idea_data = get_idea_gpt_data()
+        topic_prompt = f"""
         You are IdeaGPT, the creative innovation specialist for SnowAI. You're initiating a discussion 
         between all the specialized AI systems about SnowAI improvements and insights.
+        
+        Your current ideas data context:
+        {idea_data}
         
         Generate a focused, creative discussion topic about SnowAI that each specialist can contribute 
         to meaningfully. The topic should be:
         - Concise (1-2 sentences)
         - Innovative and thought-provoking
         - Related to: system performance, user value, future improvements, or strategic insights
-        - Something that would spark creative solutions
+        - Something that would spark creative solutions based on current system data
         
         Just return the topic, nothing else.
         """
@@ -17448,22 +17390,31 @@ def initiate_gpt_discussion(trigger_type='scheduled'):
                     if msg.gpt_system != 'CentralGPT' or msg.turn_number == 0:
                         context += f"{msg.gpt_system}: {msg.message}\n"
                 
-                # Generate response for this GPT
+                # Get system-specific data context
+                system_data_context = get_system_data_context(gpt_system)
+                
+                # Generate response for this GPT with its data context
                 gpt_prompt = f"""
                 You are {gpt_system}, specializing in {gpt_systems[gpt_system]['specialty']}.
                 You have a {gpt_systems[gpt_system]['tone']} personality.
                 
+                Your current system data context:
+                {system_data_context}
+                
+                Discussion context:
                 {context}
                 
                 Current round: {round_num}/3
                 
                 Instructions:
-                - Contribute your unique perspective on SnowAI based on your specialty
+                - Contribute your unique perspective on SnowAI based on your specialty and current data
+                - Use insights from your actual system data to inform your response
                 - Keep your response concise (2-3 sentences max)
                 - Reference or build upon previous comments when relevant
                 - Stay focused on the discussion topic
                 - Be conversational and collaborative
                 - Don't repeat what others have already said
+                - Ground your insights in the actual data you have access to
                 
                 Your response:
                 """
@@ -17480,7 +17431,7 @@ def initiate_gpt_discussion(trigger_type='scheduled'):
                 
                 total_messages += 1
         
-        # Generate final summary using CentralGPT
+        # Generate final summary using CentralGPT with all system data
         all_messages = GPTDiscussionMessage.objects.filter(
             discussion=discussion
         ).exclude(gpt_system='CentralGPT').order_by('timestamp')
@@ -17488,6 +17439,9 @@ def initiate_gpt_discussion(trigger_type='scheduled'):
         conversation_text = ""
         for msg in all_messages:
             conversation_text += f"{msg.gpt_system}: {msg.message}\n"
+        
+        # Get comprehensive system overview for CentralGPT
+        comprehensive_data = get_comprehensive_system_data()
         
         summary_prompt = f"""
         You are CentralGPT analyzing a discussion between SnowAI's specialized systems.
@@ -17497,13 +17451,17 @@ def initiate_gpt_discussion(trigger_type='scheduled'):
         Full Conversation:
         {conversation_text}
         
-        Generate a comprehensive summary that includes:
-        1. Key insights and themes that emerged
-        2. Areas of consensus among the systems
-        3. Unique perspectives each system brought
-        4. Actionable recommendations for SnowAI
+        Complete System Data Overview:
+        {comprehensive_data}
         
-        Keep it structured and insightful.
+        Generate a comprehensive summary that includes:
+        1. Key insights and themes that emerged from the data-informed discussion
+        2. Areas of consensus among the systems based on their actual data
+        3. Unique perspectives each system brought from their specialized data
+        4. Actionable recommendations for SnowAI based on real system metrics
+        5. Data-driven observations about system performance and opportunities
+        
+        Keep it structured and insightful, grounding recommendations in actual system data.
         """
         
         final_summary = chat_gpt(summary_prompt).strip()
@@ -17548,38 +17506,279 @@ def initiate_gpt_discussion(trigger_type='scheduled'):
         traceback.print_exc()
         return {'status': 'error', 'message': str(e)}
 
-def scheduled_gpt_discussion():
-    """Function called by scheduler"""
-    print(f"Starting scheduled GPT discussion at {datetime.now()}")
-    result = initiate_gpt_discussion(trigger_type='scheduled')
-    print(f"GPT discussion completed: {result}")
 
-# Schedule the discussion every 5 days
-def start_gpt_discussion_scheduler():
-    """Start the background scheduler for GPT discussions"""
+def get_system_data_context(gpt_system):
+    """Get specific data context for each GPT system"""
     try:
-        # Remove any existing jobs with this ID
-        try:
-            scheduler.remove_job('gpt_discussion')
-        except:
-            pass
-        
-        # Add the job to run every 5 days
-        scheduler.add_job(
-            scheduled_gpt_discussion,
-            'interval',
-            days=5,
-            id='gpt_discussion',
-            replace_existing=True
-        )
-        
-        scheduler.start()
-        print("GPT discussion scheduler started - will run every 5 days")
-        
+        if gpt_system == 'TraderHistoryGPT':
+            return get_trader_history_gpt_data()
+        elif gpt_system == 'MacroGPT':
+            return get_macro_gpt_data()
+        elif gpt_system == 'IdeaGPT':
+            return get_idea_gpt_data()
+        elif gpt_system == 'BacktestingGPT':
+            return get_backtesting_gpt_data()
+        elif gpt_system == 'PaperGPT':
+            return get_paper_gpt_data()
+        elif gpt_system == 'ResearchGPT':
+            return get_research_gpt_data()
+        else:
+            return "No specific data context available."
     except Exception as e:
-        print(f"Error starting GPT discussion scheduler: {e}")
+        print(f"Error getting data context for {gpt_system}: {e}")
+        return f"Error accessing {gpt_system} data context."
 
 
+def get_trader_history_gpt_data():
+    """Get trading data for TraderHistoryGPT"""
+    try:
+        recent_trades = AccountTrades.objects.all()[:30]
+        total_trades = AccountTrades.objects.count()
+        
+        trades_data = []
+        for trade in recent_trades:
+            trade_dict = {}
+            for field in trade._meta.fields:
+                field_value = getattr(trade, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    trade_dict[field.name] = field_value.isoformat()
+                else:
+                    trade_dict[field.name] = str(field_value) if field_value is not None else None
+            trades_data.append(trade_dict)
+        
+        return f"""Trading Performance Data:
+Total trades in system: {total_trades}
+
+Recent trades data:
+{json.dumps(trades_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing trading data: {e}"
+
+
+def get_macro_gpt_data():
+    """Get economic data for MacroGPT"""
+    try:
+        past_events = EconomicEvent.objects.filter(
+            date_time__gte=datetime.now() - timedelta(days=30),
+            date_time__lt=datetime.now()
+        ).order_by('-date_time')[:20]
+        
+        events_data = []
+        for event in past_events:
+            event_dict = {}
+            for field in event._meta.fields:
+                field_value = getattr(event, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    event_dict[field.name] = field_value.isoformat()
+                else:
+                    event_dict[field.name] = str(field_value) if field_value is not None else None
+            events_data.append(event_dict)
+        
+        return f"""Economic Events Data:
+Total events tracked: {EconomicEvent.objects.count()}
+
+Past economic events (Last 30 days):
+{json.dumps(events_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing economic data: {e}"
+
+
+def get_idea_gpt_data():
+    """Get ideas data for IdeaGPT"""
+    try:
+        recent_ideas = IdeaModel.objects.order_by('-created_at')[:15]
+        total_ideas = IdeaModel.objects.count()
+        
+        ideas_data = []
+        for idea in recent_ideas:
+            idea_dict = {}
+            for field in idea._meta.fields:
+                field_value = getattr(idea, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    idea_dict[field.name] = field_value.isoformat()
+                else:
+                    idea_dict[field.name] = str(field_value) if field_value is not None else None
+            ideas_data.append(idea_dict)
+        
+        return f"""Ideas Management Data:
+Total ideas in system: {total_ideas}
+
+Recent ideas data:
+{json.dumps(ideas_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing ideas data: {e}"
+
+
+def get_backtesting_gpt_data():
+    """Get backtesting data for BacktestingGPT"""
+    try:
+        recent_results = BacktestResult.objects.order_by('-created_at')[:10]
+        backtest_models = BacktestModels.objects.all()[:10]
+        
+        results_data = []
+        for result in recent_results:
+            result_info = {
+                'start': result.start.isoformat(),
+                'end': result.end.isoformat(),
+                'duration': result.duration,
+                'return_percent': result.return_percent,
+                'annual_return': result.annual_return,
+                'sharpe_ratio': result.sharpe_ratio,
+                'max_drawdown': result.max_drawdown,
+                'num_trades': result.num_trades,
+                'win_rate': result.win_rate,
+                'equity_final': result.equity_final,
+                'created_at': result.created_at.isoformat()
+            }
+            results_data.append(result_info)
+        
+        models_data = []
+        for model in backtest_models:
+            model_info = {
+                'chosen_dataset': model.chosen_dataset,
+                'dataset_start': model.dataset_start,
+                'dataset_end': model.dataset_end,
+                'initial_capital': model.initial_capital,
+                'model_backtested': model.model_backtested,
+                'generated_code': model.generated_code[:1000] + "..." if model.generated_code and len(model.generated_code) > 1000 else model.generated_code
+            }
+            models_data.append(model_info)
+        
+        return f"""Backtesting Performance Data:
+Total backtest results: {BacktestResult.objects.count()}
+Total backtest models: {BacktestModels.objects.count()}
+
+Recent backtest results:
+{json.dumps(results_data, indent=2)}
+
+Backtest models data:
+{json.dumps(models_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing backtesting data: {e}"
+
+
+def get_paper_gpt_data():
+    """Get research papers data for PaperGPT"""
+    try:
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:10]
+        total_papers = PaperGPT.objects.count()
+        
+        papers_data = []
+        for paper in recent_papers:
+            paper_info = {
+                'title': paper.title,
+                'category': paper.category,
+                'upload_date': paper.upload_date.isoformat(),
+                'file_name': paper.file_name,
+                'ai_summary': paper.ai_summary[:300] + "..." if paper.ai_summary and len(paper.ai_summary) > 300 else paper.ai_summary,
+                'has_notes': bool(paper.personal_notes),
+                'text_length': len(paper.extracted_text) if paper.extracted_text else 0
+            }
+            papers_data.append(paper_info)
+        
+        return f"""Research Papers Data:
+Total papers in collection: {total_papers}
+
+Recent papers data:
+{json.dumps(papers_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing papers data: {e}"
+
+
+def get_research_gpt_data():
+    """Get ML research data for ResearchGPT"""
+    try:
+        ml_models = SnowAIMLModelLogEntry.objects.all()[:10]
+        total_models = SnowAIMLModelLogEntry.objects.count()
+        
+        ml_models_data = []
+        for model in ml_models:
+            model_dict = {}
+            for field in model._meta.fields:
+                field_value = getattr(model, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    model_dict[field.name] = field_value.isoformat()
+                else:
+                    model_dict[field.name] = str(field_value) if field_value is not None else None
+            ml_models_data.append(model_dict)
+        
+        return f"""Research & ML Data:
+Total ML models tracked: {total_models}
+
+ML Models data:
+{json.dumps(ml_models_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing research data: {e}"
+
+
+def get_comprehensive_system_data():
+    """Get overview of all system data for CentralGPT"""
+    try:
+        # Get actual data summaries from each system
+        trading_data = get_trader_history_gpt_data()
+        macro_data = get_macro_gpt_data()
+        ideas_data = get_idea_gpt_data()
+        backtesting_data = get_backtesting_gpt_data()
+        papers_data = get_paper_gpt_data()
+        research_data = get_research_gpt_data()
+        
+        overview = {
+            'system_metrics': {
+                'total_trades': AccountTrades.objects.count(),
+                'total_economic_events': EconomicEvent.objects.count(),
+                'total_ideas': IdeaModel.objects.count(),
+                'total_backtest_results': BacktestResult.objects.count(),
+                'total_backtest_models': BacktestModels.objects.count(),
+                'total_papers': PaperGPT.objects.count(),
+                'total_ml_models': SnowAIMLModelLogEntry.objects.count(),
+                'recent_activity': {
+                    'recent_trades': AccountTrades.objects.filter(
+                        created_at__gte=datetime.now() - timedelta(days=7)
+                    ).count() if hasattr(AccountTrades._meta.get_field('created_at'), 'name') else 'N/A',
+                    'recent_events': EconomicEvent.objects.filter(
+                        date_time__gte=datetime.now() - timedelta(days=7)
+                    ).count(),
+                    'recent_ideas': IdeaModel.objects.filter(
+                        created_at__gte=datetime.now() - timedelta(days=7)
+                    ).count(),
+                    'recent_backtests': BacktestResult.objects.filter(
+                        created_at__gte=datetime.now() - timedelta(days=7)
+                    ).count()
+                }
+            }
+        }
+        
+        return f"""Comprehensive System Data Overview:
+
+System Metrics Summary:
+{json.dumps(overview, indent=2)}
+
+TraderHistoryGPT Data Context:
+{trading_data}
+
+MacroGPT Data Context:
+{macro_data}
+
+IdeaGPT Data Context:
+{ideas_data}
+
+BacktestingGPT Data Context:
+{backtesting_data}
+
+PaperGPT Data Context:
+{papers_data}
+
+ResearchGPT Data Context:
+{research_data}
+"""
+    except Exception as e:
+        return f"Error accessing comprehensive system data: {e}"
 
 
 
