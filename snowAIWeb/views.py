@@ -17318,7 +17318,6 @@ def get_country_economic_data(request):
         }, status=500)
         
 
-
 @csrf_exempt
 @require_http_methods(["POST"])
 def trigger_manual_gpt_discussion(request):
@@ -17431,12 +17430,14 @@ def initiate_gpt_discussion(trigger_type='scheduled'):
             
             for gpt_system in gpt_list:
                 # Get previous messages for context
-                previous_messages = GPTDiscussionMessage.objects.filter(
+                previous_messages = list(GPTDiscussionMessage.objects.filter(
                     discussion=discussion
-                ).order_by('timestamp')
+                ).order_by('timestamp'))
                 
                 context = f"Discussion Topic: {discussion_topic}\n\nPrevious messages:\n"
-                for msg in previous_messages[-10:]:  # Last 10 messages for context
+                # Get last 10 messages for context
+                recent_messages = previous_messages[-10:] if len(previous_messages) > 10 else previous_messages
+                for msg in recent_messages:
                     if msg.gpt_system != 'CentralGPT' or msg.turn_number == 0:
                         context += f"{msg.gpt_system}: {msg.message}\n"
                 
