@@ -17316,6 +17316,69 @@ def get_country_economic_data(request):
             'success': False,
             'error': f'An error occurred: {str(e)}'
         }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def trigger_manual_gpt_discussion(request):
+    """Manually trigger a GPT discussion"""
+    try:
+        result = initiate_gpt_discussion(trigger_type='manual')
+        return JsonResponse({
+            'status': 'success', 
+            'message': 'GPT discussion initiated successfully',
+            'discussion_id': result.get('discussion_id'),
+            'total_messages': result.get('total_messages', 0)
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_current_gpt_discussion(request):
+    """Get the current GPT discussion and all messages"""
+    try:
+        # Get the current discussion
+        discussion = GPTDiscussion.objects.filter(discussion_id='current_discussion').first()
+        
+        if not discussion:
+            return JsonResponse({
+                'status': 'success',
+                'discussion': None,
+                'messages': []
+            })
+        
+        # Get all messages for this discussion
+        messages = GPTDiscussionMessage.objects.filter(discussion=discussion).order_by('timestamp')
+        
+        messages_data = []
+        for msg in messages:
+            messages_data.append({
+                'gpt_system': msg.gpt_system,
+                'message': msg.message,
+                'timestamp': msg.timestamp.isoformat(),
+                'turn_number': msg.turn_number
+            })
+        
+        discussion_data = {
+            'discussion_id': discussion.discussion_id,
+            'started_at': discussion.started_at.isoformat(),
+            'completed_at': discussion.completed_at.isoformat() if discussion.completed_at else None,
+            'is_active': discussion.is_active,
+            'total_messages': discussion.total_messages,
+            'central_gpt_summary': discussion.central_gpt_summary,
+            'discussion_metrics': discussion.discussion_metrics,
+            'trigger_type': discussion.trigger_type
+        }
+        
+        return JsonResponse({
+            'status': 'success',
+            'discussion': discussion_data,
+            'messages': messages_data
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
         
 
 def initiate_gpt_discussion(trigger_type='scheduled'):
