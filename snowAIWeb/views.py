@@ -17318,3 +17318,386 @@ def get_country_economic_data(request):
         }, status=500)
         
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def trigger_manual_gpt_discussion(request):
+    """Manually trigger a GPT discussion"""
+    try:
+        result = initiate_gpt_discussion(trigger_type='manual')
+        return JsonResponse({
+            'status': 'success', 
+            'message': 'GPT discussion initiated successfully',
+            'discussion_id': result.get('discussion_id'),
+            'total_messages': result.get('total_messages', 0)
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_current_gpt_discussion(request):
+    """Get the current GPT discussion and all messages"""
+    try:
+        # Get the current discussion
+        discussion = GPTDiscussion.objects.filter(discussion_id='current_discussion').first()
+        
+        if not discussion:
+            return JsonResponse({
+                'status': 'success',
+                'discussion': None,
+                'messages': []
+            })
+        
+        # Get all messages for this discussion
+        messages = GPTDiscussionMessage.objects.filter(discussion=discussion).order_by('timestamp')
+        
+        messages_data = []
+        for msg in messages:
+            messages_data.append({
+                'gpt_system': msg.gpt_system,
+                'message': msg.message,
+                'timestamp': msg.timestamp.isoformat(),
+                'turn_number': msg.turn_number
+            })
+        
+        discussion_data = {
+            'discussion_id': discussion.discussion_id,
+            'started_at': discussion.started_at.isoformat(),
+            'completed_at': discussion.completed_at.isoformat() if discussion.completed_at else None,
+            'is_active': discussion.is_active,
+            'total_messages': discussion.total_messages,
+            'central_gpt_summary': discussion.central_gpt_summary,
+            'discussion_metrics': discussion.discussion_metrics,
+            'trigger_type': discussion.trigger_type
+        }
+        
+        return JsonResponse({
+            'status': 'success',
+            'discussion': discussion_data,
+            'messages': messages_data
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+def initiate_gpt_discussion(trigger_type='scheduled'):
+    """Main function to orchestrate GPT discussion"""
+    try:
+        # Delete any existing discussion
+        GPTDiscussion.objects.filter(discussion_id='current_discussion').delete()
+        
+        # Create new discussion
+        discussion = GPTDiscussion.objects.create(
+            discussion_id='current_discussion',
+            trigger_type=trigger_type,
+            is_active=True
+        )
+        
+        # Define GPT systems and their characteristics
+        gpt_systems = {
+            'TraderHistoryGPT': {'specialty': 'trading performance analysis', 'tone': 'analytical'},
+            'MacroGPT': {'specialty': 'macro economic trends', 'tone': 'strategic'},
+            'IdeaGPT': {'specialty': 'creative innovation', 'tone': 'enthusiastic'},
+            'BacktestingGPT': {'specialty': 'quantitative strategy validation', 'tone': 'methodical'},
+            'PaperGPT': {'specialty': 'research synthesis', 'tone': 'academic'},
+            'ResearchGPT': {'specialty': 'comprehensive analysis', 'tone': 'insightful'}
+        }
+        
+        # Generate discussion topic using IdeaGPT instead of CentralGPT
+        topic_prompt = """
+        You are IdeaGPT, the creative innovation specialist for SnowAI. You're initiating a discussion 
+        between all the specialized AI systems about SnowAI improvements and insights.
+        
+        Generate a focused, creative discussion topic about SnowAI that each specialist can contribute 
+        to meaningfully. The topic should be:
+        - Concise (1-2 sentences)
+        - Innovative and thought-provoking
+        - Related to: system performance, user value, future improvements, or strategic insights
+        - Something that would spark creative solutions
+        
+        Just return the topic, nothing else.
+        """
+        
+        discussion_topic = chat_gpt(topic_prompt).strip()
+        
+        # Store the topic as first message from IdeaGPT
+        GPTDiscussionMessage.objects.create(
+            discussion=discussion,
+            gpt_system='IdeaGPT',
+            message=f"Discussion Topic: {discussion_topic}",
+            turn_number=0
+        )
+        
+        # Conduct discussion rounds (3 rounds, each GPT speaks once per round)
+        total_messages = 1  # Starting with topic message
+        gpt_list = list(gpt_systems.keys())
+        
+        for round_num in range(1, 4):  # 3 rounds
+            random.shuffle(gpt_list)  # Randomize speaking order each round
+            
+            for gpt_system in gpt_list:
+                # Get previous messages for context
+                previous_messages = list(GPTDiscussionMessage.objects.filter(
+                    discussion=discussion
+                ).order_by('timestamp'))
+                
+                context = f"Discussion Topic: {discussion_topic}\n\nPrevious messages:\n"
+                # Get last 10 messages for context
+                recent_messages = previous_messages[-10:] if len(previous_messages) > 10 else previous_messages
+                for msg in recent_messages:
+                    if msg.gpt_system != 'CentralGPT' or msg.turn_number == 0:
+                        context += f"{msg.gpt_system}: {msg.message}\n"
+                
+                # Generate response for this GPT
+                gpt_prompt = f"""
+                You are {gpt_system}, specializing in {gpt_systems[gpt_system]['specialty']}.
+                You have a {gpt_systems[gpt_system]['tone']} personality.
+                
+                {context}
+                
+                Current round: {round_num}/3
+                
+                Instructions:
+                - Contribute your unique perspective on SnowAI based on your specialty
+                - Keep your response concise (2-3 sentences max)
+                - Reference or build upon previous comments when relevant
+                - Stay focused on the discussion topic
+                - Be conversational and collaborative
+                - Don't repeat what others have already said
+                
+                Your response:
+                """
+                
+                gpt_response = chat_gpt(gpt_prompt).strip()
+                
+                # Store the message
+                GPTDiscussionMessage.objects.create(
+                    discussion=discussion,
+                    gpt_system=gpt_system,
+                    message=gpt_response,
+                    turn_number=round_num
+                )
+                
+                total_messages += 1
+        
+        # Generate final summary using CentralGPT
+        all_messages = GPTDiscussionMessage.objects.filter(
+            discussion=discussion
+        ).exclude(gpt_system='CentralGPT').order_by('timestamp')
+        
+        conversation_text = ""
+        for msg in all_messages:
+            conversation_text += f"{msg.gpt_system}: {msg.message}\n"
+        
+        summary_prompt = f"""
+        You are CentralGPT analyzing a discussion between SnowAI's specialized systems.
+        
+        Discussion Topic: {discussion_topic}
+        
+        Full Conversation:
+        {conversation_text}
+        
+        Generate a comprehensive summary that includes:
+        1. Key insights and themes that emerged
+        2. Areas of consensus among the systems
+        3. Unique perspectives each system brought
+        4. Actionable recommendations for SnowAI
+        
+        Keep it structured and insightful.
+        """
+        
+        final_summary = chat_gpt(summary_prompt).strip()
+        
+        # Calculate metrics
+        word_counts = {}
+        sentiment_diversity = len(set([gpt_systems[gpt]['tone'] for gpt in gpt_systems.keys()]))
+        
+        for gpt in gpt_systems.keys():
+            gpt_messages = all_messages.filter(gpt_system=gpt)
+            total_words = sum(len(msg.message.split()) for msg in gpt_messages)
+            word_counts[gpt] = total_words
+        
+        discussion_metrics = {
+            'topic': discussion_topic,
+            'rounds_completed': 3,
+            'word_counts': word_counts,
+            'total_words': sum(word_counts.values()),
+            'participating_systems': len(gpt_systems),
+            'sentiment_diversity_score': sentiment_diversity,
+            'discussion_duration_minutes': round((timezone.now() - discussion.started_at).total_seconds() / 60, 2)
+        }
+        
+        # Update discussion with final data
+        discussion.completed_at = timezone.now()
+        discussion.is_active = False
+        discussion.total_messages = total_messages
+        discussion.central_gpt_summary = final_summary
+        discussion.discussion_metrics = discussion_metrics
+        discussion.save()
+        
+        return {
+            'status': 'success',
+            'discussion_id': discussion.discussion_id,
+            'total_messages': total_messages,
+            'summary': final_summary[:200] + '...' if len(final_summary) > 200 else final_summary
+        }
+        
+    except Exception as e:
+        print(f'Error in GPT discussion: {e}')
+        import traceback
+        traceback.print_exc()
+        return {'status': 'error', 'message': str(e)}
+
+def scheduled_gpt_discussion():
+    """Function called by scheduler"""
+    print(f"Starting scheduled GPT discussion at {datetime.now()}")
+    result = initiate_gpt_discussion(trigger_type='scheduled')
+    print(f"GPT discussion completed: {result}")
+
+# Schedule the discussion every 5 days
+def start_gpt_discussion_scheduler():
+    """Start the background scheduler for GPT discussions"""
+    try:
+        # Remove any existing jobs with this ID
+        try:
+            scheduler.remove_job('gpt_discussion')
+        except:
+            pass
+        
+        # Add the job to run every 5 days
+        scheduler.add_job(
+            scheduled_gpt_discussion,
+            'interval',
+            days=5,
+            id='gpt_discussion',
+            replace_existing=True
+        )
+        
+        scheduler.start()
+        print("GPT discussion scheduler started - will run every 5 days")
+        
+    except Exception as e:
+        print(f"Error starting GPT discussion scheduler: {e}")
+
+
+
+
+
+
+
+
+                
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
