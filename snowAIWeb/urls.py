@@ -245,6 +245,10 @@ urlpatterns = [
 
      path('api/economic-data-map/', views.get_country_economic_data, name='get_country_economic_data'),
 
+     # GPT Discussion URLs
+     path('trigger_manual_gpt_discussion/', views.trigger_manual_gpt_discussion, name='trigger_manual_gpt_discussion'),
+     path('get_current_gpt_discussion/', views.get_current_gpt_discussion, name='get_current_gpt_discussion'),
+
 
 
     # create appproprate urls.py here

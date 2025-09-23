@@ -1235,6 +1235,47 @@ class SnowAIConversationHistory(models.Model):
 
 
 
+from django.utils import timezone
+
+class GPTDiscussion(models.Model):
+    """Model to store GPT discussions - only one exists at a time"""
+    discussion_id = models.CharField(max_length=100, unique=True, default='current_discussion')
+    started_at = models.DateTimeField(default=timezone.now)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    total_messages = models.IntegerField(default=0)
+    central_gpt_summary = models.TextField(blank=True)
+    discussion_metrics = models.JSONField(default=dict)
+    trigger_type = models.CharField(max_length=20, choices=[
+        ('scheduled', 'Scheduled'),
+        ('manual', 'Manual')
+    ], default='scheduled')
+    
+    class Meta:
+        ordering = ['-started_at']
+
+class GPTDiscussionMessage(models.Model):
+    """Individual messages in the GPT discussion"""
+    discussion = models.ForeignKey(GPTDiscussion, on_delete=models.CASCADE, related_name='messages')
+    gpt_system = models.CharField(max_length=50, choices=[
+        ('TraderHistoryGPT', 'TraderHistoryGPT'),
+        ('MacroGPT', 'MacroGPT'),
+        ('IdeaGPT', 'IdeaGPT'),
+        ('BacktestingGPT', 'BacktestingGPT'),
+        ('PaperGPT', 'PaperGPT'),
+        ('ResearchGPT', 'ResearchGPT'),
+        ('CentralGPT', 'CentralGPT')
+    ])
+    message = models.TextField()
+    timestamp = models.DateTimeField(default=timezone.now)
+    turn_number = models.IntegerField(default=1)
+    
+    class Meta:
+        ordering = ['timestamp']
+
+
+
+
 
 
 
