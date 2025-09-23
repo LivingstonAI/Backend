@@ -17880,13 +17880,15 @@ def calculate_deep_account_performance_metrics(request, account_id):
         
         # Basic Performance Metrics
         total_trades = all_trades.count()
-        profitable_trades = all_trades.filter(outcome='Profit').count()
+        # Fixed: Use 'Win' instead of 'Profit'
+        profitable_trades = all_trades.filter(outcome='Win').count()
         losing_trades = all_trades.filter(outcome='Loss').count()
+        breakeven_trades = all_trades.filter(outcome='Break Even').count()
         
         win_rate = (profitable_trades / total_trades * 100) if total_trades > 0 else 0
         
-        # Calculate total P&L
-        total_profit = sum(trade.amount for trade in all_trades.filter(outcome='Profit'))
+        # Calculate total P&L - Fixed logic for wins/losses
+        total_profit = sum(abs(trade.amount) for trade in all_trades.filter(outcome='Win'))
         total_loss = sum(abs(trade.amount) for trade in all_trades.filter(outcome='Loss'))
         net_pnl = total_profit - total_loss
         
@@ -17950,6 +17952,7 @@ def calculate_deep_account_performance_metrics(request, account_id):
                 'total_trades': total_trades,
                 'profitable_trades': profitable_trades,
                 'losing_trades': losing_trades,
+                'breakeven_trades': breakeven_trades,
                 'win_rate': round(win_rate, 2),
                 'net_pnl': round(net_pnl, 2),
                 'avg_win': round(avg_win, 2),
@@ -18048,7 +18051,8 @@ def calculate_day_performance_probability(day_trades):
         return {'win_rate': 0, 'trade_count': 0, 'confidence': 'Low'}
     
     total = day_trades.count()
-    wins = day_trades.filter(outcome='Profit').count()
+    # Fixed: Use 'Win' instead of 'Profit'
+    wins = day_trades.filter(outcome='Win').count()
     win_rate = (wins / total * 100) if total > 0 else 0
     
     confidence = 'High' if total >= 10 else 'Medium' if total >= 5 else 'Low'
@@ -18065,7 +18069,8 @@ def calculate_session_performance_probability(session_trades):
         return {'win_rate': 0, 'trade_count': 0, 'confidence': 'Low'}
     
     total = session_trades.count()
-    wins = session_trades.filter(outcome='Profit').count()
+    # Fixed: Use 'Win' instead of 'Profit'
+    wins = session_trades.filter(outcome='Win').count()
     win_rate = (wins / total * 100) if total > 0 else 0
     
     confidence = 'High' if total >= 15 else 'Medium' if total >= 8 else 'Low'
@@ -18100,11 +18105,14 @@ def analyze_asset_performance(trades):
     asset_stats = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total_pnl': 0})
     
     for trade in trades:
-        asset_stats[trade.asset]['total_pnl'] += trade.amount
-        if trade.outcome == 'Profit':
+        # Fixed: Properly calculate P&L based on outcome
+        if trade.outcome == 'Win':
+            asset_stats[trade.asset]['total_pnl'] += abs(trade.amount)
             asset_stats[trade.asset]['wins'] += 1
-        else:
+        elif trade.outcome == 'Loss':
+            asset_stats[trade.asset]['total_pnl'] -= abs(trade.amount)
             asset_stats[trade.asset]['losses'] += 1
+        # Break Even trades don't affect P&L but count as trades
     
     result = []
     for asset, stats in asset_stats.items():
@@ -18127,10 +18135,12 @@ def analyze_strategy_performance(trades):
     strategy_stats = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total_pnl': 0})
     
     for trade in trades:
-        strategy_stats[trade.strategy]['total_pnl'] += trade.amount
-        if trade.outcome == 'Profit':
+        # Fixed: Properly calculate P&L based on outcome
+        if trade.outcome == 'Win':
+            strategy_stats[trade.strategy]['total_pnl'] += abs(trade.amount)
             strategy_stats[trade.strategy]['wins'] += 1
-        else:
+        elif trade.outcome == 'Loss':
+            strategy_stats[trade.strategy]['total_pnl'] -= abs(trade.amount)
             strategy_stats[trade.strategy]['losses'] += 1
     
     result = []
@@ -18161,9 +18171,13 @@ def analyze_emotional_patterns(trades):
     for trade in trades_with_emotion:
         emotion = trade.emotional_bias.lower()
         emotion_performance[emotion]['count'] += 1
-        emotion_performance[emotion]['total_pnl'] += trade.amount
-        if trade.outcome == 'Profit':
+        
+        # Fixed: Properly calculate P&L and wins
+        if trade.outcome == 'Win':
+            emotion_performance[emotion]['total_pnl'] += abs(trade.amount)
             emotion_performance[emotion]['wins'] += 1
+        elif trade.outcome == 'Loss':
+            emotion_performance[emotion]['total_pnl'] -= abs(trade.amount)
     
     result = []
     for emotion, stats in emotion_performance.items():
@@ -18197,7 +18211,8 @@ def analyze_winning_losing_streaks(trades):
     temp_losing = 0
     
     for trade in ordered_trades:
-        if trade.outcome == 'Profit':
+        # Fixed: Use 'Win' instead of 'Profit'
+        if trade.outcome == 'Win':
             temp_winning += 1
             temp_losing = 0
             max_winning_streak = max(max_winning_streak, temp_winning)
@@ -18207,7 +18222,7 @@ def analyze_winning_losing_streaks(trades):
             else:
                 current_streak = 1
                 current_streak_type = 'win'
-        else:
+        elif trade.outcome == 'Loss':
             temp_losing += 1
             temp_winning = 0
             max_losing_streak = max(max_losing_streak, temp_losing)
@@ -18217,6 +18232,11 @@ def analyze_winning_losing_streaks(trades):
             else:
                 current_streak = 1
                 current_streak_type = 'loss'
+        else:  # Break Even - breaks both streaks
+            temp_winning = 0
+            temp_losing = 0
+            current_streak = 0
+            current_streak_type = 'none'
     
     return {
         'max_winning_streak': max_winning_streak,
@@ -18232,10 +18252,14 @@ def calculate_monthly_performance_trend(trades):
     for trade in trades:
         if trade.date_entered:
             month_key = trade.date_entered.strftime('%Y-%m')
-            monthly_data[month_key]['pnl'] += trade.amount
             monthly_data[month_key]['trades'] += 1
-            if trade.outcome == 'Profit':
+            
+            # Fixed: Properly calculate monthly P&L
+            if trade.outcome == 'Win':
+                monthly_data[month_key]['pnl'] += abs(trade.amount)
                 monthly_data[month_key]['wins'] += 1
+            elif trade.outcome == 'Loss':
+                monthly_data[month_key]['pnl'] -= abs(trade.amount)
     
     result = []
     for month, data in sorted(monthly_data.items()):
@@ -18262,7 +18286,12 @@ def calculate_drawdown_metrics(trades, initial_capital):
     drawdowns = []
     
     for trade in ordered_trades:
-        running_balance += trade.amount
+        # Fixed: Properly calculate running balance
+        if trade.outcome == 'Win':
+            running_balance += abs(trade.amount)
+        elif trade.outcome == 'Loss':
+            running_balance -= abs(trade.amount)
+        # Break Even trades don't change balance
         
         if running_balance > peak_balance:
             peak_balance = running_balance
@@ -18292,7 +18321,14 @@ def calculate_advanced_risk_metrics(trades, initial_capital):
     if not trades.exists():
         return {}
     
-    returns = [trade.amount / initial_capital * 100 for trade in trades]
+    # Fixed: Calculate returns properly based on outcome
+    returns = []
+    for trade in trades:
+        if trade.outcome == 'Win':
+            returns.append(abs(trade.amount) / initial_capital * 100)
+        elif trade.outcome == 'Loss':
+            returns.append(-abs(trade.amount) / initial_capital * 100)
+        # Break Even trades have 0 return - skip or add 0
     
     # Calculate Sharpe-like ratio (simplified)
     avg_return = statistics.mean(returns) if returns else 0
@@ -18362,7 +18398,6 @@ def create_ai_diagnostic_prompt(account_id, performance_data):
     """
     
     return prompt
-
 
 
 
