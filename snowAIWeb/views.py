@@ -16175,7 +16175,7 @@ def generate_trader_history_summary():
         
         # Calculate trading metrics
         total_trades = all_trades.count()
-        profit_trades = all_trades.filter(outcome='Profit').count()
+        profit_trades = all_trades.filter(outcome='Win').count()
         loss_trades = all_trades.filter(outcome='Loss').count()
         win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
         
