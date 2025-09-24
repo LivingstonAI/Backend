@@ -19300,6 +19300,8 @@ def snowai_debug_ytdlp_availability(request):
             'error': str(e),
             'yt_dlp_available': YT_DLP_AVAILABLE
         }, status=500)
+
+        
 @csrf_exempt
 @require_http_methods(["PUT"])
 def snowai_update_transcript_metadata(request, transcript_id):
