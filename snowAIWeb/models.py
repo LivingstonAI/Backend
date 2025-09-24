@@ -1275,7 +1275,77 @@ class GPTDiscussionMessage(models.Model):
 
 
 
+from django.utils import timezone
 
+class SnowAIVideoTranscriptRecord(models.Model):
+    # Core identification fields
+    transcript_uuid = models.CharField(max_length=100, unique=True, db_index=True)
+    youtube_video_id = models.CharField(max_length=50, blank=True, null=True)
+    youtube_url = models.URLField(max_length=500, blank=True, null=True)
+    video_title = models.CharField(max_length=300, blank=True, null=True)
+    
+    # Speaker and context information
+    primary_speaker_name = models.CharField(max_length=200, blank=True, null=True)
+    speaker_organization = models.CharField(max_length=200, blank=True, null=True)
+    speaker_country_code = models.CharField(max_length=10, blank=True, null=True)
+    speaker_country_name = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Content and metadata
+    full_transcript_text = models.TextField()
+    video_duration_seconds = models.IntegerField(blank=True, null=True)
+    transcript_language = models.CharField(max_length=10, default='en')
+    video_upload_date = models.DateTimeField(blank=True, null=True)
+    
+    # Processing metadata
+    transcription_method = models.CharField(max_length=50, default='youtube_auto')  # youtube_auto, manual, ai_generated
+    transcript_confidence_score = models.FloatField(blank=True, null=True)
+    processing_status = models.CharField(max_length=30, default='completed')
+    
+    # Search and categorization
+    content_category = models.CharField(max_length=100, blank=True, null=True)  # central_bank, government, corporate
+    economic_topics = models.JSONField(default=list, blank=True)  # ["monetary_policy", "inflation", "interest_rates"]
+    custom_tags = models.JSONField(default=list, blank=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    archived_at = models.DateTimeField(blank=True, null=True)
+    
+    # Additional analysis fields
+    word_count = models.IntegerField(default=0)
+    sentiment_analysis_score = models.FloatField(blank=True, null=True)
+    key_phrases_extracted = models.JSONField(default=list, blank=True)
+    
+    class Meta:
+        db_table = 'snowai_video_transcript_records'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['primary_speaker_name']),
+            models.Index(fields=['speaker_country_code']),
+            models.Index(fields=['content_category']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['video_upload_date']),
+        ]
+
+    def __str__(self):
+        return f"{self.primary_speaker_name or 'Unknown'} - {self.video_title[:50] or 'Untitled'}..."
+
+    def save(self, *args, **kwargs):
+        if self.full_transcript_text:
+            self.word_count = len(self.full_transcript_text.split())
+        super().save(*args, **kwargs)
+
+
+class SnowAITranscriptSearchHistory(models.Model):
+    search_query = models.CharField(max_length=500)
+    search_filters = models.JSONField(default=dict)
+    results_count = models.IntegerField(default=0)
+    search_timestamp = models.DateTimeField(auto_now_add=True)
+    user_session_id = models.CharField(max_length=100, blank=True, null=True)
+    
+    class Meta:
+        db_table = 'snowai_transcript_search_history'
+        ordering = ['-search_timestamp']
 
 
 

@@ -18582,7 +18582,358 @@ def create_ai_diagnostic_prompt(account_id, performance_data):
     return prompt
 
 
+import json
+import uuid
+import re
+from datetime import datetime
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.core.paginator import Paginator
+from django.db.models import Q
+from django.utils import timezone
+from .models import SnowAIVideoTranscriptRecord, SnowAITranscriptSearchHistory
 
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from pytube import YouTube
+except ImportError:
+    YouTubeTranscriptApi = None
+    YouTube = None
+
+def extract_youtube_video_id_from_url(youtube_url):
+    """Extract video ID from various YouTube URL formats"""
+    patterns = [
+        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)',
+        r'youtube\.com\/watch\?.*v=([^&\n?#]+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, youtube_url)
+        if match:
+            return match.group(1)
+    return None
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_extract_youtube_transcript_from_url(request):
+    """Extract transcript from YouTube URL and save to database"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        # Check if transcript already exists
+        existing_transcript = SnowAIVideoTranscriptRecord.objects.filter(
+            youtube_video_id=video_id
+        ).first()
+        
+        if existing_transcript:
+            return JsonResponse({
+                'message': 'Transcript already exists',
+                'transcript_id': existing_transcript.transcript_uuid,
+                'existing': True
+            })
+        
+        # Extract transcript using YouTube Transcript API
+        if not YouTubeTranscriptApi:
+            return JsonResponse({'error': 'YouTube transcript API not available'}, status=500)
+        
+        try:
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+            full_text = ' '.join([item['text'] for item in transcript_list])
+            
+            # Get video metadata using pytube
+            video_metadata = {}
+            if YouTube:
+                try:
+                    yt = YouTube(f'https://www.youtube.com/watch?v={video_id}')
+                    video_metadata = {
+                        'title': yt.title,
+                        'length': yt.length,
+                        'publish_date': yt.publish_date,
+                        'author': yt.author
+                    }
+                except:
+                    pass
+            
+            # Create transcript record
+            transcript_record = SnowAIVideoTranscriptRecord.objects.create(
+                transcript_uuid=str(uuid.uuid4()),
+                youtube_video_id=video_id,
+                youtube_url=youtube_url,
+                video_title=video_metadata.get('title', ''),
+                full_transcript_text=full_text,
+                video_duration_seconds=video_metadata.get('length'),
+                video_upload_date=video_metadata.get('publish_date'),
+                primary_speaker_name=data.get('speaker_name', ''),
+                speaker_country_code=data.get('country_code', ''),
+                speaker_country_name=data.get('country_name', ''),
+                content_category=data.get('category', 'central_bank'),
+                transcription_method='youtube_auto'
+            )
+            
+            return JsonResponse({
+                'message': 'Transcript extracted and saved successfully',
+                'transcript_id': transcript_record.transcript_uuid,
+                'word_count': transcript_record.word_count,
+                'duration': video_metadata.get('length'),
+                'title': video_metadata.get('title', '')
+            })
+            
+        except Exception as transcript_error:
+            return JsonResponse({
+                'error': f'Failed to extract transcript: {str(transcript_error)}'
+            }, status=400)
+            
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_all_saved_transcripts(request):
+    """Retrieve all saved transcripts with pagination and filtering"""
+    try:
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 10))
+        search_query = request.GET.get('search', '').strip()
+        category_filter = request.GET.get('category', '').strip()
+        country_filter = request.GET.get('country', '').strip()
+        
+        # Build query
+        queryset = SnowAIVideoTranscriptRecord.objects.all()
+        
+        if search_query:
+            queryset = queryset.filter(
+                Q(full_transcript_text__icontains=search_query) |
+                Q(video_title__icontains=search_query) |
+                Q(primary_speaker_name__icontains=search_query)
+            )
+        
+        if category_filter:
+            queryset = queryset.filter(content_category=category_filter)
+            
+        if country_filter:
+            queryset = queryset.filter(
+                Q(speaker_country_code=country_filter) |
+                Q(speaker_country_name__icontains=country_filter)
+            )
+        
+        # Save search history
+        if search_query or category_filter or country_filter:
+            SnowAITranscriptSearchHistory.objects.create(
+                search_query=search_query,
+                search_filters={
+                    'category': category_filter,
+                    'country': country_filter
+                },
+                results_count=queryset.count()
+            )
+        
+        # Paginate results
+        paginator = Paginator(queryset, per_page)
+        page_obj = paginator.get_page(page)
+        
+        transcripts_data = []
+        for transcript in page_obj:
+            transcripts_data.append({
+                'id': transcript.transcript_uuid,
+                'youtube_url': transcript.youtube_url,
+                'video_title': transcript.video_title,
+                'speaker_name': transcript.primary_speaker_name,
+                'country': transcript.speaker_country_name,
+                'category': transcript.content_category,
+                'word_count': transcript.word_count,
+                'duration_seconds': transcript.video_duration_seconds,
+                'created_at': transcript.created_at.isoformat(),
+                'video_upload_date': transcript.video_upload_date.isoformat() if transcript.video_upload_date else None,
+                'transcript_preview': transcript.full_transcript_text[:200] + '...' if len(transcript.full_transcript_text) > 200 else transcript.full_transcript_text
+            })
+        
+        return JsonResponse({
+            'transcripts': transcripts_data,
+            'pagination': {
+                'current_page': page_obj.number,
+                'total_pages': paginator.num_pages,
+                'total_items': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_single_transcript_details(request, transcript_id):
+    """Get detailed view of a single transcript"""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        
+        return JsonResponse({
+            'id': transcript.transcript_uuid,
+            'youtube_url': transcript.youtube_url,
+            'youtube_video_id': transcript.youtube_video_id,
+            'video_title': transcript.video_title,
+            'speaker_name': transcript.primary_speaker_name,
+            'speaker_organization': transcript.speaker_organization,
+            'country_code': transcript.speaker_country_code,
+            'country_name': transcript.speaker_country_name,
+            'full_transcript': transcript.full_transcript_text,
+            'category': transcript.content_category,
+            'word_count': transcript.word_count,
+            'duration_seconds': transcript.video_duration_seconds,
+            'language': transcript.transcript_language,
+            'transcription_method': transcript.transcription_method,
+            'created_at': transcript.created_at.isoformat(),
+            'video_upload_date': transcript.video_upload_date.isoformat() if transcript.video_upload_date else None,
+            'custom_tags': transcript.custom_tags,
+            'economic_topics': transcript.economic_topics
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_transcript_record(request, transcript_id):
+    """Delete a specific transcript record"""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        video_title = transcript.video_title
+        transcript.delete()
+        
+        return JsonResponse({
+            'message': f'Transcript "{video_title}" deleted successfully'
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_transcript_metadata(request, transcript_id):
+    """Update transcript metadata like speaker info, tags, etc."""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        data = json.loads(request.body)
+        
+        # Update allowed fields
+        updateable_fields = [
+            'primary_speaker_name', 'speaker_organization', 'speaker_country_code',
+            'speaker_country_name', 'content_category', 'custom_tags', 'economic_topics'
+        ]
+        
+        for field in updateable_fields:
+            if field in data:
+                setattr(transcript, field, data[field])
+        
+        transcript.save()
+        
+        return JsonResponse({
+            'message': 'Transcript metadata updated successfully'
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Additional utility functions you might find useful
+
+@csrf_exempt  
+@require_http_methods(["GET"])
+def snowai_get_transcript_statistics(request):
+    """Get overall statistics about the transcript database"""
+    try:
+        total_transcripts = SnowAIVideoTranscriptRecord.objects.count()
+        total_words = sum(SnowAIVideoTranscriptRecord.objects.values_list('word_count', flat=True))
+        
+        # Category breakdown
+        categories = SnowAIVideoTranscriptRecord.objects.values('content_category').distinct()
+        category_stats = {}
+        for cat in categories:
+            if cat['content_category']:
+                count = SnowAIVideoTranscriptRecord.objects.filter(content_category=cat['content_category']).count()
+                category_stats[cat['content_category']] = count
+        
+        # Country breakdown
+        countries = SnowAIVideoTranscriptRecord.objects.values('speaker_country_name').distinct()
+        country_stats = {}
+        for country in countries:
+            if country['speaker_country_name']:
+                count = SnowAIVideoTranscriptRecord.objects.filter(speaker_country_name=country['speaker_country_name']).count()
+                country_stats[country['speaker_country_name']] = count
+        
+        return JsonResponse({
+            'total_transcripts': total_transcripts,
+            'total_words': total_words,
+            'average_words_per_transcript': total_words / total_transcripts if total_transcripts > 0 else 0,
+            'category_breakdown': category_stats,
+            'country_breakdown': country_stats
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"]) 
+def snowai_export_transcripts_csv(request):
+    """Export transcripts to CSV format"""
+    import csv
+    from django.http import HttpResponse
+    
+    try:
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="snowai_transcripts_export.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'ID', 'Video Title', 'Speaker Name', 'Country', 'Category', 
+            'Word Count', 'Duration (seconds)', 'YouTube URL', 'Created At', 'Transcript Text'
+        ])
+        
+        transcripts = SnowAIVideoTranscriptRecord.objects.all()
+        for transcript in transcripts:
+            writer.writerow([
+                transcript.transcript_uuid,
+                transcript.video_title or '',
+                transcript.primary_speaker_name or '',
+                transcript.speaker_country_name or '',
+                transcript.content_category or '',
+                transcript.word_count,
+                transcript.video_duration_seconds or 0,
+                transcript.youtube_url or '',
+                transcript.created_at.isoformat(),
+                transcript.full_transcript_text[:1000] + '...' if len(transcript.full_transcript_text) > 1000 else transcript.full_transcript_text
+            ])
+        
+        return response
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 

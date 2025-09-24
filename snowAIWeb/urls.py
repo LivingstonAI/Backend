@@ -255,6 +255,30 @@ urlpatterns = [
 
 
 
+     path('snowai_extract_youtube_transcript_from_url', 
+         views.snowai_extract_youtube_transcript_from_url, 
+         name='snowai_extract_youtube_transcript_from_url'),
+    
+    # Get all saved transcripts with pagination and filtering
+    path('snowai_get_all_saved_transcripts', 
+         views.snowai_get_all_saved_transcripts, 
+         name='snowai_get_all_saved_transcripts'),
+    
+    # Get single transcript details
+    path('snowai_get_single_transcript_details/<str:transcript_id>', 
+         views.snowai_get_single_transcript_details, 
+         name='snowai_get_single_transcript_details'),
+    
+    # Delete specific transcript record
+    path('snowai_delete_transcript_record/<str:transcript_id>', 
+         views.snowai_delete_transcript_record, 
+         name='snowai_delete_transcript_record'),
+    
+    # Update transcript metadata
+    path('snowai_update_transcript_metadata/<str:transcript_id>', 
+         views.snowai_update_transcript_metadata, 
+         name='snowai_update_transcript_metadata'),
+
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
