@@ -4,7 +4,7 @@ from . import views
  
 urlpatterns = [
     # ... other URL patterns
-    path('register/', UserRegistrationView.as_view(), name='user-registration'),
+#     path('register/', UserRegistrationView.as_view(), name='user-registration'),
     path('check_email/', views.check_email, name='check_email'),
     path('tell_us_more/create/', views.TellUsMoreCreateView.as_view(), name='tell_us_more_create'),
     path('login/', UserLoginView.as_view(), name='user-login'),
