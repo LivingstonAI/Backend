@@ -18596,9 +18596,16 @@ from .models import SnowAIVideoTranscriptRecord, SnowAITranscriptSearchHistory
 
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
-    from pytube import YouTube
+    YOUTUBE_TRANSCRIPT_AVAILABLE = True
 except ImportError:
+    YOUTUBE_TRANSCRIPT_AVAILABLE = False
     YouTubeTranscriptApi = None
+
+try:
+    from pytube import YouTube
+    PYTUBE_AVAILABLE = True
+except ImportError:
+    PYTUBE_AVAILABLE = False
     YouTube = None
 
 def extract_youtube_video_id_from_url(youtube_url):
@@ -18643,16 +18650,41 @@ def snowai_extract_youtube_transcript_from_url(request):
             })
         
         # Extract transcript using YouTube Transcript API
-        if not YouTubeTranscriptApi:
-            return JsonResponse({'error': 'YouTube transcript API not available'}, status=500)
+        if not YOUTUBE_TRANSCRIPT_AVAILABLE:
+            return JsonResponse({'error': 'YouTube transcript API not available. Please install: pip install youtube-transcript-api'}, status=500)
         
         try:
-            transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-            full_text = ' '.join([item['text'] for item in transcript_list])
+            # Get available transcripts for the video
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            
+            # Try to get English transcript first, then any available transcript
+            transcript = None
+            try:
+                # Try to get English transcript
+                transcript = transcript_list.find_transcript(['en'])
+            except:
+                try:
+                    # If no English, get the first available transcript
+                    transcript = transcript_list.find_transcript(['en-US', 'en-GB'])
+                except:
+                    # Get any available transcript
+                    for available_transcript in transcript_list:
+                        transcript = available_transcript
+                        break
+            
+            if not transcript:
+                return JsonResponse({'error': 'No transcript available for this video'}, status=400)
+            
+            # Fetch the actual transcript
+            transcript_data = transcript.fetch()
+            full_text = ' '.join([item['text'] for item in transcript_data])
+            
+            if not full_text.strip():
+                return JsonResponse({'error': 'Transcript is empty'}, status=400)
             
             # Get video metadata using pytube
             video_metadata = {}
-            if YouTube:
+            if PYTUBE_AVAILABLE:
                 try:
                     yt = YouTube(f'https://www.youtube.com/watch?v={video_id}')
                     video_metadata = {
@@ -18661,8 +18693,9 @@ def snowai_extract_youtube_transcript_from_url(request):
                         'publish_date': yt.publish_date,
                         'author': yt.author
                     }
-                except:
-                    pass
+                except Exception as pytube_error:
+                    print(f"Pytube error: {pytube_error}")
+                    # Continue without metadata if pytube fails
             
             # Create transcript record
             transcript_record = SnowAIVideoTranscriptRecord.objects.create(
@@ -18677,7 +18710,8 @@ def snowai_extract_youtube_transcript_from_url(request):
                 speaker_country_code=data.get('country_code', ''),
                 speaker_country_name=data.get('country_name', ''),
                 content_category=data.get('category', 'central_bank'),
-                transcription_method='youtube_auto'
+                transcription_method='youtube_auto',
+                transcript_language=getattr(transcript, 'language_code', 'en') if transcript else 'en'
             )
             
             return JsonResponse({
@@ -18685,13 +18719,25 @@ def snowai_extract_youtube_transcript_from_url(request):
                 'transcript_id': transcript_record.transcript_uuid,
                 'word_count': transcript_record.word_count,
                 'duration': video_metadata.get('length'),
-                'title': video_metadata.get('title', '')
+                'title': video_metadata.get('title', ''),
+                'language': getattr(transcript, 'language_code', 'en') if transcript else 'en'
             })
             
         except Exception as transcript_error:
-            return JsonResponse({
-                'error': f'Failed to extract transcript: {str(transcript_error)}'
-            }, status=400)
+            # Provide more specific error messages
+            error_message = str(transcript_error)
+            if "No transcripts were found" in error_message:
+                return JsonResponse({
+                    'error': 'No transcripts available for this video. The video may not have auto-generated or manual captions.'
+                }, status=400)
+            elif "Video unavailable" in error_message:
+                return JsonResponse({
+                    'error': 'Video is unavailable or private. Please check the URL.'
+                }, status=400)
+            else:
+                return JsonResponse({
+                    'error': f'Failed to extract transcript: {error_message}'
+                }, status=400)
             
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON data'}, status=400)
@@ -18934,8 +18980,6 @@ def snowai_export_transcripts_csv(request):
         
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
-
 
 
                 
