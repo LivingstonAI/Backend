@@ -18622,10 +18622,12 @@ def extract_youtube_video_id_from_url(youtube_url):
     return None
 
 
+# Improved transcript extraction function with better error handling and multiple language support
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def snowai_extract_youtube_transcript_from_url(request):
-    """Extract transcript from YouTube URL and save to database"""
+    """Extract transcript from YouTube URL and save to database - IMPROVED VERSION"""
     try:
         data = json.loads(request.body)
         youtube_url = data.get('youtube_url', '').strip()
@@ -18651,92 +18653,230 @@ def snowai_extract_youtube_transcript_from_url(request):
         
         # Extract transcript using YouTube Transcript API
         if not YOUTUBE_TRANSCRIPT_AVAILABLE:
-            return JsonResponse({'error': 'YouTube transcript API not available. Please install: pip install youtube-transcript-api==0.6.1'}, status=500)
+            return JsonResponse({
+                'error': 'YouTube transcript API not available. Please install: pip install youtube-transcript-api==0.6.1'
+            }, status=500)
+        
+        # Try multiple methods to get transcript
+        transcript_data = None
+        transcript_language = 'en'
+        extraction_method = 'youtube_auto'
         
         try:
-            # Use the correct method for youtube-transcript-api
-            # The standard method is get_transcript, not list_transcripts
-            transcript_data = YouTubeTranscriptApi.get_transcript(video_id)
-            full_text = ' '.join([item['text'] for item in transcript_data])
-            transcript_language = 'en'  # Default
-            
-            if not full_text or not full_text.strip():
-                return JsonResponse({'error': 'Transcript is empty or could not be extracted'}, status=400)
-            
-            # Get video metadata using pytube
-            video_metadata = {}
-            if PYTUBE_AVAILABLE:
+            # Method 1: Try to get transcript using list_transcripts (more robust)
+            if hasattr(YouTubeTranscriptApi, 'list_transcripts'):
+                print(f"Attempting to get transcript list for video: {video_id}")
+                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                
+                # Try to find English transcript first
                 try:
-                    yt = YouTube(f'https://www.youtube.com/watch?v={video_id}')
-                    video_metadata = {
-                        'title': yt.title,
-                        'length': yt.length,
-                        'publish_date': yt.publish_date,
-                        'author': yt.author
-                    }
-                except Exception as pytube_error:
-                    print(f"Pytube error (non-critical): {pytube_error}")
-                    # Continue without metadata if pytube fails
+                    transcript = transcript_list.find_transcript(['en'])
+                    transcript_data = transcript.fetch()
+                    transcript_language = 'en'
+                    extraction_method = 'youtube_manual'
+                    print(f"Found English transcript with {len(transcript_data)} entries")
+                except:
+                    # Try auto-generated English
+                    try:
+                        transcript = transcript_list.find_generated_transcript(['en'])
+                        transcript_data = transcript.fetch()
+                        transcript_language = 'en'
+                        extraction_method = 'youtube_auto_generated'
+                        print(f"Found auto-generated English transcript with {len(transcript_data)} entries")
+                    except:
+                        # Try any available language
+                        try:
+                            available_transcripts = list(transcript_list)
+                            if available_transcripts:
+                                transcript = available_transcripts[0]
+                                transcript_data = transcript.fetch()
+                                transcript_language = transcript.language_code
+                                extraction_method = f'youtube_{transcript.language_code}'
+                                print(f"Found transcript in {transcript_language} with {len(transcript_data)} entries")
+                        except Exception as e:
+                            print(f"Failed to get any transcript from list: {e}")
             
-            # Create transcript record
-            transcript_record = SnowAIVideoTranscriptRecord.objects.create(
-                transcript_uuid=str(uuid.uuid4()),
-                youtube_video_id=video_id,
-                youtube_url=youtube_url,
-                video_title=video_metadata.get('title', data.get('video_title', '')),
-                full_transcript_text=full_text,
-                video_duration_seconds=video_metadata.get('length'),
-                video_upload_date=video_metadata.get('publish_date'),
-                primary_speaker_name=data.get('speaker_name', ''),
-                speaker_country_code=data.get('country_code', ''),
-                speaker_country_name=data.get('country_name', ''),
-                content_category=data.get('category', 'central_bank'),
-                transcription_method='youtube_auto',
-                transcript_language=transcript_language
-            )
+            # Method 2: Fallback to direct get_transcript call
+            if not transcript_data:
+                print(f"Trying direct get_transcript for video: {video_id}")
+                # Try multiple language codes
+                language_codes = ['en', 'en-US', 'en-GB', 'auto']
+                
+                for lang_code in language_codes:
+                    try:
+                        if lang_code == 'auto':
+                            transcript_data = YouTubeTranscriptApi.get_transcript(video_id)
+                        else:
+                            transcript_data = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang_code])
+                        
+                        if transcript_data:
+                            transcript_language = lang_code
+                            extraction_method = f'youtube_direct_{lang_code}'
+                            print(f"Successfully got transcript using direct method with language: {lang_code}")
+                            break
+                    except Exception as lang_error:
+                        print(f"Failed to get transcript for language {lang_code}: {lang_error}")
+                        continue
             
-            return JsonResponse({
-                'message': 'Transcript extracted and saved successfully',
-                'transcript_id': transcript_record.transcript_uuid,
-                'word_count': transcript_record.word_count,
-                'duration': video_metadata.get('length'),
-                'title': video_metadata.get('title', ''),
-                'language': transcript_language,
-                'text_preview': full_text[:200] + '...' if len(full_text) > 200 else full_text
-            })
+            # Check if we got any transcript data
+            if not transcript_data:
+                # Try one more time without any language specification
+                try:
+                    transcript_data = YouTubeTranscriptApi.get_transcript(video_id)
+                    transcript_language = 'unknown'
+                    extraction_method = 'youtube_fallback'
+                    print("Got transcript using fallback method")
+                except Exception as fallback_error:
+                    print(f"Final fallback failed: {fallback_error}")
+                    raise Exception("No transcripts could be retrieved using any method")
+            
+            # Process transcript data
+            if isinstance(transcript_data, list) and len(transcript_data) > 0:
+                full_text = ' '.join([item.get('text', '') for item in transcript_data])
+            else:
+                raise Exception("Transcript data is empty or in unexpected format")
+            
+            # Clean up the text
+            full_text = full_text.strip()
+            if not full_text:
+                raise Exception("Transcript text is empty after processing")
+            
+            print(f"Successfully extracted transcript: {len(full_text)} characters, {len(full_text.split())} words")
             
         except Exception as transcript_error:
-            # Handle specific errors
-            error_message = str(transcript_error).lower()
+            # More specific error handling
+            error_str = str(transcript_error).lower()
+            print(f"Transcript extraction error: {error_str}")
             
-            if 'no transcript' in error_message or 'could not retrieve' in error_message:
+            # Check for specific known error patterns
+            if any(phrase in error_str for phrase in ['no transcript', 'could not retrieve', 'transcriptsdisabled']):
                 return JsonResponse({
-                    'error': 'No transcripts available for this video. The video may not have captions enabled or may be private.'
+                    'error': 'No transcripts are available for this video. This could mean: 1) The video has no captions, 2) Captions are disabled, 3) The video is private/restricted.',
+                    'debug_video_id': video_id,
+                    'debug_url': youtube_url
                 }, status=400)
-            elif 'transcripts are disabled' in error_message:
+            elif any(phrase in error_str for phrase in ['video unavailable', 'private', 'does not exist']):
                 return JsonResponse({
-                    'error': 'Transcripts are disabled for this video.'
+                    'error': 'The video is unavailable, private, or does not exist.',
+                    'debug_video_id': video_id
                 }, status=400)
-            elif 'video unavailable' in error_message or 'private' in error_message:
-                return JsonResponse({
-                    'error': 'Video is unavailable, private, or restricted.'
-                }, status=400)
-            elif 'quota exceeded' in error_message:
+            elif 'quota exceeded' in error_str:
                 return JsonResponse({
                     'error': 'YouTube API quota exceeded. Please try again later.'
                 }, status=429)
             else:
+                # Provide more detailed error information
                 return JsonResponse({
-                    'error': f'Failed to extract transcript: {str(transcript_error)}',
-                    'video_id': video_id,
-                    'debug_info': f'Library available: {YOUTUBE_TRANSCRIPT_AVAILABLE}'
+                    'error': 'Failed to extract transcript from video.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'error_details': str(transcript_error),
+                        'youtube_api_available': YOUTUBE_TRANSCRIPT_AVAILABLE,
+                        'extraction_attempts': ['list_transcripts', 'direct_get_transcript', 'fallback']
+                    }
                 }, status=400)
-            
+        
+        # Get video metadata using pytube
+        video_metadata = {}
+        if PYTUBE_AVAILABLE:
+            try:
+                yt = YouTube(f'https://www.youtube.com/watch?v={video_id}')
+                video_metadata = {
+                    'title': yt.title,
+                    'length': yt.length,
+                    'publish_date': yt.publish_date,
+                    'author': yt.author
+                }
+                print(f"Got video metadata: title='{yt.title}', length={yt.length}s")
+            except Exception as pytube_error:
+                print(f"Pytube error (non-critical): {pytube_error}")
+                # Continue without metadata if pytube fails
+        
+        # Create transcript record
+        transcript_record = SnowAIVideoTranscriptRecord.objects.create(
+            transcript_uuid=str(uuid.uuid4()),
+            youtube_video_id=video_id,
+            youtube_url=youtube_url,
+            video_title=video_metadata.get('title', data.get('video_title', '')),
+            full_transcript_text=full_text,
+            video_duration_seconds=video_metadata.get('length'),
+            video_upload_date=video_metadata.get('publish_date'),
+            primary_speaker_name=data.get('speaker_name', ''),
+            speaker_country_code=data.get('country_code', ''),
+            speaker_country_name=data.get('country_name', ''),
+            content_category=data.get('category', 'central_bank'),
+            transcription_method=extraction_method,
+            transcript_language=transcript_language
+        )
+        
+        return JsonResponse({
+            'message': 'Transcript extracted and saved successfully',
+            'transcript_id': transcript_record.transcript_uuid,
+            'word_count': transcript_record.word_count,
+            'duration': video_metadata.get('length'),
+            'title': video_metadata.get('title', ''),
+            'language': transcript_language,
+            'extraction_method': extraction_method,
+            'text_preview': full_text[:200] + '...' if len(full_text) > 200 else full_text
+        })
+        
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON data'}, status=400)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        print(f"Unexpected error: {str(e)}")
+        return JsonResponse({
+            'error': f'An unexpected error occurred: {str(e)}',
+            'debug_info': 'Check server logs for more details'
+        }, status=500)
 
+
+# Additional helper function to test transcript availability before extraction
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_check_transcript_availability(request):
+    """Check if transcript is available for a YouTube video without extracting it"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        if not YOUTUBE_TRANSCRIPT_AVAILABLE:
+            return JsonResponse({'error': 'YouTube transcript API not available'}, status=500)
+        
+        try:
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            available_transcripts = []
+            
+            for transcript in transcript_list:
+                available_transcripts.append({
+                    'language': transcript.language,
+                    'language_code': transcript.language_code,
+                    'is_generated': transcript.is_generated,
+                    'is_translatable': transcript.is_translatable
+                })
+            
+            return JsonResponse({
+                'video_id': video_id,
+                'has_transcripts': len(available_transcripts) > 0,
+                'available_transcripts': available_transcripts,
+                'total_count': len(available_transcripts)
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'video_id': video_id,
+                'has_transcripts': False,
+                'error': str(e)
+            })
+            
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
 @require_http_methods(["GET"])
