@@ -18910,10 +18910,12 @@ def snowai_extract_youtube_transcript_from_url(request):
         youtube_url = data.get('youtube_url', '').strip()
         
         if not youtube_url:
+            print('YouTube URL is required')
             return JsonResponse({'error': 'YouTube URL is required'}, status=400)
         
         video_id = extract_youtube_video_id_from_url(youtube_url)
         if not video_id:
+            print('Invalid YouTube URL format')
             return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
         
         # Check if transcript already exists
@@ -18996,11 +18998,13 @@ def snowai_extract_youtube_transcript_from_url(request):
             
             # Provide specific error messages based on common issues
             if any(phrase in error_str for phrase in ['private video', 'video unavailable', 'does not exist']):
+                print(f'Video is private, unavailable, or does not exist.')
                 return JsonResponse({
                     'error': 'Video is private, unavailable, or does not exist.',
                     'debug_video_id': video_id
                 }, status=400)
             elif 'no subtitles' in error_str or 'no captions' in error_str:
+                print(f'No subtitles or captions found for this video.')
                 return JsonResponse({
                     'error': 'No subtitles or captions found for this video.',
                     'debug_info': {
@@ -19023,6 +19027,7 @@ def snowai_extract_youtube_transcript_from_url(request):
                 }, status=400)
         
     except json.JSONDecodeError:
+        print(f'Invalid JSON data')
         return JsonResponse({'error': 'Invalid JSON data'}, status=400)
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
