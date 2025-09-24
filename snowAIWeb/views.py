@@ -18628,7 +18628,7 @@ def extract_transcript_with_ytdlp(video_url, video_id):
         'metadata': {}
     }
     
-    # yt-dlp options for extracting subtitles/captions
+    # yt-dlp options for extracting subtitles/captions with anti-bot measures
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -18638,18 +18638,118 @@ def extract_transcript_with_ytdlp(video_url, video_id):
         'subtitlesformat': 'vtt/srt/best',
         'skip_download': True,  # Don't download the video
         'extract_flat': False,
+        # Anti-bot measures
+        'extractor_args': {
+            'youtube': {
+                'skip': ['dash', 'hls'],
+                'player_skip': ['configs'],
+            }
+        },
+        # Use different user agents to avoid detection
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+        },
+        # Additional options to avoid bot detection
+        'format': 'worst[height<=144]',  # Request lowest quality to reduce suspicion
+        'no_check_certificate': True,
     }
     
     # Create a temporary directory for subtitle files
     with tempfile.TemporaryDirectory() as temp_dir:
         ydl_opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
         
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                print(f"Attempting to extract info and subtitles for video: {video_id}")
+        # Try multiple approaches with different configurations
+        extraction_configs = [
+            # First attempt: Standard extraction with anti-bot measures
+            ydl_opts,
+            
+            # Second attempt: Add proxy rotation simulation and additional headers
+            {
+                **ydl_opts,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                    'Accept': '*/*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Referer': 'https://www.youtube.com/',
+                    'Origin': 'https://www.youtube.com',
+                    'Sec-Fetch-Dest': 'empty',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Site': 'same-origin',
+                },
+                'extractor_args': {
+                    'youtube': {
+                        'skip': ['dash', 'hls'],
+                        'player_skip': ['js', 'configs'],
+                        'player_client': ['android', 'web'],
+                    }
+                }
+            },
+            
+            # Third attempt: Mobile user agent
+            {
+                **ydl_opts,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                },
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'ios'],
+                    }
+                }
+            },
+            
+            # Fourth attempt: Simplified extraction with minimal options
+            {
+                'quiet': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'skip_download': True,
+                'no_check_certificate': True,
+            }
+        ]
+        
+        extraction_error = None
+        
+        for attempt, config in enumerate(extraction_configs, 1):
+            try:
+                print(f"Attempting extraction #{attempt} for video: {video_id}")
                 
-                # Extract video info and download subtitles
-                info = ydl.extract_info(video_url, download=False)
+                with yt_dlp.YoutubeDL(config) as ydl:
+                    # Extract video info and download subtitles
+                    info = ydl.extract_info(video_url, download=False)
+                    
+                    # If we got here, extraction was successful
+                    print(f"Extraction #{attempt} successful!")
+                    break
+                    
+            except Exception as attempt_error:
+                extraction_error = attempt_error
+                error_msg = str(attempt_error).lower()
+                print(f"Extraction #{attempt} failed: {error_msg}")
+                
+                # Check if it's a bot detection error
+                if 'sign in to confirm' in error_msg or 'not a bot' in error_msg:
+                    print(f"Bot detection encountered on attempt #{attempt}, trying next configuration...")
+                    continue
+                elif 'private' in error_msg or 'unavailable' in error_msg:
+                    # No point in trying other configs for these errors
+                    raise attempt_error
+                else:
+                    continue
+        else:
+            # All attempts failed
+            if extraction_error:
+                raise extraction_error
+            else:
+                raise Exception("All extraction attempts failed")
                 
                 # Store video metadata
                 transcript_data['metadata'] = {
@@ -19199,8 +19299,7 @@ def snowai_debug_ytdlp_availability(request):
         return JsonResponse({
             'error': str(e),
             'yt_dlp_available': YT_DLP_AVAILABLE
-        }, status=500)                
-
+        }, status=500)
 @csrf_exempt
 @require_http_methods(["PUT"])
 def snowai_update_transcript_metadata(request, transcript_id):
