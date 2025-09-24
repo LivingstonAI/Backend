@@ -18658,6 +18658,9 @@ def extract_transcript_with_ytdlp(video_url, video_id):
         'no_check_certificate': True,
     }
     
+    extraction_error = None
+    info = None
+
     # Create a temporary directory for subtitle files
     with tempfile.TemporaryDirectory() as temp_dir:
         ydl_opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
@@ -18697,6 +18700,7 @@ def extract_transcript_with_ytdlp(video_url, video_id):
                     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate',
                 },
                 'extractor_args': {
                     'youtube': {
@@ -18713,23 +18717,22 @@ def extract_transcript_with_ytdlp(video_url, video_id):
                 'subtitleslangs': ['en'],
                 'skip_download': True,
                 'no_check_certificate': True,
+                'outtmpl': os.path.join(temp_dir, '%(id)s.%(ext)s')
             }
         ]
-        
-        extraction_error = None
         
         for attempt, config in enumerate(extraction_configs, 1):
             try:
                 print(f"Attempting extraction #{attempt} for video: {video_id}")
                 
-                with yt_dlp.YoutubeDL(config) as ydl:
-                    # Extract video info and download subtitles
-                    info = ydl.extract_info(video_url, download=False)
-                    
-                    # If we got here, extraction was successful
-                    print(f"Extraction #{attempt} successful!")
-                    break
-                    
+                # We do not use a context manager here because it's not strictly necessary for this simple download
+                ydl = yt_dlp.YoutubeDL(config)
+                # Extract video info and download subtitles
+                info = ydl.extract_info(video_url, download=True)
+                
+                # If we got here, extraction was successful
+                print(f"Extraction #{attempt} successful!")
+                break
             except Exception as attempt_error:
                 extraction_error = attempt_error
                 error_msg = str(attempt_error).lower()
@@ -18745,136 +18748,137 @@ def extract_transcript_with_ytdlp(video_url, video_id):
                 else:
                     continue
         else:
-            # All attempts failed
+            # This block is executed if the loop completes without a 'break'
             if extraction_error:
                 raise extraction_error
             else:
                 raise Exception("All extraction attempts failed")
-                
-                # Store video metadata
-                transcript_data['metadata'] = {
-                    'title': info.get('title', ''),
-                    'duration': info.get('duration'),
-                    'upload_date': info.get('upload_date'),
-                    'uploader': info.get('uploader', ''),
-                    'view_count': info.get('view_count'),
-                    'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
-                }
-                
-                # Check available subtitles
-                subtitles = info.get('subtitles', {})
-                automatic_captions = info.get('automatic_captions', {})
-                
-                print(f"Available subtitles: {list(subtitles.keys())}")
-                print(f"Available automatic captions: {list(automatic_captions.keys())}")
-                
-                # Try to find the best subtitle source
-                subtitle_text = None
-                selected_language = None
-                extraction_method = None
-                
-                # Priority order: manual subtitles first, then automatic captions
-                subtitle_sources = [
-                    ('manual', subtitles),
-                    ('automatic', automatic_captions)
-                ]
-                
-                for source_type, subtitle_dict in subtitle_sources:
-                    if subtitle_text:
-                        break
-                        
-                    # Try different language codes
-                    language_priority = ['en', 'en-US', 'en-GB', 'en-us', 'en-gb']
+    
+        # Logic to be executed after a successful extraction
+        try:
+            # Store video metadata
+            transcript_data['metadata'] = {
+                'title': info.get('title', ''),
+                'duration': info.get('duration'),
+                'upload_date': info.get('upload_date'),
+                'uploader': info.get('uploader', ''),
+                'view_count': info.get('view_count'),
+                'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+            }
+            
+            # Check available subtitles
+            subtitles = info.get('subtitles', {})
+            automatic_captions = info.get('automatic_captions', {})
+            
+            print(f"Available subtitles: {list(subtitles.keys())}")
+            print(f"Available automatic captions: {list(automatic_captions.keys())}")
+            
+            # Try to find the best subtitle source
+            subtitle_text = None
+            selected_language = None
+            extraction_method = None
+            
+            # Priority order: manual subtitles first, then automatic captions
+            subtitle_sources = [
+                ('manual', subtitles),
+                ('automatic', automatic_captions)
+            ]
+            
+            for source_type, subtitle_dict in subtitle_sources:
+                if subtitle_text:
+                    break
                     
-                    for lang in language_priority:
-                        if lang in subtitle_dict:
-                            print(f"Found {source_type} subtitles for language: {lang}")
+                # Try different language codes
+                language_priority = ['en', 'en-US', 'en-GB', 'en-us', 'en-gb']
+                
+                for lang in language_priority:
+                    if lang in subtitle_dict:
+                        print(f"Found {source_type} subtitles for language: {lang}")
+                        
+                        # Download the subtitle file
+                        try:
+                            download_opts = {
+                                'quiet': True,
+                                'no_warnings': True,
+                                'writesubtitles': True,
+                                'writeautomaticsub': source_type == 'automatic',
+                                'subtitleslangs': [lang],
+                                'subtitlesformat': 'vtt',
+                                'skip_download': True,
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                            }
                             
-                            # Download the subtitle file
-                            try:
-                                # Use yt-dlp to download just the subtitles
-                                download_opts = {
-                                    'quiet': True,
-                                    'no_warnings': True,
-                                    'writesubtitles': True,
-                                    'writeautomaticsub': source_type == 'automatic',
-                                    'subtitleslangs': [lang],
-                                    'subtitlesformat': 'vtt',
-                                    'skip_download': True,
-                                    'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
-                                }
+                            with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                sub_ydl.download([video_url])
+                            
+                            # Look for the downloaded subtitle file
+                            subtitle_file = None
+                            for file in os.listdir(temp_dir):
+                                if file.startswith(video_id) and file.endswith(('.vtt', '.srt')):
+                                    subtitle_file = os.path.join(temp_dir, file)
+                                    break
+                            
+                            if subtitle_file and os.path.exists(subtitle_file):
+                                print(f"Found subtitle file: {subtitle_file}")
+                                with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                    subtitle_content = f.read()
                                 
-                                with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
-                                    sub_ydl.download([video_url])
-                                
-                                # Look for the downloaded subtitle file
-                                subtitle_file = None
-                                for file in os.listdir(temp_dir):
-                                    if file.startswith(video_id) and file.endswith(('.vtt', '.srt')):
-                                        subtitle_file = os.path.join(temp_dir, file)
-                                        break
-                                
-                                if subtitle_file and os.path.exists(subtitle_file):
-                                    print(f"Found subtitle file: {subtitle_file}")
+                                # Parse VTT or SRT content to extract text
+                                subtitle_text = parse_subtitle_content(subtitle_content)
+                                selected_language = lang
+                                extraction_method = f'ytdlp_{source_type}_{lang}'
+                                break
+                            
+                        except Exception as sub_error:
+                            print(f"Failed to download {source_type} subtitles for {lang}: {sub_error}")
+                            continue
+                
+                # If no specific language found, try any available language
+                if not subtitle_text and subtitle_dict:
+                    for lang, formats in subtitle_dict.items():
+                        if subtitle_text:
+                            break
+                        print(f"Trying fallback language: {lang}")
+                        
+                        try:
+                            download_opts = {
+                                'quiet': True,
+                                'no_warnings': True,
+                                'writesubtitles': True,
+                                'writeautomaticsub': source_type == 'automatic',
+                                'subtitleslangs': [lang],
+                                'subtitlesformat': 'vtt',
+                                'skip_download': True,
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                            }
+                            
+                            with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                sub_ydl.download([video_url])
+                            
+                            # Look for the downloaded subtitle file
+                            for file in os.listdir(temp_dir):
+                                if file.startswith(video_id) and file.endswith(('.vtt', '.srt')):
+                                    subtitle_file = os.path.join(temp_dir, file)
                                     with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
                                         subtitle_content = f.read()
                                     
-                                    # Parse VTT or SRT content to extract text
                                     subtitle_text = parse_subtitle_content(subtitle_content)
                                     selected_language = lang
-                                    extraction_method = f'ytdlp_{source_type}_{lang}'
+                                    extraction_method = f'ytdlp_{source_type}_{lang}_fallback'
                                     break
                                     
-                            except Exception as sub_error:
-                                print(f"Failed to download {source_type} subtitles for {lang}: {sub_error}")
-                                continue
-                    
-                    # If no specific language found, try any available language
-                    if not subtitle_text and subtitle_dict:
-                        for lang, formats in subtitle_dict.items():
-                            if subtitle_text:
-                                break
-                            print(f"Trying fallback language: {lang}")
-                            
-                            try:
-                                download_opts = {
-                                    'quiet': True,
-                                    'no_warnings': True,
-                                    'writesubtitles': True,
-                                    'writeautomaticsub': source_type == 'automatic',
-                                    'subtitleslangs': [lang],
-                                    'subtitlesformat': 'vtt',
-                                    'skip_download': True,
-                                    'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
-                                }
-                                
-                                with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
-                                    sub_ydl.download([video_url])
-                                
-                                # Look for the downloaded subtitle file
-                                for file in os.listdir(temp_dir):
-                                    if file.startswith(video_id) and file.endswith(('.vtt', '.srt')):
-                                        subtitle_file = os.path.join(temp_dir, file)
-                                        with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
-                                            subtitle_content = f.read()
-                                        
-                                        subtitle_text = parse_subtitle_content(subtitle_content)
-                                        selected_language = lang
-                                        extraction_method = f'ytdlp_{source_type}_{lang}_fallback'
-                                        break
-                                        
-                            except Exception as fallback_error:
-                                print(f"Fallback failed for {lang}: {fallback_error}")
-                                continue
-                
-                if subtitle_text:
-                    transcript_data['text'] = subtitle_text.strip()
-                    transcript_data['language'] = selected_language
-                    transcript_data['method'] = extraction_method
-                    print(f"Successfully extracted transcript: {len(subtitle_text)} characters")
-                else:
-                    raise Exception("No subtitles could be extracted using any method")
-                
+                        except Exception as fallback_error:
+                            print(f"Fallback failed for {lang}: {fallback_error}")
+                            continue
+            
+            if subtitle_text:
+                transcript_data['text'] = subtitle_text.strip()
+                transcript_data['language'] = selected_language
+                transcript_data['method'] = extraction_method
+                print(f"Successfully extracted transcript: {len(subtitle_text)} characters")
+            else:
+                raise Exception("No subtitles could be extracted using any method")
+            
         except Exception as e:
             print(f"yt-dlp extraction error: {str(e)}")
             raise Exception(f"Failed to extract transcript: {str(e)}")
