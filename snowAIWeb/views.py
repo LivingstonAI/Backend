@@ -18654,33 +18654,56 @@ def snowai_extract_youtube_transcript_from_url(request):
             return JsonResponse({'error': 'YouTube transcript API not available. Please install: pip install youtube-transcript-api'}, status=500)
         
         try:
-            # Get available transcripts for the video
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            
-            # Try to get English transcript first, then any available transcript
-            transcript = None
+            # Method 1: Try the simple get_transcript method first
             try:
-                # Try to get English transcript
-                transcript = transcript_list.find_transcript(['en'])
-            except:
+                transcript_data = YouTubeTranscriptApi.get_transcript(video_id)
+                full_text = ' '.join([item['text'] for item in transcript_data])
+                transcript_language = 'en'  # Default assumption
+            except AttributeError:
+                # Method 2: If get_transcript doesn't exist, try list_transcripts
                 try:
-                    # If no English, get the first available transcript
-                    transcript = transcript_list.find_transcript(['en-US', 'en-GB'])
-                except:
-                    # Get any available transcript
-                    for available_transcript in transcript_list:
-                        transcript = available_transcript
-                        break
+                    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                    
+                    # Try to get English transcript first
+                    transcript = None
+                    try:
+                        transcript = transcript_list.find_transcript(['en'])
+                    except:
+                        try:
+                            transcript = transcript_list.find_transcript(['en-US', 'en-GB'])
+                        except:
+                            # Get any available transcript
+                            for available_transcript in transcript_list:
+                                transcript = available_transcript
+                                break
+                    
+                    if not transcript:
+                        return JsonResponse({'error': 'No transcript available for this video'}, status=400)
+                    
+                    transcript_data = transcript.fetch()
+                    full_text = ' '.join([item['text'] for item in transcript_data])
+                    transcript_language = getattr(transcript, 'language_code', 'en')
+                    
+                except AttributeError as ae:
+                    return JsonResponse({
+                        'error': f'YouTube Transcript API method not available. Library version issue. Error: {str(ae)}'
+                    }, status=500)
+            except Exception as e:
+                # Handle specific transcript extraction errors
+                error_msg = str(e).lower()
+                if 'no transcript' in error_msg or 'could not retrieve' in error_msg:
+                    return JsonResponse({
+                        'error': 'No transcripts available for this video. The video may not have captions enabled.'
+                    }, status=400)
+                elif 'video unavailable' in error_msg or 'private' in error_msg:
+                    return JsonResponse({
+                        'error': 'Video is unavailable, private, or restricted.'
+                    }, status=400)
+                else:
+                    raise e  # Re-raise to be caught by outer exception handler
             
-            if not transcript:
-                return JsonResponse({'error': 'No transcript available for this video'}, status=400)
-            
-            # Fetch the actual transcript
-            transcript_data = transcript.fetch()
-            full_text = ' '.join([item['text'] for item in transcript_data])
-            
-            if not full_text.strip():
-                return JsonResponse({'error': 'Transcript is empty'}, status=400)
+            if not full_text or not full_text.strip():
+                return JsonResponse({'error': 'Transcript is empty or could not be extracted'}, status=400)
             
             # Get video metadata using pytube
             video_metadata = {}
@@ -18694,7 +18717,7 @@ def snowai_extract_youtube_transcript_from_url(request):
                         'author': yt.author
                     }
                 except Exception as pytube_error:
-                    print(f"Pytube error: {pytube_error}")
+                    print(f"Pytube error (non-critical): {pytube_error}")
                     # Continue without metadata if pytube fails
             
             # Create transcript record
@@ -18702,7 +18725,7 @@ def snowai_extract_youtube_transcript_from_url(request):
                 transcript_uuid=str(uuid.uuid4()),
                 youtube_video_id=video_id,
                 youtube_url=youtube_url,
-                video_title=video_metadata.get('title', ''),
+                video_title=video_metadata.get('title', data.get('video_title', '')),
                 full_transcript_text=full_text,
                 video_duration_seconds=video_metadata.get('length'),
                 video_upload_date=video_metadata.get('publish_date'),
@@ -18711,7 +18734,7 @@ def snowai_extract_youtube_transcript_from_url(request):
                 speaker_country_name=data.get('country_name', ''),
                 content_category=data.get('category', 'central_bank'),
                 transcription_method='youtube_auto',
-                transcript_language=getattr(transcript, 'language_code', 'en') if transcript else 'en'
+                transcript_language=transcript_language if 'transcript_language' in locals() else 'en'
             )
             
             return JsonResponse({
@@ -18720,24 +18743,18 @@ def snowai_extract_youtube_transcript_from_url(request):
                 'word_count': transcript_record.word_count,
                 'duration': video_metadata.get('length'),
                 'title': video_metadata.get('title', ''),
-                'language': getattr(transcript, 'language_code', 'en') if transcript else 'en'
+                'language': transcript_language if 'transcript_language' in locals() else 'en',
+                'text_preview': full_text[:200] + '...' if len(full_text) > 200 else full_text
             })
             
         except Exception as transcript_error:
-            # Provide more specific error messages
+            # Provide detailed error information for debugging
             error_message = str(transcript_error)
-            if "No transcripts were found" in error_message:
-                return JsonResponse({
-                    'error': 'No transcripts available for this video. The video may not have auto-generated or manual captions.'
-                }, status=400)
-            elif "Video unavailable" in error_message:
-                return JsonResponse({
-                    'error': 'Video is unavailable or private. Please check the URL.'
-                }, status=400)
-            else:
-                return JsonResponse({
-                    'error': f'Failed to extract transcript: {error_message}'
-                }, status=400)
+            return JsonResponse({
+                'error': f'Failed to extract transcript: {error_message}',
+                'video_id': video_id,
+                'debug_info': f'Library available: {YOUTUBE_TRANSCRIPT_AVAILABLE}, Error type: {type(transcript_error).__name__}'
+            }, status=400)
             
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON data'}, status=400)
@@ -18904,6 +18921,55 @@ def snowai_update_transcript_metadata(request, transcript_id):
         return JsonResponse({'error': 'Invalid JSON data'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# Debug endpoint to test YouTube Transcript API
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_debug_youtube_transcript_api(request):
+    """Debug endpoint to test YouTube Transcript API availability and methods"""
+    try:
+        debug_info = {
+            'youtube_transcript_available': YOUTUBE_TRANSCRIPT_AVAILABLE,
+            'pytube_available': PYTUBE_AVAILABLE,
+        }
+        
+        if YOUTUBE_TRANSCRIPT_AVAILABLE:
+            # Test what methods are available
+            api_methods = []
+            if hasattr(YouTubeTranscriptApi, 'get_transcript'):
+                api_methods.append('get_transcript')
+            if hasattr(YouTubeTranscriptApi, 'list_transcripts'):
+                api_methods.append('list_transcripts')
+            if hasattr(YouTubeTranscriptApi, 'get_transcripts'):
+                api_methods.append('get_transcripts')
+                
+            debug_info['available_methods'] = api_methods
+            debug_info['api_class_name'] = YouTubeTranscriptApi.__name__
+            debug_info['api_module'] = YouTubeTranscriptApi.__module__
+            
+            # Try to get a transcript from a popular video (Rick Roll - has captions)
+            test_video_id = 'dQw4w9WgXcQ'  
+            
+            try:
+                if 'get_transcript' in api_methods:
+                    test_transcript = YouTubeTranscriptApi.get_transcript(test_video_id)
+                    debug_info['test_transcript_success'] = True
+                    debug_info['test_transcript_length'] = len(test_transcript)
+                else:
+                    debug_info['test_transcript_success'] = False
+                    debug_info['test_error'] = 'get_transcript method not available'
+            except Exception as e:
+                debug_info['test_transcript_success'] = False
+                debug_info['test_error'] = str(e)
+        
+        return JsonResponse(debug_info)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'youtube_transcript_available': YOUTUBE_TRANSCRIPT_AVAILABLE
+        }, status=500)
 
 
 # Additional utility functions you might find useful
