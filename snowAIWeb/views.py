@@ -18581,23 +18581,25 @@ def create_ai_diagnostic_prompt(account_id, performance_data):
     
     return prompt
 
-try:
-    import yt_dlp
-    YTDLP_AVAILABLE = True
-except ImportError:
-    YTDLP_AVAILABLE = False
-    yt_dlp = None
-
-import tempfile
-import os
-import re
 import json
 import uuid
+import re
+import subprocess
+import tempfile
+import os
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.core.paginator import Paginator
 from django.db.models import Q
+
+# Try to import yt-dlp
+try:
+    import yt_dlp
+    YT_DLP_AVAILABLE = True
+except ImportError:
+    YT_DLP_AVAILABLE = False
+    yt_dlp = None
 
 def extract_youtube_video_id_from_url(youtube_url):
     """Extract video ID from various YouTube URL formats"""
@@ -18613,309 +18615,237 @@ def extract_youtube_video_id_from_url(youtube_url):
     return None
 
 
-def extract_transcript_with_ytdlp(youtube_url, video_id):
-    """Extract transcript using yt-dlp with multiple fallback strategies"""
+def extract_transcript_with_ytdlp(video_url, video_id):
+    """Extract transcript using yt-dlp with multiple fallback methods"""
     
-    if not YTDLP_AVAILABLE:
-        raise Exception("yt-dlp not available. Please install: pip install yt-dlp")
+    if not YT_DLP_AVAILABLE:
+        raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
     
-    transcript_text = ""
-    extraction_method = ""
-    language = "unknown"
+    transcript_data = {
+        'text': None,
+        'method': None,
+        'language': 'en',
+        'metadata': {}
+    }
     
-    # Configure yt-dlp options
+    # yt-dlp options for extracting subtitles/captions
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
+        'writesubtitles': True,
+        'writeautomaticsub': True,
+        'subtitleslangs': ['en', 'en-US', 'en-GB'],
+        'subtitlesformat': 'vtt/srt/best',
+        'skip_download': True,  # Don't download the video
         'extract_flat': False,
-        'writesubtitles': False,  # We'll handle subtitles manually
-        'writeautomaticsub': False,
-        'skip_download': True,  # Don't download the video file
     }
     
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    # Create a temporary directory for subtitle files
+    with tempfile.TemporaryDirectory() as temp_dir:
+        ydl_opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+        
         try:
-            # Get video info first
-            info = ydl.extract_info(youtube_url, download=False)
-            
-            # Strategy 1: Try to get manual subtitles first
-            if 'subtitles' in info and info['subtitles']:
-                print("Found manual subtitles")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                print(f"Attempting to extract info and subtitles for video: {video_id}")
                 
-                # Prefer English subtitles
-                subtitle_langs = ['en', 'en-US', 'en-GB']
-                selected_subtitles = None
-                selected_lang = None
+                # Extract video info and download subtitles
+                info = ydl.extract_info(video_url, download=False)
                 
-                for lang in subtitle_langs:
-                    if lang in info['subtitles']:
-                        selected_subtitles = info['subtitles'][lang]
-                        selected_lang = lang
+                # Store video metadata
+                transcript_data['metadata'] = {
+                    'title': info.get('title', ''),
+                    'duration': info.get('duration'),
+                    'upload_date': info.get('upload_date'),
+                    'uploader': info.get('uploader', ''),
+                    'view_count': info.get('view_count'),
+                    'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+                }
+                
+                # Check available subtitles
+                subtitles = info.get('subtitles', {})
+                automatic_captions = info.get('automatic_captions', {})
+                
+                print(f"Available subtitles: {list(subtitles.keys())}")
+                print(f"Available automatic captions: {list(automatic_captions.keys())}")
+                
+                # Try to find the best subtitle source
+                subtitle_text = None
+                selected_language = None
+                extraction_method = None
+                
+                # Priority order: manual subtitles first, then automatic captions
+                subtitle_sources = [
+                    ('manual', subtitles),
+                    ('automatic', automatic_captions)
+                ]
+                
+                for source_type, subtitle_dict in subtitle_sources:
+                    if subtitle_text:
                         break
+                        
+                    # Try different language codes
+                    language_priority = ['en', 'en-US', 'en-GB', 'en-us', 'en-gb']
+                    
+                    for lang in language_priority:
+                        if lang in subtitle_dict:
+                            print(f"Found {source_type} subtitles for language: {lang}")
+                            
+                            # Download the subtitle file
+                            try:
+                                # Use yt-dlp to download just the subtitles
+                                download_opts = {
+                                    'quiet': True,
+                                    'no_warnings': True,
+                                    'writesubtitles': True,
+                                    'writeautomaticsub': source_type == 'automatic',
+                                    'subtitleslangs': [lang],
+                                    'subtitlesformat': 'vtt',
+                                    'skip_download': True,
+                                    'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                                }
+                                
+                                with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                    sub_ydl.download([video_url])
+                                
+                                # Look for the downloaded subtitle file
+                                subtitle_file = None
+                                for file in os.listdir(temp_dir):
+                                    if file.startswith(video_id) and file.endswith(('.vtt', '.srt')):
+                                        subtitle_file = os.path.join(temp_dir, file)
+                                        break
+                                
+                                if subtitle_file and os.path.exists(subtitle_file):
+                                    print(f"Found subtitle file: {subtitle_file}")
+                                    with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                        subtitle_content = f.read()
+                                    
+                                    # Parse VTT or SRT content to extract text
+                                    subtitle_text = parse_subtitle_content(subtitle_content)
+                                    selected_language = lang
+                                    extraction_method = f'ytdlp_{source_type}_{lang}'
+                                    break
+                                    
+                            except Exception as sub_error:
+                                print(f"Failed to download {source_type} subtitles for {lang}: {sub_error}")
+                                continue
+                    
+                    # If no specific language found, try any available language
+                    if not subtitle_text and subtitle_dict:
+                        for lang, formats in subtitle_dict.items():
+                            if subtitle_text:
+                                break
+                            print(f"Trying fallback language: {lang}")
+                            
+                            try:
+                                download_opts = {
+                                    'quiet': True,
+                                    'no_warnings': True,
+                                    'writesubtitles': True,
+                                    'writeautomaticsub': source_type == 'automatic',
+                                    'subtitleslangs': [lang],
+                                    'subtitlesformat': 'vtt',
+                                    'skip_download': True,
+                                    'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                                }
+                                
+                                with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                    sub_ydl.download([video_url])
+                                
+                                # Look for the downloaded subtitle file
+                                for file in os.listdir(temp_dir):
+                                    if file.startswith(video_id) and file.endswith(('.vtt', '.srt')):
+                                        subtitle_file = os.path.join(temp_dir, file)
+                                        with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                            subtitle_content = f.read()
+                                        
+                                        subtitle_text = parse_subtitle_content(subtitle_content)
+                                        selected_language = lang
+                                        extraction_method = f'ytdlp_{source_type}_{lang}_fallback'
+                                        break
+                                        
+                            except Exception as fallback_error:
+                                print(f"Fallback failed for {lang}: {fallback_error}")
+                                continue
                 
-                # If no English, get the first available language
-                if not selected_subtitles:
-                    first_lang = list(info['subtitles'].keys())[0]
-                    selected_subtitles = info['subtitles'][first_lang]
-                    selected_lang = first_lang
+                if subtitle_text:
+                    transcript_data['text'] = subtitle_text.strip()
+                    transcript_data['language'] = selected_language
+                    transcript_data['method'] = extraction_method
+                    print(f"Successfully extracted transcript: {len(subtitle_text)} characters")
+                else:
+                    raise Exception("No subtitles could be extracted using any method")
                 
-                # Extract subtitle content
-                if selected_subtitles:
-                    transcript_text = extract_subtitle_content(selected_subtitles, ydl)
-                    extraction_method = f"ytdlp_manual_subtitles_{selected_lang}"
-                    language = selected_lang
-            
-            # Strategy 2: Try automatic captions if no manual subtitles
-            if not transcript_text and 'automatic_captions' in info and info['automatic_captions']:
-                print("Trying automatic captions")
-                
-                auto_captions = info['automatic_captions']
-                subtitle_langs = ['en', 'en-US', 'en-GB']
-                selected_captions = None
-                selected_lang = None
-                
-                for lang in subtitle_langs:
-                    if lang in auto_captions:
-                        selected_captions = auto_captions[lang]
-                        selected_lang = lang
-                        break
-                
-                # If no English, get the first available language
-                if not selected_captions:
-                    first_lang = list(auto_captions.keys())[0]
-                    selected_captions = auto_captions[first_lang]
-                    selected_lang = first_lang
-                
-                if selected_captions:
-                    transcript_text = extract_subtitle_content(selected_captions, ydl)
-                    extraction_method = f"ytdlp_auto_captions_{selected_lang}"
-                    language = selected_lang
-            
-            # Strategy 3: Force download subtitles if above methods failed
-            if not transcript_text:
-                print("Attempting to download subtitles directly")
-                transcript_text, extraction_method, language = download_subtitles_directly(youtube_url, video_id)
-            
-            if not transcript_text:
-                raise Exception("No subtitles or captions found for this video")
-            
-            # Get video metadata
-            metadata = {
-                'title': info.get('title', ''),
-                'duration': info.get('duration'),
-                'uploader': info.get('uploader', ''),
-                'upload_date': info.get('upload_date'),
-                'view_count': info.get('view_count'),
-                'description': info.get('description', '')
-            }
-            
-            return transcript_text, extraction_method, language, metadata
-            
         except Exception as e:
             print(f"yt-dlp extraction error: {str(e)}")
-            raise e
+            raise Exception(f"Failed to extract transcript: {str(e)}")
+    
+    return transcript_data
 
 
-def extract_subtitle_content(subtitle_formats, ydl):
-    """Extract text content from subtitle formats"""
-    
-    # Prefer certain formats
-    preferred_formats = ['vtt', 'srt', 'ttml', 'srv1', 'srv2', 'srv3']
-    
-    selected_format = None
-    for fmt in preferred_formats:
-        for subtitle in subtitle_formats:
-            if subtitle.get('ext') == fmt:
-                selected_format = subtitle
-                break
-        if selected_format:
-            break
-    
-    # If no preferred format found, use the first available
-    if not selected_format and subtitle_formats:
-        selected_format = subtitle_formats[0]
-    
-    if not selected_format:
-        return ""
-    
-    try:
-        # Download subtitle content
-        subtitle_url = selected_format['url']
-        
-        # Use yt-dlp's downloader to get the subtitle content
-        import urllib.request
-        import ssl
-        
-        # Create SSL context that doesn't verify certificates (for some subtitle URLs)
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        
-        req = urllib.request.Request(subtitle_url)
-        req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-        
-        with urllib.request.urlopen(req, context=ssl_context) as response:
-            subtitle_content = response.read().decode('utf-8')
-        
-        # Parse based on format
-        if selected_format.get('ext') == 'vtt':
-            return parse_vtt_content(subtitle_content)
-        elif selected_format.get('ext') == 'srt':
-            return parse_srt_content(subtitle_content)
-        else:
-            # For other formats, try to extract text using regex
-            return parse_generic_subtitle_content(subtitle_content)
-            
-    except Exception as e:
-        print(f"Error extracting subtitle content: {e}")
-        return ""
-
-
-def download_subtitles_directly(youtube_url, video_id):
-    """Download subtitles directly using yt-dlp download functionality"""
-    
-    temp_dir = tempfile.mkdtemp()
-    transcript_text = ""
-    extraction_method = ""
-    language = "unknown"
-    
-    try:
-        # Configure yt-dlp to download subtitles only
-        ydl_opts = {
-            'writesubtitles': True,
-            'writeautomaticsub': True,
-            'subtitleslangs': ['en', 'en-US', 'en-GB'],
-            'skip_download': True,
-            'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s'),
-            'quiet': True,
-            'no_warnings': True,
-        }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([youtube_url])
-        
-        # Look for downloaded subtitle files
-        subtitle_files = []
-        for file in os.listdir(temp_dir):
-            if file.startswith(video_id) and file.endswith(('.vtt', '.srt')):
-                subtitle_files.append(os.path.join(temp_dir, file))
-        
-        # Process subtitle files
-        for subtitle_file in subtitle_files:
-            try:
-                with open(subtitle_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                if subtitle_file.endswith('.vtt'):
-                    transcript_text = parse_vtt_content(content)
-                    extraction_method = "ytdlp_direct_vtt"
-                elif subtitle_file.endswith('.srt'):
-                    transcript_text = parse_srt_content(content)
-                    extraction_method = "ytdlp_direct_srt"
-                
-                # Extract language from filename if possible
-                if '.en.' in subtitle_file or '.en-' in subtitle_file:
-                    language = "en"
-                
-                if transcript_text:
-                    break
-                    
-            except Exception as e:
-                print(f"Error reading subtitle file {subtitle_file}: {e}")
-                continue
-    
-    except Exception as e:
-        print(f"Error downloading subtitles directly: {e}")
-    
-    finally:
-        # Clean up temporary files
-        try:
-            import shutil
-            shutil.rmtree(temp_dir)
-        except:
-            pass
-    
-    return transcript_text, extraction_method, language
-
-
-def parse_vtt_content(vtt_content):
-    """Parse VTT subtitle content to extract plain text"""
-    lines = vtt_content.split('\n')
+def parse_subtitle_content(subtitle_content):
+    """Parse VTT or SRT subtitle content to extract clean text"""
+    lines = subtitle_content.split('\n')
     text_lines = []
+    
+    # Detect format
+    is_vtt = subtitle_content.startswith('WEBVTT')
     
     for line in lines:
         line = line.strip()
-        # Skip VTT headers, timestamps, and empty lines
-        if (line and 
-            not line.startswith('WEBVTT') and 
-            not line.startswith('NOTE') and
-            not '-->' in line and
-            not line.startswith('<') and
-            not re.match(r'^\d+$', line)):
-            
-            # Remove VTT formatting tags
-            line = re.sub(r'<[^>]+>', '', line)
-            line = re.sub(r'&[^;]+;', '', line)  # Remove HTML entities
-            text_lines.append(line)
-    
-    return ' '.join(text_lines).strip()
-
-
-def parse_srt_content(srt_content):
-    """Parse SRT subtitle content to extract plain text"""
-    lines = srt_content.split('\n')
-    text_lines = []
-    
-    skip_next = False
-    for line in lines:
-        line = line.strip()
         
-        if skip_next:
-            skip_next = False
+        # Skip empty lines
+        if not line:
             continue
             
-        # Skip subtitle numbers and timestamps
-        if re.match(r'^\d+$', line) or '-->' in line:
+        # Skip VTT header
+        if line.startswith('WEBVTT') or line.startswith('NOTE'):
             continue
             
-        if line:
-            # Remove SRT formatting
-            line = re.sub(r'<[^>]+>', '', line)
-            line = re.sub(r'\{[^}]+\}', '', line)
+        # Skip SRT sequence numbers (pure digits)
+        if line.isdigit():
+            continue
+            
+        # Skip timestamp lines (contain --> or time patterns)
+        if '-->' in line or re.match(r'^\d{2}:\d{2}:\d{2}', line):
+            continue
+            
+        # Skip VTT style/position tags
+        if line.startswith('<') or line.startswith('&'):
+            continue
+            
+        # Clean HTML tags and entities
+        line = re.sub(r'<[^>]+>', '', line)  # Remove HTML tags
+        line = re.sub(r'&[a-zA-Z]+;', '', line)  # Remove HTML entities
+        
+        # Remove VTT positioning tags
+        line = re.sub(r'\{[^}]*\}', '', line)
+        
+        # If line still has content, add it
+        if line and not line.startswith('[') and not line.startswith('('):
             text_lines.append(line)
     
-    return ' '.join(text_lines).strip()
-
-
-def parse_generic_subtitle_content(content):
-    """Generic parser for other subtitle formats"""
-    # Remove XML/HTML tags
-    content = re.sub(r'<[^>]+>', '', content)
-    # Remove timestamps
-    content = re.sub(r'\d{2}:\d{2}:\d{2}[\.,]\d{3}', '', content)
-    # Remove numbers at start of lines
-    content = re.sub(r'^\d+\s*$', '', content, flags=re.MULTILINE)
-    # Remove empty lines and extra whitespace
-    lines = [line.strip() for line in content.split('\n') if line.strip()]
+    # Join all text and clean up
+    full_text = ' '.join(text_lines)
     
-    return ' '.join(lines)
+    # Remove extra whitespace
+    full_text = re.sub(r'\s+', ' ', full_text)
+    
+    return full_text
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def snowai_extract_youtube_transcript_from_url(request):
-    """Extract transcript from YouTube URL using yt-dlp"""
+    """Extract transcript from YouTube URL using yt-dlp and save to database"""
     try:
         data = json.loads(request.body)
         youtube_url = data.get('youtube_url', '').strip()
         
         if not youtube_url:
-            print('YouTube URL is required')
             return JsonResponse({'error': 'YouTube URL is required'}, status=400)
         
         video_id = extract_youtube_video_id_from_url(youtube_url)
         if not video_id:
-            print('Invalid YouTube URL format')
             return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
         
         # Check if transcript already exists
@@ -18927,120 +18857,106 @@ def snowai_extract_youtube_transcript_from_url(request):
             return JsonResponse({
                 'message': 'Transcript already exists',
                 'transcript_id': existing_transcript.transcript_uuid,
-                'existing': True
+                'existing': True,
+                'word_count': existing_transcript.word_count
             })
         
+        print(f"Starting transcript extraction for video ID: {video_id}")
+        
+        # Extract transcript using yt-dlp
         try:
-            # Extract transcript using yt-dlp
-            transcript_text, extraction_method, language, metadata = extract_transcript_with_ytdlp(
-                youtube_url, video_id
-            )
+            transcript_result = extract_transcript_with_ytdlp(youtube_url, video_id)
             
-            if not transcript_text or len(transcript_text.strip()) < 50:
+            if not transcript_result['text']:
                 return JsonResponse({
-                    'error': 'No usable transcript found. This video may not have captions/subtitles available.',
+                    'error': 'No transcript text could be extracted from this video. The video may not have captions or subtitles available.',
                     'debug_info': {
                         'video_id': video_id,
-                        'extraction_method': extraction_method,
-                        'text_length': len(transcript_text) if transcript_text else 0
+                        'extraction_method': transcript_result.get('method', 'unknown'),
+                        'yt_dlp_available': YT_DLP_AVAILABLE
                     }
                 }, status=400)
             
-            # Parse upload date if available
-            upload_date = None
-            if metadata.get('upload_date'):
-                try:
-                    from datetime import datetime
-                    upload_date = datetime.strptime(metadata['upload_date'], '%Y%m%d').date()
-                except:
-                    pass
+            full_text = transcript_result['text']
+            video_metadata = transcript_result['metadata']
+            
+            print(f"Transcript extracted: {len(full_text)} characters, method: {transcript_result['method']}")
             
             # Create transcript record
             transcript_record = SnowAIVideoTranscriptRecord.objects.create(
                 transcript_uuid=str(uuid.uuid4()),
                 youtube_video_id=video_id,
                 youtube_url=youtube_url,
-                video_title=metadata.get('title', data.get('video_title', '')),
-                full_transcript_text=transcript_text,
-                video_duration_seconds=metadata.get('duration'),
-                video_upload_date=upload_date,
+                video_title=video_metadata.get('title', data.get('video_title', '')),
+                full_transcript_text=full_text,
+                video_duration_seconds=video_metadata.get('duration'),
+                video_upload_date=video_metadata.get('upload_date'),
                 primary_speaker_name=data.get('speaker_name', ''),
                 speaker_country_code=data.get('country_code', ''),
                 speaker_country_name=data.get('country_name', ''),
                 content_category=data.get('category', 'central_bank'),
-                transcription_method=extraction_method,
-                transcript_language=language,
-                video_view_count=metadata.get('view_count'),
-                video_description=metadata.get('description', '')[:1000] if metadata.get('description') else ''
+                transcription_method=transcript_result['method'],
+                transcript_language=transcript_result['language']
             )
-            
-            word_count = len(transcript_text.split())
             
             return JsonResponse({
                 'message': 'Transcript extracted and saved successfully',
                 'transcript_id': transcript_record.transcript_uuid,
-                'word_count': word_count,
-                'duration': metadata.get('duration'),
-                'title': metadata.get('title', ''),
-                'language': language,
-                'extraction_method': extraction_method,
-                'text_preview': transcript_text[:200] + '...' if len(transcript_text) > 200 else transcript_text,
-                'video_info': {
-                    'uploader': metadata.get('uploader'),
-                    'view_count': metadata.get('view_count'),
-                    'upload_date': metadata.get('upload_date')
-                }
+                'word_count': transcript_record.word_count,
+                'duration': video_metadata.get('duration'),
+                'title': video_metadata.get('title', ''),
+                'language': transcript_result['language'],
+                'extraction_method': transcript_result['method'],
+                'text_preview': full_text[:200] + '...' if len(full_text) > 200 else full_text
             })
             
         except Exception as transcript_error:
             error_str = str(transcript_error).lower()
             print(f"Transcript extraction error: {error_str}")
             
-            # Provide specific error messages based on common issues
-            if any(phrase in error_str for phrase in ['private video', 'video unavailable', 'does not exist']):
-                print(f'Video is private, unavailable, or does not exist.')
+            # Provide more specific error messages
+            if 'private' in error_str or 'unavailable' in error_str:
                 return JsonResponse({
-                    'error': 'Video is private, unavailable, or does not exist.',
+                    'error': 'The video is private, unavailable, or restricted.',
                     'debug_video_id': video_id
                 }, status=400)
-            elif 'no subtitles' in error_str or 'no captions' in error_str:
-                print(f'No subtitles or captions found for this video.')
+            elif 'no subtitles' in error_str or 'no transcript' in error_str:
                 return JsonResponse({
-                    'error': 'No subtitles or captions found for this video.',
+                    'error': 'No subtitles or captions are available for this video. This could mean the video has no captions enabled.',
                     'debug_info': {
                         'video_id': video_id,
-                        'suggestion': 'Try a different video that has captions enabled.'
+                        'url': youtube_url,
+                        'method': 'yt-dlp'
                     }
                 }, status=400)
-            elif 'yt-dlp not available' in error_str:
+            elif 'not installed' in error_str:
                 return JsonResponse({
                     'error': 'yt-dlp is not installed. Please install it: pip install yt-dlp'
                 }, status=500)
             else:
                 return JsonResponse({
-                    'error': 'Failed to extract transcript.',
+                    'error': 'Failed to extract transcript from video.',
                     'debug_info': {
                         'video_id': video_id,
-                        'error_details': str(transcript_error)[:500],  # Limit error message length
-                        'ytdlp_available': YTDLP_AVAILABLE
+                        'error_details': str(transcript_error),
+                        'yt_dlp_available': YT_DLP_AVAILABLE
                     }
                 }, status=400)
-        
+                
     except json.JSONDecodeError:
-        print(f'Invalid JSON data')
         return JsonResponse({'error': 'Invalid JSON data'}, status=400)
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         return JsonResponse({
-            'error': f'An unexpected error occurred: {str(e)}'
+            'error': f'An unexpected error occurred: {str(e)}',
+            'debug_info': 'Check server logs for more details'
         }, status=500)
 
 
-# Test endpoint to check yt-dlp availability and functionality
 @csrf_exempt
 @require_http_methods(["POST"])
-def snowai_test_ytdlp_extraction(request):
-    """Test yt-dlp extraction on a specific URL without saving to database"""
+def snowai_check_transcript_availability(request):
+    """Check if transcript/subtitles are available for a YouTube video using yt-dlp"""
     try:
         data = json.loads(request.body)
         youtube_url = data.get('youtube_url', '').strip()
@@ -19052,84 +18968,62 @@ def snowai_test_ytdlp_extraction(request):
         if not video_id:
             return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
         
-        # Test extraction
-        transcript_text, extraction_method, language, metadata = extract_transcript_with_ytdlp(
-            youtube_url, video_id
-        )
+        if not YT_DLP_AVAILABLE:
+            return JsonResponse({'error': 'yt-dlp not available'}, status=500)
         
-        return JsonResponse({
-            'success': True,
-            'video_id': video_id,
-            'extraction_method': extraction_method,
-            'language': language,
-            'transcript_length': len(transcript_text),
-            'word_count': len(transcript_text.split()),
-            'text_preview': transcript_text[:300] + '...' if len(transcript_text) > 300 else transcript_text,
-            'metadata': {
-                'title': metadata.get('title'),
-                'duration': metadata.get('duration'),
-                'uploader': metadata.get('uploader'),
-                'view_count': metadata.get('view_count')
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
             }
-        })
-        
-    except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e),
-            'ytdlp_available': YTDLP_AVAILABLE
-        }, status=400)
-
-
-@csrf_exempt
-@require_http_methods(["GET"])
-def snowai_debug_ytdlp_info(request):
-    """Debug endpoint to check yt-dlp installation and capabilities"""
-    try:
-        debug_info = {
-            'ytdlp_available': YTDLP_AVAILABLE,
-        }
-        
-        if YTDLP_AVAILABLE:
-            debug_info['ytdlp_version'] = yt_dlp.version.__version__
             
-            # Test with a known video (Rick Roll - usually has captions)
-            test_video_url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-            
-            try:
-                ydl_opts = {
-                    'quiet': True,
-                    'no_warnings': True,
-                    'skip_download': True,
-                }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=False)
                 
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(test_video_url, download=False)
-                    
-                    debug_info['test_video_info'] = {
-                        'title': info.get('title'),
-                        'duration': info.get('duration'),
-                        'has_subtitles': bool(info.get('subtitles')),
-                        'has_auto_captions': bool(info.get('automatic_captions')),
-                        'available_subtitle_languages': list(info.get('subtitles', {}).keys()),
-                        'available_auto_caption_languages': list(info.get('automatic_captions', {}).keys())
-                    }
-                    
-            except Exception as e:
-                debug_info['test_error'] = str(e)
-        
-        return JsonResponse(debug_info)
-        
+                subtitles = info.get('subtitles', {})
+                automatic_captions = info.get('automatic_captions', {})
+                
+                available_subtitles = []
+                
+                # Process manual subtitles
+                for lang, formats in subtitles.items():
+                    available_subtitles.append({
+                        'language': lang,
+                        'type': 'manual',
+                        'formats_count': len(formats) if isinstance(formats, list) else 1
+                    })
+                
+                # Process automatic captions
+                for lang, formats in automatic_captions.items():
+                    available_subtitles.append({
+                        'language': lang,
+                        'type': 'automatic',
+                        'formats_count': len(formats) if isinstance(formats, list) else 1
+                    })
+                
+                return JsonResponse({
+                    'video_id': video_id,
+                    'video_title': info.get('title', ''),
+                    'has_transcripts': len(available_subtitles) > 0,
+                    'available_subtitles': available_subtitles,
+                    'total_count': len(available_subtitles),
+                    'duration': info.get('duration'),
+                    'uploader': info.get('uploader', '')
+                })
+                
+        except Exception as e:
+            return JsonResponse({
+                'video_id': video_id,
+                'has_transcripts': False,
+                'error': str(e)
+            }, status=400)
+            
     except Exception as e:
-        return JsonResponse({
-            'error': str(e),
-            'ytdlp_available': YTDLP_AVAILABLE
-        }, status=500)
+        return JsonResponse({'error': str(e)}, status=500)
 
 
-# Keep all the other existing functions (get_all_saved_transcripts, get_single_transcript_details, etc.)
-# They don't need to change since they work with the database model
-
+# Keep all your existing endpoints (they don't need to change)
 @csrf_exempt
 @require_http_methods(["GET"])
 def snowai_get_all_saved_transcripts(request):
@@ -19158,6 +19052,17 @@ def snowai_get_all_saved_transcripts(request):
             queryset = queryset.filter(
                 Q(speaker_country_code=country_filter) |
                 Q(speaker_country_name__icontains=country_filter)
+            )
+        
+        # Save search history
+        if search_query or category_filter or country_filter:
+            SnowAITranscriptSearchHistory.objects.create(
+                search_query=search_query,
+                search_filters={
+                    'category': category_filter,
+                    'country': country_filter
+                },
+                results_count=queryset.count()
             )
         
         # Paginate results
@@ -19247,7 +19152,54 @@ def snowai_delete_transcript_record(request, transcript_id):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+
+# Debug endpoint for yt-dlp
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_debug_ytdlp_availability(request):
+    """Debug endpoint to test yt-dlp availability and version"""
+    try:
+        debug_info = {
+            'yt_dlp_available': YT_DLP_AVAILABLE,
+        }
+        
+        if YT_DLP_AVAILABLE:
+            debug_info['yt_dlp_version'] = yt_dlp.version.__version__
+            
+            # Test with a known good video (Rick Roll - has captions)
+            test_video_url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+            
+            try:
+                ydl_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'skip_download': True,
+                }
                 
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(test_video_url, download=False)
+                    
+                    debug_info['test_video_info'] = {
+                        'title': info.get('title', ''),
+                        'duration': info.get('duration'),
+                        'has_subtitles': bool(info.get('subtitles')),
+                        'has_automatic_captions': bool(info.get('automatic_captions')),
+                        'subtitle_languages': list(info.get('subtitles', {}).keys()),
+                        'automatic_caption_languages': list(info.get('automatic_captions', {}).keys())
+                    }
+                    debug_info['test_success'] = True
+                    
+            except Exception as e:
+                debug_info['test_success'] = False
+                debug_info['test_error'] = str(e)
+        
+        return JsonResponse(debug_info)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'yt_dlp_available': YT_DLP_AVAILABLE
+        }, status=500)                
 
 @csrf_exempt
 @require_http_methods(["PUT"])
