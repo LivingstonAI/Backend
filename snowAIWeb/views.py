@@ -18582,24 +18582,17 @@ def create_ai_diagnostic_prompt(account_id, performance_data):
     return prompt
 
 
-import json
-import uuid
-import re
-from datetime import datetime
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-from django.core.paginator import Paginator
-from django.db.models import Q
 from django.utils import timezone
-from .models import SnowAIVideoTranscriptRecord, SnowAITranscriptSearchHistory
-
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api._errors import TranscriptsDisabled, VideoUnavailable, NoTranscriptFound
     YOUTUBE_TRANSCRIPT_AVAILABLE = True
 except ImportError:
     YOUTUBE_TRANSCRIPT_AVAILABLE = False
     YouTubeTranscriptApi = None
+    TranscriptsDisabled = None
+    VideoUnavailable = None
+    NoTranscriptFound = None
 
 try:
     from pytube import YouTube
