@@ -18583,6 +18583,11 @@ def create_ai_diagnostic_prompt(account_id, performance_data):
 
 
 from django.utils import timezone
+# Fixed version with better error handling and debugging
+
+import re
+
+
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
     from youtube_transcript_api._errors import TranscriptsDisabled, VideoUnavailable, NoTranscriptFound
@@ -18613,9 +18618,6 @@ def extract_youtube_video_id_from_url(youtube_url):
         if match:
             return match.group(1)
     return None
-
-
-# Improved transcript extraction function with better error handling and multiple language support
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -18954,7 +18956,6 @@ def snowai_debug_video_transcript(request):
             'error': str(e),
             'debug_available': False
         }, status=500)
-
 
 # Additional helper function to test transcript availability before extraction
 @csrf_exempt
