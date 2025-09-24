@@ -17868,26 +17868,25 @@ def fetch_snowai_accounts_for_deep_analysis(request):
 @csrf_exempt
 @require_http_methods(["GET"])
 def calculate_deep_account_performance_metrics(request, account_id):
-    """Calculate comprehensive diagnostics for a specific account"""
+    """Calculate comprehensive diagnostics for a specific account - FIXED VERSION"""
     try:
         # Get South African timezone
         sa_tz = pytz.timezone('Africa/Johannesburg')
         current_time = timezone.now().astimezone(sa_tz)
         
-        # Get account and all trades
+        # Get account and all trades for this specific account
         account = Account.objects.get(id=account_id)
         all_trades = AccountTrades.objects.filter(account=account)
         
         # Basic Performance Metrics
         total_trades = all_trades.count()
-        # Fixed: Use 'Win' instead of 'Profit'
         profitable_trades = all_trades.filter(outcome='Win').count()
         losing_trades = all_trades.filter(outcome='Loss').count()
         breakeven_trades = all_trades.filter(outcome='Break Even').count()
         
         win_rate = (profitable_trades / total_trades * 100) if total_trades > 0 else 0
         
-        # Calculate total P&L - Fixed logic for wins/losses
+        # Calculate total P&L
         total_profit = sum(abs(trade.amount) for trade in all_trades.filter(outcome='Win'))
         total_loss = sum(abs(trade.amount) for trade in all_trades.filter(outcome='Loss'))
         net_pnl = total_profit - total_loss
@@ -17902,22 +17901,26 @@ def calculate_deep_account_performance_metrics(request, account_id):
         # Profit Factor
         profit_factor = total_profit / total_loss if total_loss > 0 else float('inf')
         
-        # Time-based Analysis
+        # FIXED: Time-based Analysis
         current_day = current_time.strftime('%A')
         current_hour = current_time.hour
         current_session = get_trading_session_advanced(current_hour)
         
-        # Performance by current day
-        day_trades = all_trades.filter(day_of_week_entered=current_day)
-        day_performance = calculate_day_performance_probability(day_trades)
+        # FIXED: Get performance for current day - make sure we're filtering by exact account
+        day_performance = get_current_day_performance(account, current_day)
         
-        # Performance by current session
-        session_trades = all_trades.filter(trading_session_entered=current_session)
-        session_performance = calculate_session_performance_probability(session_trades)
+        # FIXED: Get performance for current session - make sure we're filtering by exact account
+        session_performance = get_current_session_performance(account, current_session)
         
-        # Combined probability for current time
-        time_based_win_probability = calculate_time_based_win_probability(
-            day_performance, session_performance, win_rate
+        # FIXED: Get combined time performance (current day AND current session)
+        combined_time_performance = get_combined_time_performance(account, current_day, current_session)
+        
+        # Calculate the most accurate time-based probability
+        time_based_win_probability = calculate_refined_time_probability(
+            day_performance, 
+            session_performance, 
+            combined_time_performance, 
+            win_rate
         )
         
         # Asset Performance Analysis
@@ -17966,7 +17969,15 @@ def calculate_deep_account_performance_metrics(request, account_id):
                 'current_time': current_time.strftime('%H:%M %Z'),
                 'time_based_win_probability': round(time_based_win_probability, 2),
                 'day_performance': day_performance,
-                'session_performance': session_performance
+                'session_performance': session_performance,
+                'combined_time_performance': combined_time_performance,  # Added for debugging
+                'debug_info': {
+                    'account_id': account_id,
+                    'total_account_trades': total_trades,
+                    'current_day_trades': day_performance['trade_count'],
+                    'current_session_trades': session_performance['trade_count'],
+                    'combined_time_trades': combined_time_performance['trade_count']
+                }
             },
             'asset_performance': asset_performance,
             'strategy_performance': strategy_performance,
@@ -17987,6 +17998,7 @@ def calculate_deep_account_performance_metrics(request, account_id):
             'success': False,
             'error': str(e)
         })
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -18035,7 +18047,7 @@ def generate_ai_enhanced_account_diagnostics(request, account_id):
 # Helper Functions
 
 def get_trading_session_advanced(hour):
-    """Determine trading session based on hour (SA time)"""
+    """Determine trading session based on hour (SA time) - FIXED"""
     if 9 <= hour < 17:
         return "London"
     elif 15 <= hour < 23:
@@ -18044,6 +18056,176 @@ def get_trading_session_advanced(hour):
         return "Asian"
     else:
         return "Off-Hours"
+
+
+def get_current_day_performance(account, current_day):
+    """Get performance for current day of week - FIXED to use specific account"""
+    # Filter trades for this specific account and current day
+    day_trades = AccountTrades.objects.filter(
+        account=account,
+        day_of_week_entered__iexact=current_day  # Case insensitive match
+    )
+    
+    if not day_trades.exists():
+        return {
+            'win_rate': 0, 
+            'trade_count': 0, 
+            'confidence': 'No Data',
+            'wins': 0,
+            'losses': 0
+        }
+    
+    total = day_trades.count()
+    wins = day_trades.filter(outcome='Win').count()
+    losses = day_trades.filter(outcome='Loss').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    # Confidence based on sample size
+    if total >= 20:
+        confidence = 'High'
+    elif total >= 10:
+        confidence = 'Medium'
+    elif total >= 5:
+        confidence = 'Low'
+    else:
+        confidence = 'Very Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'wins': wins,
+        'losses': losses,
+        'confidence': confidence
+    }
+
+def get_current_session_performance(account, current_session):
+    """Get performance for current trading session - FIXED to use specific account"""
+    # Filter trades for this specific account and current session
+    session_trades = AccountTrades.objects.filter(
+        account=account,
+        trading_session_entered__iexact=current_session  # Case insensitive match
+    )
+    
+    if not session_trades.exists():
+        return {
+            'win_rate': 0, 
+            'trade_count': 0, 
+            'confidence': 'No Data',
+            'wins': 0,
+            'losses': 0
+        }
+    
+    total = session_trades.count()
+    wins = session_trades.filter(outcome='Win').count()
+    losses = session_trades.filter(outcome='Loss').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    # Confidence based on sample size
+    if total >= 25:
+        confidence = 'High'
+    elif total >= 15:
+        confidence = 'Medium'
+    elif total >= 8:
+        confidence = 'Low'
+    else:
+        confidence = 'Very Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'wins': wins,
+        'losses': losses,
+        'confidence': confidence
+    }
+
+
+def get_combined_time_performance(account, current_day, current_session):
+    """Get performance for current day AND current session combined - NEW FUNCTION"""
+    # Filter trades for this specific account, current day AND current session
+    combined_trades = AccountTrades.objects.filter(
+        account=account,
+        day_of_week_entered__iexact=current_day,
+        trading_session_entered__iexact=current_session
+    )
+    
+    if not combined_trades.exists():
+        return {
+            'win_rate': 0, 
+            'trade_count': 0, 
+            'confidence': 'No Data',
+            'wins': 0,
+            'losses': 0
+        }
+    
+    total = combined_trades.count()
+    wins = combined_trades.filter(outcome='Win').count()
+    losses = combined_trades.filter(outcome='Loss').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    # Confidence based on sample size for combined data
+    if total >= 15:
+        confidence = 'High'
+    elif total >= 8:
+        confidence = 'Medium'
+    elif total >= 4:
+        confidence = 'Low'
+    else:
+        confidence = 'Very Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'wins': wins,
+        'losses': losses,
+        'confidence': confidence
+    }
+
+
+def calculate_refined_time_probability(day_perf, session_perf, combined_perf, overall_win_rate):
+    """Calculate the most accurate time-based probability - IMPROVED ALGORITHM"""
+    
+    # Priority system: Combined time data is most specific and valuable
+    if combined_perf['trade_count'] >= 5:
+        # We have enough combined data (same day + same session)
+        primary_rate = combined_perf['win_rate']
+        confidence_weight = 0.8  # High weight for combined data
+        
+        # Supplement with overall win rate
+        final_probability = (primary_rate * confidence_weight) + (overall_win_rate * (1 - confidence_weight))
+        
+    elif day_perf['trade_count'] >= 5 and session_perf['trade_count'] >= 5:
+        # We have good data for both day and session separately
+        day_weight = min(day_perf['trade_count'] / 20, 0.4)  # Max 40% weight
+        session_weight = min(session_perf['trade_count'] / 25, 0.4)  # Max 40% weight
+        overall_weight = 1 - day_weight - session_weight
+        
+        final_probability = (
+            day_perf['win_rate'] * day_weight +
+            session_perf['win_rate'] * session_weight +
+            overall_win_rate * overall_weight
+        )
+        
+    elif day_perf['trade_count'] >= 5:
+        # Only day data is reliable
+        day_weight = min(day_perf['trade_count'] / 20, 0.6)  # Max 60% weight
+        final_probability = (day_perf['win_rate'] * day_weight) + (overall_win_rate * (1 - day_weight))
+        
+    elif session_perf['trade_count'] >= 5:
+        # Only session data is reliable
+        session_weight = min(session_perf['trade_count'] / 25, 0.6)  # Max 60% weight
+        final_probability = (session_perf['win_rate'] * session_weight) + (overall_win_rate * (1 - session_weight))
+        
+    else:
+        # Not enough specific time data, use overall with slight adjustments
+        day_adjustment = (day_perf['win_rate'] - overall_win_rate) * 0.1 if day_perf['trade_count'] > 0 else 0
+        session_adjustment = (session_perf['win_rate'] - overall_win_rate) * 0.1 if session_perf['trade_count'] > 0 else 0
+        
+        final_probability = overall_win_rate + day_adjustment + session_adjustment
+    
+    # Ensure probability stays within reasonable bounds
+    return max(0, min(100, final_probability))
+
+
 
 def calculate_day_performance_probability(day_trades):
     """Calculate win probability for specific day"""
