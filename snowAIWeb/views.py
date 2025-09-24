@@ -19243,6 +19243,115 @@ def snowai_delete_transcript_record(request, transcript_id):
         return JsonResponse({'error': str(e)}, status=500)
 
                 
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_transcript_metadata(request, transcript_id):
+    """Update transcript metadata like speaker info, tags, etc."""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        data = json.loads(request.body)
+        
+        # Update allowed fields
+        updateable_fields = [
+            'primary_speaker_name', 'speaker_organization', 'speaker_country_code',
+            'speaker_country_name', 'content_category', 'custom_tags', 'economic_topics'
+        ]
+        
+        for field in updateable_fields:
+            if field in data:
+                setattr(transcript, field, data[field])
+        
+        transcript.save()
+        
+        return JsonResponse({
+            'message': 'Transcript metadata updated successfully'
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Additional utility functions you might find useful
+
+@csrf_exempt  
+@require_http_methods(["GET"])
+def snowai_get_transcript_statistics(request):
+    """Get overall statistics about the transcript database"""
+    try:
+        total_transcripts = SnowAIVideoTranscriptRecord.objects.count()
+        total_words = sum(SnowAIVideoTranscriptRecord.objects.values_list('word_count', flat=True))
+        
+        # Category breakdown
+        categories = SnowAIVideoTranscriptRecord.objects.values('content_category').distinct()
+        category_stats = {}
+        for cat in categories:
+            if cat['content_category']:
+                count = SnowAIVideoTranscriptRecord.objects.filter(content_category=cat['content_category']).count()
+                category_stats[cat['content_category']] = count
+        
+        # Country breakdown
+        countries = SnowAIVideoTranscriptRecord.objects.values('speaker_country_name').distinct()
+        country_stats = {}
+        for country in countries:
+            if country['speaker_country_name']:
+                count = SnowAIVideoTranscriptRecord.objects.filter(speaker_country_name=country['speaker_country_name']).count()
+                country_stats[country['speaker_country_name']] = count
+        
+        return JsonResponse({
+            'total_transcripts': total_transcripts,
+            'total_words': total_words,
+            'average_words_per_transcript': total_words / total_transcripts if total_transcripts > 0 else 0,
+            'category_breakdown': category_stats,
+            'country_breakdown': country_stats
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"]) 
+def snowai_export_transcripts_csv(request):
+    """Export transcripts to CSV format"""
+    import csv
+    from django.http import HttpResponse
+    
+    try:
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="snowai_transcripts_export.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'ID', 'Video Title', 'Speaker Name', 'Country', 'Category', 
+            'Word Count', 'Duration (seconds)', 'YouTube URL', 'Created At', 'Transcript Text'
+        ])
+        
+        transcripts = SnowAIVideoTranscriptRecord.objects.all()
+        for transcript in transcripts:
+            writer.writerow([
+                transcript.transcript_uuid,
+                transcript.video_title or '',
+                transcript.primary_speaker_name or '',
+                transcript.speaker_country_name or '',
+                transcript.content_category or '',
+                transcript.word_count,
+                transcript.video_duration_seconds or 0,
+                transcript.youtube_url or '',
+                transcript.created_at.isoformat(),
+                transcript.full_transcript_text[:1000] + '...' if len(transcript.full_transcript_text) > 1000 else transcript.full_transcript_text
+            ])
+        
+        return response
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key

@@ -279,7 +279,6 @@ urlpatterns = [
          views.snowai_update_transcript_metadata, 
          name='snowai_update_transcript_metadata'),
 
-     path('debug_video_transcript/', snowai_debug_video_transcript, name='debug_video_transcript'),
 
 
     # create appproprate urls.py here
