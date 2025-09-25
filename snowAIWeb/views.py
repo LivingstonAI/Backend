@@ -18936,6 +18936,10 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                                     subtitle_text = parse_subtitle_content(subtitle_content)
                                     selected_language = lang
                                     extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}{"_with_cookies" if cookie_file_path else ""}'
+                                    
+                                    # Analyze transcript quality
+                                    quality_stats = analyze_transcript_quality(subtitle_text)
+                                    print(f"Transcript quality: {quality_stats['quality_score']}%, {quality_stats['repeated_phrases_detected']} repeated phrases removed")
                                     break
                                 
                             except Exception as sub_error:
@@ -18965,52 +18969,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
     return transcript_data
 
 
-def parse_subtitle_content(subtitle_content):
-    """Parse VTT or SRT subtitle content to extract clean text"""
-    lines = subtitle_content.split('\n')
-    text_lines = []
-    
-    for line in lines:
-        line = line.strip()
-        
-        # Skip empty lines
-        if not line:
-            continue
-            
-        # Skip VTT header
-        if line.startswith('WEBVTT') or line.startswith('NOTE'):
-            continue
-            
-        # Skip SRT sequence numbers (pure digits)
-        if line.isdigit():
-            continue
-            
-        # Skip timestamp lines (contain --> or time patterns)
-        if '-->' in line or re.match(r'^\d{2}:\d{2}:\d{2}', line):
-            continue
-            
-        # Skip VTT style/position tags
-        if line.startswith('<') or line.startswith('&'):
-            continue
-            
-        # Clean HTML tags and entities
-        line = re.sub(r'<[^>]+>', '', line)  # Remove HTML tags
-        line = re.sub(r'&[a-zA-Z]+;', '', line)  # Remove HTML entities
-        
-        # Remove VTT positioning tags
-        line = re.sub(r'\{[^}]*\}', '', line)
-        
-        # If line still has content, add it
-        if line and not line.startswith('[') and not line.startswith('('):
-            text_lines.append(line)
-    
-    # Join all text and clean up
-    full_text = ' '.join(text_lines)
-    
-    # Remove extra whitespace
-    full_text = re.sub(r'\s+', ' ', full_text)
-    
-    return full_text
+
 
 
 @csrf_exempt
@@ -19229,6 +19188,7 @@ def snowai_test_video_extraction(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+# Keep all your existing endpoints unchanged...
 # Keep all other existing endpoints unchanged...
 
 @csrf_exempt
