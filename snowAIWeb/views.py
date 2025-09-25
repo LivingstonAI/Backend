@@ -19049,7 +19049,7 @@ def deduplicate_transcript_text(text):
     
     # Remove near-duplicate sentences (with similarity threshold)
     final_sentences = []
-    similarity_threshold = 0.85
+    similarity_threshold = 0.6
     
     for i, sentence in enumerate(deduplicated):
         is_duplicate = False
