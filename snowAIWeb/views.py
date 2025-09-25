@@ -18655,7 +18655,7 @@ def create_cookie_jar_from_dict(cookies_dict):
 
 
 def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
-    """Extract transcript using yt-dlp with cookies support"""
+    """Extract transcript using yt-dlp with enhanced fallback strategies"""
     
     if not YT_DLP_AVAILABLE:
         raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
@@ -18667,34 +18667,11 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
         'metadata': {}
     }
     
-    # Base yt-dlp options
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'writesubtitles': True,
-        'writeautomaticsub': True,
-        'subtitleslangs': ['en', 'en-US', 'en-GB'],
-        'subtitlesformat': 'vtt/srt/best',
-        'skip_download': True,
-        'extract_flat': False,
-        'format': 'worst[height<=144]',
-        'no_check_certificate': True,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://www.youtube.com/',
-            'Origin': 'https://www.youtube.com',
-        }
-    }
-    
     # Handle cookies if provided
     cookie_file_path = None
     if cookies_data:
         try:
             if isinstance(cookies_data, str):
-                # If cookies_data is a string, assume it's JSON
                 cookies_dict = json.loads(cookies_data)
             elif isinstance(cookies_data, dict):
                 cookies_dict = cookies_data
@@ -18704,91 +18681,176 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
             
             if cookies_dict:
                 cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
-                ydl_opts['cookiefile'] = cookie_file_path
                 print(f"Using cookies from provided data")
         except Exception as cookie_error:
             print(f"Cookie processing error: {cookie_error}, proceeding without cookies")
-    
+
+    # Multiple extraction strategies with different configurations
+    extraction_strategies = [
+        # Strategy 1: Latest yt-dlp with embedded player
+        {
+            'name': 'modern_embedded',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en', 'en-US', 'en-GB'],
+                'subtitlesformat': 'vtt/srt/best',
+                'skip_download': True,
+                'extract_flat': False,
+                'no_check_certificate': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'web'],
+                        'player_skip': ['js'],
+                        'skip': ['dash', 'hls'],
+                    }
+                },
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 11; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                }
+            }
+        },
+        
+        # Strategy 2: Android client only
+        {
+            'name': 'android_client',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en', 'en-US', 'en-GB'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android'],
+                    }
+                },
+                'http_headers': {
+                    'User-Agent': 'com.google.android.youtube/17.36.4 (Linux; U; Android 11) gzip',
+                    'X-YouTube-Client-Name': '3',
+                    'X-YouTube-Client-Version': '17.36.4',
+                }
+            }
+        },
+        
+        # Strategy 3: iOS client
+        {
+            'name': 'ios_client',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['ios'],
+                    }
+                },
+                'http_headers': {
+                    'User-Agent': 'com.google.ios.youtube/17.36.4 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)',
+                    'X-YouTube-Client-Name': '5',
+                    'X-YouTube-Client-Version': '17.36.4',
+                }
+            }
+        },
+        
+        # Strategy 4: Web client with minimal options
+        {
+            'name': 'minimal_web',
+            'opts': {
+                'quiet': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'skip_download': True,
+                'no_check_certificate': True,
+            }
+        },
+        
+        # Strategy 5: TV client (often works when others fail)
+        {
+            'name': 'tv_client',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['tv_embedded'],
+                    }
+                }
+            }
+        }
+    ]
+
     extraction_error = None
     info = None
+    successful_strategy = None
 
     try:
         # Create a temporary directory for subtitle files
         with tempfile.TemporaryDirectory() as temp_dir:
-            ydl_opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
             
-            # Try multiple approaches with different configurations
-            extraction_configs = [
-                # First attempt: With cookies (if provided)
-                ydl_opts,
-                
-                # Second attempt: Different user agent with cookies
-                {
-                    **ydl_opts,
-                    'http_headers': {
-                        **ydl_opts['http_headers'],
-                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    },
-                    'extractor_args': {
-                        'youtube': {
-                            'player_client': ['android', 'web'],
-                            'skip': ['dash', 'hls'],
-                        }
-                    }
-                },
-                
-                # Third attempt: Mobile user agent
-                {
-                    **ydl_opts,
-                    'http_headers': {
-                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                    },
-                    'extractor_args': {
-                        'youtube': {
-                            'player_client': ['android', 'ios'],
-                        }
-                    }
-                }
-            ]
-            
-            # If no cookies provided, remove cookie-dependent configs
-            if not cookie_file_path:
-                for config in extraction_configs:
-                    config.pop('cookiefile', None)
-            
-            for attempt, config in enumerate(extraction_configs, 1):
+            for strategy in extraction_strategies:
                 try:
-                    print(f"Attempting extraction #{attempt} for video: {video_id}")
+                    print(f"Trying strategy: {strategy['name']} for video: {video_id}")
                     
-                    with yt_dlp.YoutubeDL(config) as ydl:
+                    # Prepare options
+                    opts = strategy['opts'].copy()
+                    opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+                    
+                    # Add cookies if available
+                    if cookie_file_path:
+                        opts['cookiefile'] = cookie_file_path
+                    
+                    # Try extraction
+                    with yt_dlp.YoutubeDL(opts) as ydl:
                         info = ydl.extract_info(video_url, download=True)
                     
-                    print(f"Extraction #{attempt} successful!")
+                    print(f"Strategy {strategy['name']} successful!")
+                    successful_strategy = strategy['name']
                     break
-                except Exception as attempt_error:
-                    extraction_error = attempt_error
-                    error_msg = str(attempt_error).lower()
-                    print(f"Extraction #{attempt} failed: {error_msg}")
                     
-                    # Check for specific error types
-                    if 'sign in to confirm' in error_msg or 'not a bot' in error_msg:
-                        if not cookies_data:
-                            print(f"Bot detection on attempt #{attempt}. Consider providing YouTube cookies.")
-                        else:
-                            print(f"Bot detection despite cookies on attempt #{attempt}")
+                except Exception as strategy_error:
+                    extraction_error = strategy_error
+                    error_msg = str(strategy_error).lower()
+                    print(f"Strategy {strategy['name']} failed: {error_msg}")
+                    
+                    # Check for specific error patterns
+                    if 'player response' in error_msg:
+                        print(f"Player response error with {strategy['name']}, trying next strategy...")
+                        continue
+                    elif 'requested format is not available' in error_msg:
+                        print(f"Format error with {strategy['name']}, trying next strategy...")
+                        continue
+                    elif 'sign in to confirm' in error_msg or 'not a bot' in error_msg:
+                        print(f"Bot detection with {strategy['name']}")
                         continue
                     elif 'private' in error_msg or 'unavailable' in error_msg:
-                        raise attempt_error
+                        # Video is genuinely unavailable, no point trying other strategies
+                        raise strategy_error
                     else:
                         continue
             else:
-                # All attempts failed
+                # All strategies failed
                 if extraction_error:
                     raise extraction_error
                 else:
-                    raise Exception("All extraction attempts failed")
+                    raise Exception("All extraction strategies failed")
         
             # Process the extracted data
             try:
@@ -18848,6 +18910,14 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                                 if cookie_file_path:
                                     download_opts['cookiefile'] = cookie_file_path
                                 
+                                # Use the same strategy that worked for info extraction
+                                if successful_strategy and successful_strategy != 'minimal_web':
+                                    matching_strategy = next((s for s in extraction_strategies if s['name'] == successful_strategy), None)
+                                    if matching_strategy and 'extractor_args' in matching_strategy['opts']:
+                                        download_opts['extractor_args'] = matching_strategy['opts']['extractor_args']
+                                    if matching_strategy and 'http_headers' in matching_strategy['opts']:
+                                        download_opts['http_headers'] = matching_strategy['opts']['http_headers']
+                                
                                 with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
                                     sub_ydl.download([video_url])
                                 
@@ -18865,7 +18935,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                                     
                                     subtitle_text = parse_subtitle_content(subtitle_content)
                                     selected_language = lang
-                                    extraction_method = f'ytdlp_{source_type}_{lang}{"_with_cookies" if cookie_file_path else ""}'
+                                    extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}{"_with_cookies" if cookie_file_path else ""}'
                                     break
                                 
                             except Exception as sub_error:
@@ -18881,8 +18951,8 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                     raise Exception("No subtitles could be extracted using any method")
                 
             except Exception as e:
-                print(f"yt-dlp extraction error: {str(e)}")
-                raise Exception(f"Failed to extract transcript: {str(e)}")
+                print(f"yt-dlp processing error: {str(e)}")
+                raise Exception(f"Failed to process extracted data: {str(e)}")
     
     finally:
         # Clean up cookie file
@@ -18899,9 +18969,6 @@ def parse_subtitle_content(subtitle_content):
     """Parse VTT or SRT subtitle content to extract clean text"""
     lines = subtitle_content.split('\n')
     text_lines = []
-    
-    # Detect format
-    is_vtt = subtitle_content.startswith('WEBVTT')
     
     for line in lines:
         line = line.strip()
@@ -18949,11 +19016,11 @@ def parse_subtitle_content(subtitle_content):
 @csrf_exempt
 @require_http_methods(["POST"])
 def snowai_extract_youtube_transcript_from_url(request):
-    """Extract transcript from YouTube URL using yt-dlp with optional cookies"""
+    """Extract transcript from YouTube URL using yt-dlp with enhanced fallback strategies"""
     try:
         data = json.loads(request.body)
         youtube_url = data.get('youtube_url', '').strip()
-        cookies_data = data.get('cookies')  # New field for cookies
+        cookies_data = data.get('cookies')
         
         if not youtube_url:
             return JsonResponse({'error': 'YouTube URL is required'}, status=400)
@@ -19032,7 +19099,13 @@ def snowai_extract_youtube_transcript_from_url(request):
             print(f"Transcript extraction error: {error_str}")
             
             # Provide more specific error messages
-            if 'sign in to confirm' in error_str or 'not a bot' in error_str:
+            if 'player response' in error_str:
+                return JsonResponse({
+                    'error': 'YouTube player response extraction failed. This usually means yt-dlp needs an update or YouTube has changed their API. Please try updating yt-dlp: pip install --upgrade yt-dlp',
+                    'debug_video_id': video_id,
+                    'needs_update': True
+                }, status=400)
+            elif 'sign in to confirm' in error_str or 'not a bot' in error_str:
                 return JsonResponse({
                     'error': 'YouTube is requesting authentication to verify you are not a bot. Please provide YouTube cookies to bypass this restriction.',
                     'debug_video_id': video_id,
@@ -19049,16 +19122,17 @@ def snowai_extract_youtube_transcript_from_url(request):
                     'debug_info': {
                         'video_id': video_id,
                         'url': youtube_url,
-                        'method': 'yt-dlp'
+                        'method': 'yt-dlp_multiple_strategies'
                     }
                 }, status=400)
             else:
                 return JsonResponse({
-                    'error': 'Failed to extract transcript from video.',
+                    'error': 'Failed to extract transcript from video. All extraction strategies failed.',
                     'debug_info': {
                         'video_id': video_id,
                         'error_details': str(transcript_error),
-                        'cookies_provided': bool(cookies_data)
+                        'cookies_provided': bool(cookies_data),
+                        'suggestion': 'Try updating yt-dlp: pip install --upgrade yt-dlp'
                     }
                 }, status=400)
                 
@@ -19070,6 +19144,90 @@ def snowai_extract_youtube_transcript_from_url(request):
             'error': f'An unexpected error occurred: {str(e)}',
             'debug_info': 'Check server logs for more details'
         }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_check_ytdlp_version_and_update(request):
+    """Check yt-dlp version and provide update commands"""
+    try:
+        debug_info = {
+            'yt_dlp_available': YT_DLP_AVAILABLE,
+        }
+        
+        if YT_DLP_AVAILABLE:
+            debug_info['yt_dlp_version'] = yt_dlp.version.__version__
+            
+            # Check if update is available (simplified check)
+            try:
+                result = subprocess.run(['pip', 'show', 'yt-dlp'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    debug_info['pip_info'] = result.stdout
+                    
+                # Try to get latest version info
+                result = subprocess.run(['yt-dlp', '--version'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    debug_info['command_version'] = result.stdout.strip()
+                    
+            except Exception as version_check_error:
+                debug_info['version_check_error'] = str(version_check_error)
+        
+        debug_info['update_commands'] = [
+            'pip install --upgrade yt-dlp',
+            'yt-dlp -U'
+        ]
+        
+        return JsonResponse(debug_info)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'yt_dlp_available': YT_DLP_AVAILABLE
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_test_video_extraction(request):
+    """Test video extraction without saving to database"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        cookies_data = data.get('cookies')
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        print(f"Testing extraction for video ID: {video_id}")
+        
+        # Test basic info extraction only
+        try:
+            transcript_result = extract_transcript_with_ytdlp(youtube_url, video_id, cookies_data)
+            
+            return JsonResponse({
+                'success': True,
+                'video_id': video_id,
+                'title': transcript_result['metadata'].get('title', ''),
+                'duration': transcript_result['metadata'].get('duration'),
+                'transcript_length': len(transcript_result['text']) if transcript_result['text'] else 0,
+                'extraction_method': transcript_result['method'],
+                'language': transcript_result['language'],
+                'text_preview': transcript_result['text'][:300] + '...' if transcript_result['text'] and len(transcript_result['text']) > 300 else transcript_result['text']
+            })
+            
+        except Exception as test_error:
+            return JsonResponse({
+                'success': False,
+                'error': str(test_error),
+                'video_id': video_id,
+                'yt_dlp_version': yt_dlp.version.__version__ if YT_DLP_AVAILABLE else 'not available'
+            })
+            
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 # Keep all other existing endpoints unchanged...
 
