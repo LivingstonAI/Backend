@@ -18969,7 +18969,214 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
     return transcript_data
 
 
+def parse_subtitle_content(subtitle_content):
+    """Parse VTT or SRT subtitle content to extract clean text with deduplication"""
+    lines = subtitle_content.split('\n')
+    text_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        
+        # Skip empty lines
+        if not line:
+            continue
+            
+        # Skip VTT header
+        if line.startswith('WEBVTT') or line.startswith('NOTE'):
+            continue
+            
+        # Skip SRT sequence numbers (pure digits)
+        if line.isdigit():
+            continue
+            
+        # Skip timestamp lines (contain --> or time patterns)
+        if '-->' in line or re.match(r'^\d{2}:\d{2}:\d{2}', line):
+            continue
+            
+        # Skip VTT style/position tags
+        if line.startswith('<') or line.startswith('&'):
+            continue
+            
+        # Clean HTML tags and entities
+        line = re.sub(r'<[^>]+>', '', line)  # Remove HTML tags
+        line = re.sub(r'&[a-zA-Z]+;', '', line)  # Remove HTML entities
+        
+        # Remove VTT positioning tags
+        line = re.sub(r'\{[^}]*\}', '', line)
+        
+        # If line still has content, add it
+        if line and not line.startswith('[') and not line.startswith('('):
+            text_lines.append(line)
+    
+    # Join all text and clean up
+    full_text = ' '.join(text_lines)
+    
+    # Remove extra whitespace
+    full_text = re.sub(r'\s+', ' ', full_text)
+    
+    # Apply deduplication
+    deduplicated_text = deduplicate_transcript_text(full_text)
+    
+    return deduplicated_text
 
+
+def deduplicate_transcript_text(text):
+    """Remove duplicate sentences and phrases from transcript text"""
+    import difflib
+    
+    # Split into sentences using multiple delimiters
+    sentences = re.split(r'[.!?]+\s+', text)
+    
+    # Clean up sentences
+    clean_sentences = []
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if len(sentence) > 3:  # Only keep sentences with more than 3 characters
+            clean_sentences.append(sentence)
+    
+    if not clean_sentences:
+        return text
+    
+    # Remove exact duplicates first
+    deduplicated = []
+    seen_sentences = set()
+    
+    for sentence in clean_sentences:
+        sentence_lower = sentence.lower().strip()
+        if sentence_lower not in seen_sentences:
+            seen_sentences.add(sentence_lower)
+            deduplicated.append(sentence)
+    
+    # Remove near-duplicate sentences (with similarity threshold)
+    final_sentences = []
+    similarity_threshold = 0.85
+    
+    for i, sentence in enumerate(deduplicated):
+        is_duplicate = False
+        
+        # Check against already added sentences
+        for existing_sentence in final_sentences:
+            similarity = difflib.SequenceMatcher(None, sentence.lower(), existing_sentence.lower()).ratio()
+            
+            if similarity > similarity_threshold:
+                is_duplicate = True
+                break
+        
+        if not is_duplicate:
+            final_sentences.append(sentence)
+    
+    # Remove repeated phrases within the remaining text
+    final_text = '. '.join(final_sentences)
+    
+    # Remove repeated phrases (3+ words that appear consecutively)
+    final_text = remove_repeated_phrases(final_text)
+    
+    # Clean up final spacing and punctuation
+    final_text = re.sub(r'\s+', ' ', final_text)
+    final_text = re.sub(r'\s*\.\s*\.', '.', final_text)  # Remove double periods
+    final_text = final_text.strip()
+    
+    # Add final period if missing
+    if final_text and not final_text.endswith(('.', '!', '?')):
+        final_text += '.'
+    
+    return final_text
+
+
+def remove_repeated_phrases(text):
+    """Remove repeated phrases of 3 or more words"""
+    words = text.split()
+    
+    if len(words) < 6:  # Need at least 6 words to have a repeated 3-word phrase
+        return text
+    
+    # Check for repeated phrases of different lengths
+    for phrase_length in range(3, min(15, len(words) // 2)):  # Check phrases up to 15 words
+        cleaned_words = remove_phrases_of_length(words, phrase_length)
+        if len(cleaned_words) < len(words):
+            words = cleaned_words
+    
+    return ' '.join(words)
+
+
+def remove_phrases_of_length(words, phrase_length):
+    """Remove repeated phrases of a specific length"""
+    if len(words) < phrase_length * 2:
+        return words
+    
+    cleaned_words = []
+    i = 0
+    
+    while i < len(words):
+        if i + phrase_length * 2 <= len(words):
+            # Get current phrase and next phrase
+            current_phrase = words[i:i + phrase_length]
+            next_phrase = words[i + phrase_length:i + phrase_length * 2]
+            
+            # Check if they're the same (case-insensitive)
+            if [word.lower() for word in current_phrase] == [word.lower() for word in next_phrase]:
+                # Skip the duplicate phrase
+                cleaned_words.extend(current_phrase)
+                i += phrase_length * 2  # Skip both phrases, we kept one
+                continue
+        
+        # No duplicate found, add current word
+        cleaned_words.append(words[i])
+        i += 1
+    
+    return cleaned_words
+
+
+def analyze_transcript_quality(text):
+    """Analyze transcript quality and provide statistics"""
+    words = text.split()
+    sentences = re.split(r'[.!?]+', text)
+    
+    # Calculate statistics
+    total_words = len(words)
+    total_sentences = len([s for s in sentences if s.strip()])
+    
+    # Find potential repeated phrases
+    repeated_phrases = find_repeated_phrases(text)
+    
+    # Calculate readability score (simple version)
+    avg_sentence_length = total_words / max(total_sentences, 1)
+    
+    quality_score = 100
+    if repeated_phrases > 10:
+        quality_score -= 20
+    if avg_sentence_length > 40:  # Very long sentences might indicate parsing issues
+        quality_score -= 10
+    if avg_sentence_length < 5:   # Very short sentences might indicate fragmentation
+        quality_score -= 10
+    
+    return {
+        'total_words': total_words,
+        'total_sentences': total_sentences,
+        'average_sentence_length': round(avg_sentence_length, 1),
+        'repeated_phrases_detected': repeated_phrases,
+        'quality_score': max(quality_score, 0)
+    }
+
+
+def find_repeated_phrases(text, min_phrase_length=3):
+    """Count repeated phrases in text"""
+    words = text.lower().split()
+    phrase_counts = {}
+    repeated_count = 0
+    
+    # Check for repeated phrases
+    for phrase_length in range(min_phrase_length, min(10, len(words) // 3)):
+        for i in range(len(words) - phrase_length + 1):
+            phrase = ' '.join(words[i:i + phrase_length])
+            phrase_counts[phrase] = phrase_counts.get(phrase, 0) + 1
+    
+    # Count phrases that appear more than once
+    for phrase, count in phrase_counts.items():
+        if count > 1:
+            repeated_count += count - 1  # Subtract 1 because original occurrence is not a repeat
+    
+    return repeated_count
 
 
 @csrf_exempt
