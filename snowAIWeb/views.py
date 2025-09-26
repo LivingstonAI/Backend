@@ -20346,6 +20346,252 @@ def snowai_export_transcripts_csv(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+
+# views.py (add these to your existing views)
+
+import json
+import time
+import uuid
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.shortcuts import get_object_or_404
+from django.core.paginator import Paginator
+from django.db.models import Q
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_transcript_analysis_dashboard_data_endpoint(request):
+    """Get dashboard data for transcript analysis overview"""
+    try:
+        # Get basic stats
+        total_transcripts = SnowAIVideoTranscriptRecord.objects.count()
+        analyzed_transcripts = SnowAIVideoTranscriptRecord.objects.filter(ai_analysis__isnull=False).count()
+        pending_analysis = total_transcripts - analyzed_transcripts
+        
+        # Get recent transcripts with analysis status
+        transcripts = SnowAIVideoTranscriptRecord.objects.select_related('ai_analysis').order_by('-created_at')[:50]
+        
+        transcript_data = []
+        for transcript in transcripts:
+            has_analysis = hasattr(transcript, 'ai_analysis') and transcript.ai_analysis is not None
+            transcript_data.append({
+                'transcript_uuid': transcript.transcript_uuid,
+                'video_title': transcript.video_title or 'Untitled',
+                'primary_speaker_name': transcript.primary_speaker_name or 'Unknown',
+                'speaker_organization': transcript.speaker_organization or 'N/A',
+                'created_at': transcript.created_at.isoformat() if transcript.created_at else None,
+                'word_count': transcript.word_count,
+                'has_analysis': has_analysis,
+                'analysis_sentiment': transcript.ai_analysis.overall_sentiment if has_analysis else None,
+                'analysis_created_at': transcript.ai_analysis.analysis_created_at.isoformat() if has_analysis else None,
+                'key_insights_count': transcript.ai_analysis.key_insights_count if has_analysis else 0
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'stats': {
+                    'total_transcripts': total_transcripts,
+                    'analyzed_transcripts': analyzed_transcripts,
+                    'pending_analysis': pending_analysis,
+                    'analysis_completion_rate': (analyzed_transcripts / total_transcripts * 100) if total_transcripts > 0 else 0
+                },
+                'transcripts': transcript_data
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trigger_transcript_analysis_endpoint(request):
+    """Trigger AI analysis for a specific transcript"""
+    try:
+        data = json.loads(request.body)
+        transcript_uuid = data.get('transcript_uuid')
+        
+        if not transcript_uuid:
+            return JsonResponse({'success': False, 'error': 'transcript_uuid is required'}, status=400)
+        
+        transcript = get_object_or_404(SnowAIVideoTranscriptRecord, transcript_uuid=transcript_uuid)
+        
+        # Check if analysis already exists
+        if hasattr(transcript, 'ai_analysis') and transcript.ai_analysis is not None:
+            return JsonResponse({
+                'success': False, 
+                'error': 'Analysis already exists for this transcript. Delete existing analysis first to re-analyze.',
+                'existing_analysis_uuid': transcript.ai_analysis.analysis_uuid
+            }, status=400)
+        
+        # Start timing the analysis
+        start_time = time.time()
+        
+        # Create the AI analysis prompt
+        analysis_prompt = f"""
+        Analyze the following speech transcript from {transcript.primary_speaker_name or 'Unknown Speaker'} 
+        from {transcript.speaker_organization or 'Unknown Organization'}. 
+        
+        Video Title: {transcript.video_title or 'Untitled'}
+        Speaker: {transcript.primary_speaker_name or 'Unknown'}
+        Organization: {transcript.speaker_organization or 'N/A'}
+        
+        Transcript Text:
+        {transcript.full_transcript_text}
+        
+        Please provide a comprehensive economic and financial analysis in JSON format with the following structure:
+        {{
+            "executive_summary": "A comprehensive 2-3 sentence summary of the key points",
+            "key_themes": ["theme1", "theme2", "theme3"],
+            "economic_opportunities": [
+                {{"opportunity": "Description of opportunity", "confidence": 0.8, "timeframe": "short_term/medium_term/long_term"}}
+            ],
+            "economic_risks": [
+                {{"risk": "Description of risk", "impact_level": "low/medium/high", "probability": 0.7}}
+            ],
+            "policy_implications": [
+                {{"implication": "Policy implication description", "timeframe": "short_term/medium_term/long_term", "sector": "monetary/fiscal/regulatory"}}
+            ],
+            "overall_sentiment": "positive/negative/neutral/mixed",
+            "sentiment_confidence": 0.85,
+            "market_outlook": "bullish/bearish/neutral/uncertain",
+            "inflation_mentions": {{"current": "value if mentioned", "target": "value if mentioned", "forecast": "value if mentioned"}},
+            "interest_rate_mentions": {{"current": "value if mentioned", "next_meeting": "decision if mentioned", "forecast": "value if mentioned"}},
+            "gdp_mentions": {{"current": "value if mentioned", "forecast": "value if mentioned"}},
+            "unemployment_mentions": {{"current": "value if mentioned", "forecast": "value if mentioned"}},
+            "policy_actions_suggested": ["action1", "action2"],
+            "market_predictions": [
+                {{"prediction": "Prediction description", "timeframe": "1_month/3_months/6_months/1_year", "confidence": 0.6}}
+            ],
+            "analysis_completeness_score": 0.9
+        }}
+        
+        Ensure all confidence scores are between 0 and 1. If specific economic metrics aren't mentioned, leave those objects empty. Focus on extracting actionable insights and concrete predictions where possible.
+        """
+        
+        # Get AI analysis
+        ai_response = chat_gpt(analysis_prompt)
+        
+        # Try to parse the JSON response
+        try:
+            analysis_data = json.loads(ai_response)
+        except json.JSONDecodeError:
+            # If direct parsing fails, try to extract JSON from the response
+            import re
+            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+            if json_match:
+                analysis_data = json.loads(json_match.group())
+            else:
+                return JsonResponse({'success': False, 'error': 'Failed to parse AI response as JSON'}, status=500)
+        
+        # Calculate analysis duration
+        analysis_duration = time.time() - start_time
+        
+        # Create the analysis record
+        analysis = SnowAITranscriptAnalysis.objects.create(
+            transcript=transcript,
+            analysis_uuid=str(uuid.uuid4()),
+            executive_summary=analysis_data.get('executive_summary', ''),
+            key_themes=analysis_data.get('key_themes', []),
+            economic_opportunities=analysis_data.get('economic_opportunities', []),
+            economic_risks=analysis_data.get('economic_risks', []),
+            policy_implications=analysis_data.get('policy_implications', []),
+            overall_sentiment=analysis_data.get('overall_sentiment', 'neutral'),
+            sentiment_confidence=analysis_data.get('sentiment_confidence', 0.0),
+            market_outlook=analysis_data.get('market_outlook', 'neutral'),
+            inflation_mentions=analysis_data.get('inflation_mentions', {}),
+            interest_rate_mentions=analysis_data.get('interest_rate_mentions', {}),
+            gdp_mentions=analysis_data.get('gdp_mentions', {}),
+            unemployment_mentions=analysis_data.get('unemployment_mentions', {}),
+            policy_actions_suggested=analysis_data.get('policy_actions_suggested', []),
+            market_predictions=analysis_data.get('market_predictions', []),
+            analysis_duration_seconds=analysis_duration,
+            analysis_completeness_score=analysis_data.get('analysis_completeness_score', 0.0)
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'analysis_uuid': analysis.analysis_uuid,
+                'executive_summary': analysis.executive_summary,
+                'overall_sentiment': analysis.overall_sentiment,
+                'key_insights_count': analysis.key_insights_count,
+                'analysis_duration': analysis_duration
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_transcript_analysis_details_endpoint(request, transcript_uuid):
+    """Get detailed analysis for a specific transcript"""
+    try:
+        transcript = get_object_or_404(SnowAIVideoTranscriptRecord, transcript_uuid=transcript_uuid)
+        
+        if not hasattr(transcript, 'ai_analysis') or transcript.ai_analysis is None:
+            return JsonResponse({'success': False, 'error': 'No analysis found for this transcript'}, status=404)
+        
+        analysis = transcript.ai_analysis
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'transcript_info': {
+                    'transcript_uuid': transcript.transcript_uuid,
+                    'video_title': transcript.video_title,
+                    'primary_speaker_name': transcript.primary_speaker_name,
+                    'speaker_organization': transcript.speaker_organization,
+                    'word_count': transcript.word_count,
+                    'created_at': transcript.created_at.isoformat() if transcript.created_at else None
+                },
+                'analysis': {
+                    'analysis_uuid': analysis.analysis_uuid,
+                    'executive_summary': analysis.executive_summary,
+                    'key_themes': analysis.key_themes,
+                    'economic_opportunities': analysis.economic_opportunities,
+                    'economic_risks': analysis.economic_risks,
+                    'policy_implications': analysis.policy_implications,
+                    'overall_sentiment': analysis.overall_sentiment,
+                    'sentiment_confidence': analysis.sentiment_confidence,
+                    'market_outlook': analysis.market_outlook,
+                    'inflation_mentions': analysis.inflation_mentions,
+                    'interest_rate_mentions': analysis.interest_rate_mentions,
+                    'gdp_mentions': analysis.gdp_mentions,
+                    'unemployment_mentions': analysis.unemployment_mentions,
+                    'policy_actions_suggested': analysis.policy_actions_suggested,
+                    'market_predictions': analysis.market_predictions,
+                    'key_insights_count': analysis.key_insights_count,
+                    'analysis_completeness_score': analysis.analysis_completeness_score,
+                    'analysis_created_at': analysis.analysis_created_at.isoformat()
+                }
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_transcript_analysis_endpoint(request, analysis_uuid):
+    """Delete an analysis"""
+    try:
+        analysis = get_object_or_404(SnowAITranscriptAnalysis, analysis_uuid=analysis_uuid)
+        transcript_uuid = analysis.transcript.transcript_uuid
+        analysis.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Analysis deleted successfully',
+            'transcript_uuid': transcript_uuid
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key

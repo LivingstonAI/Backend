@@ -1349,7 +1349,84 @@ class SnowAITranscriptSearchHistory(models.Model):
 
 
 
+# models.py (add this to your existing models)
 
+class SnowAITranscriptAnalysis(models.Model):
+    # Foreign key to the transcript
+    transcript = models.OneToOneField(
+        SnowAIVideoTranscriptRecord, 
+        on_delete=models.CASCADE, 
+        related_name='ai_analysis'
+    )
+    
+    # Analysis UUID for unique identification
+    analysis_uuid = models.CharField(max_length=100, unique=True, db_index=True)
+    
+    # Main Analysis Results
+    executive_summary = models.TextField()
+    key_themes = models.JSONField(default=list)  # ["monetary_policy", "inflation_outlook", "economic_growth"]
+    
+    # Economic Insights
+    economic_opportunities = models.JSONField(default=list)  # [{"opportunity": "text", "confidence": 0.8}]
+    economic_risks = models.JSONField(default=list)  # [{"risk": "text", "impact_level": "high"}]
+    policy_implications = models.JSONField(default=list)  # [{"implication": "text", "timeframe": "short_term"}]
+    
+    # Market Sentiment Analysis
+    overall_sentiment = models.CharField(max_length=20)  # positive, negative, neutral, mixed
+    sentiment_confidence = models.FloatField(default=0.0)
+    market_outlook = models.CharField(max_length=20)  # bullish, bearish, neutral, uncertain
+    
+    # Key Metrics Mentioned
+    inflation_mentions = models.JSONField(default=dict)  # {"current": "3.2%", "target": "2%", "forecast": "2.8%"}
+    interest_rate_mentions = models.JSONField(default=dict)  # {"current": "5.25%", "next_meeting": "hold"}
+    gdp_mentions = models.JSONField(default=dict)  # {"current": "2.1%", "forecast": "1.8%"}
+    unemployment_mentions = models.JSONField(default=dict)  # {"current": "3.8%", "forecast": "4.1%"}
+    
+    # Action Items and Predictions
+    policy_actions_suggested = models.JSONField(default=list)
+    market_predictions = models.JSONField(default=list)  # [{"prediction": "text", "timeframe": "6_months", "confidence": 0.7}]
+    
+    # Analysis Metadata
+    analysis_model_used = models.CharField(max_length=50, default='gpt-4o-mini')
+    analysis_prompt_version = models.CharField(max_length=20, default='v1.0')
+    analysis_duration_seconds = models.FloatField(blank=True, null=True)
+    analysis_word_count = models.IntegerField(default=0)
+    
+    # Timestamps
+    analysis_created_at = models.DateTimeField(auto_now_add=True)
+    analysis_updated_at = models.DateTimeField(auto_now=True)
+    
+    # Quality Metrics
+    analysis_completeness_score = models.FloatField(default=0.0)  # 0-1 score
+    key_insights_count = models.IntegerField(default=0)
+    
+    class Meta:
+        db_table = 'snowai_transcript_analysis'
+        ordering = ['-analysis_created_at']
+        indexes = [
+            models.Index(fields=['overall_sentiment']),
+            models.Index(fields=['market_outlook']),
+            models.Index(fields=['analysis_created_at']),
+        ]
+
+    def __str__(self):
+        return f"Analysis for {self.transcript.primary_speaker_name or 'Unknown'} - {self.overall_sentiment}"
+
+    def save(self, *args, **kwargs):
+        # Auto-generate UUID if not provided
+        if not self.analysis_uuid:
+            import uuid
+            self.analysis_uuid = str(uuid.uuid4())
+        
+        # Count key insights
+        self.key_insights_count = (
+            len(self.economic_opportunities) + 
+            len(self.economic_risks) + 
+            len(self.policy_implications) +
+            len(self.market_predictions)
+        )
+        
+        super().save(*args, **kwargs)
 
 
 

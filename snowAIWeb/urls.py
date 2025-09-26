@@ -279,6 +279,24 @@ urlpatterns = [
          views.snowai_update_transcript_metadata, 
          name='snowai_update_transcript_metadata'),
 
+     
+     # AI Analysis endpoints
+    path('snowai-transcript-analysis-dashboard-data/', 
+         views.snowai_transcript_analysis_dashboard_data_endpoint, 
+         name='snowai_transcript_analysis_dashboard_data'),
+         
+    path('snowai-trigger-transcript-analysis/', 
+         views.snowai_trigger_transcript_analysis_endpoint, 
+         name='snowai_trigger_transcript_analysis'),
+         
+    path('snowai-transcript-analysis-details/<str:transcript_uuid>/', 
+         views.snowai_get_transcript_analysis_details_endpoint, 
+         name='snowai_transcript_analysis_details'),
+         
+    path('snowai-delete-transcript-analysis/<str:analysis_uuid>/', 
+         views.snowai_delete_transcript_analysis_endpoint, 
+         name='snowai_delete_transcript_analysis'),
+
 
 
     # create appproprate urls.py here
