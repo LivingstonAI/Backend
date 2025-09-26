@@ -18976,20 +18976,27 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                                     if matching_strategy and 'http_headers' in matching_strategy['opts']:
                                         download_opts['http_headers'] = matching_strategy['opts']['http_headers']
                                 
+                                print(f"Starting subtitle download for {lang}...")
                                 with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
                                     sub_ydl.download([video_url])
+                                print(f"Subtitle download completed for {lang}")
+                                
+                                # List all files in temp directory for debugging
+                                all_files = os.listdir(temp_dir)
+                                print(f"All files in temp directory after download: {all_files}")
                                 
                                 # Look for the downloaded subtitle file with more flexible naming
                                 subtitle_file = None
                                 possible_files = []
                                 
-                                for file in os.listdir(temp_dir):
-                                    print(f"Found file in temp dir: {file}")
+                                for file in all_files:
                                     if file.endswith(('.vtt', '.srt')):
                                         possible_files.append(file)
+                                        print(f"Found subtitle file candidate: {file}")
                                         # Check if it contains our video ID (case insensitive)
                                         if video_id.lower() in file.lower():
                                             subtitle_file = os.path.join(temp_dir, file)
+                                            print(f"Matched video ID in filename: {file}")
                                             break
                                 
                                 # If no exact match, try the first subtitle file
@@ -18997,8 +19004,13 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                                     subtitle_file = os.path.join(temp_dir, possible_files[0])
                                     print(f"Using first available subtitle file: {possible_files[0]}")
                                 
+                                print(f"Subtitle files found: {possible_files}")
+                                print(f"Selected subtitle file: {subtitle_file}")
+                                
                                 if subtitle_file and os.path.exists(subtitle_file):
                                     print(f"Processing subtitle file: {subtitle_file}")
+                                    file_size = os.path.getsize(subtitle_file)
+                                    print(f"Subtitle file size: {file_size} bytes")
                                     
                                     try:
                                         with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
@@ -19006,29 +19018,41 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                                         
                                         print(f"Raw subtitle content length: {len(subtitle_content)} characters")
                                         
-                                        if subtitle_content.strip():
-                                            subtitle_text = parse_subtitle_content(subtitle_content)
+                                        if len(subtitle_content.strip()) > 0:
+                                            print(f"First 500 chars of subtitle content: {subtitle_content[:500]}")
                                             
-                                            if subtitle_text and len(subtitle_text.strip()) > 0:
+                                            subtitle_text = parse_subtitle_content(subtitle_content)
+                                            print(f"After parsing - subtitle text length: {len(subtitle_text) if subtitle_text else 0}")
+                                            
+                                            if subtitle_text and len(subtitle_text.strip()) > 50:  # Require at least 50 chars
                                                 selected_language = lang
                                                 extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}_with_default_cookies'
                                                 
                                                 # Analyze transcript quality
-                                                quality_stats = analyze_transcript_quality(subtitle_text)
-                                                print(f"Transcript quality: {quality_stats['quality_score']}%, {quality_stats['repeated_phrases_detected']} repeated phrases removed")
+                                                try:
+                                                    quality_stats = analyze_transcript_quality(subtitle_text)
+                                                    print(f"Transcript quality: {quality_stats['quality_score']}%, {quality_stats['repeated_phrases_detected']} repeated phrases removed")
+                                                except Exception as quality_error:
+                                                    print(f"Quality analysis error: {quality_error}")
+                                                
                                                 print(f"Final transcript length: {len(subtitle_text)} characters")
+                                                print("SUCCESS: Subtitle extraction completed")
                                                 break
                                             else:
-                                                print(f"Parsed subtitle text was empty for {lang}")
+                                                print(f"Parsed subtitle text was empty or too short for {lang}: {len(subtitle_text) if subtitle_text else 0} chars")
                                         else:
                                             print(f"Raw subtitle content was empty for {lang}")
                                             
                                     except Exception as file_read_error:
                                         print(f"Error reading subtitle file {subtitle_file}: {file_read_error}")
+                                        import traceback
+                                        print(f"Full traceback: {traceback.format_exc()}")
                                         continue
                                         
                                 else:
-                                    print(f"No subtitle file found for {lang}. Available files: {os.listdir(temp_dir)}")
+                                    print(f"No subtitle file found for {lang}.")
+                                    print(f"Available files in directory: {all_files}")
+                                    print(f"Possible subtitle files: {possible_files}")
                                 
                             except Exception as sub_error:
                                 print(f"Failed to download {source_type} subtitles for {lang}: {sub_error}")
@@ -19057,7 +19081,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                 pass
     
     return transcript_data
-    
+
 
 def parse_subtitle_content(subtitle_content):
     """Parse VTT or SRT subtitle content to extract clean text with deduplication"""
@@ -19269,6 +19293,9 @@ def find_repeated_phrases(text, min_phrase_length=3):
     return repeated_count
 
 
+from django.utils import timezone
+from datetime import datetime
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def snowai_extract_youtube_transcript_from_url(request):
@@ -19324,6 +19351,20 @@ def snowai_extract_youtube_transcript_from_url(request):
             
             print(f"Transcript extracted: {len(full_text)} characters, method: {transcript_result['method']}")
             
+            # Handle video upload date with proper timezone handling
+            video_upload_date = None
+            if video_metadata.get('upload_date'):
+                try:
+                    # Parse the upload date string (format: YYYYMMDD)
+                    upload_date_str = video_metadata['upload_date']
+                    if len(upload_date_str) == 8:  # YYYYMMDD format
+                        parsed_date = datetime.strptime(upload_date_str, '%Y%m%d')
+                        # Make it timezone-aware
+                        video_upload_date = timezone.make_aware(parsed_date, timezone.get_current_timezone())
+                except Exception as date_error:
+                    print(f"Error parsing upload date: {date_error}")
+                    video_upload_date = None
+            
             # Create transcript record
             transcript_record = SnowAIVideoTranscriptRecord.objects.create(
                 transcript_uuid=str(uuid.uuid4()),
@@ -19332,7 +19373,7 @@ def snowai_extract_youtube_transcript_from_url(request):
                 video_title=video_metadata.get('title', data.get('video_title', '')),
                 full_transcript_text=full_text,
                 video_duration_seconds=video_metadata.get('duration'),
-                video_upload_date=video_metadata.get('upload_date'),
+                video_upload_date=video_upload_date,  # Now properly timezone-aware
                 primary_speaker_name=data.get('speaker_name', ''),
                 speaker_country_code=data.get('country_code', ''),
                 speaker_country_name=data.get('country_name', ''),
@@ -19356,6 +19397,11 @@ def snowai_extract_youtube_transcript_from_url(request):
         except Exception as transcript_error:
             error_str = str(transcript_error).lower()
             print(f"Transcript extraction error: {error_str}")
+            print(f"Full error details: {transcript_error}")
+            
+            # Print full traceback for debugging
+            import traceback
+            print(f"Full traceback: {traceback.format_exc()}")
             
             # Provide more specific error messages
             if 'sign in to confirm' in error_str or 'not a bot' in error_str:
@@ -19369,9 +19415,9 @@ def snowai_extract_youtube_transcript_from_url(request):
                     'error': 'The video is private, unavailable, or restricted.',
                     'debug_video_id': video_id
                 }, status=400)
-            elif 'no subtitles' in error_str or 'no transcript' in error_str:
+            elif 'no subtitles' in error_str or 'no transcript' in error_str or 'no valid transcript' in error_str:
                 return JsonResponse({
-                    'error': 'No subtitles or captions are available for this video.',
+                    'error': 'No subtitles or captions are available for this video, or the extracted content was too short.',
                     'debug_info': {
                         'video_id': video_id,
                         'url': youtube_url,
@@ -19393,11 +19439,14 @@ def snowai_extract_youtube_transcript_from_url(request):
         return JsonResponse({'error': 'Invalid JSON data'}, status=400)
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
         return JsonResponse({
             'error': f'An unexpected error occurred: {str(e)}',
             'debug_info': 'Check server logs for more details'
         }, status=500)
 
+        
 @csrf_exempt
 @require_http_methods(["GET"])
 def snowai_check_ytdlp_version_and_update(request):
