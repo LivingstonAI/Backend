@@ -18715,372 +18715,372 @@ def process_cookies_data(cookies_data):
     return processed_cookies
 
 
-def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
-    """Extract transcript using yt-dlp with enhanced fallback strategies and default cookies"""
+# def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
+#     """Extract transcript using yt-dlp with enhanced fallback strategies and default cookies"""
     
-    if not YT_DLP_AVAILABLE:
-        raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
+#     if not YT_DLP_AVAILABLE:
+#         raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
     
-    transcript_data = {
-        'text': None,
-        'method': None,
-        'language': 'en',
-        'metadata': {}
-    }
+#     transcript_data = {
+#         'text': None,
+#         'method': None,
+#         'language': 'en',
+#         'metadata': {}
+#     }
     
-    # Process cookies with fallback to defaults
-    cookies_dict = process_cookies_data(cookies_data)
-    cookie_file_path = None
+#     # Process cookies with fallback to defaults
+#     cookies_dict = process_cookies_data(cookies_data)
+#     cookie_file_path = None
     
-    try:
-        cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
-        print(f"Created cookie jar with {len(cookies_dict)} cookies")
-    except Exception as cookie_error:
-        print(f"Cookie processing error: {cookie_error}")
-        # Continue without cookies as last resort
-        pass
+#     try:
+#         cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+#         print(f"Created cookie jar with {len(cookies_dict)} cookies")
+#     except Exception as cookie_error:
+#         print(f"Cookie processing error: {cookie_error}")
+#         # Continue without cookies as last resort
+#         pass
 
-    # Enhanced extraction strategies - all will use cookies by default
-    extraction_strategies = [
-        # Strategy 1: Modern approach with default cookies
-        {
-            'name': 'modern_with_auth',
-            'opts': {
-                'quiet': True,
-                'no_warnings': True,
-                'writesubtitles': True,
-                'writeautomaticsub': True,
-                'subtitleslangs': ['en', 'en-US', 'en-GB'],
-                'subtitlesformat': 'vtt/srt/best',
-                'skip_download': True,
-                'extract_flat': False,
-                'no_check_certificate': True,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android', 'web'],
-                        'player_skip': ['js'],
-                        'skip': ['dash', 'hls'],
-                    }
-                },
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 11; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Origin': 'https://www.youtube.com',
-                    'Referer': 'https://www.youtube.com/',
-                }
-            }
-        },
+#     # Enhanced extraction strategies - all will use cookies by default
+#     extraction_strategies = [
+#         # Strategy 1: Modern approach with default cookies
+#         {
+#             'name': 'modern_with_auth',
+#             'opts': {
+#                 'quiet': True,
+#                 'no_warnings': True,
+#                 'writesubtitles': True,
+#                 'writeautomaticsub': True,
+#                 'subtitleslangs': ['en', 'en-US', 'en-GB'],
+#                 'subtitlesformat': 'vtt/srt/best',
+#                 'skip_download': True,
+#                 'extract_flat': False,
+#                 'no_check_certificate': True,
+#                 'extractor_args': {
+#                     'youtube': {
+#                         'player_client': ['android', 'web'],
+#                         'player_skip': ['js'],
+#                         'skip': ['dash', 'hls'],
+#                     }
+#                 },
+#                 'http_headers': {
+#                     'User-Agent': 'Mozilla/5.0 (Linux; Android 11; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+#                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+#                     'Accept-Language': 'en-US,en;q=0.9',
+#                     'Accept-Encoding': 'gzip, deflate, br',
+#                     'Origin': 'https://www.youtube.com',
+#                     'Referer': 'https://www.youtube.com/',
+#                 }
+#             }
+#         },
         
-        # Strategy 2: Android client with auth
-        {
-            'name': 'android_authenticated',
-            'opts': {
-                'quiet': True,
-                'no_warnings': True,
-                'writesubtitles': True,
-                'writeautomaticsub': True,
-                'subtitleslangs': ['en', 'en-US', 'en-GB'],
-                'subtitlesformat': 'vtt',
-                'skip_download': True,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android'],
-                    }
-                },
-                'http_headers': {
-                    'User-Agent': 'com.google.android.youtube/17.36.4 (Linux; U; Android 11) gzip',
-                    'X-YouTube-Client-Name': '3',
-                    'X-YouTube-Client-Version': '17.36.4',
-                }
-            }
-        },
+#         # Strategy 2: Android client with auth
+#         {
+#             'name': 'android_authenticated',
+#             'opts': {
+#                 'quiet': True,
+#                 'no_warnings': True,
+#                 'writesubtitles': True,
+#                 'writeautomaticsub': True,
+#                 'subtitleslangs': ['en', 'en-US', 'en-GB'],
+#                 'subtitlesformat': 'vtt',
+#                 'skip_download': True,
+#                 'extractor_args': {
+#                     'youtube': {
+#                         'player_client': ['android'],
+#                     }
+#                 },
+#                 'http_headers': {
+#                     'User-Agent': 'com.google.android.youtube/17.36.4 (Linux; U; Android 11) gzip',
+#                     'X-YouTube-Client-Name': '3',
+#                     'X-YouTube-Client-Version': '17.36.4',
+#                 }
+#             }
+#         },
         
-        # Strategy 3: iOS client with auth  
-        {
-            'name': 'ios_authenticated',
-            'opts': {
-                'quiet': True,
-                'no_warnings': True,
-                'writesubtitles': True,
-                'writeautomaticsub': True,
-                'subtitleslangs': ['en'],
-                'subtitlesformat': 'vtt',
-                'skip_download': True,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['ios'],
-                    }
-                },
-                'http_headers': {
-                    'User-Agent': 'com.google.ios.youtube/17.36.4 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)',
-                    'X-YouTube-Client-Name': '5',
-                    'X-YouTube-Client-Version': '17.36.4',
-                }
-            }
-        },
+#         # Strategy 3: iOS client with auth  
+#         {
+#             'name': 'ios_authenticated',
+#             'opts': {
+#                 'quiet': True,
+#                 'no_warnings': True,
+#                 'writesubtitles': True,
+#                 'writeautomaticsub': True,
+#                 'subtitleslangs': ['en'],
+#                 'subtitlesformat': 'vtt',
+#                 'skip_download': True,
+#                 'extractor_args': {
+#                     'youtube': {
+#                         'player_client': ['ios'],
+#                     }
+#                 },
+#                 'http_headers': {
+#                     'User-Agent': 'com.google.ios.youtube/17.36.4 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)',
+#                     'X-YouTube-Client-Name': '5',
+#                     'X-YouTube-Client-Version': '17.36.4',
+#                 }
+#             }
+#         },
         
-        # Strategy 4: TV client with auth (often bypasses restrictions)
-        {
-            'name': 'tv_authenticated',
-            'opts': {
-                'quiet': True,
-                'no_warnings': True,
-                'writesubtitles': True,
-                'writeautomaticsub': True,
-                'subtitleslangs': ['en'],
-                'subtitlesformat': 'vtt',
-                'skip_download': True,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['tv_embedded'],
-                    }
-                }
-            }
-        },
+#         # Strategy 4: TV client with auth (often bypasses restrictions)
+#         {
+#             'name': 'tv_authenticated',
+#             'opts': {
+#                 'quiet': True,
+#                 'no_warnings': True,
+#                 'writesubtitles': True,
+#                 'writeautomaticsub': True,
+#                 'subtitleslangs': ['en'],
+#                 'subtitlesformat': 'vtt',
+#                 'skip_download': True,
+#                 'extractor_args': {
+#                     'youtube': {
+#                         'player_client': ['tv_embedded'],
+#                     }
+#                 }
+#             }
+#         },
         
-        # Strategy 5: Fallback without cookies (last resort)
-        {
-            'name': 'fallback_no_cookies',
-            'opts': {
-                'quiet': True,
-                'writesubtitles': True,
-                'writeautomaticsub': True,
-                'subtitleslangs': ['en'],
-                'skip_download': True,
-                'no_check_certificate': True,
-            },
-            'skip_cookies': True  # Special flag to skip cookies for this strategy
-        }
-    ]
+#         # Strategy 5: Fallback without cookies (last resort)
+#         {
+#             'name': 'fallback_no_cookies',
+#             'opts': {
+#                 'quiet': True,
+#                 'writesubtitles': True,
+#                 'writeautomaticsub': True,
+#                 'subtitleslangs': ['en'],
+#                 'skip_download': True,
+#                 'no_check_certificate': True,
+#             },
+#             'skip_cookies': True  # Special flag to skip cookies for this strategy
+#         }
+#     ]
 
-    extraction_error = None
-    info = None
-    successful_strategy = None
+#     extraction_error = None
+#     info = None
+#     successful_strategy = None
 
-    try:
-        # Create a temporary directory for subtitle files
-        with tempfile.TemporaryDirectory() as temp_dir:
+#     try:
+#         # Create a temporary directory for subtitle files
+#         with tempfile.TemporaryDirectory() as temp_dir:
             
-            for strategy in extraction_strategies:
-                try:
-                    print(f"Trying strategy: {strategy['name']} for video: {video_id}")
+#             for strategy in extraction_strategies:
+#                 try:
+#                     print(f"Trying strategy: {strategy['name']} for video: {video_id}")
                     
-                    # Prepare options
-                    opts = strategy['opts'].copy()
-                    opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+#                     # Prepare options
+#                     opts = strategy['opts'].copy()
+#                     opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
                     
-                    # Add cookies unless explicitly skipped
-                    if cookie_file_path and not strategy.get('skip_cookies', False):
-                        opts['cookiefile'] = cookie_file_path
-                        print(f"Using cookies with strategy: {strategy['name']}")
-                    elif strategy.get('skip_cookies', False):
-                        print(f"Skipping cookies for fallback strategy: {strategy['name']}")
+#                     # Add cookies unless explicitly skipped
+#                     if cookie_file_path and not strategy.get('skip_cookies', False):
+#                         opts['cookiefile'] = cookie_file_path
+#                         print(f"Using cookies with strategy: {strategy['name']}")
+#                     elif strategy.get('skip_cookies', False):
+#                         print(f"Skipping cookies for fallback strategy: {strategy['name']}")
                     
-                    # Try extraction
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        info = ydl.extract_info(video_url, download=True)
+#                     # Try extraction
+#                     with yt_dlp.YoutubeDL(opts) as ydl:
+#                         info = ydl.extract_info(video_url, download=True)
                     
-                    print(f"Strategy {strategy['name']} successful!")
-                    successful_strategy = strategy['name']
-                    break
+#                     print(f"Strategy {strategy['name']} successful!")
+#                     successful_strategy = strategy['name']
+#                     break
                     
-                except Exception as strategy_error:
-                    extraction_error = strategy_error
-                    error_msg = str(strategy_error).lower()
-                    print(f"Strategy {strategy['name']} failed: {error_msg}")
+#                 except Exception as strategy_error:
+#                     extraction_error = strategy_error
+#                     error_msg = str(strategy_error).lower()
+#                     print(f"Strategy {strategy['name']} failed: {error_msg}")
                     
-                    # Check for specific error patterns
-                    if 'sign in to confirm' in error_msg or 'not a bot' in error_msg:
-                        print(f"Bot detection hit with {strategy['name']}, trying next strategy...")
-                        continue
-                    elif 'private' in error_msg or 'unavailable' in error_msg:
-                        # Video is genuinely unavailable
-                        raise strategy_error
-                    elif 'requested format is not available' in error_msg:
-                        print(f"Format not available with {strategy['name']}, trying next strategy...")
-                        continue
-                    else:
-                        continue
-            else:
-                # All strategies failed
-                if extraction_error:
-                    raise extraction_error
-                else:
-                    raise Exception("All extraction strategies failed")
+#                     # Check for specific error patterns
+#                     if 'sign in to confirm' in error_msg or 'not a bot' in error_msg:
+#                         print(f"Bot detection hit with {strategy['name']}, trying next strategy...")
+#                         continue
+#                     elif 'private' in error_msg or 'unavailable' in error_msg:
+#                         # Video is genuinely unavailable
+#                         raise strategy_error
+#                     elif 'requested format is not available' in error_msg:
+#                         print(f"Format not available with {strategy['name']}, trying next strategy...")
+#                         continue
+#                     else:
+#                         continue
+#             else:
+#                 # All strategies failed
+#                 if extraction_error:
+#                     raise extraction_error
+#                 else:
+#                     raise Exception("All extraction strategies failed")
         
-            # Process the extracted data
-            try:
-                # Store video metadata
-                transcript_data['metadata'] = {
-                    'title': info.get('title', ''),
-                    'duration': info.get('duration'),
-                    'upload_date': info.get('upload_date'),
-                    'uploader': info.get('uploader', ''),
-                    'view_count': info.get('view_count'),
-                    'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
-                }
+#             # Process the extracted data
+#             try:
+#                 # Store video metadata
+#                 transcript_data['metadata'] = {
+#                     'title': info.get('title', ''),
+#                     'duration': info.get('duration'),
+#                     'upload_date': info.get('upload_date'),
+#                     'uploader': info.get('uploader', ''),
+#                     'view_count': info.get('view_count'),
+#                     'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+#                 }
                 
-                # Check available subtitles
-                subtitles = info.get('subtitles', {})
-                automatic_captions = info.get('automatic_captions', {})
+#                 # Check available subtitles
+#                 subtitles = info.get('subtitles', {})
+#                 automatic_captions = info.get('automatic_captions', {})
                 
-                print(f"Available subtitles: {list(subtitles.keys())}")
-                print(f"Available automatic captions: {list(automatic_captions.keys())}")
+#                 print(f"Available subtitles: {list(subtitles.keys())}")
+#                 print(f"Available automatic captions: {list(automatic_captions.keys())}")
                 
-                # Extract subtitle text
-                subtitle_text = None
-                selected_language = None
-                extraction_method = None
+#                 # Extract subtitle text
+#                 subtitle_text = None
+#                 selected_language = None
+#                 extraction_method = None
                 
-                # Priority order: manual subtitles first, then automatic captions
-                subtitle_sources = [
-                    ('manual', subtitles),
-                    ('automatic', automatic_captions)
-                ]
+#                 # Priority order: manual subtitles first, then automatic captions
+#                 subtitle_sources = [
+#                     ('manual', subtitles),
+#                     ('automatic', automatic_captions)
+#                 ]
                 
-                for source_type, subtitle_dict in subtitle_sources:
-                    if subtitle_text:
-                        break
+#                 for source_type, subtitle_dict in subtitle_sources:
+#                     if subtitle_text:
+#                         break
                         
-                    # Try different language codes
-                    language_priority = ['en', 'en-US', 'en-GB', 'en-us', 'en-gb', 'en-orig']
+#                     # Try different language codes
+#                     language_priority = ['en', 'en-US', 'en-GB', 'en-us', 'en-gb', 'en-orig']
                     
-                    for lang in language_priority:
-                        if lang in subtitle_dict:
-                            print(f"Found {source_type} subtitles for language: {lang}")
+#                     for lang in language_priority:
+#                         if lang in subtitle_dict:
+#                             print(f"Found {source_type} subtitles for language: {lang}")
                             
-                            # Download the subtitle file
-                            try:
-                                download_opts = {
-                                    'quiet': True,
-                                    'no_warnings': True,
-                                    'writesubtitles': True,
-                                    'writeautomaticsub': source_type == 'automatic',
-                                    'subtitleslangs': [lang],
-                                    'subtitlesformat': 'vtt',
-                                    'skip_download': True,
-                                    'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
-                                }
+#                             # Download the subtitle file
+#                             try:
+#                                 download_opts = {
+#                                     'quiet': True,
+#                                     'no_warnings': True,
+#                                     'writesubtitles': True,
+#                                     'writeautomaticsub': source_type == 'automatic',
+#                                     'subtitleslangs': [lang],
+#                                     'subtitlesformat': 'vtt',
+#                                     'skip_download': True,
+#                                     'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+#                                 }
                                 
-                                # Always add cookies for subtitle download if available
-                                if cookie_file_path:
-                                    download_opts['cookiefile'] = cookie_file_path
+#                                 # Always add cookies for subtitle download if available
+#                                 if cookie_file_path:
+#                                     download_opts['cookiefile'] = cookie_file_path
                                 
-                                # Use the same strategy that worked for info extraction
-                                if successful_strategy and successful_strategy != 'fallback_no_cookies':
-                                    matching_strategy = next((s for s in extraction_strategies if s['name'] == successful_strategy), None)
-                                    if matching_strategy and 'extractor_args' in matching_strategy['opts']:
-                                        download_opts['extractor_args'] = matching_strategy['opts']['extractor_args']
-                                    if matching_strategy and 'http_headers' in matching_strategy['opts']:
-                                        download_opts['http_headers'] = matching_strategy['opts']['http_headers']
+#                                 # Use the same strategy that worked for info extraction
+#                                 if successful_strategy and successful_strategy != 'fallback_no_cookies':
+#                                     matching_strategy = next((s for s in extraction_strategies if s['name'] == successful_strategy), None)
+#                                     if matching_strategy and 'extractor_args' in matching_strategy['opts']:
+#                                         download_opts['extractor_args'] = matching_strategy['opts']['extractor_args']
+#                                     if matching_strategy and 'http_headers' in matching_strategy['opts']:
+#                                         download_opts['http_headers'] = matching_strategy['opts']['http_headers']
                                 
-                                print(f"Starting subtitle download for {lang}...")
-                                with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
-                                    sub_ydl.download([video_url])
-                                print(f"Subtitle download completed for {lang}")
+#                                 print(f"Starting subtitle download for {lang}...")
+#                                 with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+#                                     sub_ydl.download([video_url])
+#                                 print(f"Subtitle download completed for {lang}")
                                 
-                                # List all files in temp directory for debugging
-                                all_files = os.listdir(temp_dir)
-                                print(f"All files in temp directory after download: {all_files}")
+#                                 # List all files in temp directory for debugging
+#                                 all_files = os.listdir(temp_dir)
+#                                 print(f"All files in temp directory after download: {all_files}")
                                 
-                                # Look for the downloaded subtitle file with more flexible naming
-                                subtitle_file = None
-                                possible_files = []
+#                                 # Look for the downloaded subtitle file with more flexible naming
+#                                 subtitle_file = None
+#                                 possible_files = []
                                 
-                                for file in all_files:
-                                    if file.endswith(('.vtt', '.srt')):
-                                        possible_files.append(file)
-                                        print(f"Found subtitle file candidate: {file}")
-                                        # Check if it contains our video ID (case insensitive)
-                                        if video_id.lower() in file.lower():
-                                            subtitle_file = os.path.join(temp_dir, file)
-                                            print(f"Matched video ID in filename: {file}")
-                                            break
+#                                 for file in all_files:
+#                                     if file.endswith(('.vtt', '.srt')):
+#                                         possible_files.append(file)
+#                                         print(f"Found subtitle file candidate: {file}")
+#                                         # Check if it contains our video ID (case insensitive)
+#                                         if video_id.lower() in file.lower():
+#                                             subtitle_file = os.path.join(temp_dir, file)
+#                                             print(f"Matched video ID in filename: {file}")
+#                                             break
                                 
-                                # If no exact match, try the first subtitle file
-                                if not subtitle_file and possible_files:
-                                    subtitle_file = os.path.join(temp_dir, possible_files[0])
-                                    print(f"Using first available subtitle file: {possible_files[0]}")
+#                                 # If no exact match, try the first subtitle file
+#                                 if not subtitle_file and possible_files:
+#                                     subtitle_file = os.path.join(temp_dir, possible_files[0])
+#                                     print(f"Using first available subtitle file: {possible_files[0]}")
                                 
-                                print(f"Subtitle files found: {possible_files}")
-                                print(f"Selected subtitle file: {subtitle_file}")
+#                                 print(f"Subtitle files found: {possible_files}")
+#                                 print(f"Selected subtitle file: {subtitle_file}")
                                 
-                                if subtitle_file and os.path.exists(subtitle_file):
-                                    print(f"Processing subtitle file: {subtitle_file}")
-                                    file_size = os.path.getsize(subtitle_file)
-                                    print(f"Subtitle file size: {file_size} bytes")
+#                                 if subtitle_file and os.path.exists(subtitle_file):
+#                                     print(f"Processing subtitle file: {subtitle_file}")
+#                                     file_size = os.path.getsize(subtitle_file)
+#                                     print(f"Subtitle file size: {file_size} bytes")
                                     
-                                    try:
-                                        with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
-                                            subtitle_content = f.read()
+#                                     try:
+#                                         with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+#                                             subtitle_content = f.read()
                                         
-                                        print(f"Raw subtitle content length: {len(subtitle_content)} characters")
+#                                         print(f"Raw subtitle content length: {len(subtitle_content)} characters")
                                         
-                                        if len(subtitle_content.strip()) > 0:
-                                            print(f"First 500 chars of subtitle content: {subtitle_content[:500]}")
+#                                         if len(subtitle_content.strip()) > 0:
+#                                             print(f"First 500 chars of subtitle content: {subtitle_content[:500]}")
                                             
-                                            subtitle_text = parse_subtitle_content(subtitle_content)
-                                            print(f"After parsing - subtitle text length: {len(subtitle_text) if subtitle_text else 0}")
+#                                             subtitle_text = parse_subtitle_content(subtitle_content)
+#                                             print(f"After parsing - subtitle text length: {len(subtitle_text) if subtitle_text else 0}")
                                             
-                                            if subtitle_text and len(subtitle_text.strip()) > 50:  # Require at least 50 chars
-                                                selected_language = lang
-                                                extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}_with_default_cookies'
+#                                             if subtitle_text and len(subtitle_text.strip()) > 50:  # Require at least 50 chars
+#                                                 selected_language = lang
+#                                                 extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}_with_default_cookies'
                                                 
-                                                # Analyze transcript quality
-                                                try:
-                                                    quality_stats = analyze_transcript_quality(subtitle_text)
-                                                    print(f"Transcript quality: {quality_stats['quality_score']}%, {quality_stats['repeated_phrases_detected']} repeated phrases removed")
-                                                except Exception as quality_error:
-                                                    print(f"Quality analysis error: {quality_error}")
+#                                                 # Analyze transcript quality
+#                                                 try:
+#                                                     quality_stats = analyze_transcript_quality(subtitle_text)
+#                                                     print(f"Transcript quality: {quality_stats['quality_score']}%, {quality_stats['repeated_phrases_detected']} repeated phrases removed")
+#                                                 except Exception as quality_error:
+#                                                     print(f"Quality analysis error: {quality_error}")
                                                 
-                                                print(f"Final transcript length: {len(subtitle_text)} characters")
-                                                print("SUCCESS: Subtitle extraction completed")
-                                                break
-                                            else:
-                                                print(f"Parsed subtitle text was empty or too short for {lang}: {len(subtitle_text) if subtitle_text else 0} chars")
-                                        else:
-                                            print(f"Raw subtitle content was empty for {lang}")
+#                                                 print(f"Final transcript length: {len(subtitle_text)} characters")
+#                                                 print("SUCCESS: Subtitle extraction completed")
+#                                                 break
+#                                             else:
+#                                                 print(f"Parsed subtitle text was empty or too short for {lang}: {len(subtitle_text) if subtitle_text else 0} chars")
+#                                         else:
+#                                             print(f"Raw subtitle content was empty for {lang}")
                                             
-                                    except Exception as file_read_error:
-                                        print(f"Error reading subtitle file {subtitle_file}: {file_read_error}")
-                                        import traceback
-                                        print(f"Full traceback: {traceback.format_exc()}")
-                                        continue
+#                                     except Exception as file_read_error:
+#                                         print(f"Error reading subtitle file {subtitle_file}: {file_read_error}")
+#                                         import traceback
+#                                         print(f"Full traceback: {traceback.format_exc()}")
+#                                         continue
                                         
-                                else:
-                                    print(f"No subtitle file found for {lang}.")
-                                    print(f"Available files in directory: {all_files}")
-                                    print(f"Possible subtitle files: {possible_files}")
+#                                 else:
+#                                     print(f"No subtitle file found for {lang}.")
+#                                     print(f"Available files in directory: {all_files}")
+#                                     print(f"Possible subtitle files: {possible_files}")
                                 
-                            except Exception as sub_error:
-                                print(f"Failed to download {source_type} subtitles for {lang}: {sub_error}")
-                                continue
+#                             except Exception as sub_error:
+#                                 print(f"Failed to download {source_type} subtitles for {lang}: {sub_error}")
+#                                 continue
                 
-                if subtitle_text and len(subtitle_text.strip()) > 0:
-                    transcript_data['text'] = subtitle_text.strip()
-                    transcript_data['language'] = selected_language
-                    transcript_data['method'] = extraction_method
-                    print(f"Successfully extracted transcript: {len(subtitle_text)} characters")
-                else:
-                    # More detailed error reporting
-                    available_langs = list(subtitles.keys()) + list(automatic_captions.keys())
-                    raise Exception(f"No valid transcript text could be extracted. Available languages: {available_langs[:10]}... (showing first 10)")
+#                 if subtitle_text and len(subtitle_text.strip()) > 0:
+#                     transcript_data['text'] = subtitle_text.strip()
+#                     transcript_data['language'] = selected_language
+#                     transcript_data['method'] = extraction_method
+#                     print(f"Successfully extracted transcript: {len(subtitle_text)} characters")
+#                 else:
+#                     # More detailed error reporting
+#                     available_langs = list(subtitles.keys()) + list(automatic_captions.keys())
+#                     raise Exception(f"No valid transcript text could be extracted. Available languages: {available_langs[:10]}... (showing first 10)")
                 
-            except Exception as e:
-                print(f"yt-dlp processing error: {str(e)}")
-                raise Exception(f"Failed to process extracted data: {str(e)}")
+#             except Exception as e:
+#                 print(f"yt-dlp processing error: {str(e)}")
+#                 raise Exception(f"Failed to process extracted data: {str(e)}")
     
-    finally:
-        # Clean up cookie file
-        if cookie_file_path and os.path.exists(cookie_file_path):
-            try:
-                os.unlink(cookie_file_path)
-            except Exception:
-                pass
+#     finally:
+#         # Clean up cookie file
+#         if cookie_file_path and os.path.exists(cookie_file_path):
+#             try:
+#                 os.unlink(cookie_file_path)
+#             except Exception:
+#                 pass
     
-    return transcript_data
+#     return transcript_data
 
 
 def parse_subtitle_content(subtitle_content):
@@ -19304,6 +19304,26 @@ def safe_truncate_field(value, max_length):
         return str(value)[:max_length-3] + "..."
     return str(value)
 
+def create_transcription_method_name(source_type, language, strategy, use_cookies=True):
+    """Create a concise transcription method name that fits database constraints"""
+    # Create shorter method names to fit in 50 characters
+    strategy_map = {
+        'modern_with_auth': 'modern',
+        'android_authenticated': 'android', 
+        'ios_authenticated': 'ios',
+        'tv_authenticated': 'tv',
+        'fallback_no_cookies': 'fallback'
+    }
+    
+    short_strategy = strategy_map.get(strategy, strategy[:10])
+    cookie_suffix = '_auth' if use_cookies else '_noauth'
+    
+    # Format: ytdlp_auto_en_tv_auth (max ~20 chars)
+    method_name = f"ytdlp_{source_type[:4]}_{language[:2]}_{short_strategy}{cookie_suffix}"
+    
+    # Ensure it fits in 50 characters
+    return safe_truncate_field(method_name, 50)
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def snowai_extract_youtube_transcript_from_url(request):
@@ -19373,17 +19393,21 @@ def snowai_extract_youtube_transcript_from_url(request):
                     print(f"Error parsing upload date: {date_error}")
                     video_upload_date = None
             
-            # Safely truncate fields to fit database constraints
-            # Adjust these max lengths based on your actual database schema
-            video_title = safe_truncate_field(video_metadata.get('title', data.get('video_title', '')), 200)
-            speaker_name = safe_truncate_field(data.get('speaker_name', ''), 100)
+            # Safely truncate fields to match your database schema exactly
+            video_title = safe_truncate_field(video_metadata.get('title', data.get('video_title', '')), 300)
+            speaker_name = safe_truncate_field(data.get('speaker_name', ''), 200)
             country_code = safe_truncate_field(data.get('country_code', ''), 10)
             country_name = safe_truncate_field(data.get('country_name', ''), 100)
-            category = safe_truncate_field(data.get('category', 'central_bank'), 50)
-            transcription_method = safe_truncate_field(transcript_result['method'], 100)
-            transcript_language = safe_truncate_field(transcript_result['language'], 10)
+            category = safe_truncate_field(data.get('category', 'central_bank'), 100)
+            transcription_method = safe_truncate_field(transcript_result.get('method', 'ytdlp_auto'), 50)
+            transcript_language = safe_truncate_field(transcript_result.get('language', 'en'), 10)
+            processing_status = safe_truncate_field('completed', 30)
             
-            print(f"Creating transcript record with title: {video_title[:50]}...")
+            print(f"Creating transcript record...")
+            print(f"- Title: {video_title[:50]}... (length: {len(video_title)})")
+            print(f"- Method: {transcription_method} (length: {len(transcription_method)})")
+            print(f"- Language: {transcript_language} (length: {len(transcript_language)})")
+            print(f"- Category: {category} (length: {len(category)})")
             
             # Create transcript record with proper field length handling
             transcript_record = SnowAIVideoTranscriptRecord.objects.create(
@@ -19393,13 +19417,14 @@ def snowai_extract_youtube_transcript_from_url(request):
                 video_title=video_title,
                 full_transcript_text=full_text,
                 video_duration_seconds=video_metadata.get('duration'),
-                video_upload_date=video_upload_date,  # Now properly timezone-aware
+                video_upload_date=video_upload_date,
                 primary_speaker_name=speaker_name,
                 speaker_country_code=country_code,
                 speaker_country_name=country_name,
                 content_category=category,
                 transcription_method=transcription_method,
-                transcript_language=transcript_language
+                transcript_language=transcript_language,
+                processing_status=processing_status
             )
             
             print(f"Transcript record created successfully with ID: {transcript_record.transcript_uuid}")
@@ -19432,6 +19457,7 @@ def snowai_extract_youtube_transcript_from_url(request):
                     'debug_info': {
                         'video_id': video_id,
                         'error_type': 'database_constraint_error',
+                        'full_error': str(transcript_error)[:200],
                         'suggestion': 'Check database field lengths for title, speaker name, etc.'
                     }
                 }, status=400)
@@ -19462,7 +19488,7 @@ def snowai_extract_youtube_transcript_from_url(request):
                     'error': 'Failed to extract transcript from video despite using default cookies.',
                     'debug_info': {
                         'video_id': video_id,
-                        'error_details': str(transcript_error)[:500],  # Truncate error details
+                        'error_details': str(transcript_error)[:300],
                         'used_default_cookies': True,
                         'suggestion': 'The video may have special restrictions or yt-dlp may need updating'
                     }
@@ -19475,10 +19501,210 @@ def snowai_extract_youtube_transcript_from_url(request):
         import traceback
         print(f"Full traceback: {traceback.format_exc()}")
         return JsonResponse({
-            'error': f'An unexpected error occurred: {str(e)}'[:200],  # Truncate long errors
+            'error': f'An unexpected error occurred: {str(e)}'[:200],
             'debug_info': 'Check server logs for more details'
         }, status=500)
 
+# Also update the extraction function to use the new method naming
+def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
+    """Extract transcript using yt-dlp with enhanced fallback strategies and default cookies"""
+    
+    if not YT_DLP_AVAILABLE:
+        raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
+    
+    transcript_data = {
+        'text': None,
+        'method': None,
+        'language': 'en',
+        'metadata': {}
+    }
+    
+    # Process cookies with fallback to defaults
+    cookies_dict = process_cookies_data(cookies_data)
+    cookie_file_path = None
+    
+    try:
+        cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+        print(f"Created cookie jar with {len(cookies_dict)} cookies")
+    except Exception as cookie_error:
+        print(f"Cookie processing error: {cookie_error}")
+        pass
+
+    # Use the working TV strategy primarily
+    extraction_strategies = [
+        {
+            'name': 'tv_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['tv_embedded'],
+                    }
+                }
+            }
+        }
+    ]
+
+    extraction_error = None
+    info = None
+    successful_strategy = None
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            print(f"Using temp directory: {temp_dir}")
+            
+            for strategy in extraction_strategies:
+                try:
+                    print(f"Trying strategy: {strategy['name']} for video: {video_id}")
+                    
+                    opts = strategy['opts'].copy()
+                    opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+                    
+                    if cookie_file_path:
+                        opts['cookiefile'] = cookie_file_path
+                        print(f"Using cookies with strategy: {strategy['name']}")
+                    
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(video_url, download=True)
+                    
+                    print(f"Strategy {strategy['name']} successful!")
+                    successful_strategy = strategy['name']
+                    break
+                    
+                except Exception as strategy_error:
+                    extraction_error = strategy_error
+                    print(f"Strategy {strategy['name']} failed: {strategy_error}")
+                    continue
+            
+            if not info:
+                raise Exception("All extraction strategies failed")
+        
+            # Process metadata
+            print("Processing video metadata...")
+            transcript_data['metadata'] = {
+                'title': info.get('title', ''),
+                'duration': info.get('duration'),
+                'upload_date': info.get('upload_date'),
+                'uploader': info.get('uploader', ''),
+                'view_count': info.get('view_count'),
+                'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+            }
+            
+            print("Checking available subtitles...")
+            subtitles = info.get('subtitles', {})
+            automatic_captions = info.get('automatic_captions', {})
+            
+            print(f"Available automatic captions: {list(automatic_captions.keys())[:10]}...")
+            
+            # Extract subtitle text
+            subtitle_text = None
+            selected_language = None
+            extraction_method = None
+            
+            try:
+                # Try English captions
+                for lang in ['en', 'en-US', 'en-GB', 'en-orig']:
+                    if lang in automatic_captions:
+                        print(f"Found automatic subtitles for language: {lang}")
+                        
+                        try:
+                            # Setup subtitle download
+                            download_opts = {
+                                'quiet': True,
+                                'no_warnings': True,
+                                'writesubtitles': False,
+                                'writeautomaticsub': True,
+                                'subtitleslangs': [lang],
+                                'subtitlesformat': 'vtt',
+                                'skip_download': True,
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                            }
+                            
+                            if cookie_file_path:
+                                download_opts['cookiefile'] = cookie_file_path
+                            
+                            print(f"Starting subtitle download for {lang}...")
+                            with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                sub_ydl.download([video_url])
+                            print(f"Subtitle download completed for {lang}")
+                            
+                            # List all files and find subtitle
+                            all_files = os.listdir(temp_dir)
+                            print(f"Files after download: {all_files}")
+                            
+                            subtitle_files = [f for f in all_files if f.endswith(('.vtt', '.srt'))]
+                            print(f"Subtitle files found: {subtitle_files}")
+                            
+                            if subtitle_files:
+                                subtitle_file = os.path.join(temp_dir, subtitle_files[0])
+                                file_size = os.path.getsize(subtitle_file)
+                                print(f"Processing subtitle file: {subtitle_files[0]} ({file_size} bytes)")
+                                
+                                if file_size > 0:
+                                    with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                        raw_content = f.read()
+                                    
+                                    print(f"Raw content length: {len(raw_content)} chars")
+                                    
+                                    if len(raw_content.strip()) > 0:
+                                        print(f"Content preview: {raw_content[:200]}...")
+                                        
+                                        # Parse the subtitle content
+                                        parsed_text = parse_subtitle_content(raw_content)
+                                        print(f"Parsed text length: {len(parsed_text) if parsed_text else 0} chars")
+                                        
+                                        if parsed_text and len(parsed_text.strip()) > 50:
+                                            subtitle_text = parsed_text
+                                            selected_language = lang
+                                            # Create shorter method name that fits in 50 chars
+                                            extraction_method = create_transcription_method_name(
+                                                'auto', lang, successful_strategy, bool(cookie_file_path)
+                                            )
+                                            print(f"SUCCESS: Subtitle extraction completed! Method: {extraction_method}")
+                                            break
+                                        else:
+                                            print(f"Parsed text too short: {len(parsed_text) if parsed_text else 0}")
+                                    else:
+                                        print("Raw content is empty")
+                                else:
+                                    print("Subtitle file is empty (0 bytes)")
+                            else:
+                                print("No subtitle files found after download")
+                                
+                        except Exception as lang_error:
+                            print(f"Error processing {lang}: {lang_error}")
+                            import traceback
+                            print(f"Lang error traceback: {traceback.format_exc()}")
+                            continue
+                            
+            except Exception as subtitle_error:
+                print(f"Subtitle extraction error: {subtitle_error}")
+                import traceback
+                print(f"Subtitle error traceback: {traceback.format_exc()}")
+                
+            if subtitle_text and len(subtitle_text.strip()) > 50:
+                transcript_data['text'] = subtitle_text.strip()
+                transcript_data['language'] = selected_language
+                transcript_data['method'] = extraction_method
+                print(f"Final transcript: {len(subtitle_text)} characters")
+            else:
+                raise Exception(f"No valid transcript text extracted. Content length: {len(subtitle_text) if subtitle_text else 0}")
+                
+    finally:
+        # Clean up cookie file
+        if cookie_file_path and os.path.exists(cookie_file_path):
+            try:
+                os.unlink(cookie_file_path)
+            except Exception:
+                pass
+    
+    return transcript_data
 
 def extract_transcript_with_ytdlp_fixed(video_url, video_id, cookies_data=None):
     """Extract transcript with better exception handling"""
