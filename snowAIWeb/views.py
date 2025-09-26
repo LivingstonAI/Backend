@@ -18654,8 +18654,69 @@ def create_cookie_jar_from_dict(cookies_dict):
     return temp_file.name
 
 
+def get_default_youtube_cookies():
+    """Return default YouTube cookies for bot detection bypass"""
+    return {
+        "GPS": "1",
+        "YSC": "H0qvLAId2T4",
+        "VISITOR_INFO1_LIVE": "NKRMIx1vX_c",
+        "VISITOR_PRIVACY_METADATA": "CgJaQRIEGgAgKg%3D%3D",
+        "__Secure-3PAPISID": "bEXYDBGFmsBDHuNG/A_gAEs-RZDu-eb6uW",
+        "__Secure-3PSID": "g.a0001whVj0REjsHbeYoAeZQPaFLNpR0mruU-uR4fi3woapfeU9G_EZmEv87QALEcLfpD56BYrgACgYKAfoSARESFQHGX2MivFsd7VuFy0RES1zxD-57cxoVAUF8yKpcsxcjzRcT4H6V3DQRJJa10076",
+        "__Secure-ROLLOUT_TOKEN": "CJ3--6bdtvPBKBD7qdrm2vWPAxjLt5ns2vWPAw%3D%3D",
+        "PREF": "tz=Africa.Johannesburg",
+        "LOGIN_INFO": "AFmmF2swRQIhAMPHYbdhrYNiHRntuR_EhFaB4K7JV2cPB9X-JNdjx7axAiANZxTCyAH4sMGUu7Aq2_Ll-xGGwe8IDVo4ebwLVVXVww:QUQ3MjNmeTJXWWpuNnhPdWtqLTFNaHZKM0RVWGhkbVVKbnZ1ZHlJcUYzb2t0Y0JlaXN0Rk5fOHVSS3JWN1BsVDQ5aWRRbFE5Mm1FREJ2Z2RoRFAya3lxb2R1NFdhM1VzOHBRbGdIakxUWkdwMU81aEh6NW9KVGJjSnR0Q3cwb1k3eWtwaU8xcV9ORlNMdG4xT1ZrNFk0WjRYZnFsaWhXUW1R",
+        "__Secure-1PSIDTS": "sidts-CjUBmkD5S-14EQqzSrBarxc7khYP7Y8eEkb-0aLVBZdV8x6NTC8top1BOjqlBKjsCZQ1pwLyhBAA",
+        "__Secure-3PSIDTS": "sidts-CjUBmkD5S-14EQqzSrBarxc7khYP7Y8eEkb-0aLVBZdV8x6NTC8top1BOjqlBKjsCZQ1pwLyhBAA",
+        "CONSISTENCY": "AKreu9sMDl5Z8XD8qSTkca8Pe9XSKtJO6ISAlEwIQw_VnVsfSU6MaMDjdU3aDh2zMLT_ql3qPhDdV8vY059O6HxvEQRpEodNwlX172XLlUzu94TrguLn9uza4JBwdZxhy7gs-n1bITj0Cv5eHy3mzCKT8Wkhfz685bLRCqXVIvx5SseXYExZNPDpKTXZlOyNMI9bClk_PMXp85sEgyd3cTEU7ACVJ4XcVioWGgPbJ8S3alWn",
+        "__Secure-3PSIDCC": "AKEyXzXHjJDNV_HwoH53yaWRCEv_zgO1TXXVMN1b3hJtsXh2jw06YwvfylOHMhNQ03tluWaS"
+    }
+
+
+def process_cookies_data(cookies_data):
+    """Process and validate cookies data with fallback to default cookies"""
+    processed_cookies = None
+    
+    if cookies_data:
+        try:
+            if isinstance(cookies_data, str):
+                # Try parsing as JSON first
+                try:
+                    processed_cookies = json.loads(cookies_data)
+                    print("Parsed user-provided cookies as JSON")
+                except json.JSONDecodeError:
+                    # Try parsing as cookie string format
+                    cookies_dict = {}
+                    cookie_pairs = cookies_data.split(';')
+                    
+                    for pair in cookie_pairs:
+                        parts = pair.split('=', 1)  # Split only on first =
+                        if len(parts) == 2:
+                            name, value = parts[0].strip(), parts[1].strip()
+                            if name and value:
+                                cookies_dict[name] = value
+                    
+                    if cookies_dict:
+                        processed_cookies = cookies_dict
+                        print(f"Parsed user-provided cookies from string format: {len(cookies_dict)} cookies")
+                    
+            elif isinstance(cookies_data, dict):
+                processed_cookies = cookies_data
+                print(f"Using user-provided cookies dict: {len(processed_cookies)} cookies")
+                
+        except Exception as cookie_error:
+            print(f"Error processing user cookies: {cookie_error}")
+    
+    # If no valid user cookies, use defaults
+    if not processed_cookies:
+        processed_cookies = get_default_youtube_cookies()
+        print(f"Using default fallback cookies: {len(processed_cookies)} cookies")
+    
+    return processed_cookies
+
+
 def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
-    """Extract transcript using yt-dlp with enhanced fallback strategies"""
+    """Extract transcript using yt-dlp with enhanced fallback strategies and default cookies"""
     
     if not YT_DLP_AVAILABLE:
         raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
@@ -18667,29 +18728,23 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
         'metadata': {}
     }
     
-    # Handle cookies if provided
+    # Process cookies with fallback to defaults
+    cookies_dict = process_cookies_data(cookies_data)
     cookie_file_path = None
-    if cookies_data:
-        try:
-            if isinstance(cookies_data, str):
-                cookies_dict = json.loads(cookies_data)
-            elif isinstance(cookies_data, dict):
-                cookies_dict = cookies_data
-            else:
-                print("Invalid cookie format, proceeding without cookies")
-                cookies_dict = None
-            
-            if cookies_dict:
-                cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
-                print(f"Using cookies from provided data")
-        except Exception as cookie_error:
-            print(f"Cookie processing error: {cookie_error}, proceeding without cookies")
+    
+    try:
+        cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+        print(f"Created cookie jar with {len(cookies_dict)} cookies")
+    except Exception as cookie_error:
+        print(f"Cookie processing error: {cookie_error}")
+        # Continue without cookies as last resort
+        pass
 
-    # Multiple extraction strategies with different configurations
+    # Enhanced extraction strategies - all will use cookies by default
     extraction_strategies = [
-        # Strategy 1: Latest yt-dlp with embedded player
+        # Strategy 1: Modern approach with default cookies
         {
-            'name': 'modern_embedded',
+            'name': 'modern_with_auth',
             'opts': {
                 'quiet': True,
                 'no_warnings': True,
@@ -18712,13 +18767,15 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.9',
                     'Accept-Encoding': 'gzip, deflate, br',
+                    'Origin': 'https://www.youtube.com',
+                    'Referer': 'https://www.youtube.com/',
                 }
             }
         },
         
-        # Strategy 2: Android client only
+        # Strategy 2: Android client with auth
         {
-            'name': 'android_client',
+            'name': 'android_authenticated',
             'opts': {
                 'quiet': True,
                 'no_warnings': True,
@@ -18740,9 +18797,9 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
             }
         },
         
-        # Strategy 3: iOS client
+        # Strategy 3: iOS client with auth  
         {
-            'name': 'ios_client',
+            'name': 'ios_authenticated',
             'opts': {
                 'quiet': True,
                 'no_warnings': True,
@@ -18764,22 +18821,9 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
             }
         },
         
-        # Strategy 4: Web client with minimal options
+        # Strategy 4: TV client with auth (often bypasses restrictions)
         {
-            'name': 'minimal_web',
-            'opts': {
-                'quiet': True,
-                'writesubtitles': True,
-                'writeautomaticsub': True,
-                'subtitleslangs': ['en'],
-                'skip_download': True,
-                'no_check_certificate': True,
-            }
-        },
-        
-        # Strategy 5: TV client (often works when others fail)
-        {
-            'name': 'tv_client',
+            'name': 'tv_authenticated',
             'opts': {
                 'quiet': True,
                 'no_warnings': True,
@@ -18794,6 +18838,20 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                     }
                 }
             }
+        },
+        
+        # Strategy 5: Fallback without cookies (last resort)
+        {
+            'name': 'fallback_no_cookies',
+            'opts': {
+                'quiet': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'skip_download': True,
+                'no_check_certificate': True,
+            },
+            'skip_cookies': True  # Special flag to skip cookies for this strategy
         }
     ]
 
@@ -18813,9 +18871,12 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                     opts = strategy['opts'].copy()
                     opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
                     
-                    # Add cookies if available
-                    if cookie_file_path:
+                    # Add cookies unless explicitly skipped
+                    if cookie_file_path and not strategy.get('skip_cookies', False):
                         opts['cookiefile'] = cookie_file_path
+                        print(f"Using cookies with strategy: {strategy['name']}")
+                    elif strategy.get('skip_cookies', False):
+                        print(f"Skipping cookies for fallback strategy: {strategy['name']}")
                     
                     # Try extraction
                     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -18831,17 +18892,11 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                     print(f"Strategy {strategy['name']} failed: {error_msg}")
                     
                     # Check for specific error patterns
-                    if 'player response' in error_msg:
-                        print(f"Player response error with {strategy['name']}, trying next strategy...")
-                        continue
-                    elif 'requested format is not available' in error_msg:
-                        print(f"Format error with {strategy['name']}, trying next strategy...")
-                        continue
-                    elif 'sign in to confirm' in error_msg or 'not a bot' in error_msg:
-                        print(f"Bot detection with {strategy['name']}")
+                    if 'sign in to confirm' in error_msg or 'not a bot' in error_msg:
+                        print(f"Bot detection hit with {strategy['name']}, trying next strategy...")
                         continue
                     elif 'private' in error_msg or 'unavailable' in error_msg:
-                        # Video is genuinely unavailable, no point trying other strategies
+                        # Video is genuinely unavailable
                         raise strategy_error
                     else:
                         continue
@@ -18852,7 +18907,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                 else:
                     raise Exception("All extraction strategies failed")
         
-            # Process the extracted data
+            # Process the extracted data (rest of the function remains the same)
             try:
                 # Store video metadata
                 transcript_data['metadata'] = {
@@ -18906,12 +18961,12 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                                     'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
                                 }
                                 
-                                # Add cookies to download options if available
+                                # Always add cookies for subtitle download if available
                                 if cookie_file_path:
                                     download_opts['cookiefile'] = cookie_file_path
                                 
                                 # Use the same strategy that worked for info extraction
-                                if successful_strategy and successful_strategy != 'minimal_web':
+                                if successful_strategy and successful_strategy != 'fallback_no_cookies':
                                     matching_strategy = next((s for s in extraction_strategies if s['name'] == successful_strategy), None)
                                     if matching_strategy and 'extractor_args' in matching_strategy['opts']:
                                         download_opts['extractor_args'] = matching_strategy['opts']['extractor_args']
@@ -18935,7 +18990,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                                     
                                     subtitle_text = parse_subtitle_content(subtitle_content)
                                     selected_language = lang
-                                    extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}{"_with_cookies" if cookie_file_path else ""}'
+                                    extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}_with_default_cookies'
                                     
                                     # Analyze transcript quality
                                     quality_stats = analyze_transcript_quality(subtitle_text)
@@ -19182,11 +19237,11 @@ def find_repeated_phrases(text, min_phrase_length=3):
 @csrf_exempt
 @require_http_methods(["POST"])
 def snowai_extract_youtube_transcript_from_url(request):
-    """Extract transcript from YouTube URL using yt-dlp with enhanced fallback strategies"""
+    """Extract transcript from YouTube URL using yt-dlp with default cookies and enhanced fallback strategies"""
     try:
         data = json.loads(request.body)
         youtube_url = data.get('youtube_url', '').strip()
-        cookies_data = data.get('cookies')
+        cookies_data = data.get('cookies')  # This can be None and will use defaults
         
         if not youtube_url:
             return JsonResponse({'error': 'YouTube URL is required'}, status=400)
@@ -19210,9 +19265,11 @@ def snowai_extract_youtube_transcript_from_url(request):
         
         print(f"Starting transcript extraction for video ID: {video_id}")
         if cookies_data:
-            print("Using provided cookies for extraction")
+            print("Using user-provided cookies for extraction")
+        else:
+            print("Using default cookies for extraction")
         
-        # Extract transcript using yt-dlp
+        # Extract transcript using yt-dlp with default cookies
         try:
             transcript_result = extract_transcript_with_ytdlp(youtube_url, video_id, cookies_data)
             
@@ -19223,7 +19280,7 @@ def snowai_extract_youtube_transcript_from_url(request):
                         'video_id': video_id,
                         'extraction_method': transcript_result.get('method', 'unknown'),
                         'yt_dlp_available': YT_DLP_AVAILABLE,
-                        'cookies_provided': bool(cookies_data)
+                        'used_default_cookies': not bool(cookies_data)
                     }
                 }, status=400)
             
@@ -19257,6 +19314,7 @@ def snowai_extract_youtube_transcript_from_url(request):
                 'title': video_metadata.get('title', ''),
                 'language': transcript_result['language'],
                 'extraction_method': transcript_result['method'],
+                'used_default_cookies': not bool(cookies_data),
                 'text_preview': full_text[:200] + '...' if len(full_text) > 200 else full_text
             })
             
@@ -19265,17 +19323,11 @@ def snowai_extract_youtube_transcript_from_url(request):
             print(f"Transcript extraction error: {error_str}")
             
             # Provide more specific error messages
-            if 'player response' in error_str:
+            if 'sign in to confirm' in error_str or 'not a bot' in error_str:
                 return JsonResponse({
-                    'error': 'YouTube player response extraction failed. This usually means yt-dlp needs an update or YouTube has changed their API. Please try updating yt-dlp: pip install --upgrade yt-dlp',
+                    'error': 'YouTube bot detection bypassed with default cookies, but extraction still failed. The video might require updated authentication.',
                     'debug_video_id': video_id,
-                    'needs_update': True
-                }, status=400)
-            elif 'sign in to confirm' in error_str or 'not a bot' in error_str:
-                return JsonResponse({
-                    'error': 'YouTube is requesting authentication to verify you are not a bot. Please provide YouTube cookies to bypass this restriction.',
-                    'debug_video_id': video_id,
-                    'needs_cookies': True
+                    'suggestion': 'Try providing fresh browser cookies from a logged-in YouTube session'
                 }, status=400)
             elif 'private' in error_str or 'unavailable' in error_str:
                 return JsonResponse({
@@ -19288,17 +19340,17 @@ def snowai_extract_youtube_transcript_from_url(request):
                     'debug_info': {
                         'video_id': video_id,
                         'url': youtube_url,
-                        'method': 'yt-dlp_multiple_strategies'
+                        'method': 'yt-dlp_with_default_cookies'
                     }
                 }, status=400)
             else:
                 return JsonResponse({
-                    'error': 'Failed to extract transcript from video. All extraction strategies failed.',
+                    'error': 'Failed to extract transcript from video despite using default cookies.',
                     'debug_info': {
                         'video_id': video_id,
                         'error_details': str(transcript_error),
-                        'cookies_provided': bool(cookies_data),
-                        'suggestion': 'Try updating yt-dlp: pip install --upgrade yt-dlp'
+                        'used_default_cookies': True,
+                        'suggestion': 'The video may have special restrictions or yt-dlp may need updating'
                     }
                 }, status=400)
                 
@@ -19310,7 +19362,6 @@ def snowai_extract_youtube_transcript_from_url(request):
             'error': f'An unexpected error occurred: {str(e)}',
             'debug_info': 'Check server logs for more details'
         }, status=500)
-
 
 @csrf_exempt
 @require_http_methods(["GET"])
