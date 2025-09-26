@@ -19296,6 +19296,14 @@ def find_repeated_phrases(text, min_phrase_length=3):
 from django.utils import timezone
 from datetime import datetime
 
+def safe_truncate_field(value, max_length):
+    """Safely truncate a field to fit database constraints"""
+    if not value:
+        return value
+    if len(str(value)) > max_length:
+        return str(value)[:max_length-3] + "..."
+    return str(value)
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def snowai_extract_youtube_transcript_from_url(request):
@@ -19365,29 +19373,43 @@ def snowai_extract_youtube_transcript_from_url(request):
                     print(f"Error parsing upload date: {date_error}")
                     video_upload_date = None
             
-            # Create transcript record
+            # Safely truncate fields to fit database constraints
+            # Adjust these max lengths based on your actual database schema
+            video_title = safe_truncate_field(video_metadata.get('title', data.get('video_title', '')), 200)
+            speaker_name = safe_truncate_field(data.get('speaker_name', ''), 100)
+            country_code = safe_truncate_field(data.get('country_code', ''), 10)
+            country_name = safe_truncate_field(data.get('country_name', ''), 100)
+            category = safe_truncate_field(data.get('category', 'central_bank'), 50)
+            transcription_method = safe_truncate_field(transcript_result['method'], 100)
+            transcript_language = safe_truncate_field(transcript_result['language'], 10)
+            
+            print(f"Creating transcript record with title: {video_title[:50]}...")
+            
+            # Create transcript record with proper field length handling
             transcript_record = SnowAIVideoTranscriptRecord.objects.create(
                 transcript_uuid=str(uuid.uuid4()),
                 youtube_video_id=video_id,
                 youtube_url=youtube_url,
-                video_title=video_metadata.get('title', data.get('video_title', '')),
+                video_title=video_title,
                 full_transcript_text=full_text,
                 video_duration_seconds=video_metadata.get('duration'),
                 video_upload_date=video_upload_date,  # Now properly timezone-aware
-                primary_speaker_name=data.get('speaker_name', ''),
-                speaker_country_code=data.get('country_code', ''),
-                speaker_country_name=data.get('country_name', ''),
-                content_category=data.get('category', 'central_bank'),
-                transcription_method=transcript_result['method'],
-                transcript_language=transcript_result['language']
+                primary_speaker_name=speaker_name,
+                speaker_country_code=country_code,
+                speaker_country_name=country_name,
+                content_category=category,
+                transcription_method=transcription_method,
+                transcript_language=transcript_language
             )
+            
+            print(f"Transcript record created successfully with ID: {transcript_record.transcript_uuid}")
             
             return JsonResponse({
                 'message': 'Transcript extracted and saved successfully',
                 'transcript_id': transcript_record.transcript_uuid,
                 'word_count': transcript_record.word_count,
                 'duration': video_metadata.get('duration'),
-                'title': video_metadata.get('title', ''),
+                'title': video_title,
                 'language': transcript_result['language'],
                 'extraction_method': transcript_result['method'],
                 'used_default_cookies': not bool(cookies_data),
@@ -19402,6 +19424,17 @@ def snowai_extract_youtube_transcript_from_url(request):
             # Print full traceback for debugging
             import traceback
             print(f"Full traceback: {traceback.format_exc()}")
+            
+            # Check if it's a database error
+            if 'value too long' in error_str:
+                return JsonResponse({
+                    'error': 'Database field length error - some metadata fields are too long for the database schema.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'error_type': 'database_constraint_error',
+                        'suggestion': 'Check database field lengths for title, speaker name, etc.'
+                    }
+                }, status=400)
             
             # Provide more specific error messages
             if 'sign in to confirm' in error_str or 'not a bot' in error_str:
@@ -19429,7 +19462,7 @@ def snowai_extract_youtube_transcript_from_url(request):
                     'error': 'Failed to extract transcript from video despite using default cookies.',
                     'debug_info': {
                         'video_id': video_id,
-                        'error_details': str(transcript_error),
+                        'error_details': str(transcript_error)[:500],  # Truncate error details
                         'used_default_cookies': True,
                         'suggestion': 'The video may have special restrictions or yt-dlp may need updating'
                     }
@@ -19442,11 +19475,209 @@ def snowai_extract_youtube_transcript_from_url(request):
         import traceback
         print(f"Full traceback: {traceback.format_exc()}")
         return JsonResponse({
-            'error': f'An unexpected error occurred: {str(e)}',
+            'error': f'An unexpected error occurred: {str(e)}'[:200],  # Truncate long errors
             'debug_info': 'Check server logs for more details'
         }, status=500)
 
+
+def extract_transcript_with_ytdlp_fixed(video_url, video_id, cookies_data=None):
+    """Extract transcript with better exception handling"""
+    
+    if not YT_DLP_AVAILABLE:
+        raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
+    
+    transcript_data = {
+        'text': None,
+        'method': None,
+        'language': 'en',
+        'metadata': {}
+    }
+    
+    # Process cookies with fallback to defaults
+    cookies_dict = process_cookies_data(cookies_data)
+    cookie_file_path = None
+    
+    try:
+        cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+        print(f"Created cookie jar with {len(cookies_dict)} cookies")
+    except Exception as cookie_error:
+        print(f"Cookie processing error: {cookie_error}")
+        pass
+
+    # Use same strategies as before...
+    extraction_strategies = [
+        {
+            'name': 'tv_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['tv_embedded'],
+                    }
+                }
+            }
+        }
+    ]
+
+    extraction_error = None
+    info = None
+    successful_strategy = None
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            print(f"Using temp directory: {temp_dir}")
+            
+            for strategy in extraction_strategies:
+                try:
+                    print(f"Trying strategy: {strategy['name']} for video: {video_id}")
+                    
+                    opts = strategy['opts'].copy()
+                    opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+                    
+                    if cookie_file_path:
+                        opts['cookiefile'] = cookie_file_path
+                        print(f"Using cookies with strategy: {strategy['name']}")
+                    
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(video_url, download=True)
+                    
+                    print(f"Strategy {strategy['name']} successful!")
+                    successful_strategy = strategy['name']
+                    break
+                    
+                except Exception as strategy_error:
+                    extraction_error = strategy_error
+                    print(f"Strategy {strategy['name']} failed: {strategy_error}")
+                    continue
+            
+            if not info:
+                raise Exception("All extraction strategies failed")
         
+            # Process metadata
+            print("Processing video metadata...")
+            transcript_data['metadata'] = {
+                'title': info.get('title', ''),
+                'duration': info.get('duration'),
+                'upload_date': info.get('upload_date'),
+                'uploader': info.get('uploader', ''),
+                'view_count': info.get('view_count'),
+                'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+            }
+            
+            print("Checking available subtitles...")
+            subtitles = info.get('subtitles', {})
+            automatic_captions = info.get('automatic_captions', {})
+            
+            print(f"Available automatic captions: {list(automatic_captions.keys())[:10]}...")
+            
+            # Extract subtitle text with better error handling
+            subtitle_text = None
+            selected_language = None
+            extraction_method = None
+            
+            try:
+                # Try English captions
+                for lang in ['en', 'en-US', 'en-GB', 'en-orig']:
+                    if lang in automatic_captions:
+                        print(f"Found automatic subtitles for language: {lang}")
+                        
+                        try:
+                            # Setup subtitle download
+                            download_opts = {
+                                'quiet': True,
+                                'no_warnings': True,
+                                'writesubtitles': False,
+                                'writeautomaticsub': True,
+                                'subtitleslangs': [lang],
+                                'subtitlesformat': 'vtt',
+                                'skip_download': True,
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                            }
+                            
+                            if cookie_file_path:
+                                download_opts['cookiefile'] = cookie_file_path
+                            
+                            print(f"Starting subtitle download for {lang}...")
+                            with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                sub_ydl.download([video_url])
+                            print(f"Subtitle download completed for {lang}")
+                            
+                            # List all files and find subtitle
+                            all_files = os.listdir(temp_dir)
+                            print(f"Files after download: {all_files}")
+                            
+                            subtitle_files = [f for f in all_files if f.endswith(('.vtt', '.srt'))]
+                            print(f"Subtitle files found: {subtitle_files}")
+                            
+                            if subtitle_files:
+                                subtitle_file = os.path.join(temp_dir, subtitle_files[0])
+                                file_size = os.path.getsize(subtitle_file)
+                                print(f"Processing subtitle file: {subtitle_files[0]} ({file_size} bytes)")
+                                
+                                if file_size > 0:
+                                    with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                        raw_content = f.read()
+                                    
+                                    print(f"Raw content length: {len(raw_content)} chars")
+                                    
+                                    if len(raw_content.strip()) > 0:
+                                        # Show first bit of content
+                                        print(f"Content preview: {raw_content[:200]}...")
+                                        
+                                        # Parse the subtitle content
+                                        parsed_text = parse_subtitle_content(raw_content)
+                                        print(f"Parsed text length: {len(parsed_text) if parsed_text else 0} chars")
+                                        
+                                        if parsed_text and len(parsed_text.strip()) > 50:
+                                            subtitle_text = parsed_text
+                                            selected_language = lang
+                                            extraction_method = f'ytdlp_automatic_{lang}_{successful_strategy}_cookies'
+                                            print("SUCCESS: Subtitle extraction completed!")
+                                            break
+                                        else:
+                                            print(f"Parsed text too short: {len(parsed_text) if parsed_text else 0}")
+                                    else:
+                                        print("Raw content is empty")
+                                else:
+                                    print("Subtitle file is empty (0 bytes)")
+                            else:
+                                print("No subtitle files found after download")
+                                
+                        except Exception as lang_error:
+                            print(f"Error processing {lang}: {lang_error}")
+                            import traceback
+                            print(f"Lang error traceback: {traceback.format_exc()}")
+                            continue
+                            
+            except Exception as subtitle_error:
+                print(f"Subtitle extraction error: {subtitle_error}")
+                import traceback
+                print(f"Subtitle error traceback: {traceback.format_exc()}")
+                
+            if subtitle_text and len(subtitle_text.strip()) > 50:
+                transcript_data['text'] = subtitle_text.strip()
+                transcript_data['language'] = selected_language
+                transcript_data['method'] = extraction_method
+                print(f"Final transcript: {len(subtitle_text)} characters")
+            else:
+                raise Exception(f"No valid transcript text extracted. Content length: {len(subtitle_text) if subtitle_text else 0}")
+                
+    finally:
+        # Clean up cookie file
+        if cookie_file_path and os.path.exists(cookie_file_path):
+            try:
+                os.unlink(cookie_file_path)
+            except Exception:
+                pass
+    
+    return transcript_data
+
 @csrf_exempt
 @require_http_methods(["GET"])
 def snowai_check_ytdlp_version_and_update(request):
