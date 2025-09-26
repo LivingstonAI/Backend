@@ -18898,6 +18898,9 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                     elif 'private' in error_msg or 'unavailable' in error_msg:
                         # Video is genuinely unavailable
                         raise strategy_error
+                    elif 'requested format is not available' in error_msg:
+                        print(f"Format not available with {strategy['name']}, trying next strategy...")
+                        continue
                     else:
                         continue
             else:
@@ -18907,7 +18910,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                 else:
                     raise Exception("All extraction strategies failed")
         
-            # Process the extracted data (rest of the function remains the same)
+            # Process the extracted data
             try:
                 # Store video metadata
                 transcript_data['metadata'] = {
@@ -18942,7 +18945,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                         break
                         
                     # Try different language codes
-                    language_priority = ['en', 'en-US', 'en-GB', 'en-us', 'en-gb']
+                    language_priority = ['en', 'en-US', 'en-GB', 'en-us', 'en-gb', 'en-orig']
                     
                     for lang in language_priority:
                         if lang in subtitle_dict:
@@ -18976,38 +18979,70 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                                 with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
                                     sub_ydl.download([video_url])
                                 
-                                # Look for the downloaded subtitle file
+                                # Look for the downloaded subtitle file with more flexible naming
                                 subtitle_file = None
+                                possible_files = []
+                                
                                 for file in os.listdir(temp_dir):
-                                    if file.startswith(video_id) and file.endswith(('.vtt', '.srt')):
-                                        subtitle_file = os.path.join(temp_dir, file)
-                                        break
+                                    print(f"Found file in temp dir: {file}")
+                                    if file.endswith(('.vtt', '.srt')):
+                                        possible_files.append(file)
+                                        # Check if it contains our video ID (case insensitive)
+                                        if video_id.lower() in file.lower():
+                                            subtitle_file = os.path.join(temp_dir, file)
+                                            break
+                                
+                                # If no exact match, try the first subtitle file
+                                if not subtitle_file and possible_files:
+                                    subtitle_file = os.path.join(temp_dir, possible_files[0])
+                                    print(f"Using first available subtitle file: {possible_files[0]}")
                                 
                                 if subtitle_file and os.path.exists(subtitle_file):
-                                    print(f"Found subtitle file: {subtitle_file}")
-                                    with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
-                                        subtitle_content = f.read()
+                                    print(f"Processing subtitle file: {subtitle_file}")
                                     
-                                    subtitle_text = parse_subtitle_content(subtitle_content)
-                                    selected_language = lang
-                                    extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}_with_default_cookies'
-                                    
-                                    # Analyze transcript quality
-                                    quality_stats = analyze_transcript_quality(subtitle_text)
-                                    print(f"Transcript quality: {quality_stats['quality_score']}%, {quality_stats['repeated_phrases_detected']} repeated phrases removed")
-                                    break
+                                    try:
+                                        with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                            subtitle_content = f.read()
+                                        
+                                        print(f"Raw subtitle content length: {len(subtitle_content)} characters")
+                                        
+                                        if subtitle_content.strip():
+                                            subtitle_text = parse_subtitle_content(subtitle_content)
+                                            
+                                            if subtitle_text and len(subtitle_text.strip()) > 0:
+                                                selected_language = lang
+                                                extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}_with_default_cookies'
+                                                
+                                                # Analyze transcript quality
+                                                quality_stats = analyze_transcript_quality(subtitle_text)
+                                                print(f"Transcript quality: {quality_stats['quality_score']}%, {quality_stats['repeated_phrases_detected']} repeated phrases removed")
+                                                print(f"Final transcript length: {len(subtitle_text)} characters")
+                                                break
+                                            else:
+                                                print(f"Parsed subtitle text was empty for {lang}")
+                                        else:
+                                            print(f"Raw subtitle content was empty for {lang}")
+                                            
+                                    except Exception as file_read_error:
+                                        print(f"Error reading subtitle file {subtitle_file}: {file_read_error}")
+                                        continue
+                                        
+                                else:
+                                    print(f"No subtitle file found for {lang}. Available files: {os.listdir(temp_dir)}")
                                 
                             except Exception as sub_error:
                                 print(f"Failed to download {source_type} subtitles for {lang}: {sub_error}")
                                 continue
                 
-                if subtitle_text:
+                if subtitle_text and len(subtitle_text.strip()) > 0:
                     transcript_data['text'] = subtitle_text.strip()
                     transcript_data['language'] = selected_language
                     transcript_data['method'] = extraction_method
                     print(f"Successfully extracted transcript: {len(subtitle_text)} characters")
                 else:
-                    raise Exception("No subtitles could be extracted using any method")
+                    # More detailed error reporting
+                    available_langs = list(subtitles.keys()) + list(automatic_captions.keys())
+                    raise Exception(f"No valid transcript text could be extracted. Available languages: {available_langs[:10]}... (showing first 10)")
                 
             except Exception as e:
                 print(f"yt-dlp processing error: {str(e)}")
@@ -19022,7 +19057,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                 pass
     
     return transcript_data
-
+    
 
 def parse_subtitle_content(subtitle_content):
     """Parse VTT or SRT subtitle content to extract clean text with deduplication"""
