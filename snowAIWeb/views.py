@@ -20591,6 +20591,96 @@ def snowai_delete_transcript_analysis_endpoint(request, analysis_uuid):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def snowai_fetch_market_ohlc_data(request):
+    """
+    Fetch OHLC market data using yfinance
+    Endpoint: /api/snowai-market-ohlc/
+    
+    Parameters:
+    - symbol: Asset symbol (e.g., AAPL, EURUSD=X, GC=F)
+    - interval: Timeframe (1m, 5m, 15m, 1h, 4h, 1d, 1wk)
+    - period: Data period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, max)
+    """
+    try:
+        # Get parameters
+        if request.method == 'POST':
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            interval = data.get('interval', '1h')
+            period = data.get('period', '1mo')
+        else:
+            symbol = request.GET.get('symbol')
+            interval = request.GET.get('interval', '1h')
+            period = request.GET.get('period', '1mo')
+        
+        if not symbol:
+            return JsonResponse({
+                'error': 'Symbol parameter is required'
+            }, status=400)
+        
+        # Map frontend intervals to yfinance intervals
+        interval_mapping = {
+            '1m': '1m',
+            '5m': '5m',
+            '15m': '15m',
+            '1h': '1h',
+            '4h': '4h',
+            '1d': '1d',
+            '1w': '1wk'
+        }
+        
+        yf_interval = interval_mapping.get(interval, '1h')
+        
+        # Fetch data from yfinance
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period=period, interval=yf_interval)
+        
+        if df.empty:
+            return JsonResponse({
+                'error': f'No data available for {symbol}',
+                'symbol': symbol
+            }, status=404)
+        
+        # Convert DataFrame to list of OHLC dictionaries
+        data = []
+        for index, row in df.iterrows():
+            # Convert timezone-aware datetime to Unix timestamp
+            timestamp = int(index.timestamp())
+            
+            data.append({
+                'time': timestamp,
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close']),
+                'volume': float(row['Volume']) if 'Volume' in row else 0
+            })
+        
+        # Sort by time
+        data.sort(key=lambda x: x['time'])
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'interval': interval,
+            'period': period,
+            'data_points': len(data),
+            'data': data,
+            'source': 'yfinance',
+            'first_date': datetime.fromtimestamp(data[0]['time']).isoformat() if data else None,
+            'last_date': datetime.fromtimestamp(data[-1]['time']).isoformat() if data else None
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'symbol': symbol if 'symbol' in locals() else 'unknown'
+        }, status=500)
+
+
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():

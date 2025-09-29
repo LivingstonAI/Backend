@@ -297,6 +297,9 @@ urlpatterns = [
          views.snowai_delete_transcript_analysis_endpoint, 
          name='snowai_delete_transcript_analysis'),
 
+     path('api/snowai-market-ohlc/', views.snowai_fetch_market_ohlc_data, name='snowai_market_ohlc'),
+
+
 
 
     # create appproprate urls.py here
