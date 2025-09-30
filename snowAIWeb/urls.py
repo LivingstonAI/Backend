@@ -299,7 +299,9 @@ urlpatterns = [
 
      path('api/snowai-market-ohlc/', views.snowai_fetch_market_ohlc_data, name='snowai_market_ohlc'),
 
-
+     path('api/livingston-ai-fetch-latest-council-discussion/', 
+         views.fetch_latest_ai_council_discussion_for_livingston, 
+         name='livingston_fetch_council'),
 
 
     # create appproprate urls.py here
