@@ -13253,4 +13253,7602 @@ def get_stock_indices_data(stock_indices, date_range):
     
     stock_data = {}
     
-  
+    for symbol in stock_indices:
+        try:
+            print(f"Fetching stock index data for {symbol} with {days} days, interval {interval}")
+            
+            # Use obtain_dataset function
+            data = obtain_dataset(symbol, interval, days)
+            
+            if not data.empty:
+                print(f"Got {len(data)} data points for {symbol}")
+                
+                # Process the data
+                stock_data[symbol] = []
+                
+                # Handle MultiIndex columns
+                if isinstance(data.columns, pd.MultiIndex):
+                    close_col = None
+                    for col in data.columns:
+                        if col[0] == 'Close':
+                            close_col = col
+                            break
+                    
+                    if close_col is None:
+                        print(f"No Close column found in MultiIndex columns for {symbol}")
+                        stock_data[symbol] = []
+                        continue
+                        
+                    # Extract the close prices and dates
+                    for date_idx, close_price in data[close_col].items():
+                        try:
+                            if hasattr(date_idx, 'strftime'):
+                                date_str = date_idx.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_idx)[:10]
+                            
+                            if pd.notna(close_price):
+                                stock_data[symbol].append({
+                                    'date': date_str,
+                                    'value': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing data point for {symbol}: {str(row_error)}")
+                            continue
+                
+                else:
+                    # Handle regular columns
+                    data_reset = data.reset_index()
+                    
+                    for _, row in data_reset.iterrows():
+                        try:
+                            # Get date
+                            date_value = row['Date'] if 'Date' in row else row.index[0]
+                            if hasattr(date_value, 'strftime'):
+                                date_str = date_value.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_value)[:10]
+                            
+                            # Get close price
+                            close_price = row['Close'] if 'Close' in row else None
+                            
+                            if close_price is not None and pd.notna(close_price):
+                                stock_data[symbol].append({
+                                    'date': date_str,
+                                    'value': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing row for {symbol}: {str(row_error)}")
+                            continue
+                
+                print(f"Processed {len(stock_data[symbol])} valid data points for {symbol}")
+                        
+        except Exception as e:
+            print(f"Error fetching stock index data for {symbol}: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            stock_data[symbol] = []
+    
+    print(f"Final stock_data keys: {list(stock_data.keys())}")
+    for symbol, data in stock_data.items():
+        print(f"{symbol}: {len(data)} data points")
+    
+    return stock_data
+
+def merge_multi_asset_data(esi_data, forex_data, stock_data, volume_data):
+    """
+    Merge ESI data with forex price data, stock indices data, and volume data
+    """
+    # Create a comprehensive date-based dictionary using YYYY-MM-DD as keys
+    merged_data = {}
+    
+    # First, convert ESI dates to YYYY-MM-DD format for consistent matching
+    esi_date_map = {}  # Maps YYYY-MM-DD to MM/DD display format
+    
+    for point in esi_data:
+        display_date = point['date']  # This is MM/DD format
+        
+        # Try to convert MM/DD to YYYY-MM-DD for matching
+        try:
+            current_year = datetime.now().year
+            if '/' in display_date:
+                month_day = display_date
+                # Try current year first, then previous year if needed
+                for year_offset in [0, -1]:
+                    try:
+                        test_year = current_year + year_offset
+                        full_date_str = f"{month_day}/{test_year}"
+                        date_obj = datetime.strptime(full_date_str, '%m/%d/%Y')
+                        iso_date = date_obj.strftime('%Y-%m-%d')
+                        
+                        # Store the mapping
+                        esi_date_map[iso_date] = display_date
+                        
+                        # Store ESI data
+                        if iso_date not in merged_data:
+                            merged_data[iso_date] = {'date': display_date}
+                        
+                        # Add all ESI values
+                        for key, value in point.items():
+                            if key != 'date':
+                                merged_data[iso_date][key] = value
+                        break
+                    except ValueError:
+                        continue
+            else:
+                # If it's already in a different format, store as-is
+                merged_data[display_date] = point.copy()
+        except Exception as e:
+            print(f"Error processing ESI date {display_date}: {str(e)}")
+            # Fallback: use original date as key
+            merged_data[display_date] = point.copy()
+    
+    # Create a complete date range for asset data interpolation
+    all_asset_dates = set()
+    
+    # Add forex dates
+    for pair, price_data in forex_data.items():
+        for price_point in price_data:
+            all_asset_dates.add(price_point['date'])
+    
+    # Add stock index dates
+    for symbol, index_data in stock_data.items():
+        for index_point in index_data:
+            all_asset_dates.add(index_point['date'])
+    
+    # Add volume dates
+    for asset_id, vol_data in volume_data.items():
+        for vol_point in vol_data:
+            all_asset_dates.add(vol_point['date'])
+    
+    # Sort dates for interpolation
+    sorted_asset_dates = sorted(all_asset_dates)
+    
+    # Add forex data with interpolation for missing values
+    for pair, price_data in forex_data.items():
+        forex_prices_by_date = {point['date']: point['price'] for point in price_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in forex_prices_by_date:
+                    merged_data[date_key][f"{pair}_price"] = forex_prices_by_date[date_key]
+                else:
+                    # Interpolation logic for forex (same as before)
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_price = None
+                    closest_after_price = None
+                    
+                    for forex_date_str, price in forex_prices_by_date.items():
+                        try:
+                            forex_date = datetime.strptime(forex_date_str, '%Y-%m-%d')
+                            
+                            if forex_date <= target_date:
+                                if closest_before is None or forex_date > closest_before:
+                                    closest_before = forex_date
+                                    closest_before_price = price
+                            
+                            if forex_date >= target_date:
+                                if closest_after is None or forex_date < closest_after:
+                                    closest_after = forex_date
+                                    closest_after_price = price
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_price is not None and closest_after_price is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_price = closest_before_price + (closest_after_price - closest_before_price) * weight
+                            merged_data[date_key][f"{pair}_price"] = interpolated_price
+                        else:
+                            merged_data[date_key][f"{pair}_price"] = closest_before_price
+                    elif closest_before_price is not None:
+                        merged_data[date_key][f"{pair}_price"] = closest_before_price
+                    elif closest_after_price is not None:
+                        merged_data[date_key][f"{pair}_price"] = closest_after_price
+                        
+            except Exception as e:
+                print(f"Error processing forex data for {date_key}: {str(e)}")
+                continue
+        
+        # Add forex-only dates
+        for forex_date_str, price in forex_prices_by_date.items():
+            if forex_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(forex_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[forex_date_str] = {
+                        'date': display_date,
+                        f"{pair}_price": price
+                    }
+                except Exception as e:
+                    print(f"Error adding forex-only date {forex_date_str}: {str(e)}")
+                    continue
+    
+    # Add stock index data with interpolation
+    for symbol, index_data in stock_data.items():
+        stock_values_by_date = {point['date']: point['value'] for point in index_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in stock_values_by_date:
+                    merged_data[date_key][f"{symbol}_index"] = stock_values_by_date[date_key]
+                else:
+                    # Interpolation logic for stock indices (similar to forex)
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_value = None
+                    closest_after_value = None
+                    
+                    for stock_date_str, value in stock_values_by_date.items():
+                        try:
+                            stock_date = datetime.strptime(stock_date_str, '%Y-%m-%d')
+                            
+                            if stock_date <= target_date:
+                                if closest_before is None or stock_date > closest_before:
+                                    closest_before = stock_date
+                                    closest_before_value = value
+                            
+                            if stock_date >= target_date:
+                                if closest_after is None or stock_date < closest_after:
+                                    closest_after = stock_date
+                                    closest_after_value = value
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_value is not None and closest_after_value is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_value = closest_before_value + (closest_after_value - closest_before_value) * weight
+                            merged_data[date_key][f"{symbol}_index"] = interpolated_value
+                        else:
+                            merged_data[date_key][f"{symbol}_index"] = closest_before_value
+                    elif closest_before_value is not None:
+                        merged_data[date_key][f"{symbol}_index"] = closest_before_value
+                    elif closest_after_value is not None:
+                        merged_data[date_key][f"{symbol}_index"] = closest_after_value
+                        
+            except Exception as e:
+                print(f"Error processing stock index data for {date_key}: {str(e)}")
+                continue
+        
+        # Add stock-index-only dates
+        for stock_date_str, value in stock_values_by_date.items():
+            if stock_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(stock_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[stock_date_str] = {
+                        'date': display_date,
+                        f"{symbol}_index": value
+                    }
+                except Exception as e:
+                    print(f"Error adding stock-index-only date {stock_date_str}: {str(e)}")
+                    continue
+    
+    # Add volume data with interpolation
+    for asset_id, vol_data in volume_data.items():
+        volume_ratios_by_date = {point['date']: point['volume_ratio'] for point in vol_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in volume_ratios_by_date:
+                    merged_data[date_key][f"{asset_id}_volume_ratio"] = volume_ratios_by_date[date_key]
+                else:
+                    # Interpolation logic for volume ratios
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_ratio = None
+                    closest_after_ratio = None
+                    
+                    for vol_date_str, ratio in volume_ratios_by_date.items():
+                        try:
+                            vol_date = datetime.strptime(vol_date_str, '%Y-%m-%d')
+                            
+                            if vol_date <= target_date:
+                                if closest_before is None or vol_date > closest_before:
+                                    closest_before = vol_date
+                                    closest_before_ratio = ratio
+                            
+                            if vol_date >= target_date:
+                                if closest_after is None or vol_date < closest_after:
+                                    closest_after = vol_date
+                                    closest_after_ratio = ratio
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_ratio is not None and closest_after_ratio is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_ratio = closest_before_ratio + (closest_after_ratio - closest_before_ratio) * weight
+                            merged_data[date_key][f"{asset_id}_volume_ratio"] = interpolated_ratio
+                        else:
+                            merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_before_ratio
+                    elif closest_before_ratio is not None:
+                        merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_before_ratio
+                    elif closest_after_ratio is not None:
+                        merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_after_ratio
+                        
+            except Exception as e:
+                print(f"Error processing volume data for {date_key}: {str(e)}")
+                continue
+        
+        # Add volume-only dates
+        for vol_date_str, ratio in volume_ratios_by_date.items():
+            if vol_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(vol_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[vol_date_str] = {
+                        'date': display_date,
+                        f"{asset_id}_volume_ratio": ratio
+                    }
+                except Exception as e:
+                    print(f"Error adding volume-only date {vol_date_str}: {str(e)}")
+                    continue
+    
+    # Convert back to list format and sort by actual date
+    merged_list = []
+    sorted_dates = sorted(merged_data.keys(), key=lambda x: datetime.strptime(x, '%Y-%m-%d') if x.count('-') == 2 else datetime.now())
+    
+    for date_key in sorted_dates:
+        data_point = merged_data[date_key].copy()
+        merged_list.append(data_point)
+    
+    # Debug: Print sample of merged data
+    print(f"Merged data sample: {merged_list[:3] if merged_list else 'No data'}")
+    if volume_data:
+        print(f"Volume data sample: {list(volume_data.items())[0] if volume_data else 'No volume data'}")
+    
+    return merged_list
+
+@api_view(['POST'])
+def economic_strength_index(request):
+    """
+    Calculate and return Economic Strength Index for selected currencies
+    Now with forex, stock indices, and volume overlay capability
+    """
+    try:
+        data = json.loads(request.body)
+        currencies = data.get('currencies', ['USD'])
+        forex_pairs = data.get('forex_pairs', [])
+        stock_indices = data.get('stock_indices', [])
+        volume_assets = data.get('volume_assets', [])
+        date_range = data.get('date_range', '30d')
+        
+        print(f"Received request: currencies={currencies}, forex={forex_pairs}, stocks={stock_indices}, volume={volume_assets}, range={date_range}")
+        
+        # Calculate date range
+        range_days = {
+            '7d': 7,
+            '30d': 30,
+            '90d': 90,
+            '180d': 180,
+            '365d': 365
+        }
+        
+        days = range_days.get(date_range, 30)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        # Fetch economic events for selected currencies within date range
+        events = EconomicEvent.objects.filter(
+            currency__in=currencies,
+            date_time__gte=start_date,
+            date_time__lte=end_date,
+            actual__isnull=False,
+            forecast__isnull=False
+        ).exclude(
+            Q(actual='') | Q(forecast='')
+        ).order_by('date_time')
+        
+        # Group events by currency and date
+        currency_data = defaultdict(lambda: defaultdict(list))
+        
+        for event in events:
+            date_key = event.date_time.date().isoformat()
+            currency_data[event.currency][date_key].append(event)
+        
+        # Calculate daily ESI scores for each currency
+        chart_data_dict = defaultdict(dict)
+        
+        # Get all unique dates across all currencies for consistency
+        all_dates = set()
+        for curr_data in currency_data.values():
+            all_dates.update(curr_data.keys())
+        
+        # If no ESI dates, create a basic date range
+        if not all_dates:
+            current_date = start_date
+            while current_date <= end_date:
+                all_dates.add(current_date.strftime('%Y-%m-%d'))
+                current_date += timedelta(days=1)
+        
+        sorted_dates = sorted(all_dates)
+        
+        for currency in currencies:
+            daily_scores = []
+            dates = []
+            
+            for date_str in sorted_dates:
+                events_for_date = currency_data[currency].get(date_str, [])
+                
+                if events_for_date:
+                    # Calculate weighted ESI score for this date
+                    weighted_deviations = []
+                    
+                    for event in events_for_date:
+                        deviation = calculate_percentage_deviation(event.actual, event.forecast)
+                        weight = get_impact_weight(event.impact)
+                        weighted_deviations.append(deviation * weight)
+                    
+                    # Average weighted deviations for the day
+                    if weighted_deviations:
+                        daily_score = np.mean(weighted_deviations)
+                        daily_scores.append(daily_score)
+                        dates.append(date_str)
+                    else:
+                        daily_scores.append(None)
+                        dates.append(date_str)
+                else:
+                    daily_scores.append(None)
+                    dates.append(date_str)
+            
+            # Fill gaps with interpolation BEFORE smoothing and normalization
+            filled_scores = []
+            for i, score in enumerate(daily_scores):
+                if score is not None:
+                    filled_scores.append(score)
+                else:
+                    # Find nearest non-null values for interpolation
+                    before_idx = None
+                    after_idx = None
+                    before_score = None
+                    after_score = None
+                    
+                    # Look backwards for nearest score
+                    for j in range(i - 1, -1, -1):
+                        if daily_scores[j] is not None:
+                            before_idx = j
+                            before_score = daily_scores[j]
+                            break
+                    
+                    # Look forwards for nearest score
+                    for j in range(i + 1, len(daily_scores)):
+                        if daily_scores[j] is not None:
+                            after_idx = j
+                            after_score = daily_scores[j]
+                            break
+                    
+                    # Interpolate or use nearest value
+                    if before_score is not None and after_score is not None:
+                        distance_total = after_idx - before_idx
+                        distance_from_before = i - before_idx
+                        weight = distance_from_before / distance_total if distance_total > 0 else 0
+                        interpolated_score = before_score + (after_score - before_score) * weight
+                        filled_scores.append(interpolated_score)
+                    elif before_score is not None:
+                        filled_scores.append(before_score)
+                    elif after_score is not None:
+                        filled_scores.append(after_score)
+                    else:
+                        filled_scores.append(0)
+            
+            daily_scores = filled_scores
+            
+            # Apply smoothing (7-day moving average) for cleaner visualization
+            if len(daily_scores) > 7:
+                smoothed_scores = []
+                for i in range(len(daily_scores)):
+                    start_idx = max(0, i - 3)
+                    end_idx = min(len(daily_scores), i + 4)
+                    window_scores = daily_scores[start_idx:end_idx]
+                    smoothed_scores.append(np.mean(window_scores))
+                daily_scores = smoothed_scores
+            
+            # Store data for each currency with dates
+            for i, date_str in enumerate(dates):
+                if i < len(daily_scores):
+                    chart_data_dict[date_str][currency] = daily_scores[i]
+        
+        # Convert to chart format with proper date handling
+        chart_data = []
+        for date_str in sorted_dates:
+            point = {'date': datetime.strptime(date_str, '%Y-%m-%d').strftime('%m/%d')}
+            
+            # Add ESI scores for each currency
+            for currency in currencies:
+                if currency in chart_data_dict[date_str]:
+                    point[currency] = chart_data_dict[date_str][currency]
+                else:
+                    point[currency] = None
+            
+            chart_data.append(point)
+        
+        # Normalize ESI scores across all currencies to 0-100 scale
+        all_scores = []
+        for point in chart_data:
+            for currency in currencies:
+                if point.get(currency) is not None:
+                    all_scores.append(point[currency])
+        
+        if all_scores:
+            normalized_scores = normalize_esi_scores(all_scores)
+            score_idx = 0
+            
+            for point in chart_data:
+                for currency in currencies:
+                    if point.get(currency) is not None:
+                        point[currency] = normalized_scores[score_idx]
+                        score_idx += 1
+        
+        print(f"Generated {len(chart_data)} ESI data points")
+        
+        # Fetch forex data if requested
+        forex_data = {}
+        if forex_pairs:
+            forex_data = get_forex_data(forex_pairs, date_range)
+            print(f"Fetched forex data for {len(forex_pairs)} pairs")
+        
+        # Fetch stock indices data if requested
+        stock_data = {}
+        if stock_indices:
+            stock_data = get_stock_indices_data(stock_indices, date_range)
+            print(f"Fetched stock data for {len(stock_indices)} indices")
+        
+        # Fetch volume data if requested
+        volume_data = {}
+        if volume_assets:
+            volume_data = get_volume_data(volume_assets, date_range)
+            print(f"Fetched volume data for {len(volume_assets)} assets")
+        
+        # Merge ESI data with forex, stock indices, and volume data
+        if forex_data or stock_data or volume_data:
+            merged_data = merge_multi_asset_data(chart_data, forex_data, stock_data, volume_data)
+            print(f"Merged data contains {len(merged_data)} points")
+        else:
+            merged_data = chart_data
+        
+        # Calculate summary statistics
+        summary_stats = {}
+        for currency in currencies:
+            currency_scores = [point.get(currency) for point in merged_data if point.get(currency) is not None]
+            if currency_scores:
+                summary_stats[currency] = {
+                    'average': np.mean(currency_scores),
+                    'current': currency_scores[-1] if currency_scores else None,
+                    'trend': 'positive' if len(currency_scores) > 1 and currency_scores[-1] > currency_scores[0] else 'negative',
+                    'volatility': np.std(currency_scores)
+                }
+        
+        return Response({
+            'success': True,
+            'chart_data': merged_data,
+            'summary': summary_stats,
+            'metadata': {
+                'date_range': date_range,
+                'currencies': currencies,
+                'forex_pairs': forex_pairs,
+                'stock_indices': stock_indices,
+                'volume_assets': volume_assets,
+                'data_points': len(merged_data),
+                'events_processed': events.count()
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error in economic_strength_index: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return Response({
+            'error': str(e),
+            'success': False
+        }, status=500)
+        
+from django.shortcuts import render
+from django.core.paginator import Paginator
+from django.db.models import Q, Count, Avg, Max, Min
+
+logger = logging.getLogger(__name__)
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def snowai_research_logbook_api_entries(request):
+    """
+    GET: Retrieve ML model entries with filtering and pagination
+    POST: Create new ML model entry
+    """
+    try:
+        if request.method == 'GET':
+            return snowai_get_ml_entries(request)
+        elif request.method == 'POST':
+            return snowai_create_ml_entry(request)
+    except Exception as e:
+        logger.error(f"SnowAI Research Logbook API error: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+def snowai_get_ml_entries(request):
+    """Get ML entries with filtering and search"""
+    # Get query parameters
+    snowai_search_query = request.GET.get('search', '').strip()
+    snowai_model_type = request.GET.get('model_type', '')
+    snowai_status = request.GET.get('status', '')
+    snowai_market_type = request.GET.get('market_type', '')
+    snowai_tags_filter = request.GET.get('tags', '')
+    snowai_page = int(request.GET.get('page', 1))
+    snowai_per_page = int(request.GET.get('per_page', 12))
+    snowai_sort_by = request.GET.get('sort_by', '-snowai_created_at')
+    
+    # Build queryset
+    queryset = SnowAIMLModelLogEntry.objects.all()
+    
+    # Apply filters
+    if snowai_search_query:
+        queryset = queryset.filter(
+            Q(snowai_model_name__icontains=snowai_search_query) |
+            Q(snowai_description__icontains=snowai_search_query) |
+            Q(snowai_tags__icontains=snowai_search_query) |
+            Q(snowai_notes__icontains=snowai_search_query)
+        )
+    
+    if snowai_model_type:
+        queryset = queryset.filter(snowai_model_type=snowai_model_type)
+    
+    if snowai_status:
+        queryset = queryset.filter(snowai_status=snowai_status)
+    
+    if snowai_market_type:
+        queryset = queryset.filter(snowai_financial_market_type=snowai_market_type)
+    
+    if snowai_tags_filter:
+        for tag in snowai_tags_filter.split(','):
+            queryset = queryset.filter(snowai_tags__icontains=tag.strip())
+    
+    # Apply sorting
+    if snowai_sort_by in ['snowai_created_at', '-snowai_created_at', 'snowai_model_name', '-snowai_model_name', 
+                         'snowai_accuracy_score', '-snowai_accuracy_score', 'snowai_r2_score', '-snowai_r2_score']:
+        queryset = queryset.order_by(snowai_sort_by)
+    
+    # Paginate
+    paginator = Paginator(queryset, snowai_per_page)
+    snowai_page_obj = paginator.get_page(snowai_page)
+    
+    # Serialize data
+    snowai_entries = []
+    for entry in snowai_page_obj:
+        snowai_entry_data = {
+            'id': entry.id,
+            'snowai_model_name': entry.snowai_model_name,
+            'snowai_model_type': entry.snowai_model_type,
+            'snowai_tags': entry.snowai_tags_list,
+            'snowai_description': entry.snowai_description,
+            'snowai_created_at': entry.snowai_created_at.isoformat(),
+            'snowai_updated_at': entry.snowai_updated_at.isoformat(),
+            'snowai_status': entry.snowai_status,
+            'snowai_financial_market_type': entry.snowai_financial_market_type,
+            'snowai_dataset_name': entry.snowai_dataset_name,
+            'snowai_framework_used': entry.snowai_framework_used,
+            
+            # Metrics
+            'snowai_accuracy_score': entry.snowai_accuracy_score,
+            'snowai_precision_score': entry.snowai_precision_score,
+            'snowai_recall_score': entry.snowai_recall_score,
+            'snowai_f1_score': entry.snowai_f1_score,
+            'snowai_mae_score': entry.snowai_mae_score,
+            'snowai_mse_score': entry.snowai_mse_score,
+            'snowai_rmse_score': entry.snowai_rmse_score,
+            'snowai_r2_score': entry.snowai_r2_score,
+            'snowai_auc_score': entry.snowai_auc_score,
+            
+            # Financial metrics
+            'snowai_profit_loss': entry.snowai_profit_loss,
+            'snowai_sharpe_ratio': entry.snowai_sharpe_ratio,
+            'snowai_max_drawdown': entry.snowai_max_drawdown,
+            'snowai_win_rate': entry.snowai_win_rate,
+            'snowai_roi_percentage': entry.snowai_roi_percentage,
+            
+            # Training info
+            'snowai_training_duration': entry.snowai_training_duration,
+            'snowai_epochs_trained': entry.snowai_epochs_trained,
+            
+            # Primary metric for display
+            'snowai_primary_metric': entry.snowai_get_primary_metric(),
+        }
+        snowai_entries.append(snowai_entry_data)
+    
+    return JsonResponse({
+        'entries': snowai_entries,
+        'pagination': {
+            'current_page': snowai_page_obj.number,
+            'total_pages': paginator.num_pages,
+            'total_entries': paginator.count,
+            'has_next': snowai_page_obj.has_next(),
+            'has_previous': snowai_page_obj.has_previous(),
+        }
+    })
+
+def snowai_create_ml_entry(request):
+    """Create new ML model entry"""
+    try:
+        snowai_data = json.loads(request.body)
+        
+        # Create new entry
+        snowai_entry = SnowAIMLModelLogEntry.objects.create(
+            snowai_model_name=snowai_data.get('snowai_model_name', ''),
+            snowai_model_type=snowai_data.get('snowai_model_type', 'other'),
+            snowai_tags=', '.join(snowai_data.get('snowai_tags', [])) if snowai_data.get('snowai_tags') else '',
+            snowai_description=snowai_data.get('snowai_description', ''),
+            snowai_code_used=snowai_data.get('snowai_code_used', ''),
+            snowai_colab_notebook_url=snowai_data.get('snowai_colab_notebook_url', ''),
+            snowai_framework_used=snowai_data.get('snowai_framework_used', ''),
+            
+            # Dataset info
+            snowai_dataset_name=snowai_data.get('snowai_dataset_name', ''),
+            snowai_dataset_description=snowai_data.get('snowai_dataset_description', ''),
+            snowai_dataset_size=snowai_data.get('snowai_dataset_size'),
+            snowai_dataset_features=snowai_data.get('snowai_dataset_features'),
+            snowai_dataset_source=snowai_data.get('snowai_dataset_source', ''),
+            snowai_financial_market_type=snowai_data.get('snowai_financial_market_type', ''),
+            
+            # Metrics
+            snowai_accuracy_score=snowai_data.get('snowai_accuracy_score'),
+            snowai_precision_score=snowai_data.get('snowai_precision_score'),
+            snowai_recall_score=snowai_data.get('snowai_recall_score'),
+            snowai_f1_score=snowai_data.get('snowai_f1_score'),
+            snowai_mae_score=snowai_data.get('snowai_mae_score'),
+            snowai_mse_score=snowai_data.get('snowai_mse_score'),
+            snowai_rmse_score=snowai_data.get('snowai_rmse_score'),
+            snowai_r2_score=snowai_data.get('snowai_r2_score'),
+            snowai_auc_score=snowai_data.get('snowai_auc_score'),
+            snowai_custom_metrics=snowai_data.get('snowai_custom_metrics'),
+            
+            # Training info
+            snowai_training_duration=snowai_data.get('snowai_training_duration'),
+            snowai_epochs_trained=snowai_data.get('snowai_epochs_trained'),
+            snowai_batch_size=snowai_data.get('snowai_batch_size'),
+            snowai_learning_rate=snowai_data.get('snowai_learning_rate'),
+            snowai_optimizer_used=snowai_data.get('snowai_optimizer_used', ''),
+            
+            # Financial metrics
+            snowai_profit_loss=snowai_data.get('snowai_profit_loss'),
+            snowai_sharpe_ratio=snowai_data.get('snowai_sharpe_ratio'),
+            snowai_max_drawdown=snowai_data.get('snowai_max_drawdown'),
+            snowai_win_rate=snowai_data.get('snowai_win_rate'),
+            snowai_roi_percentage=snowai_data.get('snowai_roi_percentage'),
+            
+            # Metadata
+            snowai_status=snowai_data.get('snowai_status', 'experimental'),
+            snowai_notes=snowai_data.get('snowai_notes', ''),
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'id': snowai_entry.id,
+            'message': 'ML model entry created successfully'
+        }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error creating ML entry: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT", "DELETE"])
+def snowai_research_logbook_api_entry_detail(request, entry_id):
+    """
+    GET: Retrieve single ML model entry
+    PUT: Update ML model entry
+    DELETE: Delete ML model entry
+    """
+    try:
+        snowai_entry = SnowAIMLModelLogEntry.objects.get(id=entry_id)
+        
+        if request.method == 'GET':
+            snowai_entry_data = {
+                'id': snowai_entry.id,
+                'snowai_model_name': snowai_entry.snowai_model_name,
+                'snowai_model_type': snowai_entry.snowai_model_type,
+                'snowai_tags': snowai_entry.snowai_tags_list,
+                'snowai_description': snowai_entry.snowai_description,
+                'snowai_code_used': snowai_entry.snowai_code_used,
+                'snowai_colab_notebook_url': snowai_entry.snowai_colab_notebook_url,
+                'snowai_framework_used': snowai_entry.snowai_framework_used,
+                'snowai_created_at': snowai_entry.snowai_created_at.isoformat(),
+                'snowai_updated_at': snowai_entry.snowai_updated_at.isoformat(),
+                'snowai_status': snowai_entry.snowai_status,
+                'snowai_notes': snowai_entry.snowai_notes,
+                
+                # Dataset info
+                'snowai_dataset_name': snowai_entry.snowai_dataset_name,
+                'snowai_dataset_description': snowai_entry.snowai_dataset_description,
+                'snowai_dataset_size': snowai_entry.snowai_dataset_size,
+                'snowai_dataset_features': snowai_entry.snowai_dataset_features,
+                'snowai_dataset_source': snowai_entry.snowai_dataset_source,
+                'snowai_financial_market_type': snowai_entry.snowai_financial_market_type,
+                
+                # All metrics
+                'snowai_accuracy_score': snowai_entry.snowai_accuracy_score,
+                'snowai_precision_score': snowai_entry.snowai_precision_score,
+                'snowai_recall_score': snowai_entry.snowai_recall_score,
+                'snowai_f1_score': snowai_entry.snowai_f1_score,
+                'snowai_mae_score': snowai_entry.snowai_mae_score,
+                'snowai_mse_score': snowai_entry.snowai_mse_score,
+                'snowai_rmse_score': snowai_entry.snowai_rmse_score,
+                'snowai_r2_score': snowai_entry.snowai_r2_score,
+                'snowai_auc_score': snowai_entry.snowai_auc_score,
+                'snowai_custom_metrics': snowai_entry.snowai_custom_metrics,
+                
+                # Training info
+                'snowai_training_duration': snowai_entry.snowai_training_duration,
+                'snowai_epochs_trained': snowai_entry.snowai_epochs_trained,
+                'snowai_batch_size': snowai_entry.snowai_batch_size,
+                'snowai_learning_rate': snowai_entry.snowai_learning_rate,
+                'snowai_optimizer_used': snowai_entry.snowai_optimizer_used,
+                
+                # Financial metrics
+                'snowai_profit_loss': snowai_entry.snowai_profit_loss,
+                'snowai_sharpe_ratio': snowai_entry.snowai_sharpe_ratio,
+                'snowai_max_drawdown': snowai_entry.snowai_max_drawdown,
+                'snowai_win_rate': snowai_entry.snowai_win_rate,
+                'snowai_roi_percentage': snowai_entry.snowai_roi_percentage,
+            }
+            return JsonResponse(snowai_entry_data)
+            
+        elif request.method == 'PUT':
+            try:
+                snowai_data = json.loads(request.body)
+                
+                # Update basic model information
+                if 'snowai_model_name' in snowai_data:
+                    snowai_entry.snowai_model_name = snowai_data['snowai_model_name']
+                if 'snowai_model_type' in snowai_data:
+                    snowai_entry.snowai_model_type = snowai_data['snowai_model_type']
+                if 'snowai_description' in snowai_data:
+                    snowai_entry.snowai_description = snowai_data['snowai_description']
+                if 'snowai_status' in snowai_data:
+                    snowai_entry.snowai_status = snowai_data['snowai_status']
+                if 'snowai_notes' in snowai_data:
+                    snowai_entry.snowai_notes = snowai_data['snowai_notes']
+                
+                # Update tags
+                if 'snowai_tags' in snowai_data:
+                    if isinstance(snowai_data['snowai_tags'], list):
+                        snowai_entry.snowai_tags = ', '.join(snowai_data['snowai_tags'])
+                    else:
+                        snowai_entry.snowai_tags = snowai_data['snowai_tags']
+                
+                # Update code and implementation
+                if 'snowai_code_used' in snowai_data:
+                    snowai_entry.snowai_code_used = snowai_data['snowai_code_used']
+                if 'snowai_colab_notebook_url' in snowai_data:
+                    snowai_entry.snowai_colab_notebook_url = snowai_data['snowai_colab_notebook_url']
+                if 'snowai_framework_used' in snowai_data:
+                    snowai_entry.snowai_framework_used = snowai_data['snowai_framework_used']
+                
+                # Update dataset information
+                if 'snowai_dataset_name' in snowai_data:
+                    snowai_entry.snowai_dataset_name = snowai_data['snowai_dataset_name']
+                if 'snowai_dataset_description' in snowai_data:
+                    snowai_entry.snowai_dataset_description = snowai_data['snowai_dataset_description']
+                if 'snowai_dataset_size' in snowai_data:
+                    snowai_entry.snowai_dataset_size = snowai_data['snowai_dataset_size']
+                if 'snowai_dataset_features' in snowai_data:
+                    snowai_entry.snowai_dataset_features = snowai_data['snowai_dataset_features']
+                if 'snowai_dataset_source' in snowai_data:
+                    snowai_entry.snowai_dataset_source = snowai_data['snowai_dataset_source']
+                if 'snowai_financial_market_type' in snowai_data:
+                    snowai_entry.snowai_financial_market_type = snowai_data['snowai_financial_market_type']
+                
+                # Update performance metrics
+                if 'snowai_accuracy_score' in snowai_data:
+                    snowai_entry.snowai_accuracy_score = snowai_data['snowai_accuracy_score'] if snowai_data['snowai_accuracy_score'] else None
+                if 'snowai_precision_score' in snowai_data:
+                    snowai_entry.snowai_precision_score = snowai_data['snowai_precision_score'] if snowai_data['snowai_precision_score'] else None
+                if 'snowai_recall_score' in snowai_data:
+                    snowai_entry.snowai_recall_score = snowai_data['snowai_recall_score'] if snowai_data['snowai_recall_score'] else None
+                if 'snowai_f1_score' in snowai_data:
+                    snowai_entry.snowai_f1_score = snowai_data['snowai_f1_score'] if snowai_data['snowai_f1_score'] else None
+                if 'snowai_mae_score' in snowai_data:
+                    snowai_entry.snowai_mae_score = snowai_data['snowai_mae_score'] if snowai_data['snowai_mae_score'] else None
+                if 'snowai_mse_score' in snowai_data:
+                    snowai_entry.snowai_mse_score = snowai_data['snowai_mse_score'] if snowai_data['snowai_mse_score'] else None
+                if 'snowai_rmse_score' in snowai_data:
+                    snowai_entry.snowai_rmse_score = snowai_data['snowai_rmse_score'] if snowai_data['snowai_rmse_score'] else None
+                if 'snowai_r2_score' in snowai_data:
+                    snowai_entry.snowai_r2_score = snowai_data['snowai_r2_score'] if snowai_data['snowai_r2_score'] else None
+                if 'snowai_auc_score' in snowai_data:
+                    snowai_entry.snowai_auc_score = snowai_data['snowai_auc_score'] if snowai_data['snowai_auc_score'] else None
+                if 'snowai_custom_metrics' in snowai_data:
+                    snowai_entry.snowai_custom_metrics = snowai_data['snowai_custom_metrics']
+                
+                # Update training information
+                if 'snowai_training_duration' in snowai_data:
+                    snowai_entry.snowai_training_duration = snowai_data['snowai_training_duration'] if snowai_data['snowai_training_duration'] else None
+                if 'snowai_epochs_trained' in snowai_data:
+                    snowai_entry.snowai_epochs_trained = snowai_data['snowai_epochs_trained'] if snowai_data['snowai_epochs_trained'] else None
+                if 'snowai_batch_size' in snowai_data:
+                    snowai_entry.snowai_batch_size = snowai_data['snowai_batch_size'] if snowai_data['snowai_batch_size'] else None
+                if 'snowai_learning_rate' in snowai_data:
+                    snowai_entry.snowai_learning_rate = snowai_data['snowai_learning_rate'] if snowai_data['snowai_learning_rate'] else None
+                if 'snowai_optimizer_used' in snowai_data:
+                    snowai_entry.snowai_optimizer_used = snowai_data['snowai_optimizer_used']
+                
+                # Update financial metrics
+                if 'snowai_profit_loss' in snowai_data:
+                    snowai_entry.snowai_profit_loss = snowai_data['snowai_profit_loss'] if snowai_data['snowai_profit_loss'] else None
+                if 'snowai_sharpe_ratio' in snowai_data:
+                    snowai_entry.snowai_sharpe_ratio = snowai_data['snowai_sharpe_ratio'] if snowai_data['snowai_sharpe_ratio'] else None
+                if 'snowai_max_drawdown' in snowai_data:
+                    snowai_entry.snowai_max_drawdown = snowai_data['snowai_max_drawdown'] if snowai_data['snowai_max_drawdown'] else None
+                if 'snowai_win_rate' in snowai_data:
+                    snowai_entry.snowai_win_rate = snowai_data['snowai_win_rate'] if snowai_data['snowai_win_rate'] else None
+                if 'snowai_roi_percentage' in snowai_data:
+                    snowai_entry.snowai_roi_percentage = snowai_data['snowai_roi_percentage'] if snowai_data['snowai_roi_percentage'] else None
+                
+                # Save the updated entry
+                snowai_entry.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': 'ML model entry updated successfully',
+                    'id': snowai_entry.id
+                })
+                
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+            except ValueError as e:
+                return JsonResponse({'error': f'Invalid data format: {str(e)}'}, status=400)
+            
+        elif request.method == 'DELETE':
+            snowai_entry.delete()
+            return JsonResponse({'success': True, 'message': 'Entry deleted successfully'})
+            
+    except SnowAIMLModelLogEntry.DoesNotExist:
+        return JsonResponse({'error': 'Entry not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error in entry detail API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+        
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_research_logbook_api_analytics(request):
+    """Get analytics and statistics for the research logbook"""
+    try:
+        # Basic counts
+        snowai_total_entries = SnowAIMLModelLogEntry.objects.count()
+        snowai_model_type_counts = SnowAIMLModelLogEntry.objects.values('snowai_model_type').annotate(count=Count('id'))
+        snowai_status_counts = SnowAIMLModelLogEntry.objects.values('snowai_status').annotate(count=Count('id'))
+        snowai_market_type_counts = SnowAIMLModelLogEntry.objects.values('snowai_financial_market_type').annotate(count=Count('id'))
+        
+        # Performance statistics
+        snowai_accuracy_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_accuracy_score__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_accuracy_score'),
+            max=Max('snowai_accuracy_score'),
+            min=Min('snowai_accuracy_score'),
+            count=Count('snowai_accuracy_score')
+        )
+        
+        snowai_r2_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_r2_score__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_r2_score'),
+            max=Max('snowai_r2_score'),
+            min=Min('snowai_r2_score'),
+            count=Count('snowai_r2_score')
+        )
+        
+        # Financial performance stats
+        snowai_roi_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_roi_percentage__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_roi_percentage'),
+            max=Max('snowai_roi_percentage'),
+            min=Min('snowai_roi_percentage'),
+            count=Count('snowai_roi_percentage')
+        )
+        
+        # Recent activity
+        snowai_recent_entries = SnowAIMLModelLogEntry.objects.order_by('-snowai_created_at')[:5]
+        snowai_recent_data = []
+        for entry in snowai_recent_entries:
+            snowai_recent_data.append({
+                'id': entry.id,
+                'snowai_model_name': entry.snowai_model_name,
+                'snowai_model_type': entry.snowai_model_type,
+                'snowai_created_at': entry.snowai_created_at.isoformat(),
+                'snowai_primary_metric': entry.snowai_get_primary_metric()
+            })
+        
+        return JsonResponse({
+            'snowai_total_entries': snowai_total_entries,
+            'snowai_model_type_distribution': list(snowai_model_type_counts),
+            'snowai_status_distribution': list(snowai_status_counts),
+            'snowai_market_type_distribution': list(snowai_market_type_counts),
+            'snowai_accuracy_statistics': snowai_accuracy_stats,
+            'snowai_r2_statistics': snowai_r2_stats,
+            'snowai_roi_statistics': snowai_roi_stats,
+            'snowai_recent_entries': snowai_recent_data,
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in analytics API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+@csrf_exempt  
+@require_http_methods(["GET"])
+def snowai_research_logbook_api_tags(request):
+    """Get all unique tags used in the system"""
+    try:
+        snowai_all_entries = SnowAIMLModelLogEntry.objects.exclude(snowai_tags='').exclude(snowai_tags__isnull=True)
+        snowai_all_tags = set()
+        
+        for entry in snowai_all_entries:
+            snowai_all_tags.update(entry.snowai_tags_list)
+        
+        return JsonResponse({'snowai_tags': sorted(list(snowai_all_tags))})
+        
+    except Exception as e:
+        logger.error(f"Error in tags API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+                
+
+# Fixed Django Views - Remove the email override
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def check_fingerprint_status(request):
+    """Check if fingerprint is registered in backend"""
+    try:
+        # Get email from request, fallback to your actual email
+        email = request.GET.get('email', 'butterrobot83@gmail.com')
+        # Remove this line that was overriding the email:
+        # email = 'butterrobot83@gmail'
+        
+        domain = request.GET.get('domain', '')
+        
+        fingerprint_status, created = FingerprintStatus.objects.get_or_create(
+            user_email=email,
+            defaults={'is_registered': False, 'domain': domain}
+        )
+        
+        # Add debugging info
+        print(f"Checking fingerprint status for: {email}, Domain: {domain}, Registered: {fingerprint_status.is_registered}")
+        
+        return JsonResponse({
+            'is_registered': fingerprint_status.is_registered,
+            'domain': fingerprint_status.domain,
+            'email_used': email,  # Add this for debugging
+            'message': 'Fingerprint status retrieved successfully'
+        })
+    except Exception as e:
+        print(f"Error checking fingerprint status: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def register_fingerprint_backend(request):
+    """Register fingerprint in backend after successful local registration"""
+    try:
+        data = json.loads(request.body)
+        # Get email from request data, fallback to your actual email
+        email = data.get('email', 'butterrobot83@gmail.com')
+        # Remove this line that was overriding the email:
+        # email = 'butterrobot83@gmail'
+        
+        domain = data.get('domain', '')
+        
+        fingerprint_status, created = FingerprintStatus.objects.get_or_create(
+            user_email=email,
+            defaults={'is_registered': True, 'domain': domain}
+        )
+        
+        if not created:
+            fingerprint_status.is_registered = True
+            fingerprint_status.domain = domain
+            fingerprint_status.save()
+        
+        print(f"Fingerprint registered for: {email}, Domain: {domain}, Created: {created}")
+        
+        return JsonResponse({
+            'success': True,
+            'is_registered': True,
+            'email_used': email,  # Add this for debugging
+            'message': 'Fingerprint registered successfully in backend'
+        })
+    except Exception as e:
+        print(f"Error registering fingerprint: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def reset_fingerprint_backend(request):
+    """Reset fingerprint registration in backend"""
+    try:
+        data = json.loads(request.body)
+        # Get email from request data, fallback to your actual email
+        email = data.get('email', 'butterrobot83@gmail.com')
+        # Remove this line that was overriding the email:
+        # email = 'butterrobot83@gmail'
+        
+        try:
+            fingerprint_status = FingerprintStatus.objects.get(user_email=email)
+            fingerprint_status.is_registered = False
+            fingerprint_status.domain = ''
+            fingerprint_status.save()
+            
+            print(f"Fingerprint reset for: {email}")
+            
+            return JsonResponse({
+                'success': True,
+                'is_registered': False,
+                'message': 'Fingerprint registration reset successfully'
+            })
+        except FingerprintStatus.DoesNotExist:
+            print(f"No fingerprint status found for: {email}")
+            return JsonResponse({'error': f'Fingerprint status not found for {email}'}, status=404)
+            
+    except Exception as e:
+        print(f"Error resetting fingerprint: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+# Add this new endpoint for debugging
+@csrf_exempt
+@require_http_methods(["GET"])
+def debug_fingerprint_status(request):
+    """Debug endpoint to see all fingerprint statuses"""
+    try:
+        all_statuses = FingerprintStatus.objects.all().values()
+        return JsonResponse({
+            'all_statuses': list(all_statuses),
+            'count': len(all_statuses)
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_trader_history_gpt_summary_endpoint(request):
+    try:
+        # Get trading data (not economic events)
+        all_trades = AccountTrades.objects.all()
+        accounts_data = Account.objects.all()
+        
+        if not all_trades.exists():
+            return JsonResponse({
+                'status': 'No trading data available',
+                'summary': 'No trading history found to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate trading metrics
+        total_trades = all_trades.count()
+        profit_trades = all_trades.filter(outcome='Profit').count()
+        loss_trades = all_trades.filter(outcome='Loss').count()
+        win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        total_pnl = all_trades.aggregate(Sum('amount'))['amount__sum'] or 0
+        avg_trade_amount = all_trades.aggregate(Avg('amount'))['amount__avg'] or 0
+        best_trade = all_trades.aggregate(Max('amount'))['amount__max'] or 0
+        worst_trade = all_trades.aggregate(Min('amount'))['amount__min'] or 0
+        
+        # Strategy analysis
+        strategy_performance = all_trades.values('strategy').annotate(
+            total_trades=Count('id'),
+            total_pnl=Sum('amount')
+        ).order_by('-total_pnl')
+        
+        best_strategy = strategy_performance.first()['strategy'] if strategy_performance else 'N/A'
+        worst_strategy = strategy_performance.last()['strategy'] if strategy_performance else 'N/A'
+        
+        # Asset analysis
+        asset_counts = all_trades.values('asset').annotate(count=Count('id')).order_by('-count')
+        most_traded_asset = asset_counts.first()['asset'] if asset_counts else 'N/A'
+        
+        # Get news data for context (if needed)
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
+        try:
+            news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        except:
+            news_data = {'message': []}
+        
+        # Create comprehensive prompt for GPT
+        prompt = f"""
+        Analyze this comprehensive trading performance data and provide a detailed, professional summary:
+
+        TRADING PERFORMANCE METRICS:
+        - Total Trades: {total_trades}
+        - Win Rate: {win_rate:.2f}%
+        - Total P&L: ${total_pnl:,.2f}
+        - Average Trade Size: ${avg_trade_amount:,.2f}
+        - Best Trade: ${best_trade:,.2f}
+        - Worst Trade: ${worst_trade:,.2f}
+        - Most Traded Asset: {most_traded_asset}
+        - Best Performing Strategy: {best_strategy}
+        - Worst Performing Strategy: {worst_strategy}
+
+        DETAILED BREAKDOWN:
+        - Profitable Trades: {profit_trades}
+        - Losing Trades: {loss_trades}
+
+        RECENT MARKET NEWS THEMES:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:5]])}
+
+        Please provide:
+        1. A comprehensive performance assessment
+        2. Key strengths and weaknesses in the trading approach
+        3. Risk management analysis
+        4. Recommendations for improvement
+        5. Strategic insights based on the data
+        6. Asset allocation observations
+        7. Future trading suggestions
+
+        Format the response as a professional trading report with clear sections and actionable insights.
+        """
+        
+        # Get AI summary
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAITraderHistoryGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'total_profit_loss': total_pnl,
+                'best_performing_strategy': best_strategy,
+                'worst_performing_strategy': worst_strategy,
+                'most_traded_asset': most_traded_asset,
+                'average_trade_amount': avg_trade_amount,
+            }
+        )
+        
+        if not created:
+            # Update existing summary
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_trades = total_trades
+            summary_obj.win_rate = win_rate
+            summary_obj.total_profit_loss = total_pnl
+            summary_obj.best_performing_strategy = best_strategy
+            summary_obj.worst_performing_strategy = worst_strategy
+            summary_obj.most_traded_asset = most_traded_asset
+            summary_obj.average_trade_amount = avg_trade_amount
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_trades': total_trades,
+                'win_rate': f"{win_rate:.2f}%",
+                'total_pnl': f"${total_pnl:,.2f}",
+                'avg_trade_amount': f"${avg_trade_amount:,.2f}",
+                'most_traded_asset': most_traded_asset,
+                'best_strategy': best_strategy
+            }
+        })
+        
+    except Exception as e:
+        print(f'Error in Trader History GPT Endpoint: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_macro_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         # Get recent macro context with more detailed information
+#         recent_events = EconomicEvent.objects.filter(date_time__gte=datetime.now() - timedelta(days=7))
+#         high_impact_recent = recent_events.filter(impact='high')
+        
+#         # Get some upcoming events too
+#         upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:5]
+        
+#         context_prompt = f"""
+#         You are MacroGPT, an AI specialized in macro economic analysis, market trends, and economic event impact assessment.
+        
+#         Recent economic context (Last 7 days):
+#         - Total events: {recent_events.count()}
+#         - High impact events: {high_impact_recent.count()}
+        
+#         Recent high-impact events:
+#         {chr(10).join([f"- {event.currency}: {event.event_name} ({event.impact} impact) - {event.date_time.strftime('%Y-%m-%d')}" for event in high_impact_recent[:5]])}
+        
+#         Upcoming events:
+#         {chr(10).join([f"- {event.currency}: {event.event_name} - {event.date_time.strftime('%Y-%m-%d %H:%M')}" for event in upcoming_events])}
+        
+#         User question: {user_message}
+        
+#         Provide expert macro economic analysis and insights based on current market conditions and economic data. 
+#         Be specific and actionable in your response. If the user asks about specific currencies or events, 
+#         reference the available data context above.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         # Ensure we have a response
+#         if not ai_response or ai_response.strip() == '':
+#             ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question about macro economic analysis."
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='MacroGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         print(f'Error in MacroGPT chat function: {e}')
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_idea_gpt_summary_endpoint(request):
+    try:
+        all_ideas = IdeaModel.objects.all()
+        trade_ideas = TradeIdea.objects.all()
+        
+        if not all_ideas.exists() and not trade_ideas.exists():
+            return JsonResponse({
+                'status': 'No ideas available',
+                'summary': 'No ideas found in the system to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate metrics for regular ideas
+        total_ideas = all_ideas.count()
+        pending_ideas = all_ideas.filter(idea_tracker='Pending').count()
+        in_progress_ideas = all_ideas.filter(idea_tracker='In Progress').count()
+        completed_ideas = all_ideas.filter(idea_tracker='Completed').count()
+        
+        completion_rate = (completed_ideas / total_ideas * 100) if total_ideas > 0 else 0
+        
+        # Category analysis
+        categories = all_ideas.values('idea_category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['idea_category'] if categories else 'N/A'
+        
+        # Trade ideas metrics
+        total_trade_ideas = trade_ideas.count()
+        pending_trade_ideas = trade_ideas.filter(trade_status='pending').count()
+        executed_trade_ideas = trade_ideas.filter(trade_status='executed').count()
+        
+        # Get recent ideas for context
+        recent_ideas = all_ideas.order_by('-created_at')[:10]
+        recent_trade_ideas = trade_ideas.order_by('-date_created')[:5]
+        
+        oldest_pending = all_ideas.filter(idea_tracker='Pending').order_by('created_at').first()
+        newest_idea = all_ideas.order_by('-created_at').first()
+        
+        prompt = f"""
+        Analyze this comprehensive idea management data and provide detailed insights:
+
+        GENERAL IDEAS ANALYSIS:
+        - Total Ideas: {total_ideas}
+        - Pending Ideas: {pending_ideas}
+        - In Progress Ideas: {in_progress_ideas}
+        - Completed Ideas: {completed_ideas}
+        - Completion Rate: {completion_rate:.2f}%
+        - Most Common Category: {most_common_category}
+
+        TRADE IDEAS ANALYSIS:
+        - Total Trade Ideas: {total_trade_ideas}
+        - Pending Trade Ideas: {pending_trade_ideas}
+        - Executed Trade Ideas: {executed_trade_ideas}
+
+        RECENT IDEAS SAMPLE:
+        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:5]])}
+
+        RECENT TRADE IDEAS:
+        {chr(10).join([f"- [{trade.trade_status}] {trade.asset}: {trade.heading}" for trade in recent_trade_ideas])}
+
+        Please provide:
+        1. Comprehensive idea pipeline analysis
+        2. Productivity and execution assessment
+        3. Category-wise performance breakdown
+        4. Bottleneck identification
+        5. Recommendations for better idea management
+        6. Trading idea conversion analysis
+        7. Strategic prioritization suggestions
+        8. Innovation and creativity assessment
+
+        Format as a professional idea management report with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIIdeaGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_ideas': total_ideas,
+                'pending_ideas': pending_ideas,
+                'in_progress_ideas': in_progress_ideas,
+                'completed_ideas': completed_ideas,
+                'most_common_category': most_common_category,
+                'completion_rate': completion_rate,
+                'oldest_pending_idea': oldest_pending.idea_text[:200] if oldest_pending else 'N/A',
+                'newest_idea': newest_idea.idea_text[:200] if newest_idea else 'N/A',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_ideas = total_ideas
+            summary_obj.pending_ideas = pending_ideas
+            summary_obj.in_progress_ideas = in_progress_ideas
+            summary_obj.completed_ideas = completed_ideas
+            summary_obj.completion_rate = completion_rate
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_ideas': total_ideas,
+                'completion_rate': f"{completion_rate:.2f}%",
+                'most_common_category': most_common_category,
+                'pending_ideas': pending_ideas,
+                'trade_ideas': total_trade_ideas
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_idea_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_ideas = IdeaModel.objects.order_by('-created_at')[:10]
+        
+#         context_prompt = f"""
+#         You are IdeaGPT, an AI specialized in idea management, creativity enhancement, and innovation strategy.
+        
+#         Recent ideas context:
+#         - Total ideas in system: {IdeaModel.objects.count()}
+#         - Recent ideas: {recent_ideas.count()}
+        
+#         Sample recent ideas:
+#         {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:3]])}
+        
+#         User question: {user_message}
+        
+#         Provide creative and strategic insights for idea management, development, and execution.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='IdeaGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_backtesting_gpt_summary_endpoint(request):
+    try:
+        all_backtests = BacktestModels.objects.all()
+        all_results = BacktestResult.objects.all()
+        
+        if not all_backtests.exists():
+            return JsonResponse({
+                'status': 'No backtesting data available',
+                'summary': 'No backtesting history found to analyze.',
+                'metrics': {}
+            })
+        
+        total_backtests = all_backtests.count()
+        successful_backtests = all_backtests.filter(model_backtested=True).count()
+        
+        # Results analysis
+        if all_results.exists():
+            avg_sharpe = all_results.aggregate(Avg('sharpe_ratio'))['sharpe_ratio__avg'] or 0
+            avg_annual_return = all_results.aggregate(Avg('annual_return'))['annual_return__avg'] or 0
+            avg_max_drawdown = all_results.aggregate(Avg('max_drawdown'))['max_drawdown__avg'] or 0
+            best_sharpe = all_results.aggregate(Max('sharpe_ratio'))['sharpe_ratio__max'] or 0
+            worst_sharpe = all_results.aggregate(Min('sharpe_ratio'))['sharpe_ratio__min'] or 0
+            
+            best_result = all_results.filter(sharpe_ratio=best_sharpe).first()
+            worst_result = all_results.filter(sharpe_ratio=worst_sharpe).first()
+        else:
+            avg_sharpe = avg_annual_return = avg_max_drawdown = 0
+            best_result = worst_result = None
+        
+        # Dataset analysis
+        datasets = all_backtests.values('chosen_dataset').annotate(count=Count('id')).order_by('-count')
+        most_used_dataset = datasets.first()['chosen_dataset'] if datasets else 'N/A'
+        
+        # Recent backtests
+        recent_backtests = all_backtests.order_by('-id')[:5]
+        
+        prompt = f"""
+        Analyze this comprehensive backtesting performance data:
+
+        BACKTESTING OVERVIEW:
+        - Total Backtests: {total_backtests}
+        - Successful Backtests: {successful_backtests}
+        - Success Rate: {(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%
+        - Most Used Dataset: {most_used_dataset}
+
+        PERFORMANCE METRICS:
+        - Average Sharpe Ratio: {avg_sharpe:.3f}
+        - Average Annual Return: {avg_annual_return:.2f}%
+        - Average Max Drawdown: {avg_max_drawdown:.2f}%
+        - Best Sharpe Ratio: {best_sharpe:.3f}
+        - Worst Sharpe Ratio: {worst_sharpe:.3f}
+
+        RECENT BACKTESTS:
+        {chr(10).join([f"- Dataset: {bt.chosen_dataset} | Period: {bt.dataset_start} to {bt.dataset_end} | Capital: ${bt.initial_capital:,.2f}" for bt in recent_backtests])}
+
+        BEST PERFORMING STRATEGY:
+        {f"Sharpe: {best_result.sharpe_ratio:.3f} | Annual Return: {best_result.annual_return:.2f}% | Drawdown: {best_result.max_drawdown:.2f}%" if best_result else "No results available"}
+
+        WORST PERFORMING STRATEGY:
+        {f"Sharpe: {worst_result.sharpe_ratio:.3f} | Annual Return: {worst_result.annual_return:.2f}% | Drawdown: {worst_result.max_drawdown:.2f}%" if worst_result else "No results available"}
+
+        Please provide:
+        1. Comprehensive backtesting performance assessment
+        2. Strategy effectiveness analysis
+        3. Risk-adjusted returns evaluation
+        4. Dataset utilization insights
+        5. Performance consistency analysis
+        6. Recommendations for strategy improvement
+        7. Risk management effectiveness
+        8. Future backtesting suggestions
+
+        Format as a professional quantitative analysis report.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIBacktestingGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_backtests': total_backtests,
+                'successful_backtests': successful_backtests,
+                'average_sharpe_ratio': avg_sharpe,
+                'average_annual_return': avg_annual_return,
+                'average_max_drawdown': avg_max_drawdown,
+                'best_performing_strategy': f"Sharpe: {best_sharpe:.3f}" if best_result else 'N/A',
+                'worst_performing_strategy': f"Sharpe: {worst_sharpe:.3f}" if worst_result else 'N/A',
+                'most_used_dataset': most_used_dataset,
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_backtests = total_backtests
+            summary_obj.successful_backtests = successful_backtests
+            summary_obj.average_sharpe_ratio = avg_sharpe
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_backtests': total_backtests,
+                'success_rate': f"{(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%",
+                'avg_sharpe_ratio': f"{avg_sharpe:.3f}",
+                'avg_annual_return': f"{avg_annual_return:.2f}%",
+                'most_used_dataset': most_used_dataset
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_backtesting_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_results = BacktestResult.objects.order_by('-created_at')[:5]
+        
+#         context_prompt = f"""
+#         You are BacktestingGPT, an AI specialized in quantitative strategy analysis, backtesting methodology, and trading system optimization.
+        
+#         Recent backtesting context:
+#         - Total backtests: {BacktestModels.objects.count()}
+#         - Total results: {BacktestResult.objects.count()}
+        
+#         Recent performance:
+#         {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
+        
+#         User question: {user_message}
+        
+#         Provide expert quantitative analysis and backtesting insights based on the available strategy performance data.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='BacktestingGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_paper_gpt_summary_endpoint(request):
+    try:
+        all_papers = PaperGPT.objects.all()
+        
+        if not all_papers.exists():
+            return JsonResponse({
+                'status': 'No research papers available',
+                'summary': 'No research papers found in the system to analyze.',
+                'metrics': {}
+            })
+        
+        total_papers = all_papers.count()
+        
+        # Calculate total file size safely
+        total_file_size = 0
+        for paper in all_papers:
+            if paper.file_size:
+                total_file_size += paper.file_size
+        total_file_size_mb = total_file_size / (1024 * 1024)  # Convert to MB
+        
+        # Category analysis
+        categories = all_papers.exclude(category__isnull=True).exclude(category='').values('category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['category'] if categories else 'Uncategorized'
+        
+        # Length analysis (approximate based on extracted text)
+        papers_with_text = all_papers.exclude(extracted_text__isnull=True).exclude(extracted_text='')
+        avg_paper_length = 0
+        if papers_with_text.exists():
+            total_length = sum([len(paper.extracted_text) for paper in papers_with_text])
+            avg_paper_length = total_length / papers_with_text.count()
+        
+        # Recent uploads
+        recent_papers = all_papers.order_by('-upload_date')[:5]
+        latest_upload = recent_papers.first()
+        
+        # Get AI summaries for analysis
+        papers_with_summaries = all_papers.exclude(ai_summary__isnull=True).exclude(ai_summary='')
+        paper_summaries = []
+        if papers_with_summaries.exists():
+            paper_summaries = [paper.ai_summary[:200] + "..." for paper in papers_with_summaries[:10]]
+        
+        # Get personal notes
+        papers_with_notes = all_papers.exclude(personal_notes__isnull=True).exclude(personal_notes='')
+        personal_notes = []
+        if papers_with_notes.exists():
+            personal_notes = [paper.personal_notes[:100] + "..." for paper in papers_with_notes[:5]]
+        
+        prompt = f"""
+        Analyze this comprehensive research paper collection and provide insights:
+
+        PAPER COLLECTION OVERVIEW:
+        - Total Papers: {total_papers}
+        - Total File Size: {total_file_size_mb:.2f} MB
+        - Most Common Category: {most_common_category}
+        - Average Paper Length: ~{avg_paper_length:.0f} characters
+
+        RECENT UPLOADS:
+        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'} | Size: {(paper.file_size/(1024*1024)):.1f}MB" for paper in recent_papers if paper.file_size])}
+
+        EXISTING AI SUMMARIES SAMPLE:
+        {chr(10).join([f"- {summary}" for summary in paper_summaries[:5]])}
+
+        PERSONAL NOTES SAMPLE:
+        {chr(10).join([f"- {note}" for note in personal_notes])}
+
+        CATEGORY BREAKDOWN:
+        {chr(10).join([f"- {cat['category']}: {cat['count']} papers" for cat in categories[:5]])}
+
+        Please provide:
+        1. Comprehensive research collection assessment
+        2. Knowledge domain analysis
+        3. Research gap identification
+        4. Cross-paper insight synthesis
+        5. Future research recommendations
+        6. Practical application opportunities
+        7. Knowledge management suggestions
+        8. Research methodology insights
+        9. Literature review conclusions
+        10. Strategic research directions
+
+        Format as a comprehensive research portfolio analysis with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Generate research recommendations
+        recommendations_prompt = f"""
+        Based on the {total_papers} research papers in categories like {most_common_category}, provide specific future research applications and recommendations:
+
+        1. Identify 3-5 key research themes
+        2. Suggest practical applications for trading/finance
+        3. Recommend next research directions
+        4. Identify knowledge gaps that need filling
+
+        Keep recommendations specific and actionable.
+        """
+        
+        research_recommendations = chat_gpt(recommendations_prompt)
+        
+        summary_obj, created = SnowAIPaperGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_papers': total_papers,
+                'most_common_category': most_common_category,
+                'total_file_size_mb': total_file_size_mb,
+                'average_paper_length': avg_paper_length,
+                'latest_upload': latest_upload.title if latest_upload else 'N/A',
+                'research_recommendations': research_recommendations,
+                'key_insights': ', '.join([summary[:50] for summary in paper_summaries[:3]]),
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_papers = total_papers
+            summary_obj.research_recommendations = research_recommendations
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_papers': total_papers,
+                'total_size_mb': f"{total_file_size_mb:.2f} MB",
+                'most_common_category': most_common_category,
+                'categories_count': len(categories),
+                'avg_length': f"{avg_paper_length:.0f} chars"
+            }
+        })
+        
+    except Exception as e:
+        print(f'Error in paper_gpt function: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_paper_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        
+#         context_prompt = f"""
+#         You are PaperGPT, an AI specialized in research paper analysis, academic literature synthesis, and research methodology.
+        
+#         Research paper context:
+#         - Total papers in collection: {PaperGPT.objects.count()}
+#         - Recent papers: {recent_papers.count()}
+        
+#         Sample recent papers:
+#         {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
+        
+#         User question: {user_message}
+        
+#         Provide expert academic and research insights based on the available paper collection and research methodology expertise.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='PaperGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_research_gpt_summary_endpoint(request):
+    try:
+        # Combine all research sources
+        all_papers = PaperGPT.objects.all()
+        ml_models = SnowAIMLModelLogEntry.objects.all()
+        backtests = BacktestModels.objects.all()
+
+        if not any([all_papers.exists(), ml_models.exists(), backtests.exists()]):
+            return JsonResponse({
+                'status': 'No research data available',
+                'summary': 'No research data found across papers, ML models, or backtests.',
+                'metrics': {}
+            })
+
+        total_papers = all_papers.count()
+        total_ml_models = ml_models.count()
+        total_backtests = backtests.count()
+        total_research_entries = total_papers + total_ml_models + total_backtests
+
+        # ML Model analysis
+        model_types = ml_models.values('snowai_model_type').annotate(count=Count('id')).order_by('-count')
+        financial_markets = ml_models.values('snowai_financial_market_type').annotate(count=Count('id')).order_by('-count')
+
+        # Paper categories
+        paper_categories = all_papers.exclude(category__isnull=True).values('category').annotate(count=Count('id')).order_by('-count')
+
+        # Recent research activity
+        recent_papers = all_papers.order_by('-upload_date')[:3]
+        recent_models = ml_models.order_by('-snowai_created_at')[:3]
+
+        # Performance metrics from ML models
+        avg_accuracy = ml_models.exclude(snowai_accuracy_score__isnull=True).aggregate(Avg('snowai_accuracy_score'))['snowai_accuracy_score__avg'] or 0
+        avg_sharpe = ml_models.exclude(snowai_sharpe_ratio__isnull=True).aggregate(Avg('snowai_sharpe_ratio'))['snowai_sharpe_ratio__avg'] or 0
+
+        # Prompt for GPT summary
+        prompt = f"""
+        Analyze this comprehensive research ecosystem and provide strategic insights:
+
+        RESEARCH PORTFOLIO OVERVIEW:
+        - Total Research Entries: {total_research_entries}
+        - Research Papers: {total_papers}
+        - ML Models: {total_ml_models}
+        - Backtesting Strategies: {total_backtests}
+
+        ML MODEL RESEARCH:
+        - Most Common Model Type: {model_types[0]['snowai_model_type'] if model_types else 'N/A'}
+        - Primary Financial Market: {financial_markets[0]['snowai_financial_market_type'] if financial_markets else 'N/A'}
+        - Average Model Accuracy: {avg_accuracy:.3f}
+        - Average Sharpe Ratio: {avg_sharpe:.3f}
+
+        PAPER RESEARCH:
+        - Primary Research Category: {paper_categories[0]['category'] if paper_categories else 'N/A'}
+        - Category Distribution: {len(paper_categories)} different categories
+
+        RECENT RESEARCH ACTIVITY:
+        Papers:
+        {chr(10).join([f"- {paper.title}" for paper in recent_papers])}
+
+        Models:
+        {chr(10).join([f"- {model.snowai_model_name} ({model.snowai_model_type})" for model in recent_models])}
+
+        MODEL TYPE DISTRIBUTION:
+        {chr(10).join([f"- {mt['snowai_model_type']}: {mt['count']} models" for mt in model_types[:5]])}
+
+        FINANCIAL MARKET FOCUS:
+        {chr(10).join([f"- {fm['snowai_financial_market_type']}: {fm['count']} models" for fm in financial_markets[:5]])}
+
+        Please provide:
+        1. Comprehensive research ecosystem analysis
+        2. Cross-disciplinary knowledge synthesis
+        3. Research methodology assessment
+        4. Knowledge gap identification and prioritization
+        5. Future research direction recommendations
+        6. Practical application opportunities
+        7. Research ROI analysis
+        8. Strategic research roadmap
+        9. Innovation potential assessment
+        10. Academic-industry bridge recommendations
+
+        Format as a strategic research portfolio review with actionable insights.
+        """
+
+        ai_summary = chat_gpt(prompt)
+
+        # Generate specific research directions
+        directions_prompt = f"""
+        Based on {total_research_entries} research entries including {total_ml_models} ML models and {total_papers} papers,
+        provide 5 specific future research directions that bridge theory and practical trading applications.
+        Focus on unexplored combinations and high-impact opportunities.
+        """
+
+        future_directions = chat_gpt(directions_prompt)
+
+        # You can optionally include future_directions in the response or save it
+
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'future_directions': future_directions,
+            'metrics': {
+                'total_papers': total_papers,
+                'total_ml_models': total_ml_models,
+                'total_backtests': total_backtests,
+                'avg_accuracy': round(avg_accuracy, 3),
+                'avg_sharpe': round(avg_sharpe, 3)
+            }
+        })
+
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_paper_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        
+#         context_prompt = f"""
+#         You are PaperGPT, an AI specialized in research paper analysis, academic literature synthesis, and research methodology.
+        
+#         Research paper context:
+#         - Total papers in collection: {PaperGPT.objects.count()}
+#         - Recent papers: {recent_papers.count()}
+        
+#         Sample recent papers:
+#         {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
+        
+#         User question: {user_message}
+        
+#         Provide expert academic and research insights based on the available paper collection and research methodology expertise.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='PaperGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_backtesting_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_results = BacktestResult.objects.order_by('-created_at')[:5]
+        
+#         context_prompt = f"""
+#         You are BacktestingGPT, an AI specialized in quantitative strategy analysis, backtesting methodology, and trading system optimization.
+        
+#         Recent backtesting context:
+#         - Total backtests: {BacktestModels.objects.count()}
+#         - Total results: {BacktestResult.objects.count()}
+        
+#         Recent performance:
+#         {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
+        
+#         User question: {user_message}
+        
+#         Provide expert quantitative analysis and backtesting insights based on the available strategy performance data.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='BacktestingGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_trader_history_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         # Get recent trading context
+#         recent_trades = AccountTrades.objects.all()[:50]  # Last 50 trades for context
+        
+#         context_prompt = f"""
+#         You are TraderHistoryGPT, an AI specialized in analyzing trading performance and providing trading insights.
+        
+#         Current trading context:
+#         - Total trades in system: {AccountTrades.objects.count()}
+#         - Recent activity: {recent_trades.count()} recent trades available
+        
+#         User question: {user_message}
+        
+#         Provide a helpful, accurate response based on the available trading data and your expertise in trading analysis.
+#         If the user asks about specific metrics, calculate them from the available data context.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         # Save conversation
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='TraderHistoryGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_macro_gpt_summary_endpoint(request):
+    try:
+        # Get economic events from the last month (NOT trading data)
+        one_month_ago = datetime.now() - timedelta(days=30)
+        recent_events = EconomicEvent.objects.filter(date_time__gte=one_month_ago)
+        
+        if not recent_events.exists():
+            return JsonResponse({
+                'status': 'No recent economic data available',
+                'summary': 'No economic events found in the last month to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate economic event metrics
+        total_events = recent_events.count()
+        high_impact_events = recent_events.filter(impact='high').count()
+        medium_impact_events = recent_events.filter(impact='medium').count()
+        low_impact_events = recent_events.filter(impact='low').count()
+        
+        # Currency analysis
+        currency_counts = recent_events.values('currency').annotate(count=Count('id')).order_by('-count')
+        most_active_currency = currency_counts.first()['currency'] if currency_counts else 'N/A'
+        
+        # Get news data for major assets
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
+        try:
+            news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        except:
+            news_data = {'message': []}
+        
+        # Upcoming events
+        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:10]
+        
+        # Create comprehensive prompt
+        prompt = f"""
+        Analyze this comprehensive macro economic data and provide a detailed market analysis:
+
+        ECONOMIC EVENTS ANALYSIS (Last 30 Days):
+        - Total Economic Events: {total_events}
+        - High Impact Events: {high_impact_events}
+        - Medium Impact Events: {medium_impact_events}  
+        - Low Impact Events: {low_impact_events}
+        - Most Active Currency: {most_active_currency}
+        
+        RECENT HIGH IMPACT EVENTS:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d')})" for event in recent_events.filter(impact='high')[:10]])}
+        
+        UPCOMING EVENTS PREVIEW:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d %H:%M')})" for event in upcoming_events])}
+        
+        NEWS THEMES FROM MAJOR ASSETS:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:10]])}
+
+        Please provide:
+        1. Comprehensive macro economic assessment
+        2. Key market themes and trends
+        3. Currency strength analysis
+        4. Risk assessment for upcoming events
+        5. Trading opportunities and recommendations
+        6. Market sentiment analysis
+        7. Geopolitical impact assessment
+        8. Central bank policy implications
+
+        Format as a professional macro economic briefing with actionable market insights.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAIMacroGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_economic_events': total_events,
+                'high_impact_events_count': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'key_market_themes': ', '.join([item['title'][:50] for item in news_data.get('message', [])[:5]]),
+                'upcoming_events_preview': ', '.join([f"{event.currency}: {event.event_name}" for event in upcoming_events[:5]]),
+                'market_sentiment': 'Mixed' if high_impact_events > 5 else 'Stable',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_economic_events = total_events
+            summary_obj.high_impact_events_count = high_impact_events
+            summary_obj.most_active_currency = most_active_currency
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_events': total_events,
+                'high_impact_events': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'upcoming_events': len(upcoming_events),
+                'news_items': len(news_data.get('message', []))
+            }
+        })
+        
+    except Exception as e:
+        print(f'Error in Macro GPT Endpoint: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# Add these new endpoints to your Django views.py
+from django.core.paginator import Paginator
+
+# Endpoint to get conversation history for a specific GPT
+@csrf_exempt 
+@require_http_methods(["GET"])
+def get_conversation_history(request, gpt_system):
+    try:
+        # Get conversation history for the specific GPT system
+        conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system=gpt_system
+        ).order_by('timestamp')[:50]  # Get last 50 conversations
+        
+        # Convert to list of dictionaries
+        conversation_data = []
+        for conv in conversations:
+            conversation_data.append({
+                'gpt_system': conv.gpt_system,
+                'user_message': conv.user_message,
+                'ai_response': conv.ai_response,
+                'timestamp': conv.timestamp.isoformat()
+            })
+        
+        return JsonResponse({
+            'status': 'success',
+            'conversation_history': conversation_data,
+            'total_messages': len(conversation_data)
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# Endpoint to clear conversation history for a specific GPT
+@csrf_exempt
+@require_http_methods(["POST"])
+def clear_conversation_history(request, gpt_system):
+    try:
+        # Delete all conversation history for the specific GPT system
+        deleted_count, _ = SnowAIConversationHistory.objects.filter(
+            gpt_system=gpt_system
+        ).delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Cleared {deleted_count} messages for {gpt_system}',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# Updated chat endpoints with conversation memory context
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_paper_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context (last 10 exchanges)
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='PaperGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get paper data with limited fields to avoid large payloads
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:10]
+        total_papers = PaperGPT.objects.count()
+        
+        # Create lightweight paper summaries (avoid large text fields)
+        papers_summary = []
+        for paper in recent_papers:
+            paper_info = {
+                'title': paper.title,
+                'category': paper.category,
+                'upload_date': paper.upload_date.isoformat(),
+                'file_name': paper.file_name,
+                'summary_preview': paper.ai_summary[:200] + "..." if paper.ai_summary and len(paper.ai_summary) > 200 else paper.ai_summary,
+                'has_notes': bool(paper.personal_notes),
+                'text_length': len(paper.extracted_text) if paper.extracted_text else 0
+            }
+            papers_summary.append(paper_info)
+        
+        context_prompt = f"""
+        You are PaperGPT, an AI assistant who specializes in research paper analysis, academic literature synthesis, and research methodology. 
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available research papers data (use only when relevant to the conversation):
+        Total papers in collection: {total_papers}
+        
+        Recent papers summary:
+        {json.dumps(papers_summary, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed paper analysis or summaries if the user specifically asks for research insights, paper analysis, or academic information
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing paper-related content
+        - Be helpful and friendly while staying true to your research expertise
+        - Reference the research data when it's actually relevant to what the user is asking
+        - You have access to paper metadata and summaries; if full text is needed, acknowledge the limitation
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        # Ensure we have a valid response
+        if not ai_response or ai_response.strip() == '':
+            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question."
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='PaperGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        print(f'Error in PaperGPT chat function: {e}')
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_backtesting_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='BacktestingGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get backtest data with essential fields only
+        recent_results = BacktestResult.objects.order_by('-created_at')[:10]
+        backtest_models = BacktestModels.objects.all()[:10]
+        
+        total_results = BacktestResult.objects.count()
+        total_models = BacktestModels.objects.count()
+        
+        # Create lightweight summaries (avoid JSON field which might be large)
+        results_summary = []
+        for result in recent_results:
+            result_info = {
+                'start': result.start.isoformat(),
+                'end': result.end.isoformat(),
+                'duration': result.duration,
+                'return_percent': result.return_percent,
+                'annual_return': result.annual_return,
+                'sharpe_ratio': result.sharpe_ratio,
+                'max_drawdown': result.max_drawdown,
+                'num_trades': result.num_trades,
+                'win_rate': result.win_rate,
+                'equity_final': result.equity_final,
+                'created_at': result.created_at.isoformat()
+            }
+            results_summary.append(result_info)
+        
+        # Serialize models data with essential fields including generated code
+        models_summary = []
+        for model in backtest_models:
+            model_info = {
+                'chosen_dataset': model.chosen_dataset,
+                'dataset_start': model.dataset_start,
+                'dataset_end': model.dataset_end,
+                'initial_capital': model.initial_capital,
+                'model_backtested': model.model_backtested,
+                'generated_code': model.generated_code[:2000] + "..." if model.generated_code and len(model.generated_code) > 2000 else model.generated_code
+            }
+            models_summary.append(model_info)
+        
+        context_prompt = f"""
+        You are BacktestingGPT, an AI assistant who specializes in quantitative strategy analysis, backtesting methodology, and trading system optimization.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available backtesting data (use only when relevant to the conversation):
+        Total backtests: {total_models}
+        Total results: {total_results}
+        
+        Recent backtest results summary:
+        {json.dumps(results_summary, indent=2)}
+        
+        Backtest models summary:
+        {json.dumps(models_summary, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed backtesting analysis or performance summaries if the user specifically asks about trading strategies, backtesting, or quantitative analysis
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing backtesting-related content
+        - Be helpful and friendly while staying true to your quantitative expertise
+        - Reference the backtesting data when it's actually relevant to what the user is asking
+        - You have access to backtest results and model configuration summaries
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        # Ensure we have a valid response
+        if not ai_response or ai_response.strip() == '':
+            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question."
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='BacktestingGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        print(f'Error in BacktestingGPT chat function: {e}')
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_research_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='ResearchGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get actual research data
+        ml_models = SnowAIMLModelLogEntry.objects.all()[:10]
+        
+        # Serialize ML models data
+        ml_models_data = []
+        for model in ml_models:
+            model_dict = {}
+            for field in model._meta.fields:
+                field_value = getattr(model, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    model_dict[field.name] = field_value.isoformat()
+                else:
+                    model_dict[field.name] = str(field_value) if field_value is not None else None
+            ml_models_data.append(model_dict)
+        
+        context_prompt = f"""
+        You are ResearchGPT, an AI assistant who specializes in comprehensive research analysis, cross-disciplinary synthesis, and strategic research planning.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available research ecosystem data (use only when relevant to the conversation):
+        Total ML models: {SnowAIMLModelLogEntry.objects.count()}
+        
+        ML Models data:
+        {json.dumps(ml_models_data, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed research analysis or comprehensive summaries if the user specifically asks about research insights, cross-disciplinary analysis, or strategic planning
+        - Be helpful and friendly while staying true to your research expertise
+        - Reference the research ecosystem data when it's actually relevant to what the user is asking
+        - You have access to full ML model data and research context
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='ResearchGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trader_history_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='TraderHistoryGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get actual trading data
+        recent_trades = AccountTrades.objects.all()[:50]
+        
+        # Serialize trades data
+        trades_data = []
+        for trade in recent_trades:
+            trade_dict = {}
+            for field in trade._meta.fields:
+                field_value = getattr(trade, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    trade_dict[field.name] = field_value.isoformat()
+                else:
+                    trade_dict[field.name] = str(field_value) if field_value is not None else None
+            trades_data.append(trade_dict)
+        
+        context_prompt = f"""
+        You are TraderHistoryGPT, an AI assistant who specializes in analyzing trading performance and providing trading insights.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available trading data (use only when relevant to the conversation):
+        Total trades in system: {AccountTrades.objects.count()}
+        
+        Recent trades data:
+        {json.dumps(trades_data, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed trading analysis or performance summaries if the user specifically asks about trading performance, metrics, or trading-related questions
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing trading-related content
+        - Be helpful and friendly while staying true to your trading expertise
+        - Reference the trading data when it's actually relevant to what the user is asking
+        - You have access to full trade data including all fields and can calculate any metrics from this data
+        - If the user asks about specific metrics, calculate them from the available trade data
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='TraderHistoryGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_idea_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='IdeaGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get actual ideas data
+        recent_ideas = IdeaModel.objects.order_by('-created_at')[:20]
+        
+        # Serialize ideas data
+        ideas_data = []
+        for idea in recent_ideas:
+            idea_dict = {}
+            for field in idea._meta.fields:
+                field_value = getattr(idea, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    idea_dict[field.name] = field_value.isoformat()
+                else:
+                    idea_dict[field.name] = str(field_value) if field_value is not None else None
+            ideas_data.append(idea_dict)
+        
+        context_prompt = f"""
+        You are IdeaGPT, an AI assistant who specializes in idea management, creativity enhancement, and innovation strategy.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available ideas data (use only when relevant to the conversation):
+        Total ideas in system: {IdeaModel.objects.count()}
+        
+        Recent ideas data:
+        {json.dumps(ideas_data, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed idea analysis or creativity insights if the user specifically asks about ideas, creativity, innovation, or brainstorming
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing idea-related content
+        - Be helpful and friendly while staying true to your creativity and innovation expertise
+        - Reference the ideas data when it's actually relevant to what the user is asking
+        - You have access to full idea data including all fields and content
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='IdeaGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_macro_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='MacroGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get actual economic data - PAST EVENTS FROM LAST 30 DAYS
+        past_events = EconomicEvent.objects.filter(
+            date_time__gte=datetime.now() - timedelta(days=30),
+            date_time__lt=datetime.now()
+        ).order_by('-date_time')
+        
+        # Serialize past events data
+        past_events_data = []
+        for event in past_events:
+            event_dict = {}
+            for field in event._meta.fields:
+                field_value = getattr(event, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    event_dict[field.name] = field_value.isoformat()
+                else:
+                    event_dict[field.name] = str(field_value) if field_value is not None else None
+            past_events_data.append(event_dict)
+        
+        context_prompt = f"""
+        You are MacroGPT, an AI assistant who specializes in macro economic analysis, market trends, and economic event impact assessment.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available economic data (use only when relevant to the conversation):
+        
+        Past economic events (Last 30 days):
+        {json.dumps(past_events_data, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed macro economic analysis or market insights if the user specifically asks about economic events, market trends, or macro analysis
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing economic content
+        - Be helpful and friendly while staying true to your macro economic expertise
+        - Reference the economic data when it's actually relevant to what the user is asking
+        - You have access to past economic event data including all fields and details
+        - If the user asks about specific currencies or past events, reference the available data context
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        # Ensure we have a response
+        if not ai_response or ai_response.strip() == '':
+            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question."
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='MacroGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        print(f'Error in MacroGPT chat function: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+        
+
+def init_scheduler():
+    """Initialize the background scheduler"""
+    global scheduler
+    if scheduler is None:
+        scheduler = BackgroundScheduler()
+        
+        # Add job to run all GPT summaries every 24 hours at 2 AM
+        scheduler.add_job(
+            func=generate_all_gpt_summaries,
+            trigger="cron",
+            hour=2,  # Run at 2 AM
+            minute=0,
+            id='gpt_summaries_job',
+            replace_existing=True
+        )
+        
+        # Add job to run every hour for testing (remove this in production)
+        # scheduler.add_job(
+        #     func=generate_all_gpt_summaries,
+        #     trigger="interval",
+        #     hours=1,
+        #     id='gpt_summaries_hourly_test',
+        #     replace_existing=True
+        # )
+        
+        scheduler.start()
+        logger.info("Scheduler started successfully")
+        
+        # Shutdown scheduler when the application exits
+        # atexit.register(lambda: scheduler.shutdown() if scheduler else None)
+    
+    return scheduler
+
+def generate_all_gpt_summaries():
+    """Function to generate all GPT summaries - called by scheduler"""
+    logger.info("Starting scheduled GPT summary generation...")
+    
+    summary_functions = [
+        ('TraderHistoryGPT', generate_trader_history_summary),
+        ('MacroGPT', generate_macro_gpt_summary), 
+        ('IdeaGPT', generate_idea_gpt_summary),
+        ('BacktestingGPT', generate_backtesting_gpt_summary),
+        ('PaperGPT', generate_paper_gpt_summary),
+        ('ResearchGPT', generate_research_gpt_summary),
+    ]
+    
+    results = {}
+    for gpt_name, func in summary_functions:
+        try:
+            logger.info(f"Generating {gpt_name} summary...")
+            result = func()
+            results[gpt_name] = 'success' if result else 'failed'
+            logger.info(f"{gpt_name} summary generation completed")
+        except Exception as e:
+            logger.error(f"Error generating {gpt_name} summary: {str(e)}")
+            results[gpt_name] = f'error: {str(e)}'
+    
+    logger.info(f"Scheduled summary generation completed. Results: {results}")
+    return results
+
+
+# NEW ENDPOINT: Get existing summary without generating
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_existing_summary(request, gpt_type):
+    """Retrieve existing summary from database without generating new one"""
+    try:
+        gpt_type_map = {
+            'TraderHistoryGPT': SnowAITraderHistoryGPTSummary,
+            'MacroGPT': SnowAIMacroGPTSummary,
+            'IdeaGPT': SnowAIIdeaGPTSummary, 
+            'BacktestingGPT': SnowAIBacktestingGPTSummary,
+            'PaperGPT': SnowAIPaperGPTSummary,
+            'ResearchGPT': SnowAIResearchGPTSummary,
+        }
+        
+        model_class = gpt_type_map.get(gpt_type)
+        if not model_class:
+            return JsonResponse({'status': 'error', 'message': 'Invalid GPT type'})
+        
+        # Get the most recent summary
+        try:
+            summary_obj = model_class.objects.latest('created_at')
+            
+            # Build metrics based on available fields
+            metrics = {}
+            
+            # Common fields across different models
+            if hasattr(summary_obj, 'total_trades'):
+                metrics['total_trades'] = summary_obj.total_trades
+            if hasattr(summary_obj, 'win_rate'): 
+                metrics['win_rate'] = f"{summary_obj.win_rate:.2f}%"
+            if hasattr(summary_obj, 'total_profit_loss'):
+                metrics['total_pnl'] = f"${summary_obj.total_profit_loss:,.2f}"
+            if hasattr(summary_obj, 'most_traded_asset'):
+                metrics['most_traded_asset'] = summary_obj.most_traded_asset
+            if hasattr(summary_obj, 'best_performing_strategy'):
+                metrics['best_strategy'] = summary_obj.best_performing_strategy
+            if hasattr(summary_obj, 'total_ideas'):
+                metrics['total_ideas'] = summary_obj.total_ideas
+            if hasattr(summary_obj, 'completion_rate'):
+                metrics['completion_rate'] = f"{summary_obj.completion_rate:.2f}%"
+            if hasattr(summary_obj, 'total_backtests'):
+                metrics['total_backtests'] = summary_obj.total_backtests
+            if hasattr(summary_obj, 'average_sharpe_ratio'):
+                metrics['avg_sharpe_ratio'] = f"{summary_obj.average_sharpe_ratio:.3f}"
+            if hasattr(summary_obj, 'total_papers'):
+                metrics['total_papers'] = summary_obj.total_papers
+            if hasattr(summary_obj, 'most_common_category'):
+                metrics['most_common_category'] = summary_obj.most_common_category
+            if hasattr(summary_obj, 'total_economic_events'):
+                metrics['total_events'] = summary_obj.total_economic_events
+            if hasattr(summary_obj, 'high_impact_events_count'):
+                metrics['high_impact_events'] = summary_obj.high_impact_events_count
+            if hasattr(summary_obj, 'most_active_currency'):
+                metrics['most_active_currency'] = summary_obj.most_active_currency
+            
+            return JsonResponse({
+                'status': 'success',
+                'summary': summary_obj.summary_text,
+                'metrics': metrics,
+                'last_updated': summary_obj.updated_at.isoformat() if hasattr(summary_obj, 'updated_at') and summary_obj.updated_at else summary_obj.created_at.isoformat()
+            })
+            
+        except model_class.DoesNotExist:
+            return JsonResponse({
+                'status': 'No summary available',
+                'summary': None,
+                'metrics': {},
+                'last_updated': None
+            })
+            
+    except Exception as e:
+        logger.error(f'Error fetching existing summary for {gpt_type}: {str(e)}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# SEPARATED SUMMARY GENERATION FUNCTIONS (for scheduler use)
+def generate_trader_history_summary():
+    """Generate TraderHistoryGPT summary - for scheduler use"""
+    try:
+        # Get trading data
+        all_trades = AccountTrades.objects.all()
+        
+        if not all_trades.exists():
+            return False
+        
+        # Calculate trading metrics
+        total_trades = all_trades.count()
+        profit_trades = all_trades.filter(outcome='Win').count()
+        loss_trades = all_trades.filter(outcome='Loss').count()
+        win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        total_pnl = all_trades.aggregate(Sum('amount'))['amount__sum'] or 0
+        avg_trade_amount = all_trades.aggregate(Avg('amount'))['amount__avg'] or 0
+        best_trade = all_trades.aggregate(Max('amount'))['amount__max'] or 0
+        worst_trade = all_trades.aggregate(Min('amount'))['amount__min'] or 0
+        
+        # Strategy analysis
+        strategy_performance = all_trades.values('strategy').annotate(
+            total_trades=Count('id'),
+            total_pnl=Sum('amount')
+        ).order_by('-total_pnl')
+        
+        best_strategy = strategy_performance.first()['strategy'] if strategy_performance else 'N/A'
+        worst_strategy = strategy_performance.last()['strategy'] if strategy_performance else 'N/A'
+        
+        # Asset analysis
+        asset_counts = all_trades.values('asset').annotate(count=Count('id')).order_by('-count')
+        most_traded_asset = asset_counts.first()['asset'] if asset_counts else 'N/A'
+        
+        # Get news data for context
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
+        try:
+            news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        except:
+            news_data = {'message': []}
+        
+        # Create comprehensive prompt for GPT
+        prompt = f"""
+        Analyze this comprehensive trading performance data and provide a detailed, professional summary:
+
+        TRADING PERFORMANCE METRICS:
+        - Total Trades: {total_trades}
+        - Win Rate: {win_rate:.2f}%
+        - Total P&L: ${total_pnl:,.2f}
+        - Average Trade Size: ${avg_trade_amount:,.2f}
+        - Best Trade: ${best_trade:,.2f}
+        - Worst Trade: ${worst_trade:,.2f}
+        - Most Traded Asset: {most_traded_asset}
+        - Best Performing Strategy: {best_strategy}
+        - Worst Performing Strategy: {worst_strategy}
+
+        DETAILED BREAKDOWN:
+        - Profitable Trades: {profit_trades}
+        - Losing Trades: {loss_trades}
+
+        RECENT MARKET NEWS THEMES:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:5]])}
+
+        Please provide:
+        1. A comprehensive performance assessment
+        2. Key strengths and weaknesses in the trading approach
+        3. Risk management analysis
+        4. Recommendations for improvement
+        5. Strategic insights based on the data
+        6. Asset allocation observations
+        7. Future trading suggestions
+
+        Format the response as a professional trading report with clear sections and actionable insights.
+        """
+        
+        # Get AI summary
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAITraderHistoryGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'total_profit_loss': total_pnl,
+                'best_performing_strategy': best_strategy,
+                'worst_performing_strategy': worst_strategy,
+                'most_traded_asset': most_traded_asset,
+                'average_trade_amount': avg_trade_amount,
+            }
+        )
+        
+        if not created:
+            # Update existing summary
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_trades = total_trades
+            summary_obj.win_rate = win_rate
+            summary_obj.total_profit_loss = total_pnl
+            summary_obj.best_performing_strategy = best_strategy
+            summary_obj.worst_performing_strategy = worst_strategy
+            summary_obj.most_traded_asset = most_traded_asset
+            summary_obj.average_trade_amount = avg_trade_amount
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'Error in generate_trader_history_summary: {e}')
+        return False
+
+
+def generate_macro_gpt_summary():
+    """Generate MacroGPT summary - for scheduler use"""
+    try:
+        one_month_ago = datetime.now() - timedelta(days=30)
+        recent_events = EconomicEvent.objects.filter(date_time__gte=one_month_ago)
+        
+        if not recent_events.exists():
+            return False
+        
+        # Calculate economic event metrics
+        total_events = recent_events.count()
+        high_impact_events = recent_events.filter(impact='high').count()
+        medium_impact_events = recent_events.filter(impact='medium').count()
+        low_impact_events = recent_events.filter(impact='low').count()
+        
+        # Currency analysis
+        currency_counts = recent_events.values('currency').annotate(count=Count('id')).order_by('-count')
+        most_active_currency = currency_counts.first()['currency'] if currency_counts else 'N/A'
+        
+        # Get news data for major assets
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
+        try:
+            news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        except:
+            news_data = {'message': []}
+        
+        # Upcoming events
+        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:10]
+        
+        # Create comprehensive prompt
+        prompt = f"""
+        Analyze this comprehensive macro economic data and provide a detailed market analysis:
+
+        ECONOMIC EVENTS ANALYSIS (Last 30 Days):
+        - Total Economic Events: {total_events}
+        - High Impact Events: {high_impact_events}
+        - Medium Impact Events: {medium_impact_events}  
+        - Low Impact Events: {low_impact_events}
+        - Most Active Currency: {most_active_currency}
+        
+        RECENT HIGH IMPACT EVENTS:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d')})" for event in recent_events.filter(impact='high')[:10]])}
+        
+        UPCOMING EVENTS PREVIEW:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d %H:%M')})" for event in upcoming_events])}
+        
+        NEWS THEMES FROM MAJOR ASSETS:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:10]])}
+
+        Please provide:
+        1. Comprehensive macro economic assessment
+        2. Key market themes and trends
+        3. Currency strength analysis
+        4. Risk assessment for upcoming events
+        5. Trading opportunities and recommendations
+        6. Market sentiment analysis
+        7. Geopolitical impact assessment
+        8. Central bank policy implications
+
+        Format as a professional macro economic briefing with actionable market insights.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAIMacroGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_economic_events': total_events,
+                'high_impact_events_count': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'key_market_themes': ', '.join([item['title'][:50] for item in news_data.get('message', [])[:5]]),
+                'upcoming_events_preview': ', '.join([f"{event.currency}: {event.event_name}" for event in upcoming_events[:5]]),
+                'market_sentiment': 'Mixed' if high_impact_events > 5 else 'Stable',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_economic_events = total_events
+            summary_obj.high_impact_events_count = high_impact_events
+            summary_obj.most_active_currency = most_active_currency
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'Error in generate_macro_gpt_summary: {e}')
+        return False
+
+
+def generate_idea_gpt_summary():
+    """Generate IdeaGPT summary - for scheduler use"""
+    try:
+        all_ideas = IdeaModel.objects.all()
+        trade_ideas = TradeIdea.objects.all()
+        
+        if not all_ideas.exists() and not trade_ideas.exists():
+            return False
+        
+        # Calculate metrics for regular ideas
+        total_ideas = all_ideas.count()
+        pending_ideas = all_ideas.filter(idea_tracker='Pending').count()
+        in_progress_ideas = all_ideas.filter(idea_tracker='In Progress').count()
+        completed_ideas = all_ideas.filter(idea_tracker='Completed').count()
+        
+        completion_rate = (completed_ideas / total_ideas * 100) if total_ideas > 0 else 0
+        
+        # Category analysis
+        categories = all_ideas.values('idea_category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['idea_category'] if categories else 'N/A'
+        
+        # Trade ideas metrics
+        total_trade_ideas = trade_ideas.count()
+        pending_trade_ideas = trade_ideas.filter(trade_status='pending').count()
+        executed_trade_ideas = trade_ideas.filter(trade_status='executed').count()
+        
+        # Get recent ideas for context
+        recent_ideas = all_ideas.order_by('-created_at')[:10]
+        recent_trade_ideas = trade_ideas.order_by('-date_created')[:5]
+        
+        oldest_pending = all_ideas.filter(idea_tracker='Pending').order_by('created_at').first()
+        newest_idea = all_ideas.order_by('-created_at').first()
+        
+        prompt = f"""
+        Analyze this comprehensive idea management data and provide detailed insights:
+
+        GENERAL IDEAS ANALYSIS:
+        - Total Ideas: {total_ideas}
+        - Pending Ideas: {pending_ideas}
+        - In Progress Ideas: {in_progress_ideas}
+        - Completed Ideas: {completed_ideas}
+        - Completion Rate: {completion_rate:.2f}%
+        - Most Common Category: {most_common_category}
+
+        TRADE IDEAS ANALYSIS:
+        - Total Trade Ideas: {total_trade_ideas}
+        - Pending Trade Ideas: {pending_trade_ideas}
+        - Executed Trade Ideas: {executed_trade_ideas}
+
+        RECENT IDEAS SAMPLE:
+        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:5]])}
+
+        RECENT TRADE IDEAS:
+        {chr(10).join([f"- [{trade.trade_status}] {trade.asset}: {trade.heading}" for trade in recent_trade_ideas])}
+
+        Please provide:
+        1. Comprehensive idea pipeline analysis
+        2. Productivity and execution assessment
+        3. Category-wise performance breakdown
+        4. Bottleneck identification
+        5. Recommendations for better idea management
+        6. Trading idea conversion analysis
+        7. Strategic prioritization suggestions
+        8. Innovation and creativity assessment
+
+        Format as a professional idea management report with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIIdeaGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_ideas': total_ideas,
+                'pending_ideas': pending_ideas,
+                'in_progress_ideas': in_progress_ideas,
+                'completed_ideas': completed_ideas,
+                'most_common_category': most_common_category,
+                'completion_rate': completion_rate,
+                'oldest_pending_idea': oldest_pending.idea_text[:200] if oldest_pending else 'N/A',
+                'newest_idea': newest_idea.idea_text[:200] if newest_idea else 'N/A',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_ideas = total_ideas
+            summary_obj.pending_ideas = pending_ideas
+            summary_obj.in_progress_ideas = in_progress_ideas
+            summary_obj.completed_ideas = completed_ideas
+            summary_obj.completion_rate = completion_rate
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'Error in generate_idea_gpt_summary: {e}')
+        return False
+
+
+def generate_backtesting_gpt_summary():
+    """Generate BacktestingGPT summary - for scheduler use"""
+    try:
+        all_backtests = BacktestModels.objects.all()
+        all_results = BacktestResult.objects.all()
+        
+        if not all_backtests.exists():
+            return False
+        
+        total_backtests = all_backtests.count()
+        successful_backtests = all_backtests.filter(model_backtested=True).count()
+        
+        # Results analysis
+        if all_results.exists():
+            avg_sharpe = all_results.aggregate(Avg('sharpe_ratio'))['sharpe_ratio__avg'] or 0
+            avg_annual_return = all_results.aggregate(Avg('annual_return'))['annual_return__avg'] or 0
+            avg_max_drawdown = all_results.aggregate(Avg('max_drawdown'))['max_drawdown__avg'] or 0
+            best_sharpe = all_results.aggregate(Max('sharpe_ratio'))['sharpe_ratio__max'] or 0
+            worst_sharpe = all_results.aggregate(Min('sharpe_ratio'))['sharpe_ratio__min'] or 0
+            
+            best_result = all_results.filter(sharpe_ratio=best_sharpe).first()
+            worst_result = all_results.filter(sharpe_ratio=worst_sharpe).first()
+        else:
+            avg_sharpe = avg_annual_return = avg_max_drawdown = 0
+            best_result = worst_result = None
+        
+        # Dataset analysis
+        datasets = all_backtests.values('chosen_dataset').annotate(count=Count('id')).order_by('-count')
+        most_used_dataset = datasets.first()['chosen_dataset'] if datasets else 'N/A'
+        
+        # Recent backtests
+        recent_backtests = all_backtests.order_by('-id')[:5]
+        
+        prompt = f"""
+        Analyze this comprehensive backtesting performance data:
+
+        BACKTESTING OVERVIEW:
+        - Total Backtests: {total_backtests}
+        - Successful Backtests: {successful_backtests}
+        - Success Rate: {(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%
+        - Most Used Dataset: {most_used_dataset}
+
+        PERFORMANCE METRICS:
+        - Average Sharpe Ratio: {avg_sharpe:.3f}
+        - Average Annual Return: {avg_annual_return:.2f}%
+        - Average Max Drawdown: {avg_max_drawdown:.2f}%
+        - Best Sharpe Ratio: {best_sharpe:.3f}
+        - Worst Sharpe Ratio: {worst_sharpe:.3f}
+
+        RECENT BACKTESTS:
+        {chr(10).join([f"- Dataset: {bt.chosen_dataset} | Period: {bt.dataset_start} to {bt.dataset_end} | Capital: ${bt.initial_capital:,.2f}" for bt in recent_backtests])}
+
+        BEST PERFORMING STRATEGY:
+        {f"Sharpe: {best_result.sharpe_ratio:.3f} | Annual Return: {best_result.annual_return:.2f}% | Drawdown: {best_result.max_drawdown:.2f}%" if best_result else "No results available"}
+
+        WORST PERFORMING STRATEGY:
+        {f"Sharpe: {worst_result.sharpe_ratio:.3f} | Annual Return: {worst_result.annual_return:.2f}% | Drawdown: {worst_result.max_drawdown:.2f}%" if worst_result else "No results available"}
+
+        Please provide:
+        1. Comprehensive backtesting performance assessment
+        2. Strategy effectiveness analysis
+        3. Risk-adjusted returns evaluation
+        4. Dataset utilization insights
+        5. Performance consistency analysis
+        6. Recommendations for strategy improvement
+        7. Risk management effectiveness
+        8. Future backtesting suggestions
+
+        Format as a professional quantitative analysis report.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIBacktestingGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_backtests': total_backtests,
+                'successful_backtests': successful_backtests,
+                'average_sharpe_ratio': avg_sharpe,
+                'average_annual_return': avg_annual_return,
+                'average_max_drawdown': avg_max_drawdown,
+                'best_performing_strategy': f"Sharpe: {best_sharpe:.3f}" if best_result else 'N/A',
+                'worst_performing_strategy': f"Sharpe: {worst_sharpe:.3f}" if worst_result else 'N/A',
+                'most_used_dataset': most_used_dataset,
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_backtests = total_backtests
+            summary_obj.successful_backtests = successful_backtests
+            summary_obj.average_sharpe_ratio = avg_sharpe
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'Error in generate_backtesting_gpt_summary: {e}')
+        return False
+
+
+def generate_paper_gpt_summary():
+    """Generate PaperGPT summary - for scheduler use"""
+    try:
+        all_papers = PaperGPT.objects.all()
+        
+        if not all_papers.exists():
+            return False
+        
+        total_papers = all_papers.count()
+        
+        # Calculate total file size safely
+        total_file_size = 0
+        for paper in all_papers:
+            if paper.file_size:
+                total_file_size += paper.file_size
+        total_file_size_mb = total_file_size / (1024 * 1024)  # Convert to MB
+        
+        # Category analysis
+        categories = all_papers.exclude(category__isnull=True).exclude(category='').values('category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['category'] if categories else 'Uncategorized'
+        
+        # Length analysis
+        papers_with_text = all_papers.exclude(extracted_text__isnull=True).exclude(extracted_text='')
+        avg_paper_length = 0
+        if papers_with_text.exists():
+            total_length = sum([len(paper.extracted_text) for paper in papers_with_text])
+            avg_paper_length = total_length / papers_with_text.count()
+        
+        # Recent uploads
+        recent_papers = all_papers.order_by('-upload_date')[:5]
+        latest_upload = recent_papers.first()
+        
+        # Get AI summaries for analysis
+        papers_with_summaries = all_papers.exclude(ai_summary__isnull=True).exclude(ai_summary='')
+        paper_summaries = []
+        if papers_with_summaries.exists():
+            paper_summaries = [paper.ai_summary[:200] + "..." for paper in papers_with_summaries[:10]]
+        
+        # Get personal notes
+        papers_with_notes = all_papers.exclude(personal_notes__isnull=True).exclude(personal_notes='')
+        personal_notes = []
+        if papers_with_notes.exists():
+            personal_notes = [paper.personal_notes[:100] + "..." for paper in papers_with_notes[:5]]
+        
+        prompt = f"""
+        Analyze this comprehensive research paper collection and provide insights:
+
+        PAPER COLLECTION OVERVIEW:
+        - Total Papers: {total_papers}
+        - Total File Size: {total_file_size_mb:.2f} MB
+        - Most Common Category: {most_common_category}
+        - Average Paper Length: ~{avg_paper_length:.0f} characters
+
+        RECENT UPLOADS:
+        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'} | Size: {(paper.file_size/(1024*1024)):.1f}MB" for paper in recent_papers if paper.file_size])}
+
+        EXISTING AI SUMMARIES SAMPLE:
+        {chr(10).join([f"- {summary}" for summary in paper_summaries[:5]])}
+
+        PERSONAL NOTES SAMPLE:
+        {chr(10).join([f"- {note}" for note in personal_notes])}
+
+        CATEGORY BREAKDOWN:
+        {chr(10).join([f"- {cat['category']}: {cat['count']} papers" for cat in categories[:5]])}
+
+        Please provide:
+        1. Comprehensive research collection assessment
+        2. Knowledge domain analysis
+        3. Research gap identification
+        4. Cross-paper insight synthesis
+        5. Future research recommendations
+        6. Practical application opportunities
+        7. Knowledge management suggestions
+        8. Research methodology insights
+        9. Literature review conclusions
+        10. Strategic research directions
+
+        Format as a comprehensive research portfolio analysis with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Generate research recommendations
+        recommendations_prompt = f"""
+        Based on the {total_papers} research papers in categories like {most_common_category}, provide specific future research applications and recommendations:
+
+        1. Identify 3-5 key research themes
+        2. Suggest practical applications for trading/finance
+        3. Recommend next research directions
+        4. Identify knowledge gaps that need filling
+
+        Keep recommendations specific and actionable.
+        """
+        
+        research_recommendations = chat_gpt(recommendations_prompt)
+        
+        summary_obj, created = SnowAIPaperGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_papers': total_papers,
+                'most_common_category': most_common_category,
+                'total_file_size_mb': total_file_size_mb,
+                'average_paper_length': avg_paper_length,
+                'latest_upload': latest_upload.title if latest_upload else 'N/A',
+                'research_recommendations': research_recommendations,
+                'key_insights': ', '.join([summary[:50] for summary in paper_summaries[:3]]),
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_papers = total_papers
+            summary_obj.research_recommendations = research_recommendations
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'Error in generate_paper_gpt_summary: {e}')
+        return False
+
+
+def generate_research_gpt_summary():
+    """Generate ResearchGPT summary - focuses only on ML models research"""
+    try:
+        # Only analyze ML models (no papers or backtests)
+        ml_models = SnowAIMLModelLogEntry.objects.all()
+
+        if not ml_models.exists():
+            return False
+
+        total_ml_models = ml_models.count()
+
+        # ML Model analysis
+        model_types = ml_models.values('snowai_model_type').annotate(count=Count('id')).order_by('-count')
+        financial_markets = ml_models.values('snowai_financial_market_type').annotate(count=Count('id')).order_by('-count')
+
+        # Recent ML model activity
+        recent_models = ml_models.order_by('-snowai_created_at')[:5]
+
+        # Performance metrics from ML models
+        avg_accuracy = ml_models.exclude(snowai_accuracy_score__isnull=True).aggregate(Avg('snowai_accuracy_score'))['snowai_accuracy_score__avg'] or 0
+        avg_sharpe = ml_models.exclude(snowai_sharpe_ratio__isnull=True).aggregate(Avg('snowai_sharpe_ratio'))['snowai_sharpe_ratio__avg'] or 0
+
+        # Model performance distribution
+        high_performing_models = ml_models.filter(snowai_accuracy_score__gte=0.7).count()
+        profitable_models = ml_models.filter(snowai_sharpe_ratio__gte=1.0).count()
+
+        # Training data analysis
+        avg_training_samples = ml_models.exclude(snowai_dataset_size__isnull=True).aggregate(Avg('snowai_dataset_size'))['snowai_dataset_size__avg'] or 0
+
+        # Prompt for GPT summary focusing on ML research
+        prompt = f"""
+        Analyze this machine learning research ecosystem and provide strategic ML insights:
+
+        ML MODEL RESEARCH OVERVIEW:
+        - Total ML Models: {total_ml_models}
+        - High-Performing Models (>70% accuracy): {high_performing_models}
+        - Profitable Models (Sharpe >1.0): {profitable_models}
+        - Average Model Accuracy: {avg_accuracy}
+        - Average Sharpe Ratio: {avg_sharpe}
+        - Average Training Samples: {avg_training_samples}
+
+        MODEL TYPE DISTRIBUTION:
+        {chr(10).join([f"- {mt['snowai_model_type']}: {mt['count']} models" for mt in model_types[:10]])}
+
+        FINANCIAL MARKET FOCUS:
+        {chr(10).join([f"- {fm['snowai_financial_market_type']}: {fm['count']} models" for fm in financial_markets[:10]])}
+
+        RECENT ML MODEL DEVELOPMENT:
+        {chr(10).join([f"- {model.snowai_model_name} ({model.snowai_model_type}) - Accuracy: {model.snowai_accuracy_score or 'N/A'}" for model in recent_models])}
+
+        Please provide:
+        1. ML model performance analysis and trends
+        2. Algorithm effectiveness assessment across different markets
+        3. Model architecture optimization insights
+        4. Feature engineering opportunities identified
+        5. Cross-market model transferability analysis
+        6. Overfitting and generalization patterns
+        7. Training data quality and quantity recommendations
+        8. Model ensemble and combination strategies
+        9. Risk management through ML model diversification
+        10. Next-generation ML research directions
+
+        Focus specifically on machine learning research insights, model development patterns, and algorithmic trading applications.
+        """
+
+        ai_summary = chat_gpt(prompt)
+
+        # Generate ML-specific knowledge gaps
+        gaps_prompt = f"""
+        Based on {total_ml_models} ML models with average accuracy of {avg_accuracy}, 
+        identify 3-5 specific knowledge gaps in our ML research that could significantly improve model performance.
+        Focus on algorithmic gaps, data gaps, and methodology gaps.
+        """
+
+        knowledge_gaps = chat_gpt(gaps_prompt)
+
+        # Generate ML research directions
+        directions_prompt = f"""
+        Based on current ML model portfolio analysis, suggest 5 specific future ML research directions 
+        that could improve trading performance. Consider model architectures, feature engineering, 
+        ensemble methods, and novel ML approaches for financial markets.
+        """
+
+        future_directions = chat_gpt(directions_prompt)
+
+        # Generate cross-model insights
+        insights_prompt = f"""
+        Analyze patterns across {total_ml_models} ML models to identify 3-5 key insights about 
+        what makes models successful vs unsuccessful in financial markets. Focus on 
+        transferable learnings and best practices.
+        """
+
+        cross_insights = chat_gpt(insights_prompt)
+
+        # Generate practical applications
+        applications_prompt = f"""
+        Based on ML model analysis, suggest 3-5 practical applications or improvements 
+        that could be immediately implemented to enhance trading performance.
+        """
+
+        practical_apps = chat_gpt(applications_prompt)
+
+        # Generate methodology suggestions
+        methodology_prompt = f"""
+        Recommend 3-5 ML research methodology improvements based on current model portfolio.
+        Focus on training approaches, validation techniques, and evaluation metrics.
+        """
+
+        methodology_suggestions = chat_gpt(methodology_prompt)
+
+        # SIMPLE FIX: Use update_or_create instead of get_or_create
+        # and get today's date at the start of the day
+        today = datetime.now().date()
+        today_start = datetime.combine(today, datetime.min.time())
+        today_end = datetime.combine(today, datetime.max.time())
+
+        summary_obj, created = SnowAIResearchGPTSummary.objects.update_or_create(
+            created_at__range=[today_start, today_end],
+            defaults={
+                'summary_text': ai_summary,
+                'total_research_entries': total_ml_models,
+                'total_papers_analyzed': 0,
+                'knowledge_gaps_identified': knowledge_gaps,
+                'future_research_directions': future_directions,
+                'cross_paper_insights': cross_insights,
+                'practical_applications': practical_apps,
+                'research_methodology_suggestions': methodology_suggestions,
+            }
+        )
+
+        logger.info(f'ResearchGPT summary {"created" if created else "updated"} successfully for {total_ml_models} ML models')
+        return True
+
+    except Exception as e:
+        logger.error(f'Error in generate_research_gpt_summary: {str(e)}')
+        return False
+        
+        
+# OPTIONAL: Manual trigger endpoint for testing
+@csrf_exempt
+# @require_http_methods(["POST"])
+def manual_trigger_summaries(request):
+    """Manually trigger summary generation - useful for testing"""
+    try:
+        results = generate_all_gpt_summaries()
+        return JsonResponse({
+            'status': 'success', 
+            'message': 'Summary generation triggered',
+            'results': results
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_custom_global_interest_rates_data_v2024(request):
+    """
+    Fetch interest rates data from local database instead of external API
+    Returns data in the same format as the original API for frontend compatibility
+    """
+    try:
+        # Define the mapping of currencies to their interest rate event names
+        interest_rate_mappings = {
+            'USD': 'Federal Funds Rate',
+            'EUR': 'Main Refinancing Rate', 
+            'GBP': 'Official Bank Rate',
+            'JPY': 'BOJ Policy Rate',
+            'AUD': 'Cash Rate',
+            'CAD': 'Overnight Rate',
+            'CHF': 'SNB Policy Rate',
+            'CNY': '1-y Loan Prime Rate',  # Using 1-year as primary, you can change this
+        }
+        
+        # Define central bank names for display
+        central_bank_names = {
+            'USD': 'Federal Reserve (USA)',
+            'EUR': 'European Central Bank',
+            'GBP': 'Bank of England',
+            'JPY': 'Bank of Japan',
+            'AUD': 'Reserve Bank of Australia', 
+            'CAD': 'Bank of Canada',
+            'CHF': 'Swiss National Bank',
+            'CNY': 'People\'s Bank of China',
+        }
+        
+        central_bank_rates = []
+        
+        for currency, event_name in interest_rate_mappings.items():
+            try:
+                # Get the most recent interest rate data for each currency
+                latest_event = EconomicEvent.objects.filter(
+                    currency=currency,
+                    event_name=event_name,
+                    actual__isnull=False
+                ).exclude(
+                    actual=''
+                ).order_by('-date_time').first()
+                
+                if latest_event:
+                    # Clean and convert the actual rate to float
+                    actual_rate = latest_event.actual.strip()
+                    
+                    # Handle percentage signs and convert to float
+                    if '%' in actual_rate:
+                        rate_value = float(actual_rate.replace('%', ''))
+                    else:
+                        rate_value = float(actual_rate)
+                    
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency, f'{currency} Central Bank'),
+                        'currency': currency,
+                        'rate_pct': rate_value,
+                        'event_name': event_name,
+                        'last_updated': latest_event.date_time.isoformat()
+                    })
+                else:
+                    # If no data found, add with 0 rate or skip
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency, f'{currency} Central Bank'),
+                        'currency': currency,
+                        'rate_pct': 0.0,
+                        'event_name': event_name,
+                        'last_updated': None
+                    })
+                    
+            except (ValueError, TypeError) as e:
+                # Handle conversion errors
+                print(f"Error processing {currency} rate: {e}")
+                central_bank_rates.append({
+                    'central_bank': central_bank_names.get(currency, f'{currency} Central Bank'),
+                    'currency': currency,
+                    'rate_pct': 0.0,
+                    'event_name': event_name,
+                    'last_updated': None
+                })
+        
+        # Sort by rate for better visualization
+        central_bank_rates.sort(key=lambda x: x['rate_pct'], reverse=True)
+        
+        # Format response to match the original API structure
+        response_data = {
+            'Interest Rates': json.dumps({
+                'central_bank_rates': central_bank_rates,
+                'data_source': 'local_database',
+                'total_banks': len(central_bank_rates)
+            })
+        }
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': 'Failed to fetch interest rates data',
+            'message': str(e)
+        }, status=500)
+
+
+# Alternative view if you want to include both 1-year and 5-year CNY rates
+@csrf_exempt 
+@require_http_methods(["GET"])
+def fetch_custom_global_interest_rates_extended_cny_v2024(request):
+    """
+    Extended version that includes both CNY 1-year and 5-year rates
+    """
+    try:
+        # Extended mapping including both CNY rates
+        interest_rate_mappings = {
+            'USD': 'Federal Funds Rate',
+            'EUR': 'Main Refinancing Rate',
+            'GBP': 'Official Bank Rate', 
+            'JPY': 'BOJ Policy Rate',
+            'AUD': 'Cash Rate',
+            'CAD': 'Overnight Rate',
+            'CHF': 'SNB Policy Rate',
+            'CNY_1Y': '1-y Loan Prime Rate',
+            'CNY_5Y': '5-y Loan Prime Rate',
+        }
+        
+        central_bank_names = {
+            'USD': 'Federal Reserve (USA)',
+            'EUR': 'European Central Bank',
+            'GBP': 'Bank of England',
+            'JPY': 'Bank of Japan', 
+            'AUD': 'Reserve Bank of Australia',
+            'CAD': 'Bank of Canada',
+            'CHF': 'Swiss National Bank',
+            'CNY_1Y': 'People\'s Bank of China (1Y)',
+            'CNY_5Y': 'People\'s Bank of China (5Y)',
+        }
+        
+        central_bank_rates = []
+        
+        for currency_key, event_name in interest_rate_mappings.items():
+            try:
+                # Extract base currency (handle CNY_1Y, CNY_5Y cases)
+                base_currency = currency_key.split('_')[0] if '_' in currency_key else currency_key
+                
+                latest_event = EconomicEvent.objects.filter(
+                    currency=base_currency,
+                    event_name=event_name,
+                    actual__isnull=False
+                ).exclude(
+                    actual=''
+                ).order_by('-date_time').first()
+                
+                if latest_event:
+                    actual_rate = latest_event.actual.strip()
+                    
+                    if '%' in actual_rate:
+                        rate_value = float(actual_rate.replace('%', ''))
+                    else:
+                        rate_value = float(actual_rate)
+                    
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency_key, f'{base_currency} Central Bank'),
+                        'currency': base_currency,
+                        'rate_pct': rate_value,
+                        'event_name': event_name,
+                        'last_updated': latest_event.date_time.isoformat()
+                    })
+                else:
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency_key, f'{base_currency} Central Bank'),
+                        'currency': base_currency, 
+                        'rate_pct': 0.0,
+                        'event_name': event_name,
+                        'last_updated': None
+                    })
+                    
+            except (ValueError, TypeError) as e:
+                print(f"Error processing {currency_key} rate: {e}")
+                base_currency = currency_key.split('_')[0] if '_' in currency_key else currency_key
+                central_bank_rates.append({
+                    'central_bank': central_bank_names.get(currency_key, f'{base_currency} Central Bank'),
+                    'currency': base_currency,
+                    'rate_pct': 0.0,
+                    'event_name': event_name,
+                    'last_updated': None
+                })
+        
+        central_bank_rates.sort(key=lambda x: x['rate_pct'], reverse=True)
+        
+        response_data = {
+            'Interest Rates': json.dumps({
+                'central_bank_rates': central_bank_rates,
+                'data_source': 'local_database',
+                'total_banks': len(central_bank_rates)
+            })
+        }
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': 'Failed to fetch interest rates data',
+            'message': str(e)
+        }, status=500)
+
+
+# Country to currency mapping
+COUNTRY_CURRENCY_MAPPING = {
+    'United States': 'USD',
+    'USA': 'USD',
+    'US': 'USD',
+    'Canada': 'CAD',
+    'United Kingdom': 'GBP',
+    'UK': 'GBP',
+    'Britain': 'GBP',
+    'European Union': 'EUR',
+    'Germany': 'EUR',
+    'France': 'EUR',
+    'Italy': 'EUR',
+    'Spain': 'EUR',
+    'Netherlands': 'EUR',
+    'Belgium': 'EUR',
+    'Austria': 'EUR',
+    'Portugal': 'EUR',
+    'Ireland': 'EUR',
+    'Greece': 'EUR',
+    'Finland': 'EUR',
+    'Japan': 'JPY',
+    'Australia': 'AUD',
+    'Switzerland': 'CHF',
+    'China': 'CNY',
+    'Brazil': 'BRL',
+    'Mexico': 'MXN',
+    'South Africa': 'ZAR',
+    'India': 'INR',
+    'Russia': 'RUB',
+    'South Korea': 'KRW',
+    'Sweden': 'SEK',
+    'Norway': 'NOK',
+    'Denmark': 'DKK',
+    'Poland': 'PLN',
+    'Czech Republic': 'CZK',
+    'Hungary': 'HUF',
+    'Turkey': 'TRY',
+    'Singapore': 'SGD',
+    'Hong Kong': 'HKD',
+    'New Zealand': 'NZD',
+    'Thailand': 'THB',
+    'Malaysia': 'MYR',
+    'Indonesia': 'IDR',
+    'Philippines': 'PHP',
+    'Taiwan': 'TWD',
+    'Israel': 'ILS',
+    'Chile': 'CLP',
+    'Colombia': 'COP',
+    'Peru': 'PEN',
+    'Argentina': 'ARS',
+    'Egypt': 'EGP',
+    'Saudi Arabia': 'SAR',
+    'UAE': 'AED',
+    'Kuwait': 'KWD',
+    'Qatar': 'QAR'
+}
+
+def get_currency_from_country(country_name):
+    """Convert country name to currency code"""
+    # Try direct match first
+    if country_name in COUNTRY_CURRENCY_MAPPING:
+        return COUNTRY_CURRENCY_MAPPING[country_name]
+    
+    # Try partial matches (case insensitive)
+    country_lower = country_name.lower()
+    for country, currency in COUNTRY_CURRENCY_MAPPING.items():
+        if country.lower() in country_lower or country_lower in country.lower():
+            return currency
+    
+    return None
+
+def chat_gpt_economic_analysis(economic_data, country_name, currency):
+    """Generate AI analysis of economic data"""
+    
+    # Prepare the data for AI analysis
+    events_summary = []
+    for event in economic_data:
+        events_summary.append({
+            'date': event.date_time.strftime('%Y-%m-%d'),
+            'event': event.event_name,
+            'impact': event.impact,
+            'actual': event.actual,
+            'forecast': event.forecast,
+            'previous': event.previous
+        })
+    
+    prompt = f"""
+    Analyze the following economic data for {country_name} ({currency}) over the last 30 days and provide a comprehensive economic summary.
+    
+    Economic Events:
+    {json.dumps(events_summary, indent=2)}
+    
+    Please provide your analysis in the following JSON format (no markdown, just pure JSON):
+    {{
+        "country": "{country_name}",
+        "currency": "{currency}",
+        "analysis_period": "Last 30 days",
+        "overall_sentiment": "positive/negative/neutral",
+        "key_highlights": [
+            "highlight 1",
+            "highlight 2",
+            "highlight 3"
+        ],
+        "economic_outlook": "Brief outlook summary",
+        "major_events": [
+            {{
+                "event_name": "Event name",
+                "impact_level": "high/medium/low",
+                "summary": "Brief event summary"
+            }}
+        ],
+        "risk_factors": [
+            "risk factor 1",
+            "risk factor 2"
+        ],
+        "opportunities": [
+            "opportunity 1",
+            "opportunity 2"
+        ],
+        "summary": "Overall economic summary in 2-3 sentences"
+    }}
+    
+    Ensure the response is valid JSON only, no additional text or formatting.
+    """
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+        
+        ai_response = response.choices[0].message['content'].strip()
+        
+        # Try to parse as JSON to validate
+        try:
+            json.loads(ai_response)
+            return ai_response
+        except json.JSONDecodeError:
+            # If parsing fails, return a structured error response
+            return json.dumps({
+                "country": country_name,
+                "currency": currency,
+                "analysis_period": "Last 30 days",
+                "overall_sentiment": "neutral",
+                "key_highlights": ["Analysis could not be completed due to formatting issues"],
+                "economic_outlook": "Unable to generate outlook",
+                "major_events": [],
+                "risk_factors": ["Analysis incomplete"],
+                "opportunities": [],
+                "summary": "Economic analysis could not be completed due to technical issues."
+            })
+            
+    except Exception as e:
+        return json.dumps({
+            "country": country_name,
+            "currency": currency,
+            "analysis_period": "Last 30 days",
+            "overall_sentiment": "neutral",
+            "key_highlights": [f"Error generating analysis: {str(e)}"],
+            "economic_outlook": "Analysis unavailable",
+            "major_events": [],
+            "risk_factors": ["Analysis service unavailable"],
+            "opportunities": [],
+            "summary": "Economic analysis is currently unavailable due to technical issues."
+        })
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def get_country_economic_data(request):
+    """Get economic data and AI analysis for a specific country"""
+    try:
+        data = json.loads(request.body)
+        country_name = data.get('country_name', '').strip()
+        
+        if not country_name:
+            return JsonResponse({
+                'success': False,
+                'error': 'Country name is required'
+            }, status=400)
+        
+        # Get currency code from country name
+        currency_code = get_currency_from_country(country_name)
+        
+        if not currency_code:
+            return JsonResponse({
+                'success': True,
+                'has_data': False,
+                'message': f'No economic data available for {country_name}',
+                'country': country_name,
+                'currency': None,
+                'ai_analysis': json.dumps({
+                    "country": country_name,
+                    "currency": "N/A",
+                    "analysis_period": "Last 30 days",
+                    "overall_sentiment": "neutral",
+                    "key_highlights": [f"No economic data tracking available for {country_name}"],
+                    "economic_outlook": "Economic data not tracked for this region",
+                    "major_events": [],
+                    "risk_factors": ["Limited economic data availability"],
+                    "opportunities": ["Economic data tracking could be expanded"],
+                    "summary": f"Currently, we do not track economic indicators for {country_name}. Economic analysis is not available for this region."
+                })
+            })
+        
+        # Query economic events for the last 30 days
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        economic_events = EconomicEvent.objects.filter(
+            currency=currency_code,
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
+        
+        if not economic_events.exists():
+            return JsonResponse({
+                'success': True,
+                'has_data': False,
+                'message': f'No recent economic data found for {country_name} ({currency_code})',
+                'country': country_name,
+                'currency': currency_code,
+                'ai_analysis': json.dumps({
+                    "country": country_name,
+                    "currency": currency_code,
+                    "analysis_period": "Last 30 days",
+                    "overall_sentiment": "neutral",
+                    "key_highlights": [f"No economic events recorded for {currency_code} in the last 30 days"],
+                    "economic_outlook": "No recent data available for analysis",
+                    "major_events": [],
+                    "risk_factors": ["Limited recent economic data"],
+                    "opportunities": ["Economic monitoring could be enhanced"],
+                    "summary": f"No economic events have been recorded for {country_name} ({currency_code}) in the past 30 days."
+                })
+            })
+        
+        # Generate AI analysis
+        ai_analysis = chat_gpt_economic_analysis(economic_events, country_name, currency_code)
+        
+        return JsonResponse({
+            'success': True,
+            'has_data': True,
+            'message': f'Economic data found for {country_name} ({currency_code})',
+            'country': country_name,
+            'currency': currency_code,
+            'events_count': economic_events.count(),
+            'ai_analysis': ai_analysis
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON data'
+        }, status=400)
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'An error occurred: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def trigger_manual_gpt_discussion(request):
+    """Manually trigger a GPT discussion"""
+    try:
+        result = initiate_gpt_discussion(trigger_type='manual')
+        return JsonResponse({
+            'status': 'success', 
+            'message': 'GPT discussion initiated successfully',
+            'discussion_id': result.get('discussion_id'),
+            'total_messages': result.get('total_messages', 0)
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_current_gpt_discussion(request):
+    """Get the current GPT discussion and all messages"""
+    try:
+        # Get the current discussion
+        discussion = GPTDiscussion.objects.filter(discussion_id='current_discussion').first()
+        
+        if not discussion:
+            return JsonResponse({
+                'status': 'success',
+                'discussion': None,
+                'messages': []
+            })
+        
+        # Get all messages for this discussion
+        messages = GPTDiscussionMessage.objects.filter(discussion=discussion).order_by('timestamp')
+        
+        messages_data = []
+        for msg in messages:
+            messages_data.append({
+                'gpt_system': msg.gpt_system,
+                'message': msg.message,
+                'timestamp': msg.timestamp.isoformat(),
+                'turn_number': msg.turn_number
+            })
+        
+        discussion_data = {
+            'discussion_id': discussion.discussion_id,
+            'started_at': discussion.started_at.isoformat(),
+            'completed_at': discussion.completed_at.isoformat() if discussion.completed_at else None,
+            'is_active': discussion.is_active,
+            'total_messages': discussion.total_messages,
+            'central_gpt_summary': discussion.central_gpt_summary,
+            'discussion_metrics': discussion.discussion_metrics,
+            'trigger_type': discussion.trigger_type
+        }
+        
+        return JsonResponse({
+            'status': 'success',
+            'discussion': discussion_data,
+            'messages': messages_data
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+        
+
+def initiate_gpt_discussion(trigger_type='scheduled'):
+    """Main function to orchestrate GPT discussion with model data access"""
+    try:
+        # Delete any existing discussion
+        GPTDiscussion.objects.filter(discussion_id='current_discussion').delete()
+        
+        # Create new discussion
+        discussion = GPTDiscussion.objects.create(
+            discussion_id='current_discussion',
+            trigger_type=trigger_type,
+            is_active=True
+        )
+        
+        # Define GPT systems and their characteristics
+        gpt_systems = {
+            'TraderHistoryGPT': {'specialty': 'trading performance analysis', 'tone': 'analytical'},
+            'MacroGPT': {'specialty': 'macro economic trends', 'tone': 'strategic'},
+            'IdeaGPT': {'specialty': 'creative innovation', 'tone': 'enthusiastic'},
+            'BacktestingGPT': {'specialty': 'quantitative strategy validation', 'tone': 'methodical'},
+            'PaperGPT': {'specialty': 'research synthesis', 'tone': 'academic'},
+            'ResearchGPT': {'specialty': 'comprehensive analysis', 'tone': 'insightful'}
+        }
+        
+        # Generate discussion topic using IdeaGPT with its data context
+        idea_data = get_idea_gpt_data()
+        topic_prompt = f"""
+        You are IdeaGPT, the creative innovation specialist for SnowAI. You're initiating a discussion 
+        between all the specialized AI systems about SnowAI improvements and insights.
+        
+        Your current ideas data context:
+        {idea_data}
+        
+        Generate a focused, creative discussion topic about SnowAI that each specialist can contribute 
+        to meaningfully. The topic should be:
+        - Concise (1-2 sentences)
+        - Innovative and thought-provoking
+        - Related to: system performance, user value, future improvements, or strategic insights
+        - Something that would spark creative solutions based on current system data
+        
+        Just return the topic, nothing else.
+        """
+        
+        discussion_topic = chat_gpt(topic_prompt).strip()
+        
+        # Store the topic as first message from IdeaGPT
+        GPTDiscussionMessage.objects.create(
+            discussion=discussion,
+            gpt_system='IdeaGPT',
+            message=f"Discussion Topic: {discussion_topic}",
+            turn_number=0
+        )
+        
+        # Conduct discussion rounds (3 rounds, each GPT speaks once per round)
+        total_messages = 1  # Starting with topic message
+        gpt_list = list(gpt_systems.keys())
+        
+        for round_num in range(1, 4):  # 3 rounds
+            random.shuffle(gpt_list)  # Randomize speaking order each round
+            
+            for gpt_system in gpt_list:
+                # Get previous messages for context
+                previous_messages = list(GPTDiscussionMessage.objects.filter(
+                    discussion=discussion
+                ).order_by('timestamp'))
+                
+                context = f"Discussion Topic: {discussion_topic}\n\nPrevious messages:\n"
+                # Get last 10 messages for context
+                recent_messages = previous_messages[-10:] if len(previous_messages) > 10 else previous_messages
+                for msg in recent_messages:
+                    if msg.gpt_system != 'CentralGPT' or msg.turn_number == 0:
+                        context += f"{msg.gpt_system}: {msg.message}\n"
+                
+                # Get system-specific data context
+                system_data_context = get_system_data_context(gpt_system)
+                
+                # Generate response for this GPT with its data context
+                gpt_prompt = f"""
+                You are {gpt_system}, specializing in {gpt_systems[gpt_system]['specialty']}.
+                You have a {gpt_systems[gpt_system]['tone']} personality.
+                
+                Your current system data context:
+                {system_data_context}
+                
+                Discussion context:
+                {context}
+                
+                Current round: {round_num}/3
+                
+                Instructions:
+                - Contribute your unique perspective on SnowAI based on your specialty and current data
+                - Use insights from your actual system data to inform your response
+                - Keep your response concise (2-3 sentences max)
+                - Reference or build upon previous comments when relevant
+                - Stay focused on the discussion topic
+                - Be conversational and collaborative
+                - Don't repeat what others have already said
+                - Ground your insights in the actual data you have access to
+                
+                Your response:
+                """
+                
+                gpt_response = chat_gpt(gpt_prompt).strip()
+                
+                # Store the message
+                GPTDiscussionMessage.objects.create(
+                    discussion=discussion,
+                    gpt_system=gpt_system,
+                    message=gpt_response,
+                    turn_number=round_num
+                )
+                
+                total_messages += 1
+        
+        # Generate final summary using CentralGPT with all system data
+        all_messages = GPTDiscussionMessage.objects.filter(
+            discussion=discussion
+        ).exclude(gpt_system='CentralGPT').order_by('timestamp')
+        
+        conversation_text = ""
+        for msg in all_messages:
+            conversation_text += f"{msg.gpt_system}: {msg.message}\n"
+        
+        # Get comprehensive system overview for CentralGPT
+        comprehensive_data = get_comprehensive_system_data()
+        
+        summary_prompt = f"""
+        You are CentralGPT analyzing a discussion between SnowAI's specialized systems.
+        
+        Discussion Topic: {discussion_topic}
+        
+        Full Conversation:
+        {conversation_text}
+        
+        Complete System Data Overview:
+        {comprehensive_data}
+        
+        Generate a comprehensive summary that includes:
+        1. Key insights and themes that emerged from the data-informed discussion
+        2. Areas of consensus among the systems based on their actual data
+        3. Unique perspectives each system brought from their specialized data
+        4. Actionable recommendations for SnowAI based on real system metrics
+        5. Data-driven observations about system performance and opportunities
+        
+        Keep it structured and insightful, grounding recommendations in actual system data.
+        """
+        
+        final_summary = chat_gpt(summary_prompt).strip()
+        
+        # Calculate metrics
+        word_counts = {}
+        sentiment_diversity = len(set([gpt_systems[gpt]['tone'] for gpt in gpt_systems.keys()]))
+        
+        for gpt in gpt_systems.keys():
+            gpt_messages = all_messages.filter(gpt_system=gpt)
+            total_words = sum(len(msg.message.split()) for msg in gpt_messages)
+            word_counts[gpt] = total_words
+        
+        discussion_metrics = {
+            'topic': discussion_topic,
+            'rounds_completed': 3,
+            'word_counts': word_counts,
+            'total_words': sum(word_counts.values()),
+            'participating_systems': len(gpt_systems),
+            'sentiment_diversity_score': sentiment_diversity,
+            'discussion_duration_minutes': round((timezone.now() - discussion.started_at).total_seconds() / 60, 2)
+        }
+        
+        # Update discussion with final data
+        discussion.completed_at = timezone.now()
+        discussion.is_active = False
+        discussion.total_messages = total_messages
+        discussion.central_gpt_summary = final_summary
+        discussion.discussion_metrics = discussion_metrics
+        discussion.save()
+        
+        return {
+            'status': 'success',
+            'discussion_id': discussion.discussion_id,
+            'total_messages': total_messages,
+            'summary': final_summary[:200] + '...' if len(final_summary) > 200 else final_summary
+        }
+        
+    except Exception as e:
+        print(f'Error in GPT discussion: {e}')
+        import traceback
+        traceback.print_exc()
+        return {'status': 'error', 'message': str(e)}
+
+
+def get_system_data_context(gpt_system):
+    """Get specific data context for each GPT system"""
+    try:
+        if gpt_system == 'TraderHistoryGPT':
+            return get_trader_history_gpt_data()
+        elif gpt_system == 'MacroGPT':
+            return get_macro_gpt_data()
+        elif gpt_system == 'IdeaGPT':
+            return get_idea_gpt_data()
+        elif gpt_system == 'BacktestingGPT':
+            return get_backtesting_gpt_data()
+        elif gpt_system == 'PaperGPT':
+            return get_paper_gpt_data()
+        elif gpt_system == 'ResearchGPT':
+            return get_research_gpt_data()
+        else:
+            return "No specific data context available."
+    except Exception as e:
+        print(f"Error getting data context for {gpt_system}: {e}")
+        return f"Error accessing {gpt_system} data context."
+
+
+def get_trader_history_gpt_data():
+    """Get trading data for TraderHistoryGPT"""
+    try:
+        recent_trades = AccountTrades.objects.all()[:30]
+        total_trades = AccountTrades.objects.count()
+        
+        trades_data = []
+        for trade in recent_trades:
+            trade_dict = {}
+            for field in trade._meta.fields:
+                field_value = getattr(trade, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    trade_dict[field.name] = field_value.isoformat()
+                else:
+                    trade_dict[field.name] = str(field_value) if field_value is not None else None
+            trades_data.append(trade_dict)
+        
+        return f"""Trading Performance Data:
+Total trades in system: {total_trades}
+
+Recent trades data:
+{json.dumps(trades_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing trading data: {e}"
+
+
+def get_macro_gpt_data():
+    """Get economic data for MacroGPT"""
+    try:
+        past_events = EconomicEvent.objects.filter(
+            date_time__gte=datetime.now() - timedelta(days=30),
+            date_time__lt=datetime.now()
+        ).order_by('-date_time')[:20]
+        
+        events_data = []
+        for event in past_events:
+            event_dict = {}
+            for field in event._meta.fields:
+                field_value = getattr(event, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    event_dict[field.name] = field_value.isoformat()
+                else:
+                    event_dict[field.name] = str(field_value) if field_value is not None else None
+            events_data.append(event_dict)
+        
+        return f"""Economic Events Data:
+Total events tracked: {EconomicEvent.objects.count()}
+
+Past economic events (Last 30 days):
+{json.dumps(events_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing economic data: {e}"
+
+
+def get_idea_gpt_data():
+    """Get ideas data for IdeaGPT"""
+    try:
+        recent_ideas = IdeaModel.objects.order_by('-created_at')[:15]
+        total_ideas = IdeaModel.objects.count()
+        
+        ideas_data = []
+        for idea in recent_ideas:
+            idea_dict = {}
+            for field in idea._meta.fields:
+                field_value = getattr(idea, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    idea_dict[field.name] = field_value.isoformat()
+                else:
+                    idea_dict[field.name] = str(field_value) if field_value is not None else None
+            ideas_data.append(idea_dict)
+        
+        return f"""Ideas Management Data:
+Total ideas in system: {total_ideas}
+
+Recent ideas data:
+{json.dumps(ideas_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing ideas data: {e}"
+
+
+def get_backtesting_gpt_data():
+    """Get backtesting data for BacktestingGPT"""
+    try:
+        recent_results = BacktestResult.objects.order_by('-created_at')[:10]
+        backtest_models = BacktestModels.objects.all()[:10]
+        
+        results_data = []
+        for result in recent_results:
+            result_info = {
+                'start': result.start.isoformat(),
+                'end': result.end.isoformat(),
+                'duration': result.duration,
+                'return_percent': result.return_percent,
+                'annual_return': result.annual_return,
+                'sharpe_ratio': result.sharpe_ratio,
+                'max_drawdown': result.max_drawdown,
+                'num_trades': result.num_trades,
+                'win_rate': result.win_rate,
+                'equity_final': result.equity_final,
+                'created_at': result.created_at.isoformat()
+            }
+            results_data.append(result_info)
+        
+        models_data = []
+        for model in backtest_models:
+            model_info = {
+                'chosen_dataset': model.chosen_dataset,
+                'dataset_start': model.dataset_start,
+                'dataset_end': model.dataset_end,
+                'initial_capital': model.initial_capital,
+                'model_backtested': model.model_backtested,
+                'generated_code': model.generated_code[:1000] + "..." if model.generated_code and len(model.generated_code) > 1000 else model.generated_code
+            }
+            models_data.append(model_info)
+        
+        return f"""Backtesting Performance Data:
+Total backtest results: {BacktestResult.objects.count()}
+Total backtest models: {BacktestModels.objects.count()}
+
+Recent backtest results:
+{json.dumps(results_data, indent=2)}
+
+Backtest models data:
+{json.dumps(models_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing backtesting data: {e}"
+
+
+def get_paper_gpt_data():
+    """Get research papers data for PaperGPT"""
+    try:
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:10]
+        total_papers = PaperGPT.objects.count()
+        
+        papers_data = []
+        for paper in recent_papers:
+            paper_info = {
+                'title': paper.title,
+                'category': paper.category,
+                'upload_date': paper.upload_date.isoformat(),
+                'file_name': paper.file_name,
+                'ai_summary': paper.ai_summary[:300] + "..." if paper.ai_summary and len(paper.ai_summary) > 300 else paper.ai_summary,
+                'has_notes': bool(paper.personal_notes),
+                'text_length': len(paper.extracted_text) if paper.extracted_text else 0
+            }
+            papers_data.append(paper_info)
+        
+        return f"""Research Papers Data:
+Total papers in collection: {total_papers}
+
+Recent papers data:
+{json.dumps(papers_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing papers data: {e}"
+
+
+def get_research_gpt_data():
+    """Get ML research data for ResearchGPT"""
+    try:
+        ml_models = SnowAIMLModelLogEntry.objects.all()[:10]
+        total_models = SnowAIMLModelLogEntry.objects.count()
+        
+        ml_models_data = []
+        for model in ml_models:
+            model_dict = {}
+            for field in model._meta.fields:
+                field_value = getattr(model, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    model_dict[field.name] = field_value.isoformat()
+                else:
+                    model_dict[field.name] = str(field_value) if field_value is not None else None
+            ml_models_data.append(model_dict)
+        
+        return f"""Research & ML Data:
+Total ML models tracked: {total_models}
+
+ML Models data:
+{json.dumps(ml_models_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing research data: {e}"
+
+
+def get_comprehensive_system_data():
+    """Get overview of all system data for CentralGPT"""
+    try:
+        # Get actual data summaries from each system
+        trading_data = get_trader_history_gpt_data()
+        macro_data = get_macro_gpt_data()
+        ideas_data = get_idea_gpt_data()
+        backtesting_data = get_backtesting_gpt_data()
+        papers_data = get_paper_gpt_data()
+        research_data = get_research_gpt_data()
+        
+        overview = {
+            'system_metrics': {
+                'total_trades': AccountTrades.objects.count(),
+                'total_economic_events': EconomicEvent.objects.count(),
+                'total_ideas': IdeaModel.objects.count(),
+                'total_backtest_results': BacktestResult.objects.count(),
+                'total_backtest_models': BacktestModels.objects.count(),
+                'total_papers': PaperGPT.objects.count(),
+                'total_ml_models': SnowAIMLModelLogEntry.objects.count(),
+                'recent_activity': {
+                    'recent_trades': AccountTrades.objects.filter(
+                        created_at__gte=datetime.now() - timedelta(days=7)
+                    ).count() if hasattr(AccountTrades._meta.get_field('created_at'), 'name') else 'N/A',
+                    'recent_events': EconomicEvent.objects.filter(
+                        date_time__gte=datetime.now() - timedelta(days=7)
+                    ).count(),
+                    'recent_ideas': IdeaModel.objects.filter(
+                        created_at__gte=datetime.now() - timedelta(days=7)
+                    ).count(),
+                    'recent_backtests': BacktestResult.objects.filter(
+                        created_at__gte=datetime.now() - timedelta(days=7)
+                    ).count()
+                }
+            }
+        }
+        
+        return f"""Comprehensive System Data Overview:
+
+System Metrics Summary:
+{json.dumps(overview, indent=2)}
+
+TraderHistoryGPT Data Context:
+{trading_data}
+
+MacroGPT Data Context:
+{macro_data}
+
+IdeaGPT Data Context:
+{ideas_data}
+
+BacktestingGPT Data Context:
+{backtesting_data}
+
+PaperGPT Data Context:
+{papers_data}
+
+ResearchGPT Data Context:
+{research_data}
+"""
+    except Exception as e:
+        return f"Error accessing comprehensive system data: {e}"
+
+
+
+import pytz
+import statistics
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_snowai_accounts_for_deep_analysis(request):
+    """Fetch all account names for selection"""
+    try:
+        accounts = Account.objects.all().values('id', 'account_name', 'main_assets', 'initial_capital')
+        accounts_list = list(accounts)
+        
+        return JsonResponse({
+            'success': True,
+            'accounts': accounts_list
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def calculate_deep_account_performance_metrics(request, account_id):
+    """Calculate comprehensive diagnostics for a specific account - FIXED VERSION"""
+    try:
+        # Get South African timezone
+        sa_tz = pytz.timezone('Africa/Johannesburg')
+        current_time = timezone.now().astimezone(sa_tz)
+        
+        # Get account and all trades for this specific account
+        account = Account.objects.get(id=account_id)
+        all_trades = AccountTrades.objects.filter(account=account)
+        
+        # Basic Performance Metrics
+        total_trades = all_trades.count()
+        profitable_trades = all_trades.filter(outcome='Win').count()
+        losing_trades = all_trades.filter(outcome='Loss').count()
+        breakeven_trades = all_trades.filter(outcome='Break Even').count()
+        
+        win_rate = (profitable_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        # Calculate total P&L
+        total_profit = sum(abs(trade.amount) for trade in all_trades.filter(outcome='Win'))
+        total_loss = sum(abs(trade.amount) for trade in all_trades.filter(outcome='Loss'))
+        net_pnl = total_profit - total_loss
+        
+        # Average trade metrics
+        avg_win = total_profit / profitable_trades if profitable_trades > 0 else 0
+        avg_loss = total_loss / losing_trades if losing_trades > 0 else 0
+        
+        # Risk-Reward Ratio
+        risk_reward_ratio = avg_win / avg_loss if avg_loss > 0 else 0
+        
+        # Profit Factor
+        profit_factor = total_profit / total_loss if total_loss > 0 else float('inf')
+        
+        # FIXED: Time-based Analysis
+        current_day = current_time.strftime('%A')
+        current_hour = current_time.hour
+        current_session = get_trading_session_advanced(current_hour)
+        
+        # FIXED: Get performance for current day - make sure we're filtering by exact account
+        day_performance = get_current_day_performance(account, current_day)
+        
+        # FIXED: Get performance for current session - make sure we're filtering by exact account
+        session_performance = get_current_session_performance(account, current_session)
+        
+        # FIXED: Get combined time performance (current day AND current session)
+        combined_time_performance = get_combined_time_performance(account, current_day, current_session)
+        
+        # Calculate the most accurate time-based probability
+        time_based_win_probability = calculate_refined_time_probability(
+            day_performance, 
+            session_performance, 
+            combined_time_performance, 
+            win_rate
+        )
+        
+        # Asset Performance Analysis
+        asset_performance = analyze_asset_performance(all_trades)
+        
+        # Strategy Performance Analysis
+        strategy_performance = analyze_strategy_performance(all_trades)
+        
+        # Emotional Bias Analysis
+        emotional_analysis = analyze_emotional_patterns(all_trades)
+        
+        # Streaks Analysis
+        streaks_data = analyze_winning_losing_streaks(all_trades)
+        
+        # Monthly Performance Trend
+        monthly_performance = calculate_monthly_performance_trend(all_trades)
+        
+        # Drawdown Analysis
+        drawdown_analysis = calculate_drawdown_metrics(all_trades, account.initial_capital)
+        
+        # Risk Metrics
+        risk_metrics = calculate_advanced_risk_metrics(all_trades, account.initial_capital)
+        
+        return JsonResponse({
+            'success': True,
+            'account_info': {
+                'name': account.account_name,
+                'main_assets': account.main_assets,
+                'initial_capital': account.initial_capital
+            },
+            'basic_metrics': {
+                'total_trades': total_trades,
+                'profitable_trades': profitable_trades,
+                'losing_trades': losing_trades,
+                'breakeven_trades': breakeven_trades,
+                'win_rate': round(win_rate, 2),
+                'net_pnl': round(net_pnl, 2),
+                'avg_win': round(avg_win, 2),
+                'avg_loss': round(avg_loss, 2),
+                'risk_reward_ratio': round(risk_reward_ratio, 2),
+                'profit_factor': round(profit_factor, 2)
+            },
+            'time_analysis': {
+                'current_day': current_day,
+                'current_session': current_session,
+                'current_time': current_time.strftime('%H:%M %Z'),
+                'time_based_win_probability': round(time_based_win_probability, 2),
+                'day_performance': day_performance,
+                'session_performance': session_performance,
+                'combined_time_performance': combined_time_performance,  # Added for debugging
+                'debug_info': {
+                    'account_id': account_id,
+                    'total_account_trades': total_trades,
+                    'current_day_trades': day_performance['trade_count'],
+                    'current_session_trades': session_performance['trade_count'],
+                    'combined_time_trades': combined_time_performance['trade_count']
+                }
+            },
+            'asset_performance': asset_performance,
+            'strategy_performance': strategy_performance,
+            'emotional_analysis': emotional_analysis,
+            'streaks_data': streaks_data,
+            'monthly_performance': monthly_performance,
+            'drawdown_analysis': drawdown_analysis,
+            'risk_metrics': risk_metrics
+        })
+        
+    except Account.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Account not found'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def generate_ai_enhanced_account_diagnostics(request, account_id):
+    """Generate AI-powered diagnostic insights using GPT-4o-mini"""
+    try:
+        data = json.loads(request.body)
+        performance_data = data.get('performance_data', {})
+        
+        # Set up OpenAI API key
+        openai.api_key = os.getenv('OPENAI_API_KEY')
+        
+        # Create comprehensive prompt for AI analysis
+        prompt = create_ai_diagnostic_prompt(account_id, performance_data)
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert trading performance analyst with deep expertise in risk management, behavioral finance, and trading psychology. Provide actionable insights and recommendations."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_tokens=1500,
+            temperature=0.7
+        )
+        
+        ai_insights = response.choices[0].message.content
+        
+        return JsonResponse({
+            'success': True,
+            'ai_insights': ai_insights,
+            'generated_at': timezone.now().isoformat()
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+# Helper Functions
+
+def get_trading_session_advanced(hour):
+    """Determine trading session based on hour (SA time) - FIXED"""
+    if 9 <= hour < 17:
+        return "London"
+    elif 15 <= hour < 23:
+        return "NY"
+    elif 2 <= hour < 10:
+        return "Asian"
+    else:
+        return "Off-Hours"
+
+
+def get_current_day_performance(account, current_day):
+    """Get performance for current day of week - FIXED to use specific account"""
+    # Filter trades for this specific account and current day
+    day_trades = AccountTrades.objects.filter(
+        account=account,
+        day_of_week_entered__iexact=current_day  # Case insensitive match
+    )
+    
+    if not day_trades.exists():
+        return {
+            'win_rate': 0, 
+            'trade_count': 0, 
+            'confidence': 'No Data',
+            'wins': 0,
+            'losses': 0
+        }
+    
+    total = day_trades.count()
+    wins = day_trades.filter(outcome='Win').count()
+    losses = day_trades.filter(outcome='Loss').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    # Confidence based on sample size
+    if total >= 20:
+        confidence = 'High'
+    elif total >= 10:
+        confidence = 'Medium'
+    elif total >= 5:
+        confidence = 'Low'
+    else:
+        confidence = 'Very Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'wins': wins,
+        'losses': losses,
+        'confidence': confidence
+    }
+
+def get_current_session_performance(account, current_session):
+    """Get performance for current trading session - FIXED to use specific account"""
+    # Filter trades for this specific account and current session
+    session_trades = AccountTrades.objects.filter(
+        account=account,
+        trading_session_entered__iexact=current_session  # Case insensitive match
+    )
+    
+    if not session_trades.exists():
+        return {
+            'win_rate': 0, 
+            'trade_count': 0, 
+            'confidence': 'No Data',
+            'wins': 0,
+            'losses': 0
+        }
+    
+    total = session_trades.count()
+    wins = session_trades.filter(outcome='Win').count()
+    losses = session_trades.filter(outcome='Loss').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    # Confidence based on sample size
+    if total >= 25:
+        confidence = 'High'
+    elif total >= 15:
+        confidence = 'Medium'
+    elif total >= 8:
+        confidence = 'Low'
+    else:
+        confidence = 'Very Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'wins': wins,
+        'losses': losses,
+        'confidence': confidence
+    }
+
+
+def get_combined_time_performance(account, current_day, current_session):
+    """Get performance for current day AND current session combined - NEW FUNCTION"""
+    # Filter trades for this specific account, current day AND current session
+    combined_trades = AccountTrades.objects.filter(
+        account=account,
+        day_of_week_entered__iexact=current_day,
+        trading_session_entered__iexact=current_session
+    )
+    
+    if not combined_trades.exists():
+        return {
+            'win_rate': 0, 
+            'trade_count': 0, 
+            'confidence': 'No Data',
+            'wins': 0,
+            'losses': 0
+        }
+    
+    total = combined_trades.count()
+    wins = combined_trades.filter(outcome='Win').count()
+    losses = combined_trades.filter(outcome='Loss').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    # Confidence based on sample size for combined data
+    if total >= 15:
+        confidence = 'High'
+    elif total >= 8:
+        confidence = 'Medium'
+    elif total >= 4:
+        confidence = 'Low'
+    else:
+        confidence = 'Very Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'wins': wins,
+        'losses': losses,
+        'confidence': confidence
+    }
+
+
+def calculate_refined_time_probability(day_perf, session_perf, combined_perf, overall_win_rate):
+    """Calculate the most accurate time-based probability - IMPROVED ALGORITHM"""
+    
+    # Priority system: Combined time data is most specific and valuable
+    if combined_perf['trade_count'] >= 5:
+        # We have enough combined data (same day + same session)
+        primary_rate = combined_perf['win_rate']
+        confidence_weight = 0.8  # High weight for combined data
+        
+        # Supplement with overall win rate
+        final_probability = (primary_rate * confidence_weight) + (overall_win_rate * (1 - confidence_weight))
+        
+    elif day_perf['trade_count'] >= 5 and session_perf['trade_count'] >= 5:
+        # We have good data for both day and session separately
+        day_weight = min(day_perf['trade_count'] / 20, 0.4)  # Max 40% weight
+        session_weight = min(session_perf['trade_count'] / 25, 0.4)  # Max 40% weight
+        overall_weight = 1 - day_weight - session_weight
+        
+        final_probability = (
+            day_perf['win_rate'] * day_weight +
+            session_perf['win_rate'] * session_weight +
+            overall_win_rate * overall_weight
+        )
+        
+    elif day_perf['trade_count'] >= 5:
+        # Only day data is reliable
+        day_weight = min(day_perf['trade_count'] / 20, 0.6)  # Max 60% weight
+        final_probability = (day_perf['win_rate'] * day_weight) + (overall_win_rate * (1 - day_weight))
+        
+    elif session_perf['trade_count'] >= 5:
+        # Only session data is reliable
+        session_weight = min(session_perf['trade_count'] / 25, 0.6)  # Max 60% weight
+        final_probability = (session_perf['win_rate'] * session_weight) + (overall_win_rate * (1 - session_weight))
+        
+    else:
+        # Not enough specific time data, use overall with slight adjustments
+        day_adjustment = (day_perf['win_rate'] - overall_win_rate) * 0.1 if day_perf['trade_count'] > 0 else 0
+        session_adjustment = (session_perf['win_rate'] - overall_win_rate) * 0.1 if session_perf['trade_count'] > 0 else 0
+        
+        final_probability = overall_win_rate + day_adjustment + session_adjustment
+    
+    # Ensure probability stays within reasonable bounds
+    return max(0, min(100, final_probability))
+
+
+
+def calculate_day_performance_probability(day_trades):
+    """Calculate win probability for specific day"""
+    if not day_trades.exists():
+        return {'win_rate': 0, 'trade_count': 0, 'confidence': 'Low'}
+    
+    total = day_trades.count()
+    # Fixed: Use 'Win' instead of 'Profit'
+    wins = day_trades.filter(outcome='Win').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    confidence = 'High' if total >= 10 else 'Medium' if total >= 5 else 'Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'confidence': confidence
+    }
+
+def calculate_session_performance_probability(session_trades):
+    """Calculate win probability for specific session"""
+    if not session_trades.exists():
+        return {'win_rate': 0, 'trade_count': 0, 'confidence': 'Low'}
+    
+    total = session_trades.count()
+    # Fixed: Use 'Win' instead of 'Profit'
+    wins = session_trades.filter(outcome='Win').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    confidence = 'High' if total >= 15 else 'Medium' if total >= 8 else 'Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'confidence': confidence
+    }
+
+def calculate_time_based_win_probability(day_perf, session_perf, overall_win_rate):
+    """Combine day and session performance with overall win rate"""
+    weights = {
+        'day': 0.3,
+        'session': 0.3,
+        'overall': 0.4
+    }
+    
+    day_rate = day_perf['win_rate'] if day_perf['trade_count'] > 0 else overall_win_rate
+    session_rate = session_perf['win_rate'] if session_perf['trade_count'] > 0 else overall_win_rate
+    
+    weighted_probability = (
+        day_rate * weights['day'] +
+        session_rate * weights['session'] +
+        overall_win_rate * weights['overall']
+    )
+    
+    return weighted_probability
+
+def analyze_asset_performance(trades):
+    """Analyze performance by asset"""
+    asset_stats = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total_pnl': 0})
+    
+    for trade in trades:
+        # Fixed: Properly calculate P&L based on outcome
+        if trade.outcome == 'Win':
+            asset_stats[trade.asset]['total_pnl'] += abs(trade.amount)
+            asset_stats[trade.asset]['wins'] += 1
+        elif trade.outcome == 'Loss':
+            asset_stats[trade.asset]['total_pnl'] -= abs(trade.amount)
+            asset_stats[trade.asset]['losses'] += 1
+        # Break Even trades don't affect P&L but count as trades
+    
+    result = []
+    for asset, stats in asset_stats.items():
+        total_trades = stats['wins'] + stats['losses']
+        win_rate = (stats['wins'] / total_trades * 100) if total_trades > 0 else 0
+        
+        result.append({
+            'asset': asset,
+            'total_trades': total_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(stats['total_pnl'], 2),
+            'wins': stats['wins'],
+            'losses': stats['losses']
+        })
+    
+    return sorted(result, key=lambda x: x['total_pnl'], reverse=True)
+
+def analyze_strategy_performance(trades):
+    """Analyze performance by strategy"""
+    strategy_stats = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total_pnl': 0})
+    
+    for trade in trades:
+        # Fixed: Properly calculate P&L based on outcome
+        if trade.outcome == 'Win':
+            strategy_stats[trade.strategy]['total_pnl'] += abs(trade.amount)
+            strategy_stats[trade.strategy]['wins'] += 1
+        elif trade.outcome == 'Loss':
+            strategy_stats[trade.strategy]['total_pnl'] -= abs(trade.amount)
+            strategy_stats[trade.strategy]['losses'] += 1
+    
+    result = []
+    for strategy, stats in strategy_stats.items():
+        total_trades = stats['wins'] + stats['losses']
+        win_rate = (stats['wins'] / total_trades * 100) if total_trades > 0 else 0
+        
+        result.append({
+            'strategy': strategy,
+            'total_trades': total_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(stats['total_pnl'], 2),
+            'wins': stats['wins'],
+            'losses': stats['losses']
+        })
+    
+    return sorted(result, key=lambda x: x['win_rate'], reverse=True)
+
+def analyze_emotional_patterns(trades):
+    """Analyze emotional bias patterns"""
+    trades_with_emotion = trades.exclude(emotional_bias__isnull=True).exclude(emotional_bias='')
+    
+    if not trades_with_emotion.exists():
+        return {'has_data': False, 'message': 'No emotional bias data available'}
+    
+    emotion_performance = defaultdict(lambda: {'count': 0, 'wins': 0, 'total_pnl': 0})
+    
+    for trade in trades_with_emotion:
+        emotion = trade.emotional_bias.lower()
+        emotion_performance[emotion]['count'] += 1
+        
+        # Fixed: Properly calculate P&L and wins
+        if trade.outcome == 'Win':
+            emotion_performance[emotion]['total_pnl'] += abs(trade.amount)
+            emotion_performance[emotion]['wins'] += 1
+        elif trade.outcome == 'Loss':
+            emotion_performance[emotion]['total_pnl'] -= abs(trade.amount)
+    
+    result = []
+    for emotion, stats in emotion_performance.items():
+        win_rate = (stats['wins'] / stats['count'] * 100) if stats['count'] > 0 else 0
+        result.append({
+            'emotion': emotion.title(),
+            'trade_count': stats['count'],
+            'win_rate': round(win_rate, 2),
+            'avg_pnl': round(stats['total_pnl'] / stats['count'], 2)
+        })
+    
+    return {
+        'has_data': True,
+        'patterns': sorted(result, key=lambda x: x['trade_count'], reverse=True)
+    }
+
+def analyze_winning_losing_streaks(trades):
+    """Analyze winning and losing streaks"""
+    if not trades.exists():
+        return {'max_winning_streak': 0, 'max_losing_streak': 0, 'current_streak': 0}
+    
+    # Order trades by date
+    ordered_trades = trades.order_by('date_entered')
+    
+    max_winning_streak = 0
+    max_losing_streak = 0
+    current_streak = 0
+    current_streak_type = None
+    
+    temp_winning = 0
+    temp_losing = 0
+    
+    for trade in ordered_trades:
+        # Fixed: Use 'Win' instead of 'Profit'
+        if trade.outcome == 'Win':
+            temp_winning += 1
+            temp_losing = 0
+            max_winning_streak = max(max_winning_streak, temp_winning)
+            
+            if current_streak_type == 'win':
+                current_streak += 1
+            else:
+                current_streak = 1
+                current_streak_type = 'win'
+        elif trade.outcome == 'Loss':
+            temp_losing += 1
+            temp_winning = 0
+            max_losing_streak = max(max_losing_streak, temp_losing)
+            
+            if current_streak_type == 'loss':
+                current_streak += 1
+            else:
+                current_streak = 1
+                current_streak_type = 'loss'
+        else:  # Break Even - breaks both streaks
+            temp_winning = 0
+            temp_losing = 0
+            current_streak = 0
+            current_streak_type = 'none'
+    
+    return {
+        'max_winning_streak': max_winning_streak,
+        'max_losing_streak': max_losing_streak,
+        'current_streak': current_streak,
+        'current_streak_type': current_streak_type or 'none'
+    }
+
+def calculate_monthly_performance_trend(trades):
+    """Calculate monthly performance trend"""
+    monthly_data = defaultdict(lambda: {'pnl': 0, 'trades': 0, 'wins': 0})
+    
+    for trade in trades:
+        if trade.date_entered:
+            month_key = trade.date_entered.strftime('%Y-%m')
+            monthly_data[month_key]['trades'] += 1
+            
+            # Fixed: Properly calculate monthly P&L
+            if trade.outcome == 'Win':
+                monthly_data[month_key]['pnl'] += abs(trade.amount)
+                monthly_data[month_key]['wins'] += 1
+            elif trade.outcome == 'Loss':
+                monthly_data[month_key]['pnl'] -= abs(trade.amount)
+    
+    result = []
+    for month, data in sorted(monthly_data.items()):
+        win_rate = (data['wins'] / data['trades'] * 100) if data['trades'] > 0 else 0
+        result.append({
+            'month': month,
+            'pnl': round(data['pnl'], 2),
+            'trades': data['trades'],
+            'win_rate': round(win_rate, 2)
+        })
+    
+    return result
+
+def calculate_drawdown_metrics(trades, initial_capital):
+    """Calculate drawdown metrics"""
+    if not trades.exists():
+        return {'max_drawdown': 0, 'current_drawdown': 0, 'drawdown_periods': []}
+    
+    # Order trades by date and calculate running balance
+    ordered_trades = trades.order_by('date_entered')
+    running_balance = initial_capital
+    peak_balance = initial_capital
+    max_drawdown = 0
+    drawdowns = []
+    
+    for trade in ordered_trades:
+        # Fixed: Properly calculate running balance
+        if trade.outcome == 'Win':
+            running_balance += abs(trade.amount)
+        elif trade.outcome == 'Loss':
+            running_balance -= abs(trade.amount)
+        # Break Even trades don't change balance
+        
+        if running_balance > peak_balance:
+            peak_balance = running_balance
+        
+        drawdown_pct = ((peak_balance - running_balance) / peak_balance * 100) if peak_balance > 0 else 0
+        max_drawdown = max(max_drawdown, drawdown_pct)
+        
+        if drawdown_pct > 5:  # Track significant drawdowns
+            drawdowns.append({
+                'date': trade.date_entered.strftime('%Y-%m-%d') if trade.date_entered else 'Unknown',
+                'drawdown_pct': round(drawdown_pct, 2),
+                'balance': round(running_balance, 2)
+            })
+    
+    current_drawdown = ((peak_balance - running_balance) / peak_balance * 100) if peak_balance > 0 else 0
+    
+    return {
+        'max_drawdown': round(max_drawdown, 2),
+        'current_drawdown': round(current_drawdown, 2),
+        'current_balance': round(running_balance, 2),
+        'peak_balance': round(peak_balance, 2),
+        'significant_drawdowns': drawdowns[-5:]  # Last 5 significant drawdowns
+    }
+
+def calculate_advanced_risk_metrics(trades, initial_capital):
+    """Calculate advanced risk metrics"""
+    if not trades.exists():
+        return {}
+    
+    # Fixed: Calculate returns properly based on outcome
+    returns = []
+    for trade in trades:
+        if trade.outcome == 'Win':
+            returns.append(abs(trade.amount) / initial_capital * 100)
+        elif trade.outcome == 'Loss':
+            returns.append(-abs(trade.amount) / initial_capital * 100)
+        # Break Even trades have 0 return - skip or add 0
+    
+    # Calculate Sharpe-like ratio (simplified)
+    avg_return = statistics.mean(returns) if returns else 0
+    return_std = statistics.stdev(returns) if len(returns) > 1 else 0
+    sharpe_ratio = avg_return / return_std if return_std > 0 else 0
+    
+    # Calculate Value at Risk (VaR) - 95% confidence
+    sorted_returns = sorted(returns)
+    var_95 = sorted_returns[int(0.05 * len(sorted_returns))] if len(sorted_returns) > 20 else min(returns) if returns else 0
+    
+    # Calculate Maximum Consecutive Losses
+    max_consecutive_losses = 0
+    consecutive_losses = 0
+    
+    for trade in trades.order_by('date_entered'):
+        if trade.outcome == 'Loss':
+            consecutive_losses += 1
+            max_consecutive_losses = max(max_consecutive_losses, consecutive_losses)
+        else:
+            consecutive_losses = 0
+    
+    return {
+        'sharpe_ratio': round(sharpe_ratio, 3),
+        'var_95': round(var_95, 2),
+        'volatility': round(return_std, 2),
+        'max_consecutive_losses': max_consecutive_losses,
+        'avg_return_pct': round(avg_return, 2)
+    }
+
+def create_ai_diagnostic_prompt(account_id, performance_data):
+    """Create comprehensive prompt for AI analysis"""
+    prompt = f"""
+    Please analyze the following trading account performance data and provide expert insights:
+
+    ACCOUNT OVERVIEW:
+    - Account: {performance_data.get('account_info', {}).get('name', 'Unknown')}
+    - Initial Capital: ${performance_data.get('account_info', {}).get('initial_capital', 0):,.2f}
+    - Main Assets: {performance_data.get('account_info', {}).get('main_assets', 'Unknown')}
+
+    PERFORMANCE METRICS:
+    - Total Trades: {performance_data.get('basic_metrics', {}).get('total_trades', 0)}
+    - Win Rate: {performance_data.get('basic_metrics', {}).get('win_rate', 0)}%
+    - Net P&L: ${performance_data.get('basic_metrics', {}).get('net_pnl', 0):,.2f}
+    - Risk/Reward Ratio: {performance_data.get('basic_metrics', {}).get('risk_reward_ratio', 0)}
+    - Profit Factor: {performance_data.get('basic_metrics', {}).get('profit_factor', 0)}
+
+    CURRENT TIME ANALYSIS:
+    - Current Day: {performance_data.get('time_analysis', {}).get('current_day', 'Unknown')}
+    - Current Session: {performance_data.get('time_analysis', {}).get('current_session', 'Unknown')}
+    - Time-based Win Probability: {performance_data.get('time_analysis', {}).get('time_based_win_probability', 0)}%
+
+    RISK METRICS:
+    - Max Drawdown: {performance_data.get('drawdown_analysis', {}).get('max_drawdown', 0)}%
+    - Sharpe Ratio: {performance_data.get('risk_metrics', {}).get('sharpe_ratio', 0)}
+    - Volatility: {performance_data.get('risk_metrics', {}).get('volatility', 0)}%
+
+    Based on this data, please provide:
+    1. Overall performance assessment
+    2. Key strengths and weaknesses
+    3. Risk management evaluation
+    4. Specific actionable recommendations
+    5. Psychological/behavioral insights
+    6. Market timing analysis
+    7. Strategic improvements for better performance
+
+    Keep the analysis concise but comprehensive, focusing on actionable insights.
+    """
+    
+    return prompt
+
+import json
+import uuid
+import re
+import subprocess
+import tempfile
+import os
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.core.paginator import Paginator
+from django.db.models import Q
+
+# Try to import yt-dlp
+try:
+    import yt_dlp
+    YT_DLP_AVAILABLE = True
+except ImportError:
+    YT_DLP_AVAILABLE = False
+    yt_dlp = None
+
+def extract_youtube_video_id_from_url(youtube_url):
+    """Extract video ID from various YouTube URL formats"""
+    patterns = [
+        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)',
+        r'youtube\.com\/watch\?.*v=([^&\n?#]+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, youtube_url)
+        if match:
+            return match.group(1)
+    return None
+
+
+def create_cookie_jar_from_dict(cookies_dict):
+    """Create a temporary cookie jar file from a dictionary of cookies"""
+    import tempfile
+    import http.cookiejar
+    import urllib.parse
+    
+    # Create a temporary file for cookies
+    cookie_jar = http.cookiejar.MozillaCookieJar()
+    
+    # Add cookies to jar
+    for name, value in cookies_dict.items():
+        cookie = http.cookiejar.Cookie(
+            version=0,
+            name=name,
+            value=value,
+            port=None,
+            port_specified=False,
+            domain='.youtube.com',
+            domain_specified=True,
+            domain_initial_dot=True,
+            path='/',
+            path_specified=True,
+            secure=True,
+            expires=None,
+            discard=True,
+            comment=None,
+            comment_url=None,
+            rest={}
+        )
+        cookie_jar.set_cookie(cookie)
+    
+    # Save to temporary file
+    temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+    cookie_jar.save(temp_file.name, ignore_discard=True, ignore_expires=True)
+    temp_file.close()
+    
+    return temp_file.name
+
+
+def get_default_youtube_cookies():
+    """Return default YouTube cookies for bot detection bypass"""
+    return {
+        "GPS": "1",
+        "YSC": "H0qvLAId2T4",
+        "VISITOR_INFO1_LIVE": "NKRMIx1vX_c",
+        "VISITOR_PRIVACY_METADATA": "CgJaQRIEGgAgKg%3D%3D",
+        "__Secure-3PAPISID": "bEXYDBGFmsBDHuNG/A_gAEs-RZDu-eb6uW",
+        "__Secure-3PSID": "g.a0001whVj0REjsHbeYoAeZQPaFLNpR0mruU-uR4fi3woapfeU9G_EZmEv87QALEcLfpD56BYrgACgYKAfoSARESFQHGX2MivFsd7VuFy0RES1zxD-57cxoVAUF8yKpcsxcjzRcT4H6V3DQRJJa10076",
+        "__Secure-ROLLOUT_TOKEN": "CJ3--6bdtvPBKBD7qdrm2vWPAxjLt5ns2vWPAw%3D%3D",
+        "PREF": "tz=Africa.Johannesburg",
+        "LOGIN_INFO": "AFmmF2swRQIhAMPHYbdhrYNiHRntuR_EhFaB4K7JV2cPB9X-JNdjx7axAiANZxTCyAH4sMGUu7Aq2_Ll-xGGwe8IDVo4ebwLVVXVww:QUQ3MjNmeTJXWWpuNnhPdWtqLTFNaHZKM0RVWGhkbVVKbnZ1ZHlJcUYzb2t0Y0JlaXN0Rk5fOHVSS3JWN1BsVDQ5aWRRbFE5Mm1FREJ2Z2RoRFAya3lxb2R1NFdhM1VzOHBRbGdIakxUWkdwMU81aEh6NW9KVGJjSnR0Q3cwb1k3eWtwaU8xcV9ORlNMdG4xT1ZrNFk0WjRYZnFsaWhXUW1R",
+        "__Secure-1PSIDTS": "sidts-CjUBmkD5S-14EQqzSrBarxc7khYP7Y8eEkb-0aLVBZdV8x6NTC8top1BOjqlBKjsCZQ1pwLyhBAA",
+        "__Secure-3PSIDTS": "sidts-CjUBmkD5S-14EQqzSrBarxc7khYP7Y8eEkb-0aLVBZdV8x6NTC8top1BOjqlBKjsCZQ1pwLyhBAA",
+        "CONSISTENCY": "AKreu9sMDl5Z8XD8qSTkca8Pe9XSKtJO6ISAlEwIQw_VnVsfSU6MaMDjdU3aDh2zMLT_ql3qPhDdV8vY059O6HxvEQRpEodNwlX172XLlUzu94TrguLn9uza4JBwdZxhy7gs-n1bITj0Cv5eHy3mzCKT8Wkhfz685bLRCqXVIvx5SseXYExZNPDpKTXZlOyNMI9bClk_PMXp85sEgyd3cTEU7ACVJ4XcVioWGgPbJ8S3alWn",
+        "__Secure-3PSIDCC": "AKEyXzXHjJDNV_HwoH53yaWRCEv_zgO1TXXVMN1b3hJtsXh2jw06YwvfylOHMhNQ03tluWaS"
+    }
+
+
+def process_cookies_data(cookies_data):
+    """Process and validate cookies data with fallback to default cookies"""
+    processed_cookies = None
+    
+    if cookies_data:
+        try:
+            if isinstance(cookies_data, str):
+                # Try parsing as JSON first
+                try:
+                    processed_cookies = json.loads(cookies_data)
+                    print("Parsed user-provided cookies as JSON")
+                except json.JSONDecodeError:
+                    # Try parsing as cookie string format
+                    cookies_dict = {}
+                    cookie_pairs = cookies_data.split(';')
+                    
+                    for pair in cookie_pairs:
+                        parts = pair.split('=', 1)  # Split only on first =
+                        if len(parts) == 2:
+                            name, value = parts[0].strip(), parts[1].strip()
+                            if name and value:
+                                cookies_dict[name] = value
+                    
+                    if cookies_dict:
+                        processed_cookies = cookies_dict
+                        print(f"Parsed user-provided cookies from string format: {len(cookies_dict)} cookies")
+                    
+            elif isinstance(cookies_data, dict):
+                processed_cookies = cookies_data
+                print(f"Using user-provided cookies dict: {len(processed_cookies)} cookies")
+                
+        except Exception as cookie_error:
+            print(f"Error processing user cookies: {cookie_error}")
+    
+    # If no valid user cookies, use defaults
+    if not processed_cookies:
+        processed_cookies = get_default_youtube_cookies()
+        print(f"Using default fallback cookies: {len(processed_cookies)} cookies")
+    
+    return processed_cookies
+
+
+# def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
+#     """Extract transcript using yt-dlp with enhanced fallback strategies and default cookies"""
+    
+#     if not YT_DLP_AVAILABLE:
+#         raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
+    
+#     transcript_data = {
+#         'text': None,
+#         'method': None,
+#         'language': 'en',
+#         'metadata': {}
+#     }
+    
+#     # Process cookies with fallback to defaults
+#     cookies_dict = process_cookies_data(cookies_data)
+#     cookie_file_path = None
+    
+#     try:
+#         cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+#         print(f"Created cookie jar with {len(cookies_dict)} cookies")
+#     except Exception as cookie_error:
+#         print(f"Cookie processing error: {cookie_error}")
+#         # Continue without cookies as last resort
+#         pass
+
+#     # Enhanced extraction strategies - all will use cookies by default
+#     extraction_strategies = [
+#         # Strategy 1: Modern approach with default cookies
+#         {
+#             'name': 'modern_with_auth',
+#             'opts': {
+#                 'quiet': True,
+#                 'no_warnings': True,
+#                 'writesubtitles': True,
+#                 'writeautomaticsub': True,
+#                 'subtitleslangs': ['en', 'en-US', 'en-GB'],
+#                 'subtitlesformat': 'vtt/srt/best',
+#                 'skip_download': True,
+#                 'extract_flat': False,
+#                 'no_check_certificate': True,
+#                 'extractor_args': {
+#                     'youtube': {
+#                         'player_client': ['android', 'web'],
+#                         'player_skip': ['js'],
+#                         'skip': ['dash', 'hls'],
+#                     }
+#                 },
+#                 'http_headers': {
+#                     'User-Agent': 'Mozilla/5.0 (Linux; Android 11; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+#                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+#                     'Accept-Language': 'en-US,en;q=0.9',
+#                     'Accept-Encoding': 'gzip, deflate, br',
+#                     'Origin': 'https://www.youtube.com',
+#                     'Referer': 'https://www.youtube.com/',
+#                 }
+#             }
+#         },
+        
+#         # Strategy 2: Android client with auth
+#         {
+#             'name': 'android_authenticated',
+#             'opts': {
+#                 'quiet': True,
+#                 'no_warnings': True,
+#                 'writesubtitles': True,
+#                 'writeautomaticsub': True,
+#                 'subtitleslangs': ['en', 'en-US', 'en-GB'],
+#                 'subtitlesformat': 'vtt',
+#                 'skip_download': True,
+#                 'extractor_args': {
+#                     'youtube': {
+#                         'player_client': ['android'],
+#                     }
+#                 },
+#                 'http_headers': {
+#                     'User-Agent': 'com.google.android.youtube/17.36.4 (Linux; U; Android 11) gzip',
+#                     'X-YouTube-Client-Name': '3',
+#                     'X-YouTube-Client-Version': '17.36.4',
+#                 }
+#             }
+#         },
+        
+#         # Strategy 3: iOS client with auth  
+#         {
+#             'name': 'ios_authenticated',
+#             'opts': {
+#                 'quiet': True,
+#                 'no_warnings': True,
+#                 'writesubtitles': True,
+#                 'writeautomaticsub': True,
+#                 'subtitleslangs': ['en'],
+#                 'subtitlesformat': 'vtt',
+#                 'skip_download': True,
+#                 'extractor_args': {
+#                     'youtube': {
+#                         'player_client': ['ios'],
+#                     }
+#                 },
+#                 'http_headers': {
+#                     'User-Agent': 'com.google.ios.youtube/17.36.4 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)',
+#                     'X-YouTube-Client-Name': '5',
+#                     'X-YouTube-Client-Version': '17.36.4',
+#                 }
+#             }
+#         },
+        
+#         # Strategy 4: TV client with auth (often bypasses restrictions)
+#         {
+#             'name': 'tv_authenticated',
+#             'opts': {
+#                 'quiet': True,
+#                 'no_warnings': True,
+#                 'writesubtitles': True,
+#                 'writeautomaticsub': True,
+#                 'subtitleslangs': ['en'],
+#                 'subtitlesformat': 'vtt',
+#                 'skip_download': True,
+#                 'extractor_args': {
+#                     'youtube': {
+#                         'player_client': ['tv_embedded'],
+#                     }
+#                 }
+#             }
+#         },
+        
+#         # Strategy 5: Fallback without cookies (last resort)
+#         {
+#             'name': 'fallback_no_cookies',
+#             'opts': {
+#                 'quiet': True,
+#                 'writesubtitles': True,
+#                 'writeautomaticsub': True,
+#                 'subtitleslangs': ['en'],
+#                 'skip_download': True,
+#                 'no_check_certificate': True,
+#             },
+#             'skip_cookies': True  # Special flag to skip cookies for this strategy
+#         }
+#     ]
+
+#     extraction_error = None
+#     info = None
+#     successful_strategy = None
+
+#     try:
+#         # Create a temporary directory for subtitle files
+#         with tempfile.TemporaryDirectory() as temp_dir:
+            
+#             for strategy in extraction_strategies:
+#                 try:
+#                     print(f"Trying strategy: {strategy['name']} for video: {video_id}")
+                    
+#                     # Prepare options
+#                     opts = strategy['opts'].copy()
+#                     opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+                    
+#                     # Add cookies unless explicitly skipped
+#                     if cookie_file_path and not strategy.get('skip_cookies', False):
+#                         opts['cookiefile'] = cookie_file_path
+#                         print(f"Using cookies with strategy: {strategy['name']}")
+#                     elif strategy.get('skip_cookies', False):
+#                         print(f"Skipping cookies for fallback strategy: {strategy['name']}")
+                    
+#                     # Try extraction
+#                     with yt_dlp.YoutubeDL(opts) as ydl:
+#                         info = ydl.extract_info(video_url, download=True)
+                    
+#                     print(f"Strategy {strategy['name']} successful!")
+#                     successful_strategy = strategy['name']
+#                     break
+                    
+#                 except Exception as strategy_error:
+#                     extraction_error = strategy_error
+#                     error_msg = str(strategy_error).lower()
+#                     print(f"Strategy {strategy['name']} failed: {error_msg}")
+                    
+#                     # Check for specific error patterns
+#                     if 'sign in to confirm' in error_msg or 'not a bot' in error_msg:
+#                         print(f"Bot detection hit with {strategy['name']}, trying next strategy...")
+#                         continue
+#                     elif 'private' in error_msg or 'unavailable' in error_msg:
+#                         # Video is genuinely unavailable
+#                         raise strategy_error
+#                     elif 'requested format is not available' in error_msg:
+#                         print(f"Format not available with {strategy['name']}, trying next strategy...")
+#                         continue
+#                     else:
+#                         continue
+#             else:
+#                 # All strategies failed
+#                 if extraction_error:
+#                     raise extraction_error
+#                 else:
+#                     raise Exception("All extraction strategies failed")
+        
+#             # Process the extracted data
+#             try:
+#                 # Store video metadata
+#                 transcript_data['metadata'] = {
+#                     'title': info.get('title', ''),
+#                     'duration': info.get('duration'),
+#                     'upload_date': info.get('upload_date'),
+#                     'uploader': info.get('uploader', ''),
+#                     'view_count': info.get('view_count'),
+#                     'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+#                 }
+                
+#                 # Check available subtitles
+#                 subtitles = info.get('subtitles', {})
+#                 automatic_captions = info.get('automatic_captions', {})
+                
+#                 print(f"Available subtitles: {list(subtitles.keys())}")
+#                 print(f"Available automatic captions: {list(automatic_captions.keys())}")
+                
+#                 # Extract subtitle text
+#                 subtitle_text = None
+#                 selected_language = None
+#                 extraction_method = None
+                
+#                 # Priority order: manual subtitles first, then automatic captions
+#                 subtitle_sources = [
+#                     ('manual', subtitles),
+#                     ('automatic', automatic_captions)
+#                 ]
+                
+#                 for source_type, subtitle_dict in subtitle_sources:
+#                     if subtitle_text:
+#                         break
+                        
+#                     # Try different language codes
+#                     language_priority = ['en', 'en-US', 'en-GB', 'en-us', 'en-gb', 'en-orig']
+                    
+#                     for lang in language_priority:
+#                         if lang in subtitle_dict:
+#                             print(f"Found {source_type} subtitles for language: {lang}")
+                            
+#                             # Download the subtitle file
+#                             try:
+#                                 download_opts = {
+#                                     'quiet': True,
+#                                     'no_warnings': True,
+#                                     'writesubtitles': True,
+#                                     'writeautomaticsub': source_type == 'automatic',
+#                                     'subtitleslangs': [lang],
+#                                     'subtitlesformat': 'vtt',
+#                                     'skip_download': True,
+#                                     'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+#                                 }
+                                
+#                                 # Always add cookies for subtitle download if available
+#                                 if cookie_file_path:
+#                                     download_opts['cookiefile'] = cookie_file_path
+                                
+#                                 # Use the same strategy that worked for info extraction
+#                                 if successful_strategy and successful_strategy != 'fallback_no_cookies':
+#                                     matching_strategy = next((s for s in extraction_strategies if s['name'] == successful_strategy), None)
+#                                     if matching_strategy and 'extractor_args' in matching_strategy['opts']:
+#                                         download_opts['extractor_args'] = matching_strategy['opts']['extractor_args']
+#                                     if matching_strategy and 'http_headers' in matching_strategy['opts']:
+#                                         download_opts['http_headers'] = matching_strategy['opts']['http_headers']
+                                
+#                                 print(f"Starting subtitle download for {lang}...")
+#                                 with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+#                                     sub_ydl.download([video_url])
+#                                 print(f"Subtitle download completed for {lang}")
+                                
+#                                 # List all files in temp directory for debugging
+#                                 all_files = os.listdir(temp_dir)
+#                                 print(f"All files in temp directory after download: {all_files}")
+                                
+#                                 # Look for the downloaded subtitle file with more flexible naming
+#                                 subtitle_file = None
+#                                 possible_files = []
+                                
+#                                 for file in all_files:
+#                                     if file.endswith(('.vtt', '.srt')):
+#                                         possible_files.append(file)
+#                                         print(f"Found subtitle file candidate: {file}")
+#                                         # Check if it contains our video ID (case insensitive)
+#                                         if video_id.lower() in file.lower():
+#                                             subtitle_file = os.path.join(temp_dir, file)
+#                                             print(f"Matched video ID in filename: {file}")
+#                                             break
+                                
+#                                 # If no exact match, try the first subtitle file
+#                                 if not subtitle_file and possible_files:
+#                                     subtitle_file = os.path.join(temp_dir, possible_files[0])
+#                                     print(f"Using first available subtitle file: {possible_files[0]}")
+                                
+#                                 print(f"Subtitle files found: {possible_files}")
+#                                 print(f"Selected subtitle file: {subtitle_file}")
+                                
+#                                 if subtitle_file and os.path.exists(subtitle_file):
+#                                     print(f"Processing subtitle file: {subtitle_file}")
+#                                     file_size = os.path.getsize(subtitle_file)
+#                                     print(f"Subtitle file size: {file_size} bytes")
+                                    
+#                                     try:
+#                                         with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+#                                             subtitle_content = f.read()
+                                        
+#                                         print(f"Raw subtitle content length: {len(subtitle_content)} characters")
+                                        
+#                                         if len(subtitle_content.strip()) > 0:
+#                                             print(f"First 500 chars of subtitle content: {subtitle_content[:500]}")
+                                            
+#                                             subtitle_text = parse_subtitle_content(subtitle_content)
+#                                             print(f"After parsing - subtitle text length: {len(subtitle_text) if subtitle_text else 0}")
+                                            
+#                                             if subtitle_text and len(subtitle_text.strip()) > 50:  # Require at least 50 chars
+#                                                 selected_language = lang
+#                                                 extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}_with_default_cookies'
+                                                
+#                                                 # Analyze transcript quality
+#                                                 try:
+#                                                     quality_stats = analyze_transcript_quality(subtitle_text)
+#                                                     print(f"Transcript quality: {quality_stats['quality_score']}%, {quality_stats['repeated_phrases_detected']} repeated phrases removed")
+#                                                 except Exception as quality_error:
+#                                                     print(f"Quality analysis error: {quality_error}")
+                                                
+#                                                 print(f"Final transcript length: {len(subtitle_text)} characters")
+#                                                 print("SUCCESS: Subtitle extraction completed")
+#                                                 break
+#                                             else:
+#                                                 print(f"Parsed subtitle text was empty or too short for {lang}: {len(subtitle_text) if subtitle_text else 0} chars")
+#                                         else:
+#                                             print(f"Raw subtitle content was empty for {lang}")
+                                            
+#                                     except Exception as file_read_error:
+#                                         print(f"Error reading subtitle file {subtitle_file}: {file_read_error}")
+#                                         import traceback
+#                                         print(f"Full traceback: {traceback.format_exc()}")
+#                                         continue
+                                        
+#                                 else:
+#                                     print(f"No subtitle file found for {lang}.")
+#                                     print(f"Available files in directory: {all_files}")
+#                                     print(f"Possible subtitle files: {possible_files}")
+                                
+#                             except Exception as sub_error:
+#                                 print(f"Failed to download {source_type} subtitles for {lang}: {sub_error}")
+#                                 continue
+                
+#                 if subtitle_text and len(subtitle_text.strip()) > 0:
+#                     transcript_data['text'] = subtitle_text.strip()
+#                     transcript_data['language'] = selected_language
+#                     transcript_data['method'] = extraction_method
+#                     print(f"Successfully extracted transcript: {len(subtitle_text)} characters")
+#                 else:
+#                     # More detailed error reporting
+#                     available_langs = list(subtitles.keys()) + list(automatic_captions.keys())
+#                     raise Exception(f"No valid transcript text could be extracted. Available languages: {available_langs[:10]}... (showing first 10)")
+                
+#             except Exception as e:
+#                 print(f"yt-dlp processing error: {str(e)}")
+#                 raise Exception(f"Failed to process extracted data: {str(e)}")
+    
+#     finally:
+#         # Clean up cookie file
+#         if cookie_file_path and os.path.exists(cookie_file_path):
+#             try:
+#                 os.unlink(cookie_file_path)
+#             except Exception:
+#                 pass
+    
+#     return transcript_data
+
+
+def parse_subtitle_content(subtitle_content):
+    """Parse VTT or SRT subtitle content to extract clean text with deduplication"""
+    lines = subtitle_content.split('\n')
+    text_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        
+        # Skip empty lines
+        if not line:
+            continue
+            
+        # Skip VTT header
+        if line.startswith('WEBVTT') or line.startswith('NOTE'):
+            continue
+            
+        # Skip SRT sequence numbers (pure digits)
+        if line.isdigit():
+            continue
+            
+        # Skip timestamp lines (contain --> or time patterns)
+        if '-->' in line or re.match(r'^\d{2}:\d{2}:\d{2}', line):
+            continue
+            
+        # Skip VTT style/position tags
+        if line.startswith('<') or line.startswith('&'):
+            continue
+            
+        # Clean HTML tags and entities
+        line = re.sub(r'<[^>]+>', '', line)  # Remove HTML tags
+        line = re.sub(r'&[a-zA-Z]+;', '', line)  # Remove HTML entities
+        
+        # Remove VTT positioning tags
+        line = re.sub(r'\{[^}]*\}', '', line)
+        
+        # If line still has content, add it
+        if line and not line.startswith('[') and not line.startswith('('):
+            text_lines.append(line)
+    
+    # Join all text and clean up
+    full_text = ' '.join(text_lines)
+    
+    # Remove extra whitespace
+    full_text = re.sub(r'\s+', ' ', full_text)
+    
+    # Apply deduplication
+    deduplicated_text = deduplicate_transcript_text(full_text)
+    
+    return deduplicated_text
+
+
+def deduplicate_transcript_text(text):
+    """Remove duplicate sentences and phrases from transcript text"""
+    import difflib
+    
+    # Split into sentences using multiple delimiters
+    sentences = re.split(r'[.!?]+\s+', text)
+    
+    # Clean up sentences
+    clean_sentences = []
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if len(sentence) > 3:  # Only keep sentences with more than 3 characters
+            clean_sentences.append(sentence)
+    
+    if not clean_sentences:
+        return text
+    
+    # Remove exact duplicates first
+    deduplicated = []
+    seen_sentences = set()
+    
+    for sentence in clean_sentences:
+        sentence_lower = sentence.lower().strip()
+        if sentence_lower not in seen_sentences:
+            seen_sentences.add(sentence_lower)
+            deduplicated.append(sentence)
+    
+    # Remove near-duplicate sentences (with similarity threshold)
+    final_sentences = []
+    similarity_threshold = 0.2
+    
+    for i, sentence in enumerate(deduplicated):
+        is_duplicate = False
+        
+        # Check against already added sentences
+        for existing_sentence in final_sentences:
+            similarity = difflib.SequenceMatcher(None, sentence.lower(), existing_sentence.lower()).ratio()
+            
+            if similarity > similarity_threshold:
+                is_duplicate = True
+                break
+        
+        if not is_duplicate:
+            final_sentences.append(sentence)
+    
+    # Remove repeated phrases within the remaining text
+    final_text = '. '.join(final_sentences)
+    
+    # Remove repeated phrases (3+ words that appear consecutively)
+    final_text = remove_repeated_phrases(final_text)
+    
+    # Clean up final spacing and punctuation
+    final_text = re.sub(r'\s+', ' ', final_text)
+    final_text = re.sub(r'\s*\.\s*\.', '.', final_text)  # Remove double periods
+    final_text = final_text.strip()
+    
+    # Add final period if missing
+    if final_text and not final_text.endswith(('.', '!', '?')):
+        final_text += '.'
+    
+    return final_text
+
+
+def remove_repeated_phrases(text):
+    """Remove repeated phrases of 3 or more words"""
+    words = text.split()
+    
+    if len(words) < 6:  # Need at least 6 words to have a repeated 3-word phrase
+        return text
+    
+    # Check for repeated phrases of different lengths
+    for phrase_length in range(3, min(15, len(words) // 2)):  # Check phrases up to 15 words
+        cleaned_words = remove_phrases_of_length(words, phrase_length)
+        if len(cleaned_words) < len(words):
+            words = cleaned_words
+    
+    return ' '.join(words)
+
+
+def remove_phrases_of_length(words, phrase_length):
+    """Remove repeated phrases of a specific length"""
+    if len(words) < phrase_length * 2:
+        return words
+    
+    cleaned_words = []
+    i = 0
+    
+    while i < len(words):
+        if i + phrase_length * 2 <= len(words):
+            # Get current phrase and next phrase
+            current_phrase = words[i:i + phrase_length]
+            next_phrase = words[i + phrase_length:i + phrase_length * 2]
+            
+            # Check if they're the same (case-insensitive)
+            if [word.lower() for word in current_phrase] == [word.lower() for word in next_phrase]:
+                # Skip the duplicate phrase
+                cleaned_words.extend(current_phrase)
+                i += phrase_length * 2  # Skip both phrases, we kept one
+                continue
+        
+        # No duplicate found, add current word
+        cleaned_words.append(words[i])
+        i += 1
+    
+    return cleaned_words
+
+
+def analyze_transcript_quality(text):
+    """Analyze transcript quality and provide statistics"""
+    words = text.split()
+    sentences = re.split(r'[.!?]+', text)
+    
+    # Calculate statistics
+    total_words = len(words)
+    total_sentences = len([s for s in sentences if s.strip()])
+    
+    # Find potential repeated phrases
+    repeated_phrases = find_repeated_phrases(text)
+    
+    # Calculate readability score (simple version)
+    avg_sentence_length = total_words / max(total_sentences, 1)
+    
+    quality_score = 100
+    if repeated_phrases > 10:
+        quality_score -= 20
+    if avg_sentence_length > 40:  # Very long sentences might indicate parsing issues
+        quality_score -= 10
+    if avg_sentence_length < 5:   # Very short sentences might indicate fragmentation
+        quality_score -= 10
+    
+    return {
+        'total_words': total_words,
+        'total_sentences': total_sentences,
+        'average_sentence_length': round(avg_sentence_length, 1),
+        'repeated_phrases_detected': repeated_phrases,
+        'quality_score': max(quality_score, 0)
+    }
+
+
+def find_repeated_phrases(text, min_phrase_length=3):
+    """Count repeated phrases in text"""
+    words = text.lower().split()
+    phrase_counts = {}
+    repeated_count = 0
+    
+    # Check for repeated phrases
+    for phrase_length in range(min_phrase_length, min(10, len(words) // 3)):
+        for i in range(len(words) - phrase_length + 1):
+            phrase = ' '.join(words[i:i + phrase_length])
+            phrase_counts[phrase] = phrase_counts.get(phrase, 0) + 1
+    
+    # Count phrases that appear more than once
+    for phrase, count in phrase_counts.items():
+        if count > 1:
+            repeated_count += count - 1  # Subtract 1 because original occurrence is not a repeat
+    
+    return repeated_count
+
+
+from django.utils import timezone
+from datetime import datetime
+
+def safe_truncate_field(value, max_length):
+    """Safely truncate a field to fit database constraints"""
+    if not value:
+        return value
+    if len(str(value)) > max_length:
+        return str(value)[:max_length-3] + "..."
+    return str(value)
+
+def create_transcription_method_name(source_type, language, strategy, use_cookies=True):
+    """Create a concise transcription method name that fits database constraints"""
+    # Create shorter method names to fit in 50 characters
+    strategy_map = {
+        'modern_with_auth': 'modern',
+        'android_authenticated': 'android', 
+        'ios_authenticated': 'ios',
+        'tv_authenticated': 'tv',
+        'fallback_no_cookies': 'fallback'
+    }
+    
+    short_strategy = strategy_map.get(strategy, strategy[:10])
+    cookie_suffix = '_auth' if use_cookies else '_noauth'
+    
+    # Format: ytdlp_auto_en_tv_auth (max ~20 chars)
+    method_name = f"ytdlp_{source_type[:4]}_{language[:2]}_{short_strategy}{cookie_suffix}"
+    
+    # Ensure it fits in 50 characters
+    return safe_truncate_field(method_name, 50)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_extract_youtube_transcript_from_url(request):
+    """Extract transcript from YouTube URL using yt-dlp with default cookies and enhanced fallback strategies"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        cookies_data = data.get('cookies')  # This can be None and will use defaults
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        # Check if transcript already exists
+        existing_transcript = SnowAIVideoTranscriptRecord.objects.filter(
+            youtube_video_id=video_id
+        ).first()
+        
+        if existing_transcript:
+            return JsonResponse({
+                'message': 'Transcript already exists',
+                'transcript_id': existing_transcript.transcript_uuid,
+                'existing': True,
+                'word_count': existing_transcript.word_count
+            })
+        
+        print(f"Starting transcript extraction for video ID: {video_id}")
+        if cookies_data:
+            print("Using user-provided cookies for extraction")
+        else:
+            print("Using default cookies for extraction")
+        
+        # Extract transcript using yt-dlp with default cookies
+        try:
+            transcript_result = extract_transcript_with_ytdlp(youtube_url, video_id, cookies_data)
+            
+            if not transcript_result['text']:
+                return JsonResponse({
+                    'error': 'No transcript text could be extracted from this video. The video may not have captions or subtitles available.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'extraction_method': transcript_result.get('method', 'unknown'),
+                        'yt_dlp_available': YT_DLP_AVAILABLE,
+                        'used_default_cookies': not bool(cookies_data)
+                    }
+                }, status=400)
+            
+            full_text = transcript_result['text']
+            video_metadata = transcript_result['metadata']
+            
+            print(f"Transcript extracted: {len(full_text)} characters, method: {transcript_result['method']}")
+            
+            # Handle video upload date with proper timezone handling
+            video_upload_date = None
+            if video_metadata.get('upload_date'):
+                try:
+                    # Parse the upload date string (format: YYYYMMDD)
+                    upload_date_str = video_metadata['upload_date']
+                    if len(upload_date_str) == 8:  # YYYYMMDD format
+                        parsed_date = datetime.strptime(upload_date_str, '%Y%m%d')
+                        # Make it timezone-aware
+                        video_upload_date = timezone.make_aware(parsed_date, timezone.get_current_timezone())
+                except Exception as date_error:
+                    print(f"Error parsing upload date: {date_error}")
+                    video_upload_date = None
+            
+            # Safely truncate fields to match your database schema exactly
+            video_title = safe_truncate_field(video_metadata.get('title', data.get('video_title', '')), 300)
+            speaker_name = safe_truncate_field(data.get('speaker_name', ''), 200)
+            country_code = safe_truncate_field(data.get('country_code', ''), 10)
+            country_name = safe_truncate_field(data.get('country_name', ''), 100)
+            category = safe_truncate_field(data.get('category', 'central_bank'), 100)
+            transcription_method = safe_truncate_field(transcript_result.get('method', 'ytdlp_auto'), 50)
+            transcript_language = safe_truncate_field(transcript_result.get('language', 'en'), 10)
+            processing_status = safe_truncate_field('completed', 30)
+            
+            print(f"Creating transcript record...")
+            print(f"- Title: {video_title[:50]}... (length: {len(video_title)})")
+            print(f"- Method: {transcription_method} (length: {len(transcription_method)})")
+            print(f"- Language: {transcript_language} (length: {len(transcript_language)})")
+            print(f"- Category: {category} (length: {len(category)})")
+            
+            # Create transcript record with proper field length handling
+            transcript_record = SnowAIVideoTranscriptRecord.objects.create(
+                transcript_uuid=str(uuid.uuid4()),
+                youtube_video_id=video_id,
+                youtube_url=youtube_url,
+                video_title=video_title,
+                full_transcript_text=full_text,
+                video_duration_seconds=video_metadata.get('duration'),
+                video_upload_date=video_upload_date,
+                primary_speaker_name=speaker_name,
+                speaker_country_code=country_code,
+                speaker_country_name=country_name,
+                content_category=category,
+                transcription_method=transcription_method,
+                transcript_language=transcript_language,
+                processing_status=processing_status
+            )
+            
+            print(f"Transcript record created successfully with ID: {transcript_record.transcript_uuid}")
+            
+            return JsonResponse({
+                'message': 'Transcript extracted and saved successfully',
+                'transcript_id': transcript_record.transcript_uuid,
+                'word_count': transcript_record.word_count,
+                'duration': video_metadata.get('duration'),
+                'title': video_title,
+                'language': transcript_result['language'],
+                'extraction_method': transcript_result['method'],
+                'used_default_cookies': not bool(cookies_data),
+                'text_preview': full_text[:200] + '...' if len(full_text) > 200 else full_text
+            })
+            
+        except Exception as transcript_error:
+            error_str = str(transcript_error).lower()
+            print(f"Transcript extraction error: {error_str}")
+            print(f"Full error details: {transcript_error}")
+            
+            # Print full traceback for debugging
+            import traceback
+            print(f"Full traceback: {traceback.format_exc()}")
+            
+            # Check if it's a database error
+            if 'value too long' in error_str:
+                return JsonResponse({
+                    'error': 'Database field length error - some metadata fields are too long for the database schema.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'error_type': 'database_constraint_error',
+                        'full_error': str(transcript_error)[:200],
+                        'suggestion': 'Check database field lengths for title, speaker name, etc.'
+                    }
+                }, status=400)
+            
+            # Provide more specific error messages
+            if 'sign in to confirm' in error_str or 'not a bot' in error_str:
+                return JsonResponse({
+                    'error': 'YouTube bot detection bypassed with default cookies, but extraction still failed. The video might require updated authentication.',
+                    'debug_video_id': video_id,
+                    'suggestion': 'Try providing fresh browser cookies from a logged-in YouTube session'
+                }, status=400)
+            elif 'private' in error_str or 'unavailable' in error_str:
+                return JsonResponse({
+                    'error': 'The video is private, unavailable, or restricted.',
+                    'debug_video_id': video_id
+                }, status=400)
+            elif 'no subtitles' in error_str or 'no transcript' in error_str or 'no valid transcript' in error_str:
+                return JsonResponse({
+                    'error': 'No subtitles or captions are available for this video, or the extracted content was too short.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'url': youtube_url,
+                        'method': 'yt-dlp_with_default_cookies'
+                    }
+                }, status=400)
+            else:
+                return JsonResponse({
+                    'error': 'Failed to extract transcript from video despite using default cookies.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'error_details': str(transcript_error)[:300],
+                        'used_default_cookies': True,
+                        'suggestion': 'The video may have special restrictions or yt-dlp may need updating'
+                    }
+                }, status=400)
+                
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        return JsonResponse({
+            'error': f'An unexpected error occurred: {str(e)}'[:200],
+            'debug_info': 'Check server logs for more details'
+        }, status=500)
+
+# Also update the extraction function to use the new method naming
+def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
+    """Extract transcript using yt-dlp with enhanced fallback strategies and default cookies"""
+    
+    if not YT_DLP_AVAILABLE:
+        raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
+    
+    transcript_data = {
+        'text': None,
+        'method': None,
+        'language': 'en',
+        'metadata': {}
+    }
+    
+    # Process cookies with fallback to defaults
+    cookies_dict = process_cookies_data(cookies_data)
+    cookie_file_path = None
+    
+    try:
+        cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+        print(f"Created cookie jar with {len(cookies_dict)} cookies")
+    except Exception as cookie_error:
+        print(f"Cookie processing error: {cookie_error}")
+        pass
+
+    # Use the working TV strategy primarily
+    extraction_strategies = [
+        {
+            'name': 'tv_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['tv_embedded'],
+                    }
+                }
+            }
+        }
+    ]
+
+    extraction_error = None
+    info = None
+    successful_strategy = None
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            print(f"Using temp directory: {temp_dir}")
+            
+            for strategy in extraction_strategies:
+                try:
+                    print(f"Trying strategy: {strategy['name']} for video: {video_id}")
+                    
+                    opts = strategy['opts'].copy()
+                    opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+                    
+                    if cookie_file_path:
+                        opts['cookiefile'] = cookie_file_path
+                        print(f"Using cookies with strategy: {strategy['name']}")
+                    
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(video_url, download=True)
+                    
+                    print(f"Strategy {strategy['name']} successful!")
+                    successful_strategy = strategy['name']
+                    break
+                    
+                except Exception as strategy_error:
+                    extraction_error = strategy_error
+                    print(f"Strategy {strategy['name']} failed: {strategy_error}")
+                    continue
+            
+            if not info:
+                raise Exception("All extraction strategies failed")
+        
+            # Process metadata
+            print("Processing video metadata...")
+            transcript_data['metadata'] = {
+                'title': info.get('title', ''),
+                'duration': info.get('duration'),
+                'upload_date': info.get('upload_date'),
+                'uploader': info.get('uploader', ''),
+                'view_count': info.get('view_count'),
+                'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+            }
+            
+            print("Checking available subtitles...")
+            subtitles = info.get('subtitles', {})
+            automatic_captions = info.get('automatic_captions', {})
+            
+            print(f"Available automatic captions: {list(automatic_captions.keys())[:10]}...")
+            
+            # Extract subtitle text
+            subtitle_text = None
+            selected_language = None
+            extraction_method = None
+            
+            try:
+                # Try English captions
+                for lang in ['en', 'en-US', 'en-GB', 'en-orig']:
+                    if lang in automatic_captions:
+                        print(f"Found automatic subtitles for language: {lang}")
+                        
+                        try:
+                            # Setup subtitle download
+                            download_opts = {
+                                'quiet': True,
+                                'no_warnings': True,
+                                'writesubtitles': False,
+                                'writeautomaticsub': True,
+                                'subtitleslangs': [lang],
+                                'subtitlesformat': 'vtt',
+                                'skip_download': True,
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                            }
+                            
+                            if cookie_file_path:
+                                download_opts['cookiefile'] = cookie_file_path
+                            
+                            print(f"Starting subtitle download for {lang}...")
+                            with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                sub_ydl.download([video_url])
+                            print(f"Subtitle download completed for {lang}")
+                            
+                            # List all files and find subtitle
+                            all_files = os.listdir(temp_dir)
+                            print(f"Files after download: {all_files}")
+                            
+                            subtitle_files = [f for f in all_files if f.endswith(('.vtt', '.srt'))]
+                            print(f"Subtitle files found: {subtitle_files}")
+                            
+                            if subtitle_files:
+                                subtitle_file = os.path.join(temp_dir, subtitle_files[0])
+                                file_size = os.path.getsize(subtitle_file)
+                                print(f"Processing subtitle file: {subtitle_files[0]} ({file_size} bytes)")
+                                
+                                if file_size > 0:
+                                    with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                        raw_content = f.read()
+                                    
+                                    print(f"Raw content length: {len(raw_content)} chars")
+                                    
+                                    if len(raw_content.strip()) > 0:
+                                        print(f"Content preview: {raw_content[:200]}...")
+                                        
+                                        # Parse the subtitle content
+                                        parsed_text = parse_subtitle_content(raw_content)
+                                        print(f"Parsed text length: {len(parsed_text) if parsed_text else 0} chars")
+                                        
+                                        if parsed_text and len(parsed_text.strip()) > 50:
+                                            subtitle_text = parsed_text
+                                            selected_language = lang
+                                            # Create shorter method name that fits in 50 chars
+                                            extraction_method = create_transcription_method_name(
+                                                'auto', lang, successful_strategy, bool(cookie_file_path)
+                                            )
+                                            print(f"SUCCESS: Subtitle extraction completed! Method: {extraction_method}")
+                                            break
+                                        else:
+                                            print(f"Parsed text too short: {len(parsed_text) if parsed_text else 0}")
+                                    else:
+                                        print("Raw content is empty")
+                                else:
+                                    print("Subtitle file is empty (0 bytes)")
+                            else:
+                                print("No subtitle files found after download")
+                                
+                        except Exception as lang_error:
+                            print(f"Error processing {lang}: {lang_error}")
+                            import traceback
+                            print(f"Lang error traceback: {traceback.format_exc()}")
+                            continue
+                            
+            except Exception as subtitle_error:
+                print(f"Subtitle extraction error: {subtitle_error}")
+                import traceback
+                print(f"Subtitle error traceback: {traceback.format_exc()}")
+                
+            if subtitle_text and len(subtitle_text.strip()) > 50:
+                transcript_data['text'] = subtitle_text.strip()
+                transcript_data['language'] = selected_language
+                transcript_data['method'] = extraction_method
+                print(f"Final transcript: {len(subtitle_text)} characters")
+            else:
+                raise Exception(f"No valid transcript text extracted. Content length: {len(subtitle_text) if subtitle_text else 0}")
+                
+    finally:
+        # Clean up cookie file
+        if cookie_file_path and os.path.exists(cookie_file_path):
+            try:
+                os.unlink(cookie_file_path)
+            except Exception:
+                pass
+    
+    return transcript_data
+
+def extract_transcript_with_ytdlp_fixed(video_url, video_id, cookies_data=None):
+    """Extract transcript with better exception handling"""
+    
+    if not YT_DLP_AVAILABLE:
+        raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
+    
+    transcript_data = {
+        'text': None,
+        'method': None,
+        'language': 'en',
+        'metadata': {}
+    }
+    
+    # Process cookies with fallback to defaults
+    cookies_dict = process_cookies_data(cookies_data)
+    cookie_file_path = None
+    
+    try:
+        cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+        print(f"Created cookie jar with {len(cookies_dict)} cookies")
+    except Exception as cookie_error:
+        print(f"Cookie processing error: {cookie_error}")
+        pass
+
+    # Use same strategies as before...
+    extraction_strategies = [
+        {
+            'name': 'tv_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['tv_embedded'],
+                    }
+                }
+            }
+        }
+    ]
+
+    extraction_error = None
+    info = None
+    successful_strategy = None
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            print(f"Using temp directory: {temp_dir}")
+            
+            for strategy in extraction_strategies:
+                try:
+                    print(f"Trying strategy: {strategy['name']} for video: {video_id}")
+                    
+                    opts = strategy['opts'].copy()
+                    opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+                    
+                    if cookie_file_path:
+                        opts['cookiefile'] = cookie_file_path
+                        print(f"Using cookies with strategy: {strategy['name']}")
+                    
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(video_url, download=True)
+                    
+                    print(f"Strategy {strategy['name']} successful!")
+                    successful_strategy = strategy['name']
+                    break
+                    
+                except Exception as strategy_error:
+                    extraction_error = strategy_error
+                    print(f"Strategy {strategy['name']} failed: {strategy_error}")
+                    continue
+            
+            if not info:
+                raise Exception("All extraction strategies failed")
+        
+            # Process metadata
+            print("Processing video metadata...")
+            transcript_data['metadata'] = {
+                'title': info.get('title', ''),
+                'duration': info.get('duration'),
+                'upload_date': info.get('upload_date'),
+                'uploader': info.get('uploader', ''),
+                'view_count': info.get('view_count'),
+                'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+            }
+            
+            print("Checking available subtitles...")
+            subtitles = info.get('subtitles', {})
+            automatic_captions = info.get('automatic_captions', {})
+            
+            print(f"Available automatic captions: {list(automatic_captions.keys())[:10]}...")
+            
+            # Extract subtitle text with better error handling
+            subtitle_text = None
+            selected_language = None
+            extraction_method = None
+            
+            try:
+                # Try English captions
+                for lang in ['en', 'en-US', 'en-GB', 'en-orig']:
+                    if lang in automatic_captions:
+                        print(f"Found automatic subtitles for language: {lang}")
+                        
+                        try:
+                            # Setup subtitle download
+                            download_opts = {
+                                'quiet': True,
+                                'no_warnings': True,
+                                'writesubtitles': False,
+                                'writeautomaticsub': True,
+                                'subtitleslangs': [lang],
+                                'subtitlesformat': 'vtt',
+                                'skip_download': True,
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                            }
+                            
+                            if cookie_file_path:
+                                download_opts['cookiefile'] = cookie_file_path
+                            
+                            print(f"Starting subtitle download for {lang}...")
+                            with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                sub_ydl.download([video_url])
+                            print(f"Subtitle download completed for {lang}")
+                            
+                            # List all files and find subtitle
+                            all_files = os.listdir(temp_dir)
+                            print(f"Files after download: {all_files}")
+                            
+                            subtitle_files = [f for f in all_files if f.endswith(('.vtt', '.srt'))]
+                            print(f"Subtitle files found: {subtitle_files}")
+                            
+                            if subtitle_files:
+                                subtitle_file = os.path.join(temp_dir, subtitle_files[0])
+                                file_size = os.path.getsize(subtitle_file)
+                                print(f"Processing subtitle file: {subtitle_files[0]} ({file_size} bytes)")
+                                
+                                if file_size > 0:
+                                    with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                        raw_content = f.read()
+                                    
+                                    print(f"Raw content length: {len(raw_content)} chars")
+                                    
+                                    if len(raw_content.strip()) > 0:
+                                        # Show first bit of content
+                                        print(f"Content preview: {raw_content[:200]}...")
+                                        
+                                        # Parse the subtitle content
+                                        parsed_text = parse_subtitle_content(raw_content)
+                                        print(f"Parsed text length: {len(parsed_text) if parsed_text else 0} chars")
+                                        
+                                        if parsed_text and len(parsed_text.strip()) > 50:
+                                            subtitle_text = parsed_text
+                                            selected_language = lang
+                                            extraction_method = f'ytdlp_automatic_{lang}_{successful_strategy}_cookies'
+                                            print("SUCCESS: Subtitle extraction completed!")
+                                            break
+                                        else:
+                                            print(f"Parsed text too short: {len(parsed_text) if parsed_text else 0}")
+                                    else:
+                                        print("Raw content is empty")
+                                else:
+                                    print("Subtitle file is empty (0 bytes)")
+                            else:
+                                print("No subtitle files found after download")
+                                
+                        except Exception as lang_error:
+                            print(f"Error processing {lang}: {lang_error}")
+                            import traceback
+                            print(f"Lang error traceback: {traceback.format_exc()}")
+                            continue
+                            
+            except Exception as subtitle_error:
+                print(f"Subtitle extraction error: {subtitle_error}")
+                import traceback
+                print(f"Subtitle error traceback: {traceback.format_exc()}")
+                
+            if subtitle_text and len(subtitle_text.strip()) > 50:
+                transcript_data['text'] = subtitle_text.strip()
+                transcript_data['language'] = selected_language
+                transcript_data['method'] = extraction_method
+                print(f"Final transcript: {len(subtitle_text)} characters")
+            else:
+                raise Exception(f"No valid transcript text extracted. Content length: {len(subtitle_text) if subtitle_text else 0}")
+                
+    finally:
+        # Clean up cookie file
+        if cookie_file_path and os.path.exists(cookie_file_path):
+            try:
+                os.unlink(cookie_file_path)
+            except Exception:
+                pass
+    
+    return transcript_data
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_check_ytdlp_version_and_update(request):
+    """Check yt-dlp version and provide update commands"""
+    try:
+        debug_info = {
+            'yt_dlp_available': YT_DLP_AVAILABLE,
+        }
+        
+        if YT_DLP_AVAILABLE:
+            debug_info['yt_dlp_version'] = yt_dlp.version.__version__
+            
+            # Check if update is available (simplified check)
+            try:
+                result = subprocess.run(['pip', 'show', 'yt-dlp'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    debug_info['pip_info'] = result.stdout
+                    
+                # Try to get latest version info
+                result = subprocess.run(['yt-dlp', '--version'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    debug_info['command_version'] = result.stdout.strip()
+                    
+            except Exception as version_check_error:
+                debug_info['version_check_error'] = str(version_check_error)
+        
+        debug_info['update_commands'] = [
+            'pip install --upgrade yt-dlp',
+            'yt-dlp -U'
+        ]
+        
+        return JsonResponse(debug_info)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'yt_dlp_available': YT_DLP_AVAILABLE
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_test_video_extraction(request):
+    """Test video extraction without saving to database"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        cookies_data = data.get('cookies')
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        print(f"Testing extraction for video ID: {video_id}")
+        
+        # Test basic info extraction only
+        try:
+            transcript_result = extract_transcript_with_ytdlp(youtube_url, video_id, cookies_data)
+            
+            return JsonResponse({
+                'success': True,
+                'video_id': video_id,
+                'title': transcript_result['metadata'].get('title', ''),
+                'duration': transcript_result['metadata'].get('duration'),
+                'transcript_length': len(transcript_result['text']) if transcript_result['text'] else 0,
+                'extraction_method': transcript_result['method'],
+                'language': transcript_result['language'],
+                'text_preview': transcript_result['text'][:300] + '...' if transcript_result['text'] and len(transcript_result['text']) > 300 else transcript_result['text']
+            })
+            
+        except Exception as test_error:
+            return JsonResponse({
+                'success': False,
+                'error': str(test_error),
+                'video_id': video_id,
+                'yt_dlp_version': yt_dlp.version.__version__ if YT_DLP_AVAILABLE else 'not available'
+            })
+            
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+# Keep all your existing endpoints unchanged...
+# Keep all other existing endpoints unchanged...
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_check_transcript_availability(request):
+    """Check if transcript/subtitles are available for a YouTube video using yt-dlp"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        if not YT_DLP_AVAILABLE:
+            return JsonResponse({'error': 'yt-dlp not available'}, status=500)
+        
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=False)
+                
+                subtitles = info.get('subtitles', {})
+                automatic_captions = info.get('automatic_captions', {})
+                
+                available_subtitles = []
+                
+                # Process manual subtitles
+                for lang, formats in subtitles.items():
+                    available_subtitles.append({
+                        'language': lang,
+                        'type': 'manual',
+                        'formats_count': len(formats) if isinstance(formats, list) else 1
+                    })
+                
+                # Process automatic captions
+                for lang, formats in automatic_captions.items():
+                    available_subtitles.append({
+                        'language': lang,
+                        'type': 'automatic',
+                        'formats_count': len(formats) if isinstance(formats, list) else 1
+                    })
+                
+                return JsonResponse({
+                    'video_id': video_id,
+                    'video_title': info.get('title', ''),
+                    'has_transcripts': len(available_subtitles) > 0,
+                    'available_subtitles': available_subtitles,
+                    'total_count': len(available_subtitles),
+                    'duration': info.get('duration'),
+                    'uploader': info.get('uploader', '')
+                })
+                
+        except Exception as e:
+            return JsonResponse({
+                'video_id': video_id,
+                'has_transcripts': False,
+                'error': str(e)
+            }, status=400)
+            
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Keep all your existing endpoints (they don't need to change)
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_all_saved_transcripts(request):
+    """Retrieve all saved transcripts with pagination and filtering"""
+    try:
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 10))
+        search_query = request.GET.get('search', '').strip()
+        category_filter = request.GET.get('category', '').strip()
+        country_filter = request.GET.get('country', '').strip()
+        
+        # Build query
+        queryset = SnowAIVideoTranscriptRecord.objects.all()
+        
+        if search_query:
+            queryset = queryset.filter(
+                Q(full_transcript_text__icontains=search_query) |
+                Q(video_title__icontains=search_query) |
+                Q(primary_speaker_name__icontains=search_query)
+            )
+        
+        if category_filter:
+            queryset = queryset.filter(content_category=category_filter)
+            
+        if country_filter:
+            queryset = queryset.filter(
+                Q(speaker_country_code=country_filter) |
+                Q(speaker_country_name__icontains=country_filter)
+            )
+        
+        # Save search history
+        if search_query or category_filter or country_filter:
+            SnowAITranscriptSearchHistory.objects.create(
+                search_query=search_query,
+                search_filters={
+                    'category': category_filter,
+                    'country': country_filter
+                },
+                results_count=queryset.count()
+            )
+        
+        # Paginate results
+        paginator = Paginator(queryset, per_page)
+        page_obj = paginator.get_page(page)
+        
+        transcripts_data = []
+        for transcript in page_obj:
+            transcripts_data.append({
+                'id': transcript.transcript_uuid,
+                'youtube_url': transcript.youtube_url,
+                'video_title': transcript.video_title,
+                'speaker_name': transcript.primary_speaker_name,
+                'country': transcript.speaker_country_name,
+                'category': transcript.content_category,
+                'word_count': transcript.word_count,
+                'duration_seconds': transcript.video_duration_seconds,
+                'created_at': transcript.created_at.isoformat(),
+                'video_upload_date': transcript.video_upload_date.isoformat() if transcript.video_upload_date else None,
+                'transcript_preview': transcript.full_transcript_text[:200] + '...' if len(transcript.full_transcript_text) > 200 else transcript.full_transcript_text
+            })
+        
+        return JsonResponse({
+            'transcripts': transcripts_data,
+            'pagination': {
+                'current_page': page_obj.number,
+                'total_pages': paginator.num_pages,
+                'total_items': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_single_transcript_details(request, transcript_id):
+    """Get detailed view of a single transcript"""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        
+        return JsonResponse({
+            'id': transcript.transcript_uuid,
+            'youtube_url': transcript.youtube_url,
+            'youtube_video_id': transcript.youtube_video_id,
+            'video_title': transcript.video_title,
+            'speaker_name': transcript.primary_speaker_name,
+            'speaker_organization': transcript.speaker_organization,
+            'country_code': transcript.speaker_country_code,
+            'country_name': transcript.speaker_country_name,
+            'full_transcript': transcript.full_transcript_text,
+            'category': transcript.content_category,
+            'word_count': transcript.word_count,
+            'duration_seconds': transcript.video_duration_seconds,
+            'language': transcript.transcript_language,
+            'transcription_method': transcript.transcription_method,
+            'created_at': transcript.created_at.isoformat(),
+            'video_upload_date': transcript.video_upload_date.isoformat() if transcript.video_upload_date else None,
+            'custom_tags': transcript.custom_tags,
+            'economic_topics': transcript.economic_topics
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_transcript_record(request, transcript_id):
+    """Delete a specific transcript record"""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        video_title = transcript.video_title
+        transcript.delete()
+        
+        return JsonResponse({
+            'message': f'Transcript "{video_title}" deleted successfully'
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Debug endpoint for yt-dlp
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_debug_ytdlp_availability(request):
+    """Debug endpoint to test yt-dlp availability and version"""
+    try:
+        debug_info = {
+            'yt_dlp_available': YT_DLP_AVAILABLE,
+        }
+        
+        if YT_DLP_AVAILABLE:
+            debug_info['yt_dlp_version'] = yt_dlp.version.__version__
+            
+            # Test with a known good video (Rick Roll - has captions)
+            test_video_url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+            
+            try:
+                ydl_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'skip_download': True,
+                }
+                
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(test_video_url, download=False)
+                    
+                    debug_info['test_video_info'] = {
+                        'title': info.get('title', ''),
+                        'duration': info.get('duration'),
+                        'has_subtitles': bool(info.get('subtitles')),
+                        'has_automatic_captions': bool(info.get('automatic_captions')),
+                        'subtitle_languages': list(info.get('subtitles', {}).keys()),
+                        'automatic_caption_languages': list(info.get('automatic_captions', {}).keys())
+                    }
+                    debug_info['test_success'] = True
+                    
+            except Exception as e:
+                debug_info['test_success'] = False
+                debug_info['test_error'] = str(e)
+        
+        return JsonResponse(debug_info)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'yt_dlp_available': YT_DLP_AVAILABLE
+        }, status=500)
+        
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_transcript_metadata(request, transcript_id):
+    """Update transcript metadata like speaker info, tags, etc."""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        data = json.loads(request.body)
+        
+        # Update allowed fields
+        updateable_fields = [
+            'primary_speaker_name', 'speaker_organization', 'speaker_country_code',
+            'speaker_country_name', 'content_category', 'custom_tags', 'economic_topics'
+        ]
+        
+        for field in updateable_fields:
+            if field in data:
+                setattr(transcript, field, data[field])
+        
+        transcript.save()
+        
+        return JsonResponse({
+            'message': 'Transcript metadata updated successfully'
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Additional utility functions you might find useful
+
+@csrf_exempt  
+@require_http_methods(["GET"])
+def snowai_get_transcript_statistics(request):
+    """Get overall statistics about the transcript database"""
+    try:
+        total_transcripts = SnowAIVideoTranscriptRecord.objects.count()
+        total_words = sum(SnowAIVideoTranscriptRecord.objects.values_list('word_count', flat=True))
+        
+        # Category breakdown
+        categories = SnowAIVideoTranscriptRecord.objects.values('content_category').distinct()
+        category_stats = {}
+        for cat in categories:
+            if cat['content_category']:
+                count = SnowAIVideoTranscriptRecord.objects.filter(content_category=cat['content_category']).count()
+                category_stats[cat['content_category']] = count
+        
+        # Country breakdown
+        countries = SnowAIVideoTranscriptRecord.objects.values('speaker_country_name').distinct()
+        country_stats = {}
+        for country in countries:
+            if country['speaker_country_name']:
+                count = SnowAIVideoTranscriptRecord.objects.filter(speaker_country_name=country['speaker_country_name']).count()
+                country_stats[country['speaker_country_name']] = count
+        
+        return JsonResponse({
+            'total_transcripts': total_transcripts,
+            'total_words': total_words,
+            'average_words_per_transcript': total_words / total_transcripts if total_transcripts > 0 else 0,
+            'category_breakdown': category_stats,
+            'country_breakdown': country_stats
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"]) 
+def snowai_export_transcripts_csv(request):
+    """Export transcripts to CSV format"""
+    import csv
+    from django.http import HttpResponse
+    
+    try:
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="snowai_transcripts_export.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'ID', 'Video Title', 'Speaker Name', 'Country', 'Category', 
+            'Word Count', 'Duration (seconds)', 'YouTube URL', 'Created At', 'Transcript Text'
+        ])
+        
+        transcripts = SnowAIVideoTranscriptRecord.objects.all()
+        for transcript in transcripts:
+            writer.writerow([
+                transcript.transcript_uuid,
+                transcript.video_title or '',
+                transcript.primary_speaker_name or '',
+                transcript.speaker_country_name or '',
+                transcript.content_category or '',
+                transcript.word_count,
+                transcript.video_duration_seconds or 0,
+                transcript.youtube_url or '',
+                transcript.created_at.isoformat(),
+                transcript.full_transcript_text[:1000] + '...' if len(transcript.full_transcript_text) > 1000 else transcript.full_transcript_text
+            ])
+        
+        return response
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+
+# views.py (add these to your existing views)
+
+import json
+import time
+import uuid
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.shortcuts import get_object_or_404
+from django.core.paginator import Paginator
+from django.db.models import Q
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_transcript_analysis_dashboard_data_endpoint(request):
+    """Get dashboard data for transcript analysis overview"""
+    try:
+        # Get basic stats
+        total_transcripts = SnowAIVideoTranscriptRecord.objects.count()
+        analyzed_transcripts = SnowAIVideoTranscriptRecord.objects.filter(ai_analysis__isnull=False).count()
+        pending_analysis = total_transcripts - analyzed_transcripts
+        
+        # Get recent transcripts with analysis status
+        transcripts = SnowAIVideoTranscriptRecord.objects.select_related('ai_analysis').order_by('-created_at')[:50]
+        
+        transcript_data = []
+        for transcript in transcripts:
+            has_analysis = hasattr(transcript, 'ai_analysis') and transcript.ai_analysis is not None
+            transcript_data.append({
+                'transcript_uuid': transcript.transcript_uuid,
+                'video_title': transcript.video_title or 'Untitled',
+                'primary_speaker_name': transcript.primary_speaker_name or 'Unknown',
+                'speaker_organization': transcript.speaker_organization or 'N/A',
+                'created_at': transcript.created_at.isoformat() if transcript.created_at else None,
+                'word_count': transcript.word_count,
+                'has_analysis': has_analysis,
+                'analysis_sentiment': transcript.ai_analysis.overall_sentiment if has_analysis else None,
+                'analysis_created_at': transcript.ai_analysis.analysis_created_at.isoformat() if has_analysis else None,
+                'key_insights_count': transcript.ai_analysis.key_insights_count if has_analysis else 0
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'stats': {
+                    'total_transcripts': total_transcripts,
+                    'analyzed_transcripts': analyzed_transcripts,
+                    'pending_analysis': pending_analysis,
+                    'analysis_completion_rate': (analyzed_transcripts / total_transcripts * 100) if total_transcripts > 0 else 0
+                },
+                'transcripts': transcript_data
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trigger_transcript_analysis_endpoint(request):
+    """Trigger AI analysis for a specific transcript"""
+    try:
+        data = json.loads(request.body)
+        transcript_uuid = data.get('transcript_uuid')
+        
+        if not transcript_uuid:
+            return JsonResponse({'success': False, 'error': 'transcript_uuid is required'}, status=400)
+        
+        transcript = get_object_or_404(SnowAIVideoTranscriptRecord, transcript_uuid=transcript_uuid)
+        
+        # Check if analysis already exists
+        if hasattr(transcript, 'ai_analysis') and transcript.ai_analysis is not None:
+            return JsonResponse({
+                'success': False, 
+                'error': 'Analysis already exists for this transcript. Delete existing analysis first to re-analyze.',
+                'existing_analysis_uuid': transcript.ai_analysis.analysis_uuid
+            }, status=400)
+        
+        # Start timing the analysis
+        start_time = time.time()
+        
+        # Create the AI analysis prompt
+        analysis_prompt = f"""
+        Analyze the following speech transcript from {transcript.primary_speaker_name or 'Unknown Speaker'} 
+        from {transcript.speaker_organization or 'Unknown Organization'}. 
+        
+        Video Title: {transcript.video_title or 'Untitled'}
+        Speaker: {transcript.primary_speaker_name or 'Unknown'}
+        Organization: {transcript.speaker_organization or 'N/A'}
+        
+        Transcript Text:
+        {transcript.full_transcript_text}
+        
+        Please provide a comprehensive economic and financial analysis in JSON format with the following structure:
+        {{
+            "executive_summary": "A comprehensive 2-3 sentence summary of the key points",
+            "key_themes": ["theme1", "theme2", "theme3"],
+            "economic_opportunities": [
+                {{"opportunity": "Description of opportunity", "confidence": 0.8, "timeframe": "short_term/medium_term/long_term"}}
+            ],
+            "economic_risks": [
+                {{"risk": "Description of risk", "impact_level": "low/medium/high", "probability": 0.7}}
+            ],
+            "policy_implications": [
+                {{"implication": "Policy implication description", "timeframe": "short_term/medium_term/long_term", "sector": "monetary/fiscal/regulatory"}}
+            ],
+            "overall_sentiment": "positive/negative/neutral/mixed",
+            "sentiment_confidence": 0.85,
+            "market_outlook": "bullish/bearish/neutral/uncertain",
+            "inflation_mentions": {{"current": "value if mentioned", "target": "value if mentioned", "forecast": "value if mentioned"}},
+            "interest_rate_mentions": {{"current": "value if mentioned", "next_meeting": "decision if mentioned", "forecast": "value if mentioned"}},
+            "gdp_mentions": {{"current": "value if mentioned", "forecast": "value if mentioned"}},
+            "unemployment_mentions": {{"current": "value if mentioned", "forecast": "value if mentioned"}},
+            "policy_actions_suggested": ["action1", "action2"],
+            "market_predictions": [
+                {{"prediction": "Prediction description", "timeframe": "1_month/3_months/6_months/1_year", "confidence": 0.6}}
+            ],
+            "analysis_completeness_score": 0.9
+        }}
+        
+        Ensure all confidence scores are between 0 and 1. If specific economic metrics aren't mentioned, leave those objects empty. Focus on extracting actionable insights and concrete predictions where possible.
+        """
+        
+        # Get AI analysis
+        ai_response = chat_gpt(analysis_prompt)
+        
+        # Try to parse the JSON response
+        try:
+            analysis_data = json.loads(ai_response)
+        except json.JSONDecodeError:
+            # If direct parsing fails, try to extract JSON from the response
+            import re
+            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+            if json_match:
+                analysis_data = json.loads(json_match.group())
+            else:
+                return JsonResponse({'success': False, 'error': 'Failed to parse AI response as JSON'}, status=500)
+        
+        # Calculate analysis duration
+        analysis_duration = time.time() - start_time
+        
+        # Create the analysis record
+        analysis = SnowAITranscriptAnalysis.objects.create(
+            transcript=transcript,
+            analysis_uuid=str(uuid.uuid4()),
+            executive_summary=analysis_data.get('executive_summary', ''),
+            key_themes=analysis_data.get('key_themes', []),
+            economic_opportunities=analysis_data.get('economic_opportunities', []),
+            economic_risks=analysis_data.get('economic_risks', []),
+            policy_implications=analysis_data.get('policy_implications', []),
+            overall_sentiment=analysis_data.get('overall_sentiment', 'neutral'),
+            sentiment_confidence=analysis_data.get('sentiment_confidence', 0.0),
+            market_outlook=analysis_data.get('market_outlook', 'neutral'),
+            inflation_mentions=analysis_data.get('inflation_mentions', {}),
+            interest_rate_mentions=analysis_data.get('interest_rate_mentions', {}),
+            gdp_mentions=analysis_data.get('gdp_mentions', {}),
+            unemployment_mentions=analysis_data.get('unemployment_mentions', {}),
+            policy_actions_suggested=analysis_data.get('policy_actions_suggested', []),
+            market_predictions=analysis_data.get('market_predictions', []),
+            analysis_duration_seconds=analysis_duration,
+            analysis_completeness_score=analysis_data.get('analysis_completeness_score', 0.0)
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'analysis_uuid': analysis.analysis_uuid,
+                'executive_summary': analysis.executive_summary,
+                'overall_sentiment': analysis.overall_sentiment,
+                'key_insights_count': analysis.key_insights_count,
+                'analysis_duration': analysis_duration
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_transcript_analysis_details_endpoint(request, transcript_uuid):
+    """Get detailed analysis for a specific transcript"""
+    try:
+        transcript = get_object_or_404(SnowAIVideoTranscriptRecord, transcript_uuid=transcript_uuid)
+        
+        if not hasattr(transcript, 'ai_analysis') or transcript.ai_analysis is None:
+            return JsonResponse({'success': False, 'error': 'No analysis found for this transcript'}, status=404)
+        
+        analysis = transcript.ai_analysis
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'transcript_info': {
+                    'transcript_uuid': transcript.transcript_uuid,
+                    'video_title': transcript.video_title,
+                    'primary_speaker_name': transcript.primary_speaker_name,
+                    'speaker_organization': transcript.speaker_organization,
+                    'word_count': transcript.word_count,
+                    'created_at': transcript.created_at.isoformat() if transcript.created_at else None
+                },
+                'analysis': {
+                    'analysis_uuid': analysis.analysis_uuid,
+                    'executive_summary': analysis.executive_summary,
+                    'key_themes': analysis.key_themes,
+                    'economic_opportunities': analysis.economic_opportunities,
+                    'economic_risks': analysis.economic_risks,
+                    'policy_implications': analysis.policy_implications,
+                    'overall_sentiment': analysis.overall_sentiment,
+                    'sentiment_confidence': analysis.sentiment_confidence,
+                    'market_outlook': analysis.market_outlook,
+                    'inflation_mentions': analysis.inflation_mentions,
+                    'interest_rate_mentions': analysis.interest_rate_mentions,
+                    'gdp_mentions': analysis.gdp_mentions,
+                    'unemployment_mentions': analysis.unemployment_mentions,
+                    'policy_actions_suggested': analysis.policy_actions_suggested,
+                    'market_predictions': analysis.market_predictions,
+                    'key_insights_count': analysis.key_insights_count,
+                    'analysis_completeness_score': analysis.analysis_completeness_score,
+                    'analysis_created_at': analysis.analysis_created_at.isoformat()
+                }
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_transcript_analysis_endpoint(request, analysis_uuid):
+    """Delete an analysis"""
+    try:
+        analysis = get_object_or_404(SnowAITranscriptAnalysis, analysis_uuid=analysis_uuid)
+        transcript_uuid = analysis.transcript.transcript_uuid
+        analysis.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Analysis deleted successfully',
+            'transcript_uuid': transcript_uuid
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def snowai_fetch_market_ohlc_data(request):
+    """
+    Fetch OHLC market data using yfinance
+    Endpoint: /api/snowai-market-ohlc/
+    
+    Parameters:
+    - symbol: Asset symbol (e.g., AAPL, EURUSD=X, GC=F)
+    - interval: Timeframe (1m, 5m, 15m, 1h, 4h, 1d, 1wk)
+    - period: Data period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, max)
+    """
+    try:
+        # Get parameters
+        if request.method == 'POST':
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            interval = data.get('interval', '1h')
+            period = data.get('period', '1mo')
+        else:
+            symbol = request.GET.get('symbol')
+            interval = request.GET.get('interval', '1h')
+            period = request.GET.get('period', '1mo')
+        
+        if not symbol:
+            return JsonResponse({
+                'error': 'Symbol parameter is required'
+            }, status=400)
+        
+        # Map frontend intervals to yfinance intervals
+        interval_mapping = {
+            '1m': '1m',
+            '5m': '5m',
+            '15m': '15m',
+            '1h': '1h',
+            '4h': '4h',
+            '1d': '1d',
+            '1w': '1wk'
+        }
+        
+        yf_interval = interval_mapping.get(interval, '1h')
+        
+        # Fetch data from yfinance
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period=period, interval=yf_interval)
+        
+        if df.empty:
+            return JsonResponse({
+                'error': f'No data available for {symbol}',
+                'symbol': symbol
+            }, status=404)
+        
+        # Convert DataFrame to list of OHLC dictionaries
+        data = []
+        for index, row in df.iterrows():
+            # Convert timezone-aware datetime to Unix timestamp
+            timestamp = int(index.timestamp())
+            
+            data.append({
+                'time': timestamp,
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close']),
+                'volume': float(row['Volume']) if 'Volume' in row else 0
+            })
+        
+        # Sort by time
+        data.sort(key=lambda x: x['time'])
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'interval': interval,
+            'period': period,
+            'data_points': len(data),
+            'data': data,
+            'source': 'yfinance',
+            'first_date': datetime.fromtimestamp(data[0]['time']).isoformat() if data else None,
+            'last_date': datetime.fromtimestamp(data[-1]['time']).isoformat() if data else None
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'symbol': symbol if 'symbol' in locals() else 'unknown'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_latest_ai_council_discussion_for_livingston(request):
+    """Fetch the most recent AI Trading Council Discussion for Livingston AI assistant"""
+    try:
+        latest_discussion = AITradingCouncilConversation.objects.filter(
+            status='completed'
+        ).order_by('-created_at').first()
+        
+        if not latest_discussion:
+            return JsonResponse({
+                'success': True,
+                'has_discussion': False,
+                'message': 'No completed discussions found'
+            })
+        
+        discussion_context = {
+            'conversation_id': latest_discussion.conversation_id,
+            'title': latest_discussion.title,
+            'created_at': latest_discussion.created_at.isoformat(),
+            'participating_assets': latest_discussion.participating_assets,
+            'total_participants': latest_discussion.total_participants,
+            'conversation_summary': latest_discussion.conversation_summary,
+            'overall_economic_outlook': latest_discussion.overall_economic_outlook,
+            'global_market_sentiment': latest_discussion.global_market_sentiment,
+            'market_volatility_level': latest_discussion.market_volatility_level,
+            'major_economic_themes': latest_discussion.major_economic_themes,
+            'currency_strength_rankings': latest_discussion.currency_strength_rankings,
+            'risk_factors_identified': latest_discussion.risk_factors_identified,
+            'opportunity_areas': latest_discussion.opportunity_areas,
+            'bullish_sentiment_count': latest_discussion.bullish_sentiment_count,
+            'bearish_sentiment_count': latest_discussion.bearish_sentiment_count,
+            'neutral_sentiment_count': latest_discussion.neutral_sentiment_count,
+            'average_confidence_score': latest_discussion.average_confidence_score,
+            'dominant_sentiment': latest_discussion.get_dominant_sentiment(),
+            'conversation_turns_count': latest_discussion.get_conversation_turns_count(),
+            'full_conversation': latest_discussion.conversation_data
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'has_discussion': True,
+            'discussion': discussion_context
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+
+
+
+
+
+
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
