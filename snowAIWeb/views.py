@@ -7,7 +7,7 @@ from django.contrib.auth import authenticate, login
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.timezone import now
 from rest_framework.views import APIView
-from rest_framework.response import Response
+from rest_framework.response import Responsebot
 from rest_framework import status
 from .serializers import *
 from .models import *
@@ -6342,6 +6342,22 @@ def is_stock_index(asset):
     return asset in stock_indices
 
 
+def is_bond(asset):
+    """
+    Determines if an asset is a bond/treasury based on the asset name.
+    """
+    bonds = ['ZB1!', 'US10Y', 'US5Y']
+    return asset in bonds
+
+
+def is_commodity(asset):
+    """
+    Determines if an asset is a commodity (currently just Gold).
+    """
+    commodities = ['XAUUSD']
+    return asset in commodities
+
+
 def get_latest_price(asset):
     """
     Gets the latest price for an asset, using appropriate data source.
@@ -6353,6 +6369,21 @@ def get_latest_price(asset):
         if data is None or data.empty:
             return None
         return round(float(data["Close"].iloc[-1]), 2)
+    
+    elif is_bond(asset):
+        # Use get_bond_data for bonds/treasuries
+        data = get_bond_data(asset, timeframe="1d", lookback_days=1)
+        if data is None or data.empty:
+            return None
+        return round(float(data["Close"].iloc[-1]), 3)
+    
+    elif is_commodity(asset):
+        # Use get_commodity_data for commodities (Gold)
+        data = get_commodity_data(asset, timeframe="1d", lookback_days=1)
+        if data is None or data.empty:
+            return None
+        return round(float(data["Close"].iloc[-1]), 2)
+    
     else:
         # Use existing obtain_dataset function for Forex
         data = obtain_dataset(asset, interval="1m", num_days=1)
@@ -6403,10 +6434,6 @@ def manage_alerts():
             print(f"Error processing alert for {alert.asset}: {e}")
 
 
-# Import the required libraries and functions
-import yfinance as yf
-import pandas as pd
-
 def get_index_data(asset, timeframe, lookback_days):
     """
     Fetches historical data for a given index (S&P 500, Nasdaq, or Dow Jones).
@@ -6432,6 +6459,84 @@ def get_index_data(asset, timeframe, lookback_days):
 
     if ticker is None:
         print(f"Invalid asset: {asset}. Please choose from 'S&P 500', 'NASDAQ', or 'DOW JONES'.")
+        return None
+
+    # Calculate start date based on lookback period
+    end_date = pd.to_datetime('today')
+    start_date = end_date - pd.Timedelta(days=lookback_days)
+
+    # Fetch data using yfinance
+    try:
+        data = yf.download(ticker, start=start_date, end=end_date, interval=timeframe)
+        return data
+    except Exception as e:
+        print(f"Error fetching data for {asset}: {e}")
+        return None
+
+
+def get_bond_data(asset, timeframe, lookback_days):
+    """
+    Fetches historical data for bonds and treasuries.
+
+    Args:
+        asset (str): The bond to fetch data for ('ZB1!', 'US10Y', or 'US5Y').
+        timeframe (str): The data interval (e.g., '1d', '1wk', '1mo').
+        lookback_days (int): The number of days to look back from the current date.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the historical data.
+                          Returns None if the asset is invalid.
+    """
+    # Define tickers for each bond
+    tickers = {
+        'ZB1!': 'ZB=F',       # 30-Year Treasury Bond Futures
+        'US10Y': '^TNX',      # 10-Year Treasury Yield
+        'US5Y': '^FVX'        # 5-Year Treasury Yield
+    }
+
+    # Get the ticker for the specified asset
+    ticker = tickers.get(asset.upper())
+
+    if ticker is None:
+        print(f"Invalid asset: {asset}. Please choose from 'ZB1!', 'US10Y', or 'US5Y'.")
+        return None
+
+    # Calculate start date based on lookback period
+    end_date = pd.to_datetime('today')
+    start_date = end_date - pd.Timedelta(days=lookback_days)
+
+    # Fetch data using yfinance
+    try:
+        data = yf.download(ticker, start=start_date, end=end_date, interval=timeframe)
+        return data
+    except Exception as e:
+        print(f"Error fetching data for {asset}: {e}")
+        return None
+
+
+def get_commodity_data(asset, timeframe, lookback_days):
+    """
+    Fetches historical data for commodities (currently Gold).
+
+    Args:
+        asset (str): The commodity to fetch data for ('XAUUSD').
+        timeframe (str): The data interval (e.g., '1d', '1wk', '1mo').
+        lookback_days (int): The number of days to look back from the current date.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the historical data.
+                          Returns None if the asset is invalid.
+    """
+    # Define tickers for each commodity
+    tickers = {
+        'XAUUSD': 'GC=F'  # Gold Futures
+    }
+
+    # Get the ticker for the specified asset
+    ticker = tickers.get(asset.upper())
+
+    if ticker is None:
+        print(f"Invalid asset: {asset}. Please choose from 'XAUUSD'.")
         return None
 
     # Calculate start date based on lookback period
