@@ -20546,7 +20546,7 @@ def snowai_trigger_transcript_analysis_endpoint(request):
         
         Please provide a comprehensive economic and financial analysis in JSON format with the following structure:
         {{
-            "executive_summary": "A comprehensive 2-3 sentence summary of the key points",
+            "executive_summary": "A comprehensive 3-4 paragraph summary of the key points",
             "key_themes": ["theme1", "theme2", "theme3"],
             "economic_opportunities": [
                 {{"opportunity": "Description of opportunity", "confidence": 0.8, "timeframe": "short_term/medium_term/long_term"}}
