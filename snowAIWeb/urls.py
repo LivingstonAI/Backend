@@ -303,6 +303,9 @@ urlpatterns = [
          views.fetch_latest_ai_council_discussion_for_livingston, 
          name='livingston_fetch_council'),
 
+     path('api/snowai-time-separators/', views.snowai_fetch_time_separators, name='snowai_time_separators'),
+
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

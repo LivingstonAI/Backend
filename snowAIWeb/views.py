@@ -20857,6 +20857,71 @@ def fetch_latest_ai_council_discussion_for_livingston(request):
         }, status=500)
 
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_fetch_time_separators(request):
+    """
+    Fetch week and month separator timestamps for chart visualization
+    Endpoint: /api/snowai-time-separators/
+    
+    Parameters:
+    - symbol: Asset symbol (e.g., AAPL, EURUSD=X, GC=F)
+    - period: Data period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, max)
+    """
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        period = data.get('period', '1y')
+        
+        if not symbol:
+            return JsonResponse({
+                'error': 'Symbol parameter is required'
+            }, status=400)
+        
+        # Fetch weekly data
+        ticker = yf.Ticker(symbol)
+        weekly_df = ticker.history(period=period, interval='1wk')
+        monthly_df = ticker.history(period=period, interval='1mo')
+        
+        if weekly_df.empty and monthly_df.empty:
+            return JsonResponse({
+                'error': f'No data available for {symbol}',
+                'symbol': symbol
+            }, status=404)
+        
+        # Extract week start timestamps
+        week_starts = []
+        if not weekly_df.empty:
+            for index in weekly_df.index:
+                timestamp = int(index.timestamp())
+                week_starts.append(timestamp)
+        
+        # Extract month start timestamps
+        month_starts = []
+        if not monthly_df.empty:
+            for index in monthly_df.index:
+                timestamp = int(index.timestamp())
+                month_starts.append(timestamp)
+        
+        # Sort timestamps
+        week_starts.sort()
+        month_starts.sort()
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'period': period,
+            'week_starts': week_starts,
+            'month_starts': month_starts,
+            'week_count': len(week_starts),
+            'month_count': len(month_starts)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'symbol': symbol if 'symbol' in locals() else 'unknown'
+        }, status=500)
 
 
 
