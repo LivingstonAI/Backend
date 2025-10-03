@@ -20794,30 +20794,18 @@ def fetch_latest_ai_council_discussion_for_livingston(request):
             status='completed'
         ).order_by('-created_at').first()
         
-        # Fetch recent transcript analyses
-        recent_analyses = SnowAITranscriptAnalysis.objects.select_related(
+        # Fetch ALL transcript analyses - only the fields we need
+        all_analyses = SnowAITranscriptAnalysis.objects.select_related(
             'transcript'
         ).order_by('-analysis_created_at')
         
         transcript_insights = []
-        for analysis in recent_analyses:
+        for analysis in all_analyses:
             transcript_insights.append({
-                'speaker_name': analysis.transcript.primary_speaker_name,
-                'video_title': analysis.transcript.video_title,
-                'video_date': analysis.transcript.video_publish_date.isoformat() if analysis.transcript.video_publish_date else None,
                 'executive_summary': analysis.executive_summary,
                 'key_themes': analysis.key_themes,
-                'overall_sentiment': analysis.overall_sentiment,
-                'market_outlook': analysis.market_outlook,
-                'economic_opportunities': analysis.economic_opportunities,
-                'economic_risks': analysis.economic_risks,
-                'policy_implications': analysis.policy_implications,
-                'market_predictions': analysis.market_predictions,
-                'inflation_mentions': analysis.inflation_mentions,
-                'interest_rate_mentions': analysis.interest_rate_mentions,
-                'gdp_mentions': analysis.gdp_mentions,
-                'unemployment_mentions': analysis.unemployment_mentions,
-                'analysis_created_at': analysis.analysis_created_at.isoformat()
+                'speaker_name': analysis.transcript.primary_speaker_name,
+                'country_code': analysis.transcript.speaker_country_code,
             })
         
         if not latest_discussion:
@@ -20826,7 +20814,8 @@ def fetch_latest_ai_council_discussion_for_livingston(request):
                 'has_discussion': False,
                 'message': 'No completed discussions found',
                 'has_transcript_insights': len(transcript_insights) > 0,
-                'transcript_insights': transcript_insights
+                'transcript_insights': transcript_insights,
+                'transcript_insights_count': len(transcript_insights)
             })
         
         discussion_context = {
@@ -20866,7 +20855,6 @@ def fetch_latest_ai_council_discussion_for_livingston(request):
             'success': False,
             'error': str(e)
         }, status=500)
-
 
 
 
