@@ -20923,6 +20923,7 @@ def snowai_fetch_time_separators(request):
             'symbol': symbol if 'symbol' in locals() else 'unknown'
         }, status=500)
 
+
 import numpy as np
 from scipy.stats import pearsonr
 
@@ -20936,26 +20937,33 @@ ASSET_TICKERS = {
         'AUDUSD': 'AUDUSD=X',
         'NZDUSD': 'NZDUSD=X',
         'USDCAD': 'USDCAD=X',
-        'DXY': 'DX-Y.NYB'  # US Dollar Index
+        'DXY': 'DX-Y.NYB'
     },
     'bonds': {
-        'ZB1!': 'ZB=F',  # 30-Year T-Bond Futures
-        'US10Y': '^TNX',  # 10-Year Treasury Yield
-        'US5Y': '^FVX',   # 5-Year Treasury Yield
-        'US2Y': '^IRX'    # 2-Year Treasury Yield
+        'US30Y': 'ZB=F',
+        'US10Y': '^TNX',
+        'US5Y': '^FVX',
+        'US2Y': '^IRX',
+        'German 10Y': '^TNX',
+        'UK 10Y': '^TNX'
     },
     'commodities': {
         'Gold': 'GC=F',
         'Silver': 'SI=F',
-        'Oil': 'CL=F',
-        'Copper': 'HG=F'
+        'Crude Oil': 'CL=F',
+        'Copper': 'HG=F',
+        'Natural Gas': 'NG=F',
+        'Platinum': 'PL=F'
     },
     'indices': {
         'S&P 500': '^GSPC',
         'Nasdaq': '^IXIC',
         'Dow Jones': '^DJI',
         'Russell 2000': '^RUT',
-        'VIX': '^VIX'
+        'VIX': '^VIX',
+        'FTSE 100': '^FTSE',
+        'DAX': '^GDAXI',
+        'Nikkei': '^N225'
     }
 }
 
@@ -21232,7 +21240,8 @@ def snowai_asset_correlation_calculate_correlations(request):
         return JsonResponse({
             'success': True,
             'correlations': correlations,
-            'period': period
+            'period': period,
+            'asset_class': asset_class
         })
     
     except Exception as e:
@@ -21246,7 +21255,6 @@ def snowai_asset_correlation_get_all_classes(request):
         'success': True,
         'asset_classes': list(ASSET_TICKERS.keys())
     })
-
 
 
 # LEGODI BACKEND CODE
