@@ -20923,6 +20923,329 @@ def snowai_fetch_time_separators(request):
             'symbol': symbol if 'symbol' in locals() else 'unknown'
         }, status=500)
 
+import numpy as np
+from scipy.stats import pearsonr
+
+# Asset ticker mappings
+ASSET_TICKERS = {
+    'forex': {
+        'EURUSD': 'EURUSD=X',
+        'GBPUSD': 'GBPUSD=X',
+        'USDJPY': 'USDJPY=X',
+        'USDCHF': 'USDCHF=X',
+        'AUDUSD': 'AUDUSD=X',
+        'NZDUSD': 'NZDUSD=X',
+        'USDCAD': 'USDCAD=X',
+        'DXY': 'DX-Y.NYB'  # US Dollar Index
+    },
+    'bonds': {
+        'ZB1!': 'ZB=F',  # 30-Year T-Bond Futures
+        'US10Y': '^TNX',  # 10-Year Treasury Yield
+        'US5Y': '^FVX',   # 5-Year Treasury Yield
+        'US2Y': '^IRX'    # 2-Year Treasury Yield
+    },
+    'commodities': {
+        'Gold': 'GC=F',
+        'Silver': 'SI=F',
+        'Oil': 'CL=F',
+        'Copper': 'HG=F'
+    },
+    'indices': {
+        'S&P 500': '^GSPC',
+        'Nasdaq': '^IXIC',
+        'Dow Jones': '^DJI',
+        'Russell 2000': '^RUT',
+        'VIX': '^VIX'
+    }
+}
+
+def calculate_price_changes(ticker, periods=['1d', '1wk', '1mo', '3mo']):
+    """Calculate price changes for different periods"""
+    try:
+        stock = yf.Ticker(ticker)
+        
+        # Get historical data for the last 6 months
+        hist = stock.history(period='6mo')
+        
+        if hist.empty:
+            return None
+        
+        current_price = hist['Close'].iloc[-1]
+        changes = {'current_price': round(current_price, 4)}
+        
+        # Calculate changes for each period
+        period_days = {
+            '1d': 1,
+            '1wk': 5,
+            '1mo': 21,
+            '3mo': 63
+        }
+        
+        for period, days in period_days.items():
+            if len(hist) > days:
+                past_price = hist['Close'].iloc[-(days + 1)]
+                change_pct = ((current_price - past_price) / past_price) * 100
+                change_abs = current_price - past_price
+                changes[period] = {
+                    'percent': round(change_pct, 2),
+                    'absolute': round(change_abs, 4),
+                    'past_price': round(past_price, 4)
+                }
+            else:
+                changes[period] = None
+        
+        return changes
+    except Exception as e:
+        print(f"Error calculating changes for {ticker}: {str(e)}")
+        return None
+
+def calculate_correlation(ticker1, ticker2, period='3mo'):
+    """Calculate correlation between two assets"""
+    try:
+        stock1 = yf.Ticker(ticker1)
+        stock2 = yf.Ticker(ticker2)
+        
+        hist1 = stock1.history(period=period)
+        hist2 = stock2.history(period=period)
+        
+        if hist1.empty or hist2.empty:
+            return None
+        
+        # Align the data by date
+        df1 = hist1['Close'].pct_change().dropna()
+        df2 = hist2['Close'].pct_change().dropna()
+        
+        # Find common dates
+        common_dates = df1.index.intersection(df2.index)
+        
+        if len(common_dates) < 20:  # Need at least 20 data points
+            return None
+        
+        returns1 = df1.loc[common_dates]
+        returns2 = df2.loc[common_dates]
+        
+        correlation, p_value = pearsonr(returns1, returns2)
+        
+        return {
+            'correlation': round(correlation, 3),
+            'p_value': round(p_value, 4),
+            'significant': p_value < 0.05
+        }
+    except Exception as e:
+        print(f"Error calculating correlation: {str(e)}")
+        return None
+
+def generate_intermarket_insights(asset_class, asset_data):
+    """Generate trading insights based on intermarket analysis"""
+    insights = []
+    
+    try:
+        # Get DXY (Dollar Index) data
+        dxy_changes = calculate_price_changes(ASSET_TICKERS['forex']['DXY'])
+        
+        # Get Gold data
+        gold_changes = calculate_price_changes(ASSET_TICKERS['commodities']['Gold'])
+        
+        # Get US10Y data
+        us10y_changes = calculate_price_changes(ASSET_TICKERS['bonds']['US10Y'])
+        
+        # Get VIX data
+        vix_changes = calculate_price_changes(ASSET_TICKERS['indices']['VIX'])
+        
+        # Forex-specific insights
+        if asset_class == 'forex':
+            if dxy_changes and dxy_changes.get('1d', {}).get('percent'):
+                dxy_daily = dxy_changes['1d']['percent']
+                
+                if dxy_daily < -0.5:
+                    insights.append({
+                        'type': 'bullish',
+                        'message': f'USD Index down {abs(dxy_daily):.2f}% today. Consider long positions on EURUSD, GBPUSD, AUDUSD.',
+                        'strength': 'moderate' if abs(dxy_daily) < 1 else 'strong'
+                    })
+                elif dxy_daily > 0.5:
+                    insights.append({
+                        'type': 'bearish',
+                        'message': f'USD Index up {dxy_daily:.2f}% today. Consider short positions on EUR/GBP pairs or long USDJPY.',
+                        'strength': 'moderate' if dxy_daily < 1 else 'strong'
+                    })
+            
+            if gold_changes and gold_changes.get('1wk', {}).get('percent'):
+                gold_weekly = gold_changes['1wk']['percent']
+                if gold_weekly > 2:
+                    insights.append({
+                        'type': 'bullish',
+                        'message': f'Gold up {gold_weekly:.2f}% this week. Risk-off sentiment may support safe-haven currencies like JPY, CHF.',
+                        'strength': 'moderate'
+                    })
+        
+        # Commodities insights
+        elif asset_class == 'commodities':
+            if dxy_changes:
+                dxy_monthly = dxy_changes.get('1mo', {}).get('percent', 0)
+                if abs(dxy_monthly) > 2:
+                    direction = 'inverse' if dxy_monthly > 0 else 'positive'
+                    insights.append({
+                        'type': 'correlation',
+                        'message': f'USD Index {dxy_monthly:+.2f}% this month. Typically {direction} correlation with commodities.',
+                        'strength': 'strong' if abs(dxy_monthly) > 4 else 'moderate'
+                    })
+            
+            if us10y_changes:
+                yield_monthly = us10y_changes.get('1mo', {}).get('percent', 0)
+                if abs(yield_monthly) > 5:
+                    insights.append({
+                        'type': 'info',
+                        'message': f'10Y Yields {yield_monthly:+.2f}% this month. Rising yields typically pressure Gold/Silver.',
+                        'strength': 'moderate'
+                    })
+        
+        # Bonds insights
+        elif asset_class == 'bonds':
+            if vix_changes:
+                vix_weekly = vix_changes.get('1wk', {}).get('percent', 0)
+                if vix_weekly > 10:
+                    insights.append({
+                        'type': 'bullish',
+                        'message': f'VIX up {vix_weekly:.2f}% this week. Flight to safety may boost bond prices (lower yields).',
+                        'strength': 'strong'
+                    })
+            
+            # Check yield curve
+            us10y_curr = us10y_changes.get('current_price', 0)
+            us2y_changes = calculate_price_changes(ASSET_TICKERS['bonds']['US2Y'])
+            us2y_curr = us2y_changes.get('current_price', 0) if us2y_changes else 0
+            
+            if us10y_curr and us2y_curr:
+                spread = us10y_curr - us2y_curr
+                if spread < 0:
+                    insights.append({
+                        'type': 'warning',
+                        'message': f'Inverted yield curve detected (spread: {spread:.2f}%). Historically indicates recession risk.',
+                        'strength': 'strong'
+                    })
+                elif spread > 2:
+                    insights.append({
+                        'type': 'info',
+                        'message': f'Steep yield curve (spread: {spread:.2f}%). Typically indicates strong growth expectations.',
+                        'strength': 'moderate'
+                    })
+        
+        # Indices insights
+        elif asset_class == 'indices':
+            if us10y_changes:
+                yield_weekly = us10y_changes.get('1wk', {}).get('percent', 0)
+                if yield_weekly > 3:
+                    insights.append({
+                        'type': 'bearish',
+                        'message': f'10Y yields surging (+{yield_weekly:.2f}% weekly). May pressure equity valuations.',
+                        'strength': 'moderate'
+                    })
+            
+            if vix_changes:
+                vix_curr = vix_changes.get('current_price', 0)
+                if vix_curr > 25:
+                    insights.append({
+                        'type': 'warning',
+                        'message': f'VIX elevated at {vix_curr:.2f}. High volatility environment - exercise caution.',
+                        'strength': 'strong'
+                    })
+                elif vix_curr < 15:
+                    insights.append({
+                        'type': 'info',
+                        'message': f'VIX low at {vix_curr:.2f}. Low volatility may indicate complacency or stable conditions.',
+                        'strength': 'moderate'
+                    })
+        
+    except Exception as e:
+        print(f"Error generating insights: {str(e)}")
+    
+    return insights
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_asset_correlation_get_data(request):
+    """Get asset price changes and correlation data"""
+    try:
+        asset_class = request.GET.get('asset_class', 'forex')
+        
+        if asset_class not in ASSET_TICKERS:
+            return JsonResponse({'error': 'Invalid asset class'}, status=400)
+        
+        assets = ASSET_TICKERS[asset_class]
+        result = {}
+        
+        for name, ticker in assets.items():
+            changes = calculate_price_changes(ticker)
+            if changes:
+                result[name] = changes
+        
+        # Generate insights
+        insights = generate_intermarket_insights(asset_class, result)
+        
+        return JsonResponse({
+            'success': True,
+            'asset_class': asset_class,
+            'data': result,
+            'insights': insights,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_asset_correlation_calculate_correlations(request):
+    """Calculate correlations between selected assets"""
+    try:
+        data = json.loads(request.body)
+        asset_class = data.get('asset_class', 'forex')
+        period = data.get('period', '3mo')
+        
+        if asset_class not in ASSET_TICKERS:
+            return JsonResponse({'error': 'Invalid asset class'}, status=400)
+        
+        assets = ASSET_TICKERS[asset_class]
+        correlations = []
+        
+        # Calculate correlations between all pairs
+        asset_list = list(assets.items())
+        for i in range(len(asset_list)):
+            for j in range(i + 1, len(asset_list)):
+                name1, ticker1 = asset_list[i]
+                name2, ticker2 = asset_list[j]
+                
+                corr_data = calculate_correlation(ticker1, ticker2, period)
+                
+                if corr_data:
+                    correlations.append({
+                        'asset1': name1,
+                        'asset2': name2,
+                        'correlation': corr_data['correlation'],
+                        'significant': corr_data['significant']
+                    })
+        
+        # Sort by absolute correlation value
+        correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
+        
+        return JsonResponse({
+            'success': True,
+            'correlations': correlations,
+            'period': period
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_asset_correlation_get_all_classes(request):
+    """Get available asset classes"""
+    return JsonResponse({
+        'success': True,
+        'asset_classes': list(ASSET_TICKERS.keys())
+    })
 
 
 

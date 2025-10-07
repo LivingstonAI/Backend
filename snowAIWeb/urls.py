@@ -305,6 +305,9 @@ urlpatterns = [
 
      path('api/snowai-time-separators/', views.snowai_fetch_time_separators, name='snowai_time_separators'),
 
+     path('api/snowai-asset-correlation-data/', views.snowai_asset_correlation_get_data, name='snowai_asset_correlation_get_data'),
+     path('api/snowai-asset-correlation-correlations/', views.snowai_asset_correlation_calculate_correlations, name='snowai_asset_correlation_calculate_correlations'),
+     path('api/snowai-asset-correlation-classes/', views.snowai_asset_correlation_get_all_classes, name='snowai_asset_correlation_get_all_classes'),
 
 
     # create appproprate urls.py here
