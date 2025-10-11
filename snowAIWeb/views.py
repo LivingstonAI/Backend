@@ -4780,7 +4780,7 @@ def run_genesys_backtests_wrapper():
 # Schedule the wrapper function instead of the async function directly
 scheduler.add_job(
     run_genesys_backtests_wrapper,
-    trigger=IntervalTrigger(minutes=30),
+    trigger=IntervalTrigger(minutes=5),
     id='run_genesys_backtests',
     name='Update genesys backtests every 30 minutes',
     replace_existing=True
@@ -5699,7 +5699,8 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
             'is_bullish_orderblock': is_bullish_orderblock,
             'is_bearish_orderblock': is_bearish_orderblock,
             'is_bullish_weekly_profile': is_bullish_weekly_profile,
-            'is_bearish_weekly_profile': is_bearish_weekly_profile
+            'is_bearish_weekly_profile': is_bearish_weekly_profile,
+            'buy_hold': buy_hold,
         }
     
         exec(model_code, namespace)
