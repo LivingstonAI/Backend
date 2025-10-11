@@ -5127,6 +5127,170 @@ def is_resistance_level(data):
     return latest_price >= resistance_level
 
 
+
+import pandas as pd
+import numpy as np
+
+# ==================== DIP DETECTION ALGORITHMS ====================
+
+def detect_rsi_dip(close, period=14, oversold=30):
+    """
+    Detect dips using RSI (Relative Strength Index).
+    Returns True when RSI is oversold.
+    """
+    delta = np.diff(close, prepend=close[0])
+    gain = np.where(delta > 0, delta, 0)
+    loss = np.where(delta < 0, -delta, 0)
+    
+    avg_gain = np.convolve(gain, np.ones(period)/period, mode='same')
+    avg_loss = np.convolve(loss, np.ones(period)/period, mode='same')
+    
+    rs = np.divide(avg_gain, avg_loss, out=np.zeros_like(avg_gain), where=avg_loss!=0)
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi, rsi < oversold
+
+
+def detect_bollinger_dip(close, period=20, std_dev=2):
+    """
+    Detect dips using Bollinger Bands.
+    Returns True when price touches or goes below lower band.
+    """
+    sma = np.convolve(close, np.ones(period)/period, mode='same')
+    
+    # Calculate rolling standard deviation
+    rolling_std = np.array([
+        np.std(close[max(0, i-period):i+1]) if i >= period-1 else np.std(close[:i+1])
+        for i in range(len(close))
+    ])
+    
+    lower_band = sma - (std_dev * rolling_std)
+    upper_band = sma + (std_dev * rolling_std)
+    
+    return lower_band, upper_bb, close <= lower_band
+
+
+def detect_price_momentum_dip(close, short_period=10, long_period=30, threshold=-0.02):
+    """
+    Detect dips using price momentum.
+    Returns True when short-term momentum drops significantly below long-term.
+    """
+    short_ma = np.convolve(close, np.ones(short_period)/short_period, mode='same')
+    long_ma = np.convolve(close, np.ones(long_period)/long_period, mode='same')
+    
+    momentum_diff = (short_ma - long_ma) / long_ma
+    
+    return momentum_diff, momentum_diff < threshold
+
+
+def detect_percentage_pullback(close, lookback=20, pullback_pct=0.03):
+    """
+    Detect dips based on percentage pullback from recent high.
+    Returns True when price has pulled back by specified percentage.
+    """
+    rolling_max = np.array([
+        np.max(close[max(0, i-lookback):i+1])
+        for i in range(len(close))
+    ])
+    
+    pullback = (rolling_max - close) / rolling_max
+    
+    return rolling_max, pullback >= pullback_pct
+
+
+# ==================== MAIN BUY_HOLD FUNCTION ====================
+
+def buy_hold(dataset, 
+             dip_threshold=2,
+             rsi_period=14, 
+             rsi_oversold=35,
+             bb_period=20, 
+             bb_std=2,
+             momentum_short=10, 
+             momentum_long=30,
+             pullback_period=20, 
+             pullback_pct=0.025):
+    """
+    Determines if buy conditions are met based on dip detection algorithms.
+    
+    Parameters:
+    -----------
+    dataset : pd.DataFrame
+        DataFrame with OHLCV data (must have 'Close' column)
+    dip_threshold : int
+        Minimum number of dip conditions to trigger buy (default: 2)
+    rsi_period : int
+        RSI calculation period (default: 14)
+    rsi_oversold : float
+        RSI oversold threshold (default: 35)
+    bb_period : int
+        Bollinger Bands period (default: 20)
+    bb_std : float
+        Bollinger Bands standard deviation multiplier (default: 2)
+    momentum_short : int
+        Short-term momentum period (default: 10)
+    momentum_long : int
+        Long-term momentum period (default: 30)
+    pullback_period : int
+        Period for pullback calculation (default: 20)
+    pullback_pct : float
+        Minimum pullback percentage to trigger signal (default: 0.025)
+    
+    Returns:
+    --------
+    bool : True if buy conditions are met, False otherwise
+    
+    Usage in Genesys:
+    -----------------
+    if buy_hold(dataset):
+        self.buy(size=0.95)
+        self.current_equity = self.equity
+    """
+    
+    # Get current index (last bar)
+    current_idx = len(dataset) - 1
+    
+    # Need enough data for indicators
+    min_periods = max(rsi_period, bb_period, momentum_long, pullback_period)
+    if current_idx < min_periods:
+        return False  # Not enough data yet
+    
+    # Extract close prices as numpy array
+    close = dataset['Close'].values
+    
+    # ==================== CALCULATE INDICATORS ====================
+    
+    # 1. RSI Dip Detection
+    rsi, rsi_dip = detect_rsi_dip(close, rsi_period, rsi_oversold)
+    rsi_signal = rsi_dip[-1]
+    
+    # 2. Bollinger Bands Dip Detection
+    lower_bb, upper_bb, bb_dip = detect_bollinger_dip(close, bb_period, bb_std)
+    bb_signal = bb_dip[-1]
+    
+    # 3. Price Momentum Dip Detection
+    momentum, momentum_dip = detect_price_momentum_dip(close, momentum_short, momentum_long)
+    momentum_signal = momentum_dip[-1]
+    
+    # 4. Percentage Pullback Detection
+    recent_high, pullback_dip = detect_percentage_pullback(close, pullback_period, pullback_pct)
+    pullback_signal = pullback_dip[-1]
+    
+    # ==================== CALCULATE DIP SCORE ====================
+    
+    dip_score = (
+        int(rsi_signal) + 
+        int(bb_signal) + 
+        int(momentum_signal) + 
+        int(pullback_signal)
+    )
+    
+    # Return True if dip threshold is met
+    return dip_score >= dip_threshold
+
+
+
+
 def is_asian_range_buy(asset):
     try:
         # Specify your local time zone
