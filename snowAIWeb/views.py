@@ -4782,7 +4782,7 @@ scheduler.add_job(
     run_genesys_backtests_wrapper,
     trigger=IntervalTrigger(minutes=5),
     id='run_genesys_backtests',
-    name='Update genesys backtests every 30 minutes',
+    name='Update genesys backtests every 5 minutes',
     replace_existing=True
 )
 
@@ -5248,45 +5248,51 @@ def buy_hold(dataset,
     """
     
     # Get current index (last bar)
-    current_idx = len(dataset) - 1
+    try:
+            
+        current_idx = len(dataset) - 1
+        
+        # Need enough data for indicators
+        min_periods = max(rsi_period, bb_period, momentum_long, pullback_period)
+        if current_idx < min_periods:
+            return False  # Not enough data yet
+        
+        # Extract close prices as numpy array
+        close = dataset['Close'].values
+        
+        # ==================== CALCULATE INDICATORS ====================
+        
+        # 1. RSI Dip Detection
+        rsi, rsi_dip = detect_rsi_dip(close, rsi_period, rsi_oversold)
+        rsi_signal = rsi_dip[-1]
+        
+        # 2. Bollinger Bands Dip Detection
+        lower_bb, upper_bb, bb_dip = detect_bollinger_dip(close, bb_period, bb_std)
+        bb_signal = bb_dip[-1]
+        
+        # 3. Price Momentum Dip Detection
+        momentum, momentum_dip = detect_price_momentum_dip(close, momentum_short, momentum_long)
+        momentum_signal = momentum_dip[-1]
+        
+        # 4. Percentage Pullback Detection
+        recent_high, pullback_dip = detect_percentage_pullback(close, pullback_period, pullback_pct)
+        pullback_signal = pullback_dip[-1]
+        
+        # ==================== CALCULATE DIP SCORE ====================
+        
+        dip_score = (
+            int(rsi_signal) + 
+            int(bb_signal) + 
+            int(momentum_signal) + 
+            int(pullback_signal)
+        )
+        
+        # Return True if dip threshold is met
+        return dip_score >= dip_threshold
     
-    # Need enough data for indicators
-    min_periods = max(rsi_period, bb_period, momentum_long, pullback_period)
-    if current_idx < min_periods:
-        return False  # Not enough data yet
-    
-    # Extract close prices as numpy array
-    close = dataset['Close'].values
-    
-    # ==================== CALCULATE INDICATORS ====================
-    
-    # 1. RSI Dip Detection
-    rsi, rsi_dip = detect_rsi_dip(close, rsi_period, rsi_oversold)
-    rsi_signal = rsi_dip[-1]
-    
-    # 2. Bollinger Bands Dip Detection
-    lower_bb, upper_bb, bb_dip = detect_bollinger_dip(close, bb_period, bb_std)
-    bb_signal = bb_dip[-1]
-    
-    # 3. Price Momentum Dip Detection
-    momentum, momentum_dip = detect_price_momentum_dip(close, momentum_short, momentum_long)
-    momentum_signal = momentum_dip[-1]
-    
-    # 4. Percentage Pullback Detection
-    recent_high, pullback_dip = detect_percentage_pullback(close, pullback_period, pullback_pct)
-    pullback_signal = pullback_dip[-1]
-    
-    # ==================== CALCULATE DIP SCORE ====================
-    
-    dip_score = (
-        int(rsi_signal) + 
-        int(bb_signal) + 
-        int(momentum_signal) + 
-        int(pullback_signal)
-    )
-    
-    # Return True if dip threshold is met
-    return dip_score >= dip_threshold
+    except Exception as e:
+        print(f'Exception occured in buy_hold system: {e}')
+        return False # no trade
 
 
 
