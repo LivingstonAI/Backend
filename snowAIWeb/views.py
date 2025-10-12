@@ -5295,6 +5295,220 @@ def buy_hold(dataset,
         return False # no trade
 
 
+# ==================== REGIME DETECTION ====================
+
+def detect_market_regime(close, high, low, atr_period=14, adx_period=14, 
+                         trending_threshold=25, ranging_threshold=20):
+    """
+    Detect market regime using ADX (Average Directional Index) and ATR.
+    
+    Returns:
+    --------
+    regime : array
+        0 = Ranging, 1 = Trending Up, -1 = Trending Down
+    adx : array
+        ADX values
+    """
+    # Calculate True Range
+    tr1 = high - low
+    tr2 = np.abs(high - np.roll(close, 1))
+    tr3 = np.abs(low - np.roll(close, 1))
+    tr = np.maximum(tr1, np.maximum(tr2, tr3))
+    tr[0] = tr1[0]  # Fix first value
+    
+    # Calculate ATR
+    atr = np.convolve(tr, np.ones(atr_period)/atr_period, mode='same')
+    
+    # Calculate Directional Movement
+    high_diff = np.diff(high, prepend=high[0])
+    low_diff = -np.diff(low, prepend=low[0])
+    
+    plus_dm = np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0)
+    minus_dm = np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0)
+    
+    # Smooth the directional movements
+    plus_dm_smooth = np.convolve(plus_dm, np.ones(adx_period)/adx_period, mode='same')
+    minus_dm_smooth = np.convolve(minus_dm, np.ones(adx_period)/adx_period, mode='same')
+    
+    # Calculate Directional Indicators
+    plus_di = 100 * plus_dm_smooth / (atr + 1e-10)
+    minus_di = 100 * minus_dm_smooth / (atr + 1e-10)
+    
+    # Calculate DX and ADX
+    dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+    adx = np.convolve(dx, np.ones(adx_period)/adx_period, mode='same')
+    
+    # Determine regime
+    regime = np.zeros(len(close))
+    regime[adx >= trending_threshold] = np.where(
+        plus_di[adx >= trending_threshold] > minus_di[adx >= trending_threshold], 
+        1, -1
+    )
+    regime[adx < ranging_threshold] = 0
+    
+    # For values between thresholds, keep previous regime (hysteresis)
+    mask = (adx >= ranging_threshold) & (adx < trending_threshold)
+    for i in range(1, len(regime)):
+        if mask[i]:
+            regime[i] = regime[i-1]
+    
+    return regime, adx, plus_di, minus_di
+
+
+# ==================== MAIN BUY_HOLD_REGIME FUNCTION ====================
+
+def buy_hold_regime(dataset,
+                    atr_period=14,
+                    adx_period=14,
+                    trending_threshold=25,
+                    ranging_threshold=20,
+                    trending_dip_threshold=2,
+                    ranging_dip_threshold=3,
+                    downtrend_dip_threshold=4,
+                    rsi_period=14,
+                    rsi_oversold=35,
+                    bb_period=20,
+                    bb_std=2,
+                    momentum_short=10,
+                    momentum_long=30,
+                    pullback_period=20,
+                    pullback_pct=0.025):
+    """
+    Determines if buy conditions are met based on market regime and dip detection.
+    
+    Adapts strategy based on detected market regime:
+    - Trending Up (regime=1): Buys dips aggressively
+    - Ranging (regime=0): More selective with dips
+    - Trending Down (regime=-1): Only extreme dips
+    
+    Parameters:
+    -----------
+    dataset : pd.DataFrame
+        DataFrame with OHLCV data (must have 'Open', 'High', 'Low', 'Close', 'Volume')
+    atr_period : int
+        ATR calculation period (default: 14)
+    adx_period : int
+        ADX calculation period (default: 14)
+    trending_threshold : float
+        ADX threshold for trending market (default: 25)
+    ranging_threshold : float
+        ADX threshold for ranging market (default: 20)
+    trending_dip_threshold : int
+        Min dip signals for trending market (default: 2)
+    ranging_dip_threshold : int
+        Min dip signals for ranging market (default: 3)
+    downtrend_dip_threshold : int
+        Min dip signals for downtrend (default: 4)
+    rsi_period : int
+        RSI calculation period (default: 14)
+    rsi_oversold : float
+        RSI oversold threshold (default: 35)
+    bb_period : int
+        Bollinger Bands period (default: 20)
+    bb_std : float
+        Bollinger Bands standard deviation (default: 2)
+    momentum_short : int
+        Short-term momentum period (default: 10)
+    momentum_long : int
+        Long-term momentum period (default: 30)
+    pullback_period : int
+        Pullback calculation period (default: 20)
+    pullback_pct : float
+        Minimum pullback percentage (default: 0.025)
+    
+    Returns:
+    --------
+    bool : True if buy conditions are met, False otherwise
+    
+    Usage in Genesys:
+    -----------------
+    if buy_hold_regime(dataset):
+        self.buy(size=0.95)
+        self.current_equity = self.equity
+    """
+    try:
+            
+        # Get current index
+        current_idx = len(dataset) - 1
+        
+        # Need enough data for indicators
+        min_periods = max(rsi_period, bb_period, momentum_long, pullback_period, adx_period, atr_period)
+        if current_idx < min_periods:
+            return False  # Not enough data yet
+        
+        # Extract data
+        close = dataset['Close'].values
+        high = dataset['High'].values
+        low = dataset['Low'].values
+        
+        # ==================== DETECT MARKET REGIME ====================
+        
+        regime, adx, plus_di, minus_di = detect_market_regime(
+            close, high, low,
+            atr_period, adx_period,
+            trending_threshold, ranging_threshold
+        )
+        current_regime = regime[-1]
+        
+        # ==================== CALCULATE DIP INDICATORS ====================
+        
+        # 1. RSI Dip Detection
+        rsi, rsi_dip = detect_rsi_dip(close, rsi_period, rsi_oversold)
+        rsi_signal = rsi_dip[-1]
+        
+        # 2. Bollinger Bands Dip Detection
+        lower_bb, upper_bb, bb_dip = detect_bollinger_dip(close, bb_period, bb_std)
+        bb_signal = bb_dip[-1]
+        
+        # 3. Price Momentum Dip Detection
+        momentum, momentum_dip = detect_price_momentum_dip(close, momentum_short, momentum_long)
+        momentum_signal = momentum_dip[-1]
+        
+        # 4. Percentage Pullback Detection
+        recent_high, pullback_dip = detect_percentage_pullback(close, pullback_period, pullback_pct)
+        pullback_signal = pullback_dip[-1]
+        
+        # Calculate dip score
+        dip_score = (
+            int(rsi_signal) + 
+            int(bb_signal) + 
+            int(momentum_signal) + 
+            int(pullback_signal)
+        )
+        
+        # ==================== REGIME-BASED DECISION ====================
+        
+        should_buy = False
+        position_size = 0.0
+        take_profit_pct = 10.0
+        stop_loss_pct = 5.0
+        
+        if current_regime == 1:  # TRENDING UPWARD
+            if dip_score >= trending_dip_threshold:
+                should_buy = True
+                position_size = 0.95  # Aggressive
+                take_profit_pct = 12.0
+                stop_loss_pct = 4.0
+        
+        elif current_regime == 0:  # RANGING
+            if dip_score >= ranging_dip_threshold:
+                should_buy = True
+                position_size = 0.60  # Conservative
+                take_profit_pct = 6.0
+                stop_loss_pct = 3.0
+        
+        elif current_regime == -1:  # TRENDING DOWNWARD
+            if dip_score >= downtrend_dip_threshold:  # Only extreme dips
+                should_buy = True
+                position_size = 0.30  # Very small
+                take_profit_pct = 6.0
+                stop_loss_pct = 3.0
+        
+        return should_buy
+    except Exception as e:
+        print(f'Exception occured in buy_hold_regime system: {e}')
+        return False # no trade
+
 
 
 
