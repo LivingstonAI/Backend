@@ -21643,6 +21643,276 @@ def snowai_asset_correlation_get_all_classes(request):
     })
 
 
+
+
+from sklearn.linear_model import LinearRegression
+
+@csrf_exempt
+def calculate_market_stability_score(request):
+    """
+    Calculate Market Stability Score for given assets using improved formula
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            period_days = data.get('period', 60)
+            
+            results = []
+            all_volatilities = []
+            temp_results = []
+            
+            # First pass: collect all data and volatilities for normalization
+            for symbol in symbols:
+                try:
+                    # Download data
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period=f"{period_days}d")
+                    
+                    if len(hist) < 20:
+                        continue
+                    
+                    # Calculate returns
+                    hist['returns'] = hist['Close'].pct_change()
+                    
+                    # Calculate volatility (σ)
+                    volatility = hist['returns'].std()
+                    
+                    # Calculate R² (trend clarity)
+                    prices = hist['Close'].values
+                    X = np.arange(len(prices)).reshape(-1, 1)
+                    y = prices.reshape(-1, 1)
+                    
+                    model = LinearRegression()
+                    model.fit(X, y)
+                    r_squared = model.score(X, y)
+                    
+                    # Calculate liquidity factor (0.8 to 1.2 based on volume)
+                    avg_volume = hist['Volume'].mean()
+                    
+                    # Normalize volume to liquidity factor
+                    if avg_volume > 10000000:  # High volume
+                        liquidity_factor = 1.2
+                    elif avg_volume > 1000000:  # Medium volume
+                        liquidity_factor = 1.0
+                    elif avg_volume > 100000:  # Low volume
+                        liquidity_factor = 0.9
+                    else:  # Very low volume
+                        liquidity_factor = 0.8
+                    
+                    # Get current price and change
+                    current_price = hist['Close'].iloc[-1]
+                    price_change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
+                    
+                    temp_results.append({
+                        'symbol': symbol,
+                        'volatility': volatility,
+                        'r_squared': r_squared,
+                        'liquidity_factor': liquidity_factor,
+                        'current_price': current_price,
+                        'price_change': price_change,
+                        'data_points': len(hist),
+                        'avg_volume': avg_volume
+                    })
+                    
+                    all_volatilities.append(volatility)
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    continue
+            
+            # Calculate max volatility for normalization
+            max_volatility = max(all_volatilities) if all_volatilities else 1.0
+            
+            # Second pass: calculate MSS with normalized volatility
+            for temp in temp_results:
+                # Normalize volatility (0 to 1, where 1 is highest volatility)
+                normalized_volatility = temp['volatility'] / max_volatility if max_volatility > 0 else 0
+                
+                # Improved MSS Formula:
+                # MSS = (R² × 100) × (1 - normalized_volatility) × liquidity_factor
+                # This naturally produces scores between 0-100
+                trend_score = temp['r_squared'] * 100  # 0-100
+                stability_factor = 1 - normalized_volatility  # Higher is better (less volatile)
+                
+                mss = trend_score * stability_factor * temp['liquidity_factor']
+                mss = min(max(mss, 0), 100)  # Ensure 0-100 range
+                
+                # Determine category
+                if mss >= 60:
+                    category = "stable"
+                    status = "Trending - Good Conditions"
+                    color = "#10b981"
+                elif mss >= 40:
+                    category = "choppy"
+                    status = "Choppy - Moderate Risk"
+                    color = "#f59e0b"
+                else:
+                    category = "volatile"
+                    status = "Volatile - Avoid Trading"
+                    color = "#ef4444"
+                
+                results.append({
+                    'symbol': temp['symbol'],
+                    'mss': round(mss, 2),
+                    'volatility': round(temp['volatility'], 4),
+                    'normalized_volatility': round(normalized_volatility, 4),
+                    'r_squared': round(temp['r_squared'], 4),
+                    'liquidity_factor': round(temp['liquidity_factor'], 2),
+                    'category': category,
+                    'status': status,
+                    'color': color,
+                    'current_price': round(temp['current_price'], 2),
+                    'price_change': round(temp['price_change'], 2),
+                    'data_points': temp['data_points'],
+                    'avg_volume': int(temp['avg_volume'])
+                })
+            
+            # Sort by MSS descending
+            results.sort(key=lambda x: x['mss'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def get_mss_historical_data(request):
+    """
+    Get historical MSS data for a specific symbol using improved formula
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            period_days = data.get('period', 180)
+            
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period=f"{period_days}d")
+            
+            if len(hist) < 30:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Insufficient data'
+                }, status=400)
+            
+            # Calculate rolling MSS
+            window = 20
+            mss_history = []
+            all_window_volatilities = []
+            
+            # First pass: collect all window volatilities for normalization
+            for i in range(window, len(hist)):
+                window_data = hist.iloc[i-window:i]
+                returns = window_data['Close'].pct_change()
+                volatility = returns.std()
+                all_window_volatilities.append(volatility)
+            
+            max_volatility = max(all_window_volatilities) if all_window_volatilities else 1.0
+            
+            # Second pass: calculate MSS with normalization
+            vol_index = 0
+            for i in range(window, len(hist)):
+                window_data = hist.iloc[i-window:i]
+                returns = window_data['Close'].pct_change()
+                volatility = returns.std()
+                
+                # Normalize volatility
+                normalized_volatility = volatility / max_volatility if max_volatility > 0 else 0
+                
+                # Calculate R²
+                prices = window_data['Close'].values
+                X = np.arange(len(prices)).reshape(-1, 1)
+                y = prices.reshape(-1, 1)
+                
+                model = LinearRegression()
+                model.fit(X, y)
+                r_squared = model.score(X, y)
+                
+                # Calculate liquidity factor
+                avg_volume = window_data['Volume'].mean()
+                if avg_volume > 10000000:
+                    liquidity_factor = 1.2
+                elif avg_volume > 1000000:
+                    liquidity_factor = 1.0
+                elif avg_volume > 100000:
+                    liquidity_factor = 0.9
+                else:
+                    liquidity_factor = 0.8
+                
+                # Improved MSS calculation
+                trend_score = r_squared * 100
+                stability_factor = 1 - normalized_volatility
+                mss = trend_score * stability_factor * liquidity_factor
+                mss = min(max(mss, 0), 100)
+                
+                mss_history.append({
+                    'date': window_data.index[-1].strftime('%Y-%m-%d'),
+                    'mss': round(mss, 2),
+                    'price': round(window_data['Close'].iloc[-1], 2)
+                })
+                
+                vol_index += 1
+            
+            return JsonResponse({
+                'success': True,
+                'symbol': symbol,
+                'data': mss_history
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def get_predefined_asset_lists(request):
+    """
+    Get predefined lists of assets by category
+    """
+    asset_lists = {
+        'forex': [
+            'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 
+            'USDCAD=X', 'USDCHF=X', 'NZDUSD=X'
+        ],
+        'stocks': [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 
+            'TSLA', 'META', 'JPM', 'V', 'WMT'
+        ],
+        'indices': [
+            '^GSPC', '^DJI', '^IXIC', '^FTSE', '^GDAXI',
+            '^N225', '^HSI'
+        ],
+        'commodities': [
+            'GC=F', 'SI=F', 'CL=F', 'NG=F', 'HG=F'
+        ],
+        'bonds': [
+            '^TNX', '^TYX', '^FVX'
+        ]
+    }
+    
+    return JsonResponse({
+        'success': True,
+        'asset_lists': asset_lists
+    })
+
+
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
