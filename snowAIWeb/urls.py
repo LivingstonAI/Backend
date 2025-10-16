@@ -309,6 +309,10 @@ urlpatterns = [
      path('api/snowai-asset-correlation-correlations/', views.snowai_asset_correlation_calculate_correlations, name='snowai_asset_correlation_calculate_correlations'),
      path('api/snowai-asset-correlation-classes/', views.snowai_asset_correlation_get_all_classes, name='snowai_asset_correlation_get_all_classes'),
 
+     path('api/mss/calculate/', views.calculate_market_stability_score, name='calculate_mss'),
+     path('api/mss/historical/', views.get_mss_historical_data, name='mss_historical'),
+     path('api/mss/asset-lists/', views.get_predefined_asset_lists, name='mss_asset_lists'),
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
