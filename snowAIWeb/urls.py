@@ -313,6 +313,23 @@ urlpatterns = [
      path('api/mss/historical/', views.get_mss_historical_data, name='mss_historical'),
      path('api/mss/asset-lists/', views.get_predefined_asset_lists, name='mss_asset_lists'),
 
+     path('snowai/hedge-funds/', views.snowai_get_all_hedge_funds, name='snowai_get_all_hedge_funds'),
+     path('snowai/hedge-funds/create/', views.snowai_create_hedge_fund, name='snowai_create_hedge_fund'),
+     path('snowai/hedge-funds/<int:fund_id>/update/', views.snowai_update_hedge_fund, name='snowai_update_hedge_fund'),
+     path('snowai/hedge-funds/<int:fund_id>/delete/', views.snowai_delete_hedge_fund, name='snowai_delete_hedge_fund'),
+    
+     # Key People
+     path('snowai/hedge-funds/<int:fund_id>/key-person/add/', views.snowai_add_key_person, name='snowai_add_key_person'),
+     path('snowai/hedge-funds/key-person/<int:person_id>/delete/', views.snowai_delete_key_person, name='snowai_delete_key_person'),
+    
+     # Resources
+     path('snowai/hedge-funds/<int:fund_id>/resource/add/', views.snowai_add_resource, name='snowai_add_resource'),
+     path('snowai/hedge-funds/resource/<int:resource_id>/delete/', views.snowai_delete_resource, name='snowai_delete_resource'),
+    
+     # Performance
+     path('snowai/hedge-funds/<int:fund_id>/performance/add/', views.snowai_add_performance, name='snowai_add_performance'),
+     path('snowai/hedge-funds/performance/<int:performance_id>/delete/', views.snowai_delete_performance, name='snowai_delete_performance'),
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

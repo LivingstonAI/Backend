@@ -1430,6 +1430,84 @@ class SnowAITranscriptAnalysis(models.Model):
 
 
 
+class SnowAIHedgeFundEntity(models.Model):
+    name = models.CharField(max_length=255)
+    logo_url = models.URLField(max_length=500, blank=True, null=True, help_text="External URL for logo (e.g., imgur, cloudinary)")
+    description = models.TextField(blank=True, null=True)
+    founded_year = models.IntegerField(blank=True, null=True)
+    aum = models.CharField(max_length=100, blank=True, null=True, help_text="Assets Under Management")
+    strategy = models.CharField(max_length=255, blank=True, null=True)
+    headquarters = models.CharField(max_length=255, blank=True, null=True)
+    website = models.URLField(max_length=500, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "SnowAI Hedge Fund Entity"
+        verbose_name_plural = "SnowAI Hedge Fund Entities"
+    
+    def __str__(self):
+        return self.name
+
+
+class SnowAIHedgeFundKeyPerson(models.Model):
+    hedge_fund = models.ForeignKey(SnowAIHedgeFundEntity, on_delete=models.CASCADE, related_name='key_people')
+    name = models.CharField(max_length=255)
+    role = models.CharField(max_length=255, blank=True, null=True)
+    wikipedia_url = models.URLField(max_length=500, blank=True, null=True)
+    linkedin_url = models.URLField(max_length=500, blank=True, null=True)
+    bio = models.TextField(blank=True, null=True)
+    photo_url = models.URLField(max_length=500, blank=True, null=True, help_text="External URL for photo")
+    
+    class Meta:
+        ordering = ['name']
+        verbose_name = "SnowAI Hedge Fund Key Person"
+        verbose_name_plural = "SnowAI Hedge Fund Key People"
+    
+    def __str__(self):
+        return f"{self.name} - {self.hedge_fund.name}"
+
+
+class SnowAIHedgeFundResource(models.Model):
+    hedge_fund = models.ForeignKey(SnowAIHedgeFundEntity, on_delete=models.CASCADE, related_name='resources')
+    title = models.CharField(max_length=255)
+    url = models.URLField(max_length=500)
+    description = models.TextField(blank=True, null=True)
+    resource_type = models.CharField(max_length=50, choices=[
+        ('article', 'Article'),
+        ('interview', 'Interview'),
+        ('video', 'Video'),
+        ('report', 'Report'),
+        ('other', 'Other')
+    ], default='article')
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "SnowAI Hedge Fund Resource"
+        verbose_name_plural = "SnowAI Hedge Fund Resources"
+    
+    def __str__(self):
+        return f"{self.title} - {self.hedge_fund.name}"
+
+
+class SnowAIHedgeFundPerformance(models.Model):
+    hedge_fund = models.ForeignKey(SnowAIHedgeFundEntity, on_delete=models.CASCADE, related_name='performance_data')
+    year = models.IntegerField()
+    return_percentage = models.DecimalField(max_digits=10, decimal_places=2, help_text="Annual return percentage")
+    notes = models.TextField(blank=True, null=True)
+    
+    class Meta:
+        ordering = ['year']
+        unique_together = ['hedge_fund', 'year']
+        verbose_name = "SnowAI Hedge Fund Performance"
+        verbose_name_plural = "SnowAI Hedge Fund Performance Data"
+    
+    def __str__(self):
+        return f"{self.hedge_fund.name} - {self.year}: {self.return_percentage}%"
+
+
 
 
 class FeedbackForm(models.Model): 

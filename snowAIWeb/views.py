@@ -21911,6 +21911,243 @@ def get_predefined_asset_lists(request):
     })
 
 
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_all_hedge_funds(request):
+    """Get all hedge funds with their related data"""
+    try:
+        hedge_funds = SnowAIHedgeFundEntity.objects.all()
+        
+        data = []
+        for fund in hedge_funds:
+            key_people = fund.key_people.all()
+            resources = fund.resources.all()
+            performance = fund.performance_data.all()
+            
+            fund_data = {
+                'id': fund.id,
+                'name': fund.name,
+                'logo_url': fund.logo_url,
+                'description': fund.description,
+                'founded_year': fund.founded_year,
+                'aum': fund.aum,
+                'strategy': fund.strategy,
+                'headquarters': fund.headquarters,
+                'website': fund.website,
+                'key_people': [
+                    {
+                        'id': person.id,
+                        'name': person.name,
+                        'role': person.role,
+                        'wikipedia_url': person.wikipedia_url,
+                        'linkedin_url': person.linkedin_url,
+                        'bio': person.bio,
+                        'photo_url': person.photo_url
+                    } for person in key_people
+                ],
+                'resources': [
+                    {
+                        'id': resource.id,
+                        'title': resource.title,
+                        'url': resource.url,
+                        'description': resource.description,
+                        'resource_type': resource.resource_type
+                    } for resource in resources
+                ],
+                'performance': [
+                    {
+                        'id': perf.id,
+                        'year': perf.year,
+                        'return_percentage': float(perf.return_percentage),
+                        'notes': perf.notes
+                    } for perf in performance
+                ]
+            }
+            data.append(fund_data)
+        
+        return JsonResponse({'success': True, 'data': data})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_create_hedge_fund(request):
+    """Create a new hedge fund"""
+    try:
+        data = json.loads(request.body)
+        
+        fund = SnowAIHedgeFundEntity.objects.create(
+            name=data.get('name'),
+            logo_url=data.get('logo_url'),
+            description=data.get('description'),
+            founded_year=data.get('founded_year'),
+            aum=data.get('aum'),
+            strategy=data.get('strategy'),
+            headquarters=data.get('headquarters'),
+            website=data.get('website')
+        )
+        
+        return JsonResponse({
+            'success': True, 
+            'data': {
+                'id': fund.id,
+                'name': fund.name
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_hedge_fund(request, fund_id):
+    """Update an existing hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        for key, value in data.items():
+            if hasattr(fund, key):
+                setattr(fund, key, value)
+        
+        fund.save()
+        
+        return JsonResponse({'success': True, 'message': 'Fund updated successfully'})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_hedge_fund(request, fund_id):
+    """Delete a hedge fund"""
+    try:
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        fund.delete()
+        return JsonResponse({'success': True, 'message': 'Fund deleted successfully'})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_add_key_person(request, fund_id):
+    """Add a key person to a hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        person = SnowAIHedgeFundKeyPerson.objects.create(
+            hedge_fund=fund,
+            name=data.get('name'),
+            role=data.get('role'),
+            wikipedia_url=data.get('wikipedia_url'),
+            linkedin_url=data.get('linkedin_url'),
+            bio=data.get('bio'),
+            photo_url=data.get('photo_url')
+        )
+        
+        return JsonResponse({'success': True, 'data': {'id': person.id}})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_key_person(request, person_id):
+    """Delete a key person"""
+    try:
+        person = SnowAIHedgeFundKeyPerson.objects.get(id=person_id)
+        person.delete()
+        return JsonResponse({'success': True, 'message': 'Person deleted successfully'})
+    except SnowAIHedgeFundKeyPerson.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Person not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_add_resource(request, fund_id):
+    """Add a resource to a hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        resource = SnowAIHedgeFundResource.objects.create(
+            hedge_fund=fund,
+            title=data.get('title'),
+            url=data.get('url'),
+            description=data.get('description'),
+            resource_type=data.get('resource_type', 'article')
+        )
+        
+        return JsonResponse({'success': True, 'data': {'id': resource.id}})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_resource(request, resource_id):
+    """Delete a resource"""
+    try:
+        resource = SnowAIHedgeFundResource.objects.get(id=resource_id)
+        resource.delete()
+        return JsonResponse({'success': True, 'message': 'Resource deleted successfully'})
+    except SnowAIHedgeFundResource.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Resource not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_add_performance(request, fund_id):
+    """Add performance data to a hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        performance, created = SnowAIHedgeFundPerformance.objects.update_or_create(
+            hedge_fund=fund,
+            year=data.get('year'),
+            defaults={
+                'return_percentage': data.get('return_percentage'),
+                'notes': data.get('notes', '')
+            }
+        )
+        
+        return JsonResponse({'success': True, 'data': {'id': performance.id}})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_performance(request, performance_id):
+    """Delete performance data"""
+    try:
+        performance = SnowAIHedgeFundPerformance.objects.get(id=performance_id)
+        performance.delete()
+        return JsonResponse({'success': True, 'message': 'Performance data deleted successfully'})
+    except SnowAIHedgeFundPerformance.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Performance data not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
 
 
 # LEGODI BACKEND CODE
