@@ -331,6 +331,12 @@ urlpatterns = [
      path('snowai/hedge-funds/performance/<int:performance_id>/delete/', views.snowai_delete_performance, name='snowai_delete_performance'),
 
 
+
+     # Add these to your urlpatterns
+     path('snowai/hedge-funds/<int:fund_id>/update/', snowai_update_hedge_fund),
+     path('snowai/hedge-funds/key-person/<int:person_id>/update/', snowai_update_key_person),
+     path('snowai/hedge-funds/resource/<int:resource_id>/update/', snowai_update_resource),
+     path('snowai/hedge-funds/performance/<int:performance_id>/update/', snowai_update_performance),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

@@ -22148,6 +22148,71 @@ def snowai_delete_performance(request, performance_id):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+# Add these to your views.py file
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_key_person(request, person_id):
+    """Update a key person"""
+    try:
+        data = json.loads(request.body)
+        person = SnowAIHedgeFundKeyPerson.objects.get(id=person_id)
+        
+        for key, value in data.items():
+            if hasattr(person, key) and key != 'id':
+                setattr(person, key, value)
+        
+        person.save()
+        
+        return JsonResponse({'success': True, 'message': 'Person updated successfully'})
+    except SnowAIHedgeFundKeyPerson.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Person not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_resource(request, resource_id):
+    """Update a resource"""
+    try:
+        data = json.loads(request.body)
+        resource = SnowAIHedgeFundResource.objects.get(id=resource_id)
+        
+        for key, value in data.items():
+            if hasattr(resource, key) and key != 'id':
+                setattr(resource, key, value)
+        
+        resource.save()
+        
+        return JsonResponse({'success': True, 'message': 'Resource updated successfully'})
+    except SnowAIHedgeFundResource.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Resource not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_performance(request, performance_id):
+    """Update performance data"""
+    try:
+        data = json.loads(request.body)
+        performance = SnowAIHedgeFundPerformance.objects.get(id=performance_id)
+        
+        for key, value in data.items():
+            if hasattr(performance, key) and key != 'id':
+                setattr(performance, key, value)
+        
+        performance.save()
+        
+        return JsonResponse({'success': True, 'message': 'Performance data updated successfully'})
+    except SnowAIHedgeFundPerformance.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Performance data not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+        
 
 
 # LEGODI BACKEND CODE
