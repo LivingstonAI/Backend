@@ -21779,44 +21779,44 @@ def snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2(request):
         asset_name = data.get('asset_name')
         asset_class = data.get('asset_class')
         analysis_period = data.get('period', '1y')  # Default to 1 year
-        
+
         if not asset_name or not asset_class:
             return JsonResponse({'error': 'Asset name and class required'}, status=400)
-        
+
         # Get the ticker for this asset
         if asset_class not in ASSET_TICKERS:
             return JsonResponse({'error': 'Invalid asset class'}, status=400)
-        
+
         ticker = ASSET_TICKERS[asset_class].get(asset_name)
         if not ticker:
             return JsonResponse({'error': 'Asset not found'}, status=404)
-        
+
         # Fetch volume data
         stock = yf.Ticker(ticker)
         hist = stock.history(period=analysis_period)
-        
+
         if hist.empty or 'Volume' not in hist.columns:
             return JsonResponse({
                 'error': 'Volume data not available for this asset',
                 'success': False
             }, status=404)
-        
+
         # Get current volume (most recent day)
         current_volume = hist['Volume'].iloc[-1]
-        
+
         # Calculate volume statistics
         volumes = hist['Volume'].values
         avg_volume = np.mean(volumes)
         std_volume = np.std(volumes)
         median_volume = np.median(volumes)
-        
+
         # Calculate percentile
         percentile = (np.sum(volumes < current_volume) / len(volumes)) * 100
-        
+
         # Determine volume level
         if current_volume > avg_volume + std_volume:
             volume_level = 'high'
-            description = f'Significantly above average (Top {100-percentile:.0f}%)'
+            description = f'Significantly above average (Top {100 - percentile:.0f}%)'
         elif current_volume > avg_volume:
             volume_level = 'medium'
             description = f'Above average ({percentile:.0f}th percentile)'
@@ -21826,17 +21826,17 @@ def snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2(request):
         else:
             volume_level = 'low'
             description = f'Below average (Bottom {percentile:.0f}%)'
-        
-        # Calculate comparison metrics
-        vs_avg_percent = ((current_volume - avg_volume) / avg_volume) * 100
-        vs_median_percent = ((current_volume - median_volume) / median_volume) * 100
-        
+
+        # Safe division for comparison metrics
+        vs_avg_percent = ((current_volume - avg_volume) / avg_volume) * 100 if avg_volume else 0
+        vs_median_percent = ((current_volume - median_volume) / median_volume) * 100 if median_volume else 0
+
         # Get recent trend (last 5 days vs previous 20 days)
         if len(volumes) >= 25:
             recent_avg = np.mean(volumes[-5:])
             prior_avg = np.mean(volumes[-25:-5])
-            trend_change = ((recent_avg - prior_avg) / prior_avg) * 100
-            
+            trend_change = ((recent_avg - prior_avg) / prior_avg) * 100 if prior_avg else 0
+
             if trend_change > 15:
                 trend = 'increasing'
             elif trend_change < -15:
@@ -21846,7 +21846,7 @@ def snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2(request):
         else:
             trend = 'insufficient_data'
             trend_change = 0
-        
+
         return JsonResponse({
             'success': True,
             'asset_name': asset_name,
@@ -21863,7 +21863,7 @@ def snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2(request):
             'analysis_period': analysis_period,
             'data_points': len(volumes)
         })
-        
+
     except Exception as e:
         return JsonResponse({
             'error': str(e),
