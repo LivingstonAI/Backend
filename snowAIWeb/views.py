@@ -19494,4 +19494,3115 @@ def process_cookies_data(cookies_data):
 #                                 if not subtitle_file and possible_files:
 #                                     subtitle_file = os.path.join(temp_dir, possible_files[0])
 #                                     print(f"Using first available subtitle file: {possible_files[0]}")
-                          
+                                
+#                                 print(f"Subtitle files found: {possible_files}")
+#                                 print(f"Selected subtitle file: {subtitle_file}")
+                                
+#                                 if subtitle_file and os.path.exists(subtitle_file):
+#                                     print(f"Processing subtitle file: {subtitle_file}")
+#                                     file_size = os.path.getsize(subtitle_file)
+#                                     print(f"Subtitle file size: {file_size} bytes")
+                                    
+#                                     try:
+#                                         with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+#                                             subtitle_content = f.read()
+                                        
+#                                         print(f"Raw subtitle content length: {len(subtitle_content)} characters")
+                                        
+#                                         if len(subtitle_content.strip()) > 0:
+#                                             print(f"First 500 chars of subtitle content: {subtitle_content[:500]}")
+                                            
+#                                             subtitle_text = parse_subtitle_content(subtitle_content)
+#                                             print(f"After parsing - subtitle text length: {len(subtitle_text) if subtitle_text else 0}")
+                                            
+#                                             if subtitle_text and len(subtitle_text.strip()) > 50:  # Require at least 50 chars
+#                                                 selected_language = lang
+#                                                 extraction_method = f'ytdlp_{source_type}_{lang}_{successful_strategy}_with_default_cookies'
+                                                
+#                                                 # Analyze transcript quality
+#                                                 try:
+#                                                     quality_stats = analyze_transcript_quality(subtitle_text)
+#                                                     print(f"Transcript quality: {quality_stats['quality_score']}%, {quality_stats['repeated_phrases_detected']} repeated phrases removed")
+#                                                 except Exception as quality_error:
+#                                                     print(f"Quality analysis error: {quality_error}")
+                                                
+#                                                 print(f"Final transcript length: {len(subtitle_text)} characters")
+#                                                 print("SUCCESS: Subtitle extraction completed")
+#                                                 break
+#                                             else:
+#                                                 print(f"Parsed subtitle text was empty or too short for {lang}: {len(subtitle_text) if subtitle_text else 0} chars")
+#                                         else:
+#                                             print(f"Raw subtitle content was empty for {lang}")
+                                            
+#                                     except Exception as file_read_error:
+#                                         print(f"Error reading subtitle file {subtitle_file}: {file_read_error}")
+#                                         import traceback
+#                                         print(f"Full traceback: {traceback.format_exc()}")
+#                                         continue
+                                        
+#                                 else:
+#                                     print(f"No subtitle file found for {lang}.")
+#                                     print(f"Available files in directory: {all_files}")
+#                                     print(f"Possible subtitle files: {possible_files}")
+                                
+#                             except Exception as sub_error:
+#                                 print(f"Failed to download {source_type} subtitles for {lang}: {sub_error}")
+#                                 continue
+                
+#                 if subtitle_text and len(subtitle_text.strip()) > 0:
+#                     transcript_data['text'] = subtitle_text.strip()
+#                     transcript_data['language'] = selected_language
+#                     transcript_data['method'] = extraction_method
+#                     print(f"Successfully extracted transcript: {len(subtitle_text)} characters")
+#                 else:
+#                     # More detailed error reporting
+#                     available_langs = list(subtitles.keys()) + list(automatic_captions.keys())
+#                     raise Exception(f"No valid transcript text could be extracted. Available languages: {available_langs[:10]}... (showing first 10)")
+                
+#             except Exception as e:
+#                 print(f"yt-dlp processing error: {str(e)}")
+#                 raise Exception(f"Failed to process extracted data: {str(e)}")
+    
+#     finally:
+#         # Clean up cookie file
+#         if cookie_file_path and os.path.exists(cookie_file_path):
+#             try:
+#                 os.unlink(cookie_file_path)
+#             except Exception:
+#                 pass
+    
+#     return transcript_data
+
+
+def parse_subtitle_content(subtitle_content):
+    """Parse VTT or SRT subtitle content to extract clean text with deduplication"""
+    lines = subtitle_content.split('\n')
+    text_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        
+        # Skip empty lines
+        if not line:
+            continue
+            
+        # Skip VTT header
+        if line.startswith('WEBVTT') or line.startswith('NOTE'):
+            continue
+            
+        # Skip SRT sequence numbers (pure digits)
+        if line.isdigit():
+            continue
+            
+        # Skip timestamp lines (contain --> or time patterns)
+        if '-->' in line or re.match(r'^\d{2}:\d{2}:\d{2}', line):
+            continue
+            
+        # Skip VTT style/position tags
+        if line.startswith('<') or line.startswith('&'):
+            continue
+            
+        # Clean HTML tags and entities
+        line = re.sub(r'<[^>]+>', '', line)  # Remove HTML tags
+        line = re.sub(r'&[a-zA-Z]+;', '', line)  # Remove HTML entities
+        
+        # Remove VTT positioning tags
+        line = re.sub(r'\{[^}]*\}', '', line)
+        
+        # If line still has content, add it
+        if line and not line.startswith('[') and not line.startswith('('):
+            text_lines.append(line)
+    
+    # Join all text and clean up
+    full_text = ' '.join(text_lines)
+    
+    # Remove extra whitespace
+    full_text = re.sub(r'\s+', ' ', full_text)
+    
+    # Apply deduplication
+    deduplicated_text = deduplicate_transcript_text(full_text)
+    
+    return deduplicated_text
+
+
+def deduplicate_transcript_text(text):
+    """Remove duplicate sentences and phrases from transcript text"""
+    import difflib
+    
+    # Split into sentences using multiple delimiters
+    sentences = re.split(r'[.!?]+\s+', text)
+    
+    # Clean up sentences
+    clean_sentences = []
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if len(sentence) > 3:  # Only keep sentences with more than 3 characters
+            clean_sentences.append(sentence)
+    
+    if not clean_sentences:
+        return text
+    
+    # Remove exact duplicates first
+    deduplicated = []
+    seen_sentences = set()
+    
+    for sentence in clean_sentences:
+        sentence_lower = sentence.lower().strip()
+        if sentence_lower not in seen_sentences:
+            seen_sentences.add(sentence_lower)
+            deduplicated.append(sentence)
+    
+    # Remove near-duplicate sentences (with similarity threshold)
+    final_sentences = []
+    similarity_threshold = 0.2
+    
+    for i, sentence in enumerate(deduplicated):
+        is_duplicate = False
+        
+        # Check against already added sentences
+        for existing_sentence in final_sentences:
+            similarity = difflib.SequenceMatcher(None, sentence.lower(), existing_sentence.lower()).ratio()
+            
+            if similarity > similarity_threshold:
+                is_duplicate = True
+                break
+        
+        if not is_duplicate:
+            final_sentences.append(sentence)
+    
+    # Remove repeated phrases within the remaining text
+    final_text = '. '.join(final_sentences)
+    
+    # Remove repeated phrases (3+ words that appear consecutively)
+    final_text = remove_repeated_phrases(final_text)
+    
+    # Clean up final spacing and punctuation
+    final_text = re.sub(r'\s+', ' ', final_text)
+    final_text = re.sub(r'\s*\.\s*\.', '.', final_text)  # Remove double periods
+    final_text = final_text.strip()
+    
+    # Add final period if missing
+    if final_text and not final_text.endswith(('.', '!', '?')):
+        final_text += '.'
+    
+    return final_text
+
+
+def remove_repeated_phrases(text):
+    """Remove repeated phrases of 3 or more words"""
+    words = text.split()
+    
+    if len(words) < 6:  # Need at least 6 words to have a repeated 3-word phrase
+        return text
+    
+    # Check for repeated phrases of different lengths
+    for phrase_length in range(3, min(15, len(words) // 2)):  # Check phrases up to 15 words
+        cleaned_words = remove_phrases_of_length(words, phrase_length)
+        if len(cleaned_words) < len(words):
+            words = cleaned_words
+    
+    return ' '.join(words)
+
+
+def remove_phrases_of_length(words, phrase_length):
+    """Remove repeated phrases of a specific length"""
+    if len(words) < phrase_length * 2:
+        return words
+    
+    cleaned_words = []
+    i = 0
+    
+    while i < len(words):
+        if i + phrase_length * 2 <= len(words):
+            # Get current phrase and next phrase
+            current_phrase = words[i:i + phrase_length]
+            next_phrase = words[i + phrase_length:i + phrase_length * 2]
+            
+            # Check if they're the same (case-insensitive)
+            if [word.lower() for word in current_phrase] == [word.lower() for word in next_phrase]:
+                # Skip the duplicate phrase
+                cleaned_words.extend(current_phrase)
+                i += phrase_length * 2  # Skip both phrases, we kept one
+                continue
+        
+        # No duplicate found, add current word
+        cleaned_words.append(words[i])
+        i += 1
+    
+    return cleaned_words
+
+
+def analyze_transcript_quality(text):
+    """Analyze transcript quality and provide statistics"""
+    words = text.split()
+    sentences = re.split(r'[.!?]+', text)
+    
+    # Calculate statistics
+    total_words = len(words)
+    total_sentences = len([s for s in sentences if s.strip()])
+    
+    # Find potential repeated phrases
+    repeated_phrases = find_repeated_phrases(text)
+    
+    # Calculate readability score (simple version)
+    avg_sentence_length = total_words / max(total_sentences, 1)
+    
+    quality_score = 100
+    if repeated_phrases > 10:
+        quality_score -= 20
+    if avg_sentence_length > 40:  # Very long sentences might indicate parsing issues
+        quality_score -= 10
+    if avg_sentence_length < 5:   # Very short sentences might indicate fragmentation
+        quality_score -= 10
+    
+    return {
+        'total_words': total_words,
+        'total_sentences': total_sentences,
+        'average_sentence_length': round(avg_sentence_length, 1),
+        'repeated_phrases_detected': repeated_phrases,
+        'quality_score': max(quality_score, 0)
+    }
+
+
+def find_repeated_phrases(text, min_phrase_length=3):
+    """Count repeated phrases in text"""
+    words = text.lower().split()
+    phrase_counts = {}
+    repeated_count = 0
+    
+    # Check for repeated phrases
+    for phrase_length in range(min_phrase_length, min(10, len(words) // 3)):
+        for i in range(len(words) - phrase_length + 1):
+            phrase = ' '.join(words[i:i + phrase_length])
+            phrase_counts[phrase] = phrase_counts.get(phrase, 0) + 1
+    
+    # Count phrases that appear more than once
+    for phrase, count in phrase_counts.items():
+        if count > 1:
+            repeated_count += count - 1  # Subtract 1 because original occurrence is not a repeat
+    
+    return repeated_count
+
+
+from django.utils import timezone
+from datetime import datetime
+
+def safe_truncate_field(value, max_length):
+    """Safely truncate a field to fit database constraints"""
+    if not value:
+        return value
+    if len(str(value)) > max_length:
+        return str(value)[:max_length-3] + "..."
+    return str(value)
+
+def create_transcription_method_name(source_type, language, strategy, use_cookies=True):
+    """Create a concise transcription method name that fits database constraints"""
+    # Create shorter method names to fit in 50 characters
+    strategy_map = {
+        'modern_with_auth': 'modern',
+        'android_authenticated': 'android', 
+        'ios_authenticated': 'ios',
+        'tv_authenticated': 'tv',
+        'fallback_no_cookies': 'fallback'
+    }
+    
+    short_strategy = strategy_map.get(strategy, strategy[:10])
+    cookie_suffix = '_auth' if use_cookies else '_noauth'
+    
+    # Format: ytdlp_auto_en_tv_auth (max ~20 chars)
+    method_name = f"ytdlp_{source_type[:4]}_{language[:2]}_{short_strategy}{cookie_suffix}"
+    
+    # Ensure it fits in 50 characters
+    return safe_truncate_field(method_name, 50)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_extract_youtube_transcript_from_url(request):
+    """Extract transcript from YouTube URL using yt-dlp with default cookies and enhanced fallback strategies"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        cookies_data = data.get('cookies')  # This can be None and will use defaults
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        # Check if transcript already exists
+        existing_transcript = SnowAIVideoTranscriptRecord.objects.filter(
+            youtube_video_id=video_id
+        ).first()
+        
+        if existing_transcript:
+            return JsonResponse({
+                'message': 'Transcript already exists',
+                'transcript_id': existing_transcript.transcript_uuid,
+                'existing': True,
+                'word_count': existing_transcript.word_count
+            })
+        
+        print(f"Starting transcript extraction for video ID: {video_id}")
+        if cookies_data:
+            print("Using user-provided cookies for extraction")
+        else:
+            print("Using default cookies for extraction")
+        
+        # Extract transcript using yt-dlp with default cookies
+        try:
+            transcript_result = extract_transcript_with_ytdlp(youtube_url, video_id, cookies_data)
+            
+            if not transcript_result['text']:
+                return JsonResponse({
+                    'error': 'No transcript text could be extracted from this video. The video may not have captions or subtitles available.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'extraction_method': transcript_result.get('method', 'unknown'),
+                        'yt_dlp_available': YT_DLP_AVAILABLE,
+                        'used_default_cookies': not bool(cookies_data)
+                    }
+                }, status=400)
+            
+            full_text = transcript_result['text']
+            video_metadata = transcript_result['metadata']
+            
+            print(f"Transcript extracted: {len(full_text)} characters, method: {transcript_result['method']}")
+            
+            # Handle video upload date with proper timezone handling
+            video_upload_date = None
+            if video_metadata.get('upload_date'):
+                try:
+                    # Parse the upload date string (format: YYYYMMDD)
+                    upload_date_str = video_metadata['upload_date']
+                    if len(upload_date_str) == 8:  # YYYYMMDD format
+                        parsed_date = datetime.strptime(upload_date_str, '%Y%m%d')
+                        # Make it timezone-aware
+                        video_upload_date = timezone.make_aware(parsed_date, timezone.get_current_timezone())
+                except Exception as date_error:
+                    print(f"Error parsing upload date: {date_error}")
+                    video_upload_date = None
+            
+            # Safely truncate fields to match your database schema exactly
+            video_title = safe_truncate_field(video_metadata.get('title', data.get('video_title', '')), 300)
+            speaker_name = safe_truncate_field(data.get('speaker_name', ''), 200)
+            country_code = safe_truncate_field(data.get('country_code', ''), 10)
+            country_name = safe_truncate_field(data.get('country_name', ''), 100)
+            category = safe_truncate_field(data.get('category', 'central_bank'), 100)
+            transcription_method = safe_truncate_field(transcript_result.get('method', 'ytdlp_auto'), 50)
+            transcript_language = safe_truncate_field(transcript_result.get('language', 'en'), 10)
+            processing_status = safe_truncate_field('completed', 30)
+            
+            print(f"Creating transcript record...")
+            print(f"- Title: {video_title[:50]}... (length: {len(video_title)})")
+            print(f"- Method: {transcription_method} (length: {len(transcription_method)})")
+            print(f"- Language: {transcript_language} (length: {len(transcript_language)})")
+            print(f"- Category: {category} (length: {len(category)})")
+            
+            # Create transcript record with proper field length handling
+            transcript_record = SnowAIVideoTranscriptRecord.objects.create(
+                transcript_uuid=str(uuid.uuid4()),
+                youtube_video_id=video_id,
+                youtube_url=youtube_url,
+                video_title=video_title,
+                full_transcript_text=full_text,
+                video_duration_seconds=video_metadata.get('duration'),
+                video_upload_date=video_upload_date,
+                primary_speaker_name=speaker_name,
+                speaker_country_code=country_code,
+                speaker_country_name=country_name,
+                content_category=category,
+                transcription_method=transcription_method,
+                transcript_language=transcript_language,
+                processing_status=processing_status
+            )
+            
+            print(f"Transcript record created successfully with ID: {transcript_record.transcript_uuid}")
+            
+            return JsonResponse({
+                'message': 'Transcript extracted and saved successfully',
+                'transcript_id': transcript_record.transcript_uuid,
+                'word_count': transcript_record.word_count,
+                'duration': video_metadata.get('duration'),
+                'title': video_title,
+                'language': transcript_result['language'],
+                'extraction_method': transcript_result['method'],
+                'used_default_cookies': not bool(cookies_data),
+                'text_preview': full_text[:200] + '...' if len(full_text) > 200 else full_text
+            })
+            
+        except Exception as transcript_error:
+            error_str = str(transcript_error).lower()
+            print(f"Transcript extraction error: {error_str}")
+            print(f"Full error details: {transcript_error}")
+            
+            # Print full traceback for debugging
+            import traceback
+            print(f"Full traceback: {traceback.format_exc()}")
+            
+            # Check if it's a database error
+            if 'value too long' in error_str:
+                return JsonResponse({
+                    'error': 'Database field length error - some metadata fields are too long for the database schema.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'error_type': 'database_constraint_error',
+                        'full_error': str(transcript_error)[:200],
+                        'suggestion': 'Check database field lengths for title, speaker name, etc.'
+                    }
+                }, status=400)
+            
+            # Provide more specific error messages
+            if 'sign in to confirm' in error_str or 'not a bot' in error_str:
+                return JsonResponse({
+                    'error': 'YouTube bot detection bypassed with default cookies, but extraction still failed. The video might require updated authentication.',
+                    'debug_video_id': video_id,
+                    'suggestion': 'Try providing fresh browser cookies from a logged-in YouTube session'
+                }, status=400)
+            elif 'private' in error_str or 'unavailable' in error_str:
+                return JsonResponse({
+                    'error': 'The video is private, unavailable, or restricted.',
+                    'debug_video_id': video_id
+                }, status=400)
+            elif 'no subtitles' in error_str or 'no transcript' in error_str or 'no valid transcript' in error_str:
+                return JsonResponse({
+                    'error': 'No subtitles or captions are available for this video, or the extracted content was too short.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'url': youtube_url,
+                        'method': 'yt-dlp_with_default_cookies'
+                    }
+                }, status=400)
+            else:
+                return JsonResponse({
+                    'error': 'Failed to extract transcript from video despite using default cookies.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'error_details': str(transcript_error)[:300],
+                        'used_default_cookies': True,
+                        'suggestion': 'The video may have special restrictions or yt-dlp may need updating'
+                    }
+                }, status=400)
+                
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        return JsonResponse({
+            'error': f'An unexpected error occurred: {str(e)}'[:200],
+            'debug_info': 'Check server logs for more details'
+        }, status=500)
+
+# Also update the extraction function to use the new method naming
+def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
+    """Extract transcript using yt-dlp with enhanced fallback strategies and default cookies"""
+    
+    if not YT_DLP_AVAILABLE:
+        raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
+    
+    transcript_data = {
+        'text': None,
+        'method': None,
+        'language': 'en',
+        'metadata': {}
+    }
+    
+    # Process cookies with fallback to defaults
+    cookies_dict = process_cookies_data(cookies_data)
+    cookie_file_path = None
+    
+    try:
+        cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+        print(f"Created cookie jar with {len(cookies_dict)} cookies")
+    except Exception as cookie_error:
+        print(f"Cookie processing error: {cookie_error}")
+        pass
+
+    # Use the working TV strategy primarily
+    extraction_strategies = [
+        {
+            'name': 'tv_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['tv_embedded'],
+                    }
+                }
+            }
+        }
+    ]
+
+    extraction_error = None
+    info = None
+    successful_strategy = None
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            print(f"Using temp directory: {temp_dir}")
+            
+            for strategy in extraction_strategies:
+                try:
+                    print(f"Trying strategy: {strategy['name']} for video: {video_id}")
+                    
+                    opts = strategy['opts'].copy()
+                    opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+                    
+                    if cookie_file_path:
+                        opts['cookiefile'] = cookie_file_path
+                        print(f"Using cookies with strategy: {strategy['name']}")
+                    
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(video_url, download=True)
+                    
+                    print(f"Strategy {strategy['name']} successful!")
+                    successful_strategy = strategy['name']
+                    break
+                    
+                except Exception as strategy_error:
+                    extraction_error = strategy_error
+                    print(f"Strategy {strategy['name']} failed: {strategy_error}")
+                    continue
+            
+            if not info:
+                raise Exception("All extraction strategies failed")
+        
+            # Process metadata
+            print("Processing video metadata...")
+            transcript_data['metadata'] = {
+                'title': info.get('title', ''),
+                'duration': info.get('duration'),
+                'upload_date': info.get('upload_date'),
+                'uploader': info.get('uploader', ''),
+                'view_count': info.get('view_count'),
+                'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+            }
+            
+            print("Checking available subtitles...")
+            subtitles = info.get('subtitles', {})
+            automatic_captions = info.get('automatic_captions', {})
+            
+            print(f"Available automatic captions: {list(automatic_captions.keys())[:10]}...")
+            
+            # Extract subtitle text
+            subtitle_text = None
+            selected_language = None
+            extraction_method = None
+            
+            try:
+                # Try English captions
+                for lang in ['en', 'en-US', 'en-GB', 'en-orig']:
+                    if lang in automatic_captions:
+                        print(f"Found automatic subtitles for language: {lang}")
+                        
+                        try:
+                            # Setup subtitle download
+                            download_opts = {
+                                'quiet': True,
+                                'no_warnings': True,
+                                'writesubtitles': False,
+                                'writeautomaticsub': True,
+                                'subtitleslangs': [lang],
+                                'subtitlesformat': 'vtt',
+                                'skip_download': True,
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                            }
+                            
+                            if cookie_file_path:
+                                download_opts['cookiefile'] = cookie_file_path
+                            
+                            print(f"Starting subtitle download for {lang}...")
+                            with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                sub_ydl.download([video_url])
+                            print(f"Subtitle download completed for {lang}")
+                            
+                            # List all files and find subtitle
+                            all_files = os.listdir(temp_dir)
+                            print(f"Files after download: {all_files}")
+                            
+                            subtitle_files = [f for f in all_files if f.endswith(('.vtt', '.srt'))]
+                            print(f"Subtitle files found: {subtitle_files}")
+                            
+                            if subtitle_files:
+                                subtitle_file = os.path.join(temp_dir, subtitle_files[0])
+                                file_size = os.path.getsize(subtitle_file)
+                                print(f"Processing subtitle file: {subtitle_files[0]} ({file_size} bytes)")
+                                
+                                if file_size > 0:
+                                    with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                        raw_content = f.read()
+                                    
+                                    print(f"Raw content length: {len(raw_content)} chars")
+                                    
+                                    if len(raw_content.strip()) > 0:
+                                        print(f"Content preview: {raw_content[:200]}...")
+                                        
+                                        # Parse the subtitle content
+                                        parsed_text = parse_subtitle_content(raw_content)
+                                        print(f"Parsed text length: {len(parsed_text) if parsed_text else 0} chars")
+                                        
+                                        if parsed_text and len(parsed_text.strip()) > 50:
+                                            subtitle_text = parsed_text
+                                            selected_language = lang
+                                            # Create shorter method name that fits in 50 chars
+                                            extraction_method = create_transcription_method_name(
+                                                'auto', lang, successful_strategy, bool(cookie_file_path)
+                                            )
+                                            print(f"SUCCESS: Subtitle extraction completed! Method: {extraction_method}")
+                                            break
+                                        else:
+                                            print(f"Parsed text too short: {len(parsed_text) if parsed_text else 0}")
+                                    else:
+                                        print("Raw content is empty")
+                                else:
+                                    print("Subtitle file is empty (0 bytes)")
+                            else:
+                                print("No subtitle files found after download")
+                                
+                        except Exception as lang_error:
+                            print(f"Error processing {lang}: {lang_error}")
+                            import traceback
+                            print(f"Lang error traceback: {traceback.format_exc()}")
+                            continue
+                            
+            except Exception as subtitle_error:
+                print(f"Subtitle extraction error: {subtitle_error}")
+                import traceback
+                print(f"Subtitle error traceback: {traceback.format_exc()}")
+                
+            if subtitle_text and len(subtitle_text.strip()) > 50:
+                transcript_data['text'] = subtitle_text.strip()
+                transcript_data['language'] = selected_language
+                transcript_data['method'] = extraction_method
+                print(f"Final transcript: {len(subtitle_text)} characters")
+            else:
+                raise Exception(f"No valid transcript text extracted. Content length: {len(subtitle_text) if subtitle_text else 0}")
+                
+    finally:
+        # Clean up cookie file
+        if cookie_file_path and os.path.exists(cookie_file_path):
+            try:
+                os.unlink(cookie_file_path)
+            except Exception:
+                pass
+    
+    return transcript_data
+
+def extract_transcript_with_ytdlp_fixed(video_url, video_id, cookies_data=None):
+    """Extract transcript with better exception handling"""
+    
+    if not YT_DLP_AVAILABLE:
+        raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
+    
+    transcript_data = {
+        'text': None,
+        'method': None,
+        'language': 'en',
+        'metadata': {}
+    }
+    
+    # Process cookies with fallback to defaults
+    cookies_dict = process_cookies_data(cookies_data)
+    cookie_file_path = None
+    
+    try:
+        cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+        print(f"Created cookie jar with {len(cookies_dict)} cookies")
+    except Exception as cookie_error:
+        print(f"Cookie processing error: {cookie_error}")
+        pass
+
+    # Use same strategies as before...
+    extraction_strategies = [
+        {
+            'name': 'tv_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['tv_embedded'],
+                    }
+                }
+            }
+        }
+    ]
+
+    extraction_error = None
+    info = None
+    successful_strategy = None
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            print(f"Using temp directory: {temp_dir}")
+            
+            for strategy in extraction_strategies:
+                try:
+                    print(f"Trying strategy: {strategy['name']} for video: {video_id}")
+                    
+                    opts = strategy['opts'].copy()
+                    opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+                    
+                    if cookie_file_path:
+                        opts['cookiefile'] = cookie_file_path
+                        print(f"Using cookies with strategy: {strategy['name']}")
+                    
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(video_url, download=True)
+                    
+                    print(f"Strategy {strategy['name']} successful!")
+                    successful_strategy = strategy['name']
+                    break
+                    
+                except Exception as strategy_error:
+                    extraction_error = strategy_error
+                    print(f"Strategy {strategy['name']} failed: {strategy_error}")
+                    continue
+            
+            if not info:
+                raise Exception("All extraction strategies failed")
+        
+            # Process metadata
+            print("Processing video metadata...")
+            transcript_data['metadata'] = {
+                'title': info.get('title', ''),
+                'duration': info.get('duration'),
+                'upload_date': info.get('upload_date'),
+                'uploader': info.get('uploader', ''),
+                'view_count': info.get('view_count'),
+                'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+            }
+            
+            print("Checking available subtitles...")
+            subtitles = info.get('subtitles', {})
+            automatic_captions = info.get('automatic_captions', {})
+            
+            print(f"Available automatic captions: {list(automatic_captions.keys())[:10]}...")
+            
+            # Extract subtitle text with better error handling
+            subtitle_text = None
+            selected_language = None
+            extraction_method = None
+            
+            try:
+                # Try English captions
+                for lang in ['en', 'en-US', 'en-GB', 'en-orig']:
+                    if lang in automatic_captions:
+                        print(f"Found automatic subtitles for language: {lang}")
+                        
+                        try:
+                            # Setup subtitle download
+                            download_opts = {
+                                'quiet': True,
+                                'no_warnings': True,
+                                'writesubtitles': False,
+                                'writeautomaticsub': True,
+                                'subtitleslangs': [lang],
+                                'subtitlesformat': 'vtt',
+                                'skip_download': True,
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                            }
+                            
+                            if cookie_file_path:
+                                download_opts['cookiefile'] = cookie_file_path
+                            
+                            print(f"Starting subtitle download for {lang}...")
+                            with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                sub_ydl.download([video_url])
+                            print(f"Subtitle download completed for {lang}")
+                            
+                            # List all files and find subtitle
+                            all_files = os.listdir(temp_dir)
+                            print(f"Files after download: {all_files}")
+                            
+                            subtitle_files = [f for f in all_files if f.endswith(('.vtt', '.srt'))]
+                            print(f"Subtitle files found: {subtitle_files}")
+                            
+                            if subtitle_files:
+                                subtitle_file = os.path.join(temp_dir, subtitle_files[0])
+                                file_size = os.path.getsize(subtitle_file)
+                                print(f"Processing subtitle file: {subtitle_files[0]} ({file_size} bytes)")
+                                
+                                if file_size > 0:
+                                    with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                        raw_content = f.read()
+                                    
+                                    print(f"Raw content length: {len(raw_content)} chars")
+                                    
+                                    if len(raw_content.strip()) > 0:
+                                        # Show first bit of content
+                                        print(f"Content preview: {raw_content[:200]}...")
+                                        
+                                        # Parse the subtitle content
+                                        parsed_text = parse_subtitle_content(raw_content)
+                                        print(f"Parsed text length: {len(parsed_text) if parsed_text else 0} chars")
+                                        
+                                        if parsed_text and len(parsed_text.strip()) > 50:
+                                            subtitle_text = parsed_text
+                                            selected_language = lang
+                                            extraction_method = f'ytdlp_automatic_{lang}_{successful_strategy}_cookies'
+                                            print("SUCCESS: Subtitle extraction completed!")
+                                            break
+                                        else:
+                                            print(f"Parsed text too short: {len(parsed_text) if parsed_text else 0}")
+                                    else:
+                                        print("Raw content is empty")
+                                else:
+                                    print("Subtitle file is empty (0 bytes)")
+                            else:
+                                print("No subtitle files found after download")
+                                
+                        except Exception as lang_error:
+                            print(f"Error processing {lang}: {lang_error}")
+                            import traceback
+                            print(f"Lang error traceback: {traceback.format_exc()}")
+                            continue
+                            
+            except Exception as subtitle_error:
+                print(f"Subtitle extraction error: {subtitle_error}")
+                import traceback
+                print(f"Subtitle error traceback: {traceback.format_exc()}")
+                
+            if subtitle_text and len(subtitle_text.strip()) > 50:
+                transcript_data['text'] = subtitle_text.strip()
+                transcript_data['language'] = selected_language
+                transcript_data['method'] = extraction_method
+                print(f"Final transcript: {len(subtitle_text)} characters")
+            else:
+                raise Exception(f"No valid transcript text extracted. Content length: {len(subtitle_text) if subtitle_text else 0}")
+                
+    finally:
+        # Clean up cookie file
+        if cookie_file_path and os.path.exists(cookie_file_path):
+            try:
+                os.unlink(cookie_file_path)
+            except Exception:
+                pass
+    
+    return transcript_data
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_check_ytdlp_version_and_update(request):
+    """Check yt-dlp version and provide update commands"""
+    try:
+        debug_info = {
+            'yt_dlp_available': YT_DLP_AVAILABLE,
+        }
+        
+        if YT_DLP_AVAILABLE:
+            debug_info['yt_dlp_version'] = yt_dlp.version.__version__
+            
+            # Check if update is available (simplified check)
+            try:
+                result = subprocess.run(['pip', 'show', 'yt-dlp'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    debug_info['pip_info'] = result.stdout
+                    
+                # Try to get latest version info
+                result = subprocess.run(['yt-dlp', '--version'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    debug_info['command_version'] = result.stdout.strip()
+                    
+            except Exception as version_check_error:
+                debug_info['version_check_error'] = str(version_check_error)
+        
+        debug_info['update_commands'] = [
+            'pip install --upgrade yt-dlp',
+            'yt-dlp -U'
+        ]
+        
+        return JsonResponse(debug_info)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'yt_dlp_available': YT_DLP_AVAILABLE
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_test_video_extraction(request):
+    """Test video extraction without saving to database"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        cookies_data = data.get('cookies')
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        print(f"Testing extraction for video ID: {video_id}")
+        
+        # Test basic info extraction only
+        try:
+            transcript_result = extract_transcript_with_ytdlp(youtube_url, video_id, cookies_data)
+            
+            return JsonResponse({
+                'success': True,
+                'video_id': video_id,
+                'title': transcript_result['metadata'].get('title', ''),
+                'duration': transcript_result['metadata'].get('duration'),
+                'transcript_length': len(transcript_result['text']) if transcript_result['text'] else 0,
+                'extraction_method': transcript_result['method'],
+                'language': transcript_result['language'],
+                'text_preview': transcript_result['text'][:300] + '...' if transcript_result['text'] and len(transcript_result['text']) > 300 else transcript_result['text']
+            })
+            
+        except Exception as test_error:
+            return JsonResponse({
+                'success': False,
+                'error': str(test_error),
+                'video_id': video_id,
+                'yt_dlp_version': yt_dlp.version.__version__ if YT_DLP_AVAILABLE else 'not available'
+            })
+            
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+# Keep all your existing endpoints unchanged...
+# Keep all other existing endpoints unchanged...
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_check_transcript_availability(request):
+    """Check if transcript/subtitles are available for a YouTube video using yt-dlp"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        if not YT_DLP_AVAILABLE:
+            return JsonResponse({'error': 'yt-dlp not available'}, status=500)
+        
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=False)
+                
+                subtitles = info.get('subtitles', {})
+                automatic_captions = info.get('automatic_captions', {})
+                
+                available_subtitles = []
+                
+                # Process manual subtitles
+                for lang, formats in subtitles.items():
+                    available_subtitles.append({
+                        'language': lang,
+                        'type': 'manual',
+                        'formats_count': len(formats) if isinstance(formats, list) else 1
+                    })
+                
+                # Process automatic captions
+                for lang, formats in automatic_captions.items():
+                    available_subtitles.append({
+                        'language': lang,
+                        'type': 'automatic',
+                        'formats_count': len(formats) if isinstance(formats, list) else 1
+                    })
+                
+                return JsonResponse({
+                    'video_id': video_id,
+                    'video_title': info.get('title', ''),
+                    'has_transcripts': len(available_subtitles) > 0,
+                    'available_subtitles': available_subtitles,
+                    'total_count': len(available_subtitles),
+                    'duration': info.get('duration'),
+                    'uploader': info.get('uploader', '')
+                })
+                
+        except Exception as e:
+            return JsonResponse({
+                'video_id': video_id,
+                'has_transcripts': False,
+                'error': str(e)
+            }, status=400)
+            
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Keep all your existing endpoints (they don't need to change)
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_all_saved_transcripts(request):
+    """Retrieve all saved transcripts with pagination and filtering"""
+    try:
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 10))
+        search_query = request.GET.get('search', '').strip()
+        category_filter = request.GET.get('category', '').strip()
+        country_filter = request.GET.get('country', '').strip()
+        
+        # Build query
+        queryset = SnowAIVideoTranscriptRecord.objects.all()
+        
+        if search_query:
+            queryset = queryset.filter(
+                Q(full_transcript_text__icontains=search_query) |
+                Q(video_title__icontains=search_query) |
+                Q(primary_speaker_name__icontains=search_query)
+            )
+        
+        if category_filter:
+            queryset = queryset.filter(content_category=category_filter)
+            
+        if country_filter:
+            queryset = queryset.filter(
+                Q(speaker_country_code=country_filter) |
+                Q(speaker_country_name__icontains=country_filter)
+            )
+        
+        # Save search history
+        if search_query or category_filter or country_filter:
+            SnowAITranscriptSearchHistory.objects.create(
+                search_query=search_query,
+                search_filters={
+                    'category': category_filter,
+                    'country': country_filter
+                },
+                results_count=queryset.count()
+            )
+        
+        # Paginate results
+        paginator = Paginator(queryset, per_page)
+        page_obj = paginator.get_page(page)
+        
+        transcripts_data = []
+        for transcript in page_obj:
+            transcripts_data.append({
+                'id': transcript.transcript_uuid,
+                'youtube_url': transcript.youtube_url,
+                'video_title': transcript.video_title,
+                'speaker_name': transcript.primary_speaker_name,
+                'country': transcript.speaker_country_name,
+                'category': transcript.content_category,
+                'word_count': transcript.word_count,
+                'duration_seconds': transcript.video_duration_seconds,
+                'created_at': transcript.created_at.isoformat(),
+                'video_upload_date': transcript.video_upload_date.isoformat() if transcript.video_upload_date else None,
+                'transcript_preview': transcript.full_transcript_text[:200] + '...' if len(transcript.full_transcript_text) > 200 else transcript.full_transcript_text
+            })
+        
+        return JsonResponse({
+            'transcripts': transcripts_data,
+            'pagination': {
+                'current_page': page_obj.number,
+                'total_pages': paginator.num_pages,
+                'total_items': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_single_transcript_details(request, transcript_id):
+    """Get detailed view of a single transcript"""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        
+        return JsonResponse({
+            'id': transcript.transcript_uuid,
+            'youtube_url': transcript.youtube_url,
+            'youtube_video_id': transcript.youtube_video_id,
+            'video_title': transcript.video_title,
+            'speaker_name': transcript.primary_speaker_name,
+            'speaker_organization': transcript.speaker_organization,
+            'country_code': transcript.speaker_country_code,
+            'country_name': transcript.speaker_country_name,
+            'full_transcript': transcript.full_transcript_text,
+            'category': transcript.content_category,
+            'word_count': transcript.word_count,
+            'duration_seconds': transcript.video_duration_seconds,
+            'language': transcript.transcript_language,
+            'transcription_method': transcript.transcription_method,
+            'created_at': transcript.created_at.isoformat(),
+            'video_upload_date': transcript.video_upload_date.isoformat() if transcript.video_upload_date else None,
+            'custom_tags': transcript.custom_tags,
+            'economic_topics': transcript.economic_topics
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_transcript_record(request, transcript_id):
+    """Delete a specific transcript record"""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        video_title = transcript.video_title
+        transcript.delete()
+        
+        return JsonResponse({
+            'message': f'Transcript "{video_title}" deleted successfully'
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Debug endpoint for yt-dlp
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_debug_ytdlp_availability(request):
+    """Debug endpoint to test yt-dlp availability and version"""
+    try:
+        debug_info = {
+            'yt_dlp_available': YT_DLP_AVAILABLE,
+        }
+        
+        if YT_DLP_AVAILABLE:
+            debug_info['yt_dlp_version'] = yt_dlp.version.__version__
+            
+            # Test with a known good video (Rick Roll - has captions)
+            test_video_url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+            
+            try:
+                ydl_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'skip_download': True,
+                }
+                
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(test_video_url, download=False)
+                    
+                    debug_info['test_video_info'] = {
+                        'title': info.get('title', ''),
+                        'duration': info.get('duration'),
+                        'has_subtitles': bool(info.get('subtitles')),
+                        'has_automatic_captions': bool(info.get('automatic_captions')),
+                        'subtitle_languages': list(info.get('subtitles', {}).keys()),
+                        'automatic_caption_languages': list(info.get('automatic_captions', {}).keys())
+                    }
+                    debug_info['test_success'] = True
+                    
+            except Exception as e:
+                debug_info['test_success'] = False
+                debug_info['test_error'] = str(e)
+        
+        return JsonResponse(debug_info)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'yt_dlp_available': YT_DLP_AVAILABLE
+        }, status=500)
+        
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_transcript_metadata(request, transcript_id):
+    """Update transcript metadata like speaker info, tags, etc."""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        data = json.loads(request.body)
+        
+        # Update allowed fields
+        updateable_fields = [
+            'primary_speaker_name', 'speaker_organization', 'speaker_country_code',
+            'speaker_country_name', 'content_category', 'custom_tags', 'economic_topics'
+        ]
+        
+        for field in updateable_fields:
+            if field in data:
+                setattr(transcript, field, data[field])
+        
+        transcript.save()
+        
+        return JsonResponse({
+            'message': 'Transcript metadata updated successfully'
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Additional utility functions you might find useful
+
+@csrf_exempt  
+@require_http_methods(["GET"])
+def snowai_get_transcript_statistics(request):
+    """Get overall statistics about the transcript database"""
+    try:
+        total_transcripts = SnowAIVideoTranscriptRecord.objects.count()
+        total_words = sum(SnowAIVideoTranscriptRecord.objects.values_list('word_count', flat=True))
+        
+        # Category breakdown
+        categories = SnowAIVideoTranscriptRecord.objects.values('content_category').distinct()
+        category_stats = {}
+        for cat in categories:
+            if cat['content_category']:
+                count = SnowAIVideoTranscriptRecord.objects.filter(content_category=cat['content_category']).count()
+                category_stats[cat['content_category']] = count
+        
+        # Country breakdown
+        countries = SnowAIVideoTranscriptRecord.objects.values('speaker_country_name').distinct()
+        country_stats = {}
+        for country in countries:
+            if country['speaker_country_name']:
+                count = SnowAIVideoTranscriptRecord.objects.filter(speaker_country_name=country['speaker_country_name']).count()
+                country_stats[country['speaker_country_name']] = count
+        
+        return JsonResponse({
+            'total_transcripts': total_transcripts,
+            'total_words': total_words,
+            'average_words_per_transcript': total_words / total_transcripts if total_transcripts > 0 else 0,
+            'category_breakdown': category_stats,
+            'country_breakdown': country_stats
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"]) 
+def snowai_export_transcripts_csv(request):
+    """Export transcripts to CSV format"""
+    import csv
+    from django.http import HttpResponse
+    
+    try:
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="snowai_transcripts_export.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'ID', 'Video Title', 'Speaker Name', 'Country', 'Category', 
+            'Word Count', 'Duration (seconds)', 'YouTube URL', 'Created At', 'Transcript Text'
+        ])
+        
+        transcripts = SnowAIVideoTranscriptRecord.objects.all()
+        for transcript in transcripts:
+            writer.writerow([
+                transcript.transcript_uuid,
+                transcript.video_title or '',
+                transcript.primary_speaker_name or '',
+                transcript.speaker_country_name or '',
+                transcript.content_category or '',
+                transcript.word_count,
+                transcript.video_duration_seconds or 0,
+                transcript.youtube_url or '',
+                transcript.created_at.isoformat(),
+                transcript.full_transcript_text[:1000] + '...' if len(transcript.full_transcript_text) > 1000 else transcript.full_transcript_text
+            ])
+        
+        return response
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+
+# views.py (add these to your existing views)
+
+import json
+import time
+import uuid
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.shortcuts import get_object_or_404
+from django.core.paginator import Paginator
+from django.db.models import Q
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_transcript_analysis_dashboard_data_endpoint(request):
+    """Get dashboard data for transcript analysis overview"""
+    try:
+        # Get basic stats
+        total_transcripts = SnowAIVideoTranscriptRecord.objects.count()
+        analyzed_transcripts = SnowAIVideoTranscriptRecord.objects.filter(ai_analysis__isnull=False).count()
+        pending_analysis = total_transcripts - analyzed_transcripts
+        
+        # Get recent transcripts with analysis status
+        transcripts = SnowAIVideoTranscriptRecord.objects.select_related('ai_analysis').order_by('-created_at')[:50]
+        
+        transcript_data = []
+        for transcript in transcripts:
+            has_analysis = hasattr(transcript, 'ai_analysis') and transcript.ai_analysis is not None
+            transcript_data.append({
+                'transcript_uuid': transcript.transcript_uuid,
+                'video_title': transcript.video_title or 'Untitled',
+                'primary_speaker_name': transcript.primary_speaker_name or 'Unknown',
+                'speaker_organization': transcript.speaker_organization or 'N/A',
+                'created_at': transcript.created_at.isoformat() if transcript.created_at else None,
+                'word_count': transcript.word_count,
+                'has_analysis': has_analysis,
+                'analysis_sentiment': transcript.ai_analysis.overall_sentiment if has_analysis else None,
+                'analysis_created_at': transcript.ai_analysis.analysis_created_at.isoformat() if has_analysis else None,
+                'key_insights_count': transcript.ai_analysis.key_insights_count if has_analysis else 0
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'stats': {
+                    'total_transcripts': total_transcripts,
+                    'analyzed_transcripts': analyzed_transcripts,
+                    'pending_analysis': pending_analysis,
+                    'analysis_completion_rate': (analyzed_transcripts / total_transcripts * 100) if total_transcripts > 0 else 0
+                },
+                'transcripts': transcript_data
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trigger_transcript_analysis_endpoint(request):
+    """Trigger AI analysis for a specific transcript"""
+    try:
+        data = json.loads(request.body)
+        transcript_uuid = data.get('transcript_uuid')
+        
+        if not transcript_uuid:
+            return JsonResponse({'success': False, 'error': 'transcript_uuid is required'}, status=400)
+        
+        transcript = get_object_or_404(SnowAIVideoTranscriptRecord, transcript_uuid=transcript_uuid)
+        
+        # Check if analysis already exists
+        if hasattr(transcript, 'ai_analysis') and transcript.ai_analysis is not None:
+            return JsonResponse({
+                'success': False, 
+                'error': 'Analysis already exists for this transcript. Delete existing analysis first to re-analyze.',
+                'existing_analysis_uuid': transcript.ai_analysis.analysis_uuid
+            }, status=400)
+        
+        # Start timing the analysis
+        start_time = time.time()
+        
+        # Create the AI analysis prompt
+        analysis_prompt = f"""
+        Analyze the following speech transcript from {transcript.primary_speaker_name or 'Unknown Speaker'} 
+        from {transcript.speaker_organization or 'Unknown Organization'}. 
+        
+        Video Title: {transcript.video_title or 'Untitled'}
+        Speaker: {transcript.primary_speaker_name or 'Unknown'}
+        Organization: {transcript.speaker_organization or 'N/A'}
+        
+        Transcript Text:
+        {transcript.full_transcript_text}
+        
+        Please provide a comprehensive economic and financial analysis in JSON format with the following structure:
+        {{
+            "executive_summary": "A comprehensive 3-4 paragraph summary of the key points",
+            "key_themes": ["theme1", "theme2", "theme3"],
+            "economic_opportunities": [
+                {{"opportunity": "Description of opportunity", "confidence": 0.8, "timeframe": "short_term/medium_term/long_term"}}
+            ],
+            "economic_risks": [
+                {{"risk": "Description of risk", "impact_level": "low/medium/high", "probability": 0.7}}
+            ],
+            "policy_implications": [
+                {{"implication": "Policy implication description", "timeframe": "short_term/medium_term/long_term", "sector": "monetary/fiscal/regulatory"}}
+            ],
+            "overall_sentiment": "positive/negative/neutral/mixed",
+            "sentiment_confidence": 0.85,
+            "market_outlook": "bullish/bearish/neutral/uncertain",
+            "inflation_mentions": {{"current": "value if mentioned", "target": "value if mentioned", "forecast": "value if mentioned"}},
+            "interest_rate_mentions": {{"current": "value if mentioned", "next_meeting": "decision if mentioned", "forecast": "value if mentioned"}},
+            "gdp_mentions": {{"current": "value if mentioned", "forecast": "value if mentioned"}},
+            "unemployment_mentions": {{"current": "value if mentioned", "forecast": "value if mentioned"}},
+            "policy_actions_suggested": ["action1", "action2"],
+            "market_predictions": [
+                {{"prediction": "Prediction description", "timeframe": "1_month/3_months/6_months/1_year", "confidence": 0.6}}
+            ],
+            "analysis_completeness_score": 0.9
+        }}
+        
+        Ensure all confidence scores are between 0 and 1. If specific economic metrics aren't mentioned, leave those objects empty. Focus on extracting actionable insights and concrete predictions where possible.
+        """
+        
+        # Get AI analysis
+        ai_response = chat_gpt(analysis_prompt)
+        
+        # Try to parse the JSON response
+        try:
+            analysis_data = json.loads(ai_response)
+        except json.JSONDecodeError:
+            # If direct parsing fails, try to extract JSON from the response
+            import re
+            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+            if json_match:
+                analysis_data = json.loads(json_match.group())
+            else:
+                return JsonResponse({'success': False, 'error': 'Failed to parse AI response as JSON'}, status=500)
+        
+        # Calculate analysis duration
+        analysis_duration = time.time() - start_time
+        
+        # Create the analysis record
+        analysis = SnowAITranscriptAnalysis.objects.create(
+            transcript=transcript,
+            analysis_uuid=str(uuid.uuid4()),
+            executive_summary=analysis_data.get('executive_summary', ''),
+            key_themes=analysis_data.get('key_themes', []),
+            economic_opportunities=analysis_data.get('economic_opportunities', []),
+            economic_risks=analysis_data.get('economic_risks', []),
+            policy_implications=analysis_data.get('policy_implications', []),
+            overall_sentiment=analysis_data.get('overall_sentiment', 'neutral'),
+            sentiment_confidence=analysis_data.get('sentiment_confidence', 0.0),
+            market_outlook=analysis_data.get('market_outlook', 'neutral'),
+            inflation_mentions=analysis_data.get('inflation_mentions', {}),
+            interest_rate_mentions=analysis_data.get('interest_rate_mentions', {}),
+            gdp_mentions=analysis_data.get('gdp_mentions', {}),
+            unemployment_mentions=analysis_data.get('unemployment_mentions', {}),
+            policy_actions_suggested=analysis_data.get('policy_actions_suggested', []),
+            market_predictions=analysis_data.get('market_predictions', []),
+            analysis_duration_seconds=analysis_duration,
+            analysis_completeness_score=analysis_data.get('analysis_completeness_score', 0.0)
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'analysis_uuid': analysis.analysis_uuid,
+                'executive_summary': analysis.executive_summary,
+                'overall_sentiment': analysis.overall_sentiment,
+                'key_insights_count': analysis.key_insights_count,
+                'analysis_duration': analysis_duration
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_transcript_analysis_details_endpoint(request, transcript_uuid):
+    """Get detailed analysis for a specific transcript"""
+    try:
+        transcript = get_object_or_404(SnowAIVideoTranscriptRecord, transcript_uuid=transcript_uuid)
+        
+        if not hasattr(transcript, 'ai_analysis') or transcript.ai_analysis is None:
+            return JsonResponse({'success': False, 'error': 'No analysis found for this transcript'}, status=404)
+        
+        analysis = transcript.ai_analysis
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'transcript_info': {
+                    'transcript_uuid': transcript.transcript_uuid,
+                    'video_title': transcript.video_title,
+                    'primary_speaker_name': transcript.primary_speaker_name,
+                    'speaker_organization': transcript.speaker_organization,
+                    'word_count': transcript.word_count,
+                    'created_at': transcript.created_at.isoformat() if transcript.created_at else None
+                },
+                'analysis': {
+                    'analysis_uuid': analysis.analysis_uuid,
+                    'executive_summary': analysis.executive_summary,
+                    'key_themes': analysis.key_themes,
+                    'economic_opportunities': analysis.economic_opportunities,
+                    'economic_risks': analysis.economic_risks,
+                    'policy_implications': analysis.policy_implications,
+                    'overall_sentiment': analysis.overall_sentiment,
+                    'sentiment_confidence': analysis.sentiment_confidence,
+                    'market_outlook': analysis.market_outlook,
+                    'inflation_mentions': analysis.inflation_mentions,
+                    'interest_rate_mentions': analysis.interest_rate_mentions,
+                    'gdp_mentions': analysis.gdp_mentions,
+                    'unemployment_mentions': analysis.unemployment_mentions,
+                    'policy_actions_suggested': analysis.policy_actions_suggested,
+                    'market_predictions': analysis.market_predictions,
+                    'key_insights_count': analysis.key_insights_count,
+                    'analysis_completeness_score': analysis.analysis_completeness_score,
+                    'analysis_created_at': analysis.analysis_created_at.isoformat()
+                }
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_transcript_analysis_endpoint(request, analysis_uuid):
+    """Delete an analysis"""
+    try:
+        analysis = get_object_or_404(SnowAITranscriptAnalysis, analysis_uuid=analysis_uuid)
+        transcript_uuid = analysis.transcript.transcript_uuid
+        analysis.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Analysis deleted successfully',
+            'transcript_uuid': transcript_uuid
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def snowai_fetch_market_ohlc_data(request):
+    """
+    Fetch OHLC market data using yfinance
+    Endpoint: /api/snowai-market-ohlc/
+    
+    Parameters:
+    - symbol: Asset symbol (e.g., AAPL, EURUSD=X, GC=F)
+    - interval: Timeframe (1m, 5m, 15m, 1h, 4h, 1d, 1wk)
+    - period: Data period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, max)
+    """
+    try:
+        # Get parameters
+        if request.method == 'POST':
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            interval = data.get('interval', '1h')
+            period = data.get('period', '1mo')
+        else:
+            symbol = request.GET.get('symbol')
+            interval = request.GET.get('interval', '1h')
+            period = request.GET.get('period', '1mo')
+        
+        if not symbol:
+            return JsonResponse({
+                'error': 'Symbol parameter is required'
+            }, status=400)
+        
+        # Map frontend intervals to yfinance intervals
+        interval_mapping = {
+            '1m': '1m',
+            '5m': '5m',
+            '15m': '15m',
+            '1h': '1h',
+            '4h': '4h',
+            '1d': '1d',
+            '1w': '1wk'
+        }
+        
+        yf_interval = interval_mapping.get(interval, '1h')
+        
+        # Fetch data from yfinance
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period=period, interval=yf_interval)
+        
+        if df.empty:
+            return JsonResponse({
+                'error': f'No data available for {symbol}',
+                'symbol': symbol
+            }, status=404)
+        
+        # Convert DataFrame to list of OHLC dictionaries
+        data = []
+        for index, row in df.iterrows():
+            # Convert timezone-aware datetime to Unix timestamp
+            timestamp = int(index.timestamp())
+            
+            data.append({
+                'time': timestamp,
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close']),
+                'volume': float(row['Volume']) if 'Volume' in row else 0
+            })
+        
+        # Sort by time
+        data.sort(key=lambda x: x['time'])
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'interval': interval,
+            'period': period,
+            'data_points': len(data),
+            'data': data,
+            'source': 'yfinance',
+            'first_date': datetime.fromtimestamp(data[0]['time']).isoformat() if data else None,
+            'last_date': datetime.fromtimestamp(data[-1]['time']).isoformat() if data else None
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'symbol': symbol if 'symbol' in locals() else 'unknown'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_latest_ai_council_discussion_for_livingston(request):
+    """Fetch the most recent AI Trading Council Discussion for Livingston AI assistant"""
+    try:
+        latest_discussion = AITradingCouncilConversation.objects.filter(
+            status='completed'
+        ).order_by('-created_at').first()
+        
+        # Fetch ALL transcript analyses - only the fields we need
+        all_analyses = SnowAITranscriptAnalysis.objects.select_related(
+            'transcript'
+        ).order_by('-analysis_created_at')
+        
+        transcript_insights = []
+        for analysis in all_analyses:
+            transcript_insights.append({
+                'executive_summary': analysis.executive_summary,
+                'key_themes': analysis.key_themes,
+                'speaker_name': analysis.transcript.primary_speaker_name,
+                'country_code': analysis.transcript.speaker_country_code,
+            })
+        
+        if not latest_discussion:
+            return JsonResponse({
+                'success': True,
+                'has_discussion': False,
+                'message': 'No completed discussions found',
+                'has_transcript_insights': len(transcript_insights) > 0,
+                'transcript_insights': transcript_insights,
+                'transcript_insights_count': len(transcript_insights)
+            })
+        
+        discussion_context = {
+            'conversation_id': latest_discussion.conversation_id,
+            'title': latest_discussion.title,
+            'created_at': latest_discussion.created_at.isoformat(),
+            'participating_assets': latest_discussion.participating_assets,
+            'total_participants': latest_discussion.total_participants,
+            'conversation_summary': latest_discussion.conversation_summary,
+            'overall_economic_outlook': latest_discussion.overall_economic_outlook,
+            'global_market_sentiment': latest_discussion.global_market_sentiment,
+            'market_volatility_level': latest_discussion.market_volatility_level,
+            'major_economic_themes': latest_discussion.major_economic_themes,
+            'currency_strength_rankings': latest_discussion.currency_strength_rankings,
+            'risk_factors_identified': latest_discussion.risk_factors_identified,
+            'opportunity_areas': latest_discussion.opportunity_areas,
+            'bullish_sentiment_count': latest_discussion.bullish_sentiment_count,
+            'bearish_sentiment_count': latest_discussion.bearish_sentiment_count,
+            'neutral_sentiment_count': latest_discussion.neutral_sentiment_count,
+            'average_confidence_score': latest_discussion.average_confidence_score,
+            'dominant_sentiment': latest_discussion.get_dominant_sentiment(),
+            'conversation_turns_count': latest_discussion.get_conversation_turns_count(),
+            'full_conversation': latest_discussion.conversation_data
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'has_discussion': True,
+            'discussion': discussion_context,
+            'has_transcript_insights': len(transcript_insights) > 0,
+            'transcript_insights': transcript_insights,
+            'transcript_insights_count': len(transcript_insights)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_fetch_time_separators(request):
+    """
+    Fetch week and month separator timestamps for chart visualization
+    Endpoint: /api/snowai-time-separators/
+    
+    Parameters:
+    - symbol: Asset symbol (e.g., AAPL, EURUSD=X, GC=F)
+    - period: Data period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, max)
+    """
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        period = data.get('period', '1y')
+        
+        if not symbol:
+            return JsonResponse({
+                'error': 'Symbol parameter is required'
+            }, status=400)
+        
+        # Fetch weekly data
+        ticker = yf.Ticker(symbol)
+        weekly_df = ticker.history(period=period, interval='1wk')
+        monthly_df = ticker.history(period=period, interval='1mo')
+        
+        if weekly_df.empty and monthly_df.empty:
+            return JsonResponse({
+                'error': f'No data available for {symbol}',
+                'symbol': symbol
+            }, status=404)
+        
+        # Extract week start timestamps
+        week_starts = []
+        if not weekly_df.empty:
+            for index in weekly_df.index:
+                timestamp = int(index.timestamp())
+                week_starts.append(timestamp)
+        
+        # Extract month start timestamps
+        month_starts = []
+        if not monthly_df.empty:
+            for index in monthly_df.index:
+                timestamp = int(index.timestamp())
+                month_starts.append(timestamp)
+        
+        # Sort timestamps
+        week_starts.sort()
+        month_starts.sort()
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'period': period,
+            'week_starts': week_starts,
+            'month_starts': month_starts,
+            'week_count': len(week_starts),
+            'month_count': len(month_starts)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'symbol': symbol if 'symbol' in locals() else 'unknown'
+        }, status=500)
+
+
+import numpy as np
+from scipy.stats import pearsonr
+
+# Asset ticker mappings
+ASSET_TICKERS = {
+    'forex': {
+        'EURUSD': 'EURUSD=X',
+        'GBPUSD': 'GBPUSD=X',
+        'USDJPY': 'USDJPY=X',
+        'USDCHF': 'USDCHF=X',
+        'AUDUSD': 'AUDUSD=X',
+        'NZDUSD': 'NZDUSD=X',
+        'USDCAD': 'USDCAD=X',
+        'DXY': 'DX-Y.NYB'
+    },
+    'bonds': {
+        'US30Y': 'ZB=F',
+        'US10Y': '^TNX',
+        'US5Y': '^FVX',
+        'US2Y': '^IRX',
+        'German 10Y': '^TNX',
+        'UK 10Y': '^TNX'
+    },
+    'commodities': {
+        'Gold': 'GC=F',
+        'Silver': 'SI=F',
+        'Crude Oil': 'CL=F',
+        'Copper': 'HG=F',
+        'Natural Gas': 'NG=F',
+        'Platinum': 'PL=F'
+    },
+    'indices': {
+        'S&P 500': '^GSPC',
+        'Nasdaq': '^IXIC',
+        'Dow Jones': '^DJI',
+        'Russell 2000': '^RUT',
+        'VIX': '^VIX',
+        'FTSE 100': '^FTSE',
+        'DAX': '^GDAXI',
+        'Nikkei': '^N225'
+    }
+}
+
+def calculate_correlation(ticker1, ticker2, period='3mo'):
+    """Calculate correlation between two assets"""
+    try:
+        stock1 = yf.Ticker(ticker1)
+        stock2 = yf.Ticker(ticker2)
+        
+        hist1 = stock1.history(period=period)
+        hist2 = stock2.history(period=period)
+        
+        if hist1.empty or hist2.empty:
+            return None
+        
+        # Align the data by date
+        df1 = hist1['Close'].pct_change().dropna()
+        df2 = hist2['Close'].pct_change().dropna()
+        
+        # Find common dates
+        common_dates = df1.index.intersection(df2.index)
+        
+        if len(common_dates) < 20:  # Need at least 20 data points
+            return None
+        
+        returns1 = df1.loc[common_dates]
+        returns2 = df2.loc[common_dates]
+        
+        correlation, p_value = pearsonr(returns1, returns2)
+        
+        return {
+            'correlation': round(correlation, 3),
+            'p_value': round(p_value, 4),
+            'significant': p_value < 0.05
+        }
+    except Exception as e:
+        print(f"Error calculating correlation: {str(e)}")
+        return None
+
+def generate_intermarket_insights(asset_class, asset_data):
+    """Generate trading insights based on intermarket analysis"""
+    insights = []
+    
+    try:
+        # Get DXY (Dollar Index) data
+        dxy_changes = calculate_price_changes(ASSET_TICKERS['forex']['DXY'])
+        
+        # Get Gold data
+        gold_changes = calculate_price_changes(ASSET_TICKERS['commodities']['Gold'])
+        
+        # Get US10Y data
+        us10y_changes = calculate_price_changes(ASSET_TICKERS['bonds']['US10Y'])
+        
+        # Get VIX data
+        vix_changes = calculate_price_changes(ASSET_TICKERS['indices']['VIX'])
+        
+        # Forex-specific insights
+        if asset_class == 'forex':
+            if dxy_changes and dxy_changes.get('1d', {}).get('percent'):
+                dxy_daily = dxy_changes['1d']['percent']
+                
+                if dxy_daily < -0.5:
+                    insights.append({
+                        'type': 'bullish',
+                        'message': f'USD Index down {abs(dxy_daily):.2f}% today. Consider long positions on EURUSD, GBPUSD, AUDUSD.',
+                        'strength': 'moderate' if abs(dxy_daily) < 1 else 'strong'
+                    })
+                elif dxy_daily > 0.5:
+                    insights.append({
+                        'type': 'bearish',
+                        'message': f'USD Index up {dxy_daily:.2f}% today. Consider short positions on EUR/GBP pairs or long USDJPY.',
+                        'strength': 'moderate' if dxy_daily < 1 else 'strong'
+                    })
+            
+            if gold_changes and gold_changes.get('1wk', {}).get('percent'):
+                gold_weekly = gold_changes['1wk']['percent']
+                if gold_weekly > 2:
+                    insights.append({
+                        'type': 'bullish',
+                        'message': f'Gold up {gold_weekly:.2f}% this week. Risk-off sentiment may support safe-haven currencies like JPY, CHF.',
+                        'strength': 'moderate'
+                    })
+        
+        # Commodities insights
+        elif asset_class == 'commodities':
+            if dxy_changes:
+                dxy_monthly = dxy_changes.get('1mo', {}).get('percent', 0)
+                if abs(dxy_monthly) > 2:
+                    direction = 'inverse' if dxy_monthly > 0 else 'positive'
+                    insights.append({
+                        'type': 'correlation',
+                        'message': f'USD Index {dxy_monthly:+.2f}% this month. Typically {direction} correlation with commodities.',
+                        'strength': 'strong' if abs(dxy_monthly) > 4 else 'moderate'
+                    })
+            
+            if us10y_changes:
+                yield_monthly = us10y_changes.get('1mo', {}).get('percent', 0)
+                if abs(yield_monthly) > 5:
+                    insights.append({
+                        'type': 'info',
+                        'message': f'10Y Yields {yield_monthly:+.2f}% this month. Rising yields typically pressure Gold/Silver.',
+                        'strength': 'moderate'
+                    })
+        
+        # Bonds insights
+        elif asset_class == 'bonds':
+            if vix_changes:
+                vix_weekly = vix_changes.get('1wk', {}).get('percent', 0)
+                if vix_weekly > 10:
+                    insights.append({
+                        'type': 'bullish',
+                        'message': f'VIX up {vix_weekly:.2f}% this week. Flight to safety may boost bond prices (lower yields).',
+                        'strength': 'strong'
+                    })
+            
+            # Check yield curve
+            us10y_curr = us10y_changes.get('current_price', 0)
+            us2y_changes = calculate_price_changes(ASSET_TICKERS['bonds']['US2Y'])
+            us2y_curr = us2y_changes.get('current_price', 0) if us2y_changes else 0
+            
+            if us10y_curr and us2y_curr:
+                spread = us10y_curr - us2y_curr
+                if spread < 0:
+                    insights.append({
+                        'type': 'warning',
+                        'message': f'Inverted yield curve detected (spread: {spread:.2f}%). Historically indicates recession risk.',
+                        'strength': 'strong'
+                    })
+                elif spread > 2:
+                    insights.append({
+                        'type': 'info',
+                        'message': f'Steep yield curve (spread: {spread:.2f}%). Typically indicates strong growth expectations.',
+                        'strength': 'moderate'
+                    })
+        
+        # Indices insights
+        elif asset_class == 'indices':
+            if us10y_changes:
+                yield_weekly = us10y_changes.get('1wk', {}).get('percent', 0)
+                if yield_weekly > 3:
+                    insights.append({
+                        'type': 'bearish',
+                        'message': f'10Y yields surging (+{yield_weekly:.2f}% weekly). May pressure equity valuations.',
+                        'strength': 'moderate'
+                    })
+            
+            if vix_changes:
+                vix_curr = vix_changes.get('current_price', 0)
+                if vix_curr > 25:
+                    insights.append({
+                        'type': 'warning',
+                        'message': f'VIX elevated at {vix_curr:.2f}. High volatility environment - exercise caution.',
+                        'strength': 'strong'
+                    })
+                elif vix_curr < 15:
+                    insights.append({
+                        'type': 'info',
+                        'message': f'VIX low at {vix_curr:.2f}. Low volatility may indicate complacency or stable conditions.',
+                        'strength': 'moderate'
+                    })
+        
+    except Exception as e:
+        print(f"Error generating insights: {str(e)}")
+    
+    return insights
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_asset_correlation_calculate_correlations(request):
+    """Calculate correlations between selected assets"""
+    try:
+        data = json.loads(request.body)
+        asset_class = data.get('asset_class', 'forex')
+        period = data.get('period', '3mo')
+        
+        if asset_class not in ASSET_TICKERS:
+            return JsonResponse({'error': 'Invalid asset class'}, status=400)
+        
+        assets = ASSET_TICKERS[asset_class]
+        correlations = []
+        
+        # Calculate correlations between all pairs
+        asset_list = list(assets.items())
+        for i in range(len(asset_list)):
+            for j in range(i + 1, len(asset_list)):
+                name1, ticker1 = asset_list[i]
+                name2, ticker2 = asset_list[j]
+                
+                corr_data = calculate_correlation(ticker1, ticker2, period)
+                
+                if corr_data:
+                    correlations.append({
+                        'asset1': name1,
+                        'asset2': name2,
+                        'correlation': corr_data['correlation'],
+                        'significant': corr_data['significant']
+                    })
+        
+        # Sort by absolute correlation value
+        correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
+        
+        return JsonResponse({
+            'success': True,
+            'correlations': correlations,
+            'period': period,
+            'asset_class': asset_class
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_asset_correlation_get_all_classes(request):
+    """Get available asset classes"""
+    return JsonResponse({
+        'success': True,
+        'asset_classes': list(ASSET_TICKERS.keys())
+    })
+
+
+def calculate_price_changes(ticker, periods=['1d', '1wk', '1mo', '3mo']):
+    """Calculate price changes for different periods"""
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period='6mo')
+        
+        if hist.empty:
+            return None
+        
+        current_price = hist['Close'].iloc[-1]
+        changes = {'current_price': round(current_price, 4)}
+        
+        period_days = {
+            '1d': 1,
+            '1wk': 5,
+            '1mo': 21,
+            '3mo': 63
+        }
+        
+        for period, days in period_days.items():
+            if len(hist) > days:
+                past_price = hist['Close'].iloc[-(days + 1)]
+                change_pct = ((current_price - past_price) / past_price) * 100
+                change_abs = current_price - past_price
+                changes[period] = {
+                    'percent': round(change_pct, 2),
+                    'absolute': round(change_abs, 4),
+                    'past_price': round(past_price, 4)
+                }
+            else:
+                changes[period] = None
+        
+        return changes
+    except Exception as e:
+        print(f"Error calculating changes for {ticker}: {str(e)}")
+        return None
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_asset_correlation_get_data(request):
+    """Get asset price changes and correlation data"""
+    try:
+        asset_class = request.GET.get('asset_class', 'forex')
+        
+        if asset_class not in ASSET_TICKERS:
+            return JsonResponse({'error': 'Invalid asset class'}, status=400)
+        
+        assets = ASSET_TICKERS[asset_class]
+        result = {}
+        
+        for name, ticker in assets.items():
+            changes = calculate_price_changes(ticker)
+            if changes:
+                result[name] = changes
+        
+        return JsonResponse({
+            'success': True,
+            'asset_class': asset_class,
+            'data': result,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_intermarket_council_driven_asset_sentiment_analysis_v2(request):
+    """
+    Get AI-powered sentiment analysis for a specific asset based on latest AI Trading Council discussion
+    Very unique name to avoid conflicts in large codebase
+    """
+    try:
+        data = json.loads(request.body)
+        asset_name = data.get('asset_name')
+        asset_class = data.get('asset_class')
+        all_asset_movements = data.get('all_asset_movements', {})
+        openai_api_key = data.get('openai_api_key')
+        
+        if not asset_name or not asset_class:
+            return JsonResponse({'error': 'Asset name and class required'}, status=400)
+        
+        # Get the most recent AI Trading Council conversation
+        latest_council = AITradingCouncilConversation.objects.filter(
+            status='completed'
+        ).order_by('-created_at').first()
+        
+        if not latest_council:
+            return JsonResponse({
+                'error': 'No completed AI Trading Council discussions found'
+            }, status=404)
+        
+        # Prepare council summary
+        council_summary = {
+            'economic_outlook': latest_council.overall_economic_outlook,
+            'market_sentiment': latest_council.global_market_sentiment,
+            'volatility': latest_council.market_volatility_level,
+            'major_themes': latest_council.major_economic_themes,
+            'risk_factors': latest_council.risk_factors_identified,
+            'opportunities': latest_council.opportunity_areas,
+            'summary': latest_council.conversation_summary,
+            'timestamp': latest_council.created_at.isoformat()
+        }
+        
+        # Format all asset movements for context
+        movements_text = "\n".join([
+            f"{name}: Current ${info.get('current_price', 'N/A')}, "
+            f"Daily: {info.get('1d', {}).get('percent', 'N/A')}%, "
+            f"Weekly: {info.get('1wk', {}).get('percent', 'N/A')}%, "
+            f"Monthly: {info.get('1mo', {}).get('percent', 'N/A')}%"
+            for name, info in all_asset_movements.items()
+        ])
+        
+        # Create AI prompt
+        prompt = f"""You are a financial analyst. Based on the latest AI Trading Council discussion and current market movements, provide a sentiment analysis for {asset_name}.
+
+AI Trading Council Summary (MOST RECENT):
+- Economic Outlook: {council_summary['economic_outlook']}
+- Market Sentiment: {council_summary['market_sentiment']}
+- Volatility Level: {council_summary['volatility']}
+- Major Themes: {', '.join(council_summary['major_themes'][:5]) if council_summary['major_themes'] else 'None'}
+- Key Risks: {', '.join(council_summary['risk_factors'][:3]) if council_summary['risk_factors'] else 'None'}
+
+Current Market Movements:
+{movements_text}
+
+Provide analysis in this EXACT format:
+SENTIMENT: [bullish/bearish/neutral]
+CONFIDENCE: [number between 0-100]
+REASONING: [2-3 sentences explaining why, referencing the council discussion and current movements]
+
+Be specific and actionable. Reference the council's insights."""
+
+        # Call OpenAI API
+        import requests
+        response = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {openai_api_key}'
+            },
+            json={
+                'model': 'gpt-4o-mini',
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 250,
+                'temperature': 0.7
+            }
+        )
+        
+        ai_response = response.json()
+        analysis_text = ai_response['choices'][0]['message']['content'].strip()
+        
+        # Parse the response
+        lines = analysis_text.split('\n')
+        sentiment = 'neutral'
+        confidence = 50
+        reasoning = ''
+        
+        for line in lines:
+            if line.startswith('SENTIMENT:'):
+                sentiment = line.split(':', 1)[1].strip().lower()
+            elif line.startswith('CONFIDENCE:'):
+                try:
+                    confidence = int(''.join(filter(str.isdigit, line.split(':', 1)[1])))
+                except:
+                    confidence = 50
+            elif line.startswith('REASONING:'):
+                reasoning = line.split(':', 1)[1].strip()
+        
+        # Ensure valid sentiment
+        if sentiment not in ['bullish', 'bearish', 'neutral']:
+            sentiment = 'neutral'
+        
+        return JsonResponse({
+            'success': True,
+            'asset_name': asset_name,
+            'sentiment': sentiment,
+            'confidence': confidence,
+            'reasoning': reasoning,
+            'council_reference': {
+                'discussion_id': latest_council.conversation_id,
+                'timestamp': council_summary['timestamp'],
+                'economic_outlook': council_summary['economic_outlook']
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2(request):
+    """
+    Analyze current volume in proportion to historical volume for a specific asset
+    Very unique name to avoid conflicts in large codebase
+    """
+    try:
+        data = json.loads(request.body)
+        asset_name = data.get('asset_name')
+        asset_class = data.get('asset_class')
+        analysis_period = data.get('period', '1y')  # Default to 1 year
+        
+        if not asset_name or not asset_class:
+            return JsonResponse({'error': 'Asset name and class required'}, status=400)
+        
+        # Get the ticker for this asset
+        if asset_class not in ASSET_TICKERS:
+            return JsonResponse({'error': 'Invalid asset class'}, status=400)
+        
+        ticker = ASSET_TICKERS[asset_class].get(asset_name)
+        if not ticker:
+            return JsonResponse({'error': 'Asset not found'}, status=404)
+        
+        # Fetch volume data
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period=analysis_period)
+        
+        if hist.empty or 'Volume' not in hist.columns:
+            return JsonResponse({
+                'error': 'Volume data not available for this asset',
+                'success': False
+            }, status=404)
+        
+        # Get current volume (most recent day)
+        current_volume = hist['Volume'].iloc[-1]
+        
+        # Calculate volume statistics
+        volumes = hist['Volume'].values
+        avg_volume = np.mean(volumes)
+        std_volume = np.std(volumes)
+        median_volume = np.median(volumes)
+        
+        # Calculate percentile
+        percentile = (np.sum(volumes < current_volume) / len(volumes)) * 100
+        
+        # Determine volume level
+        if current_volume > avg_volume + std_volume:
+            volume_level = 'high'
+            description = f'Significantly above average (Top {100-percentile:.0f}%)'
+        elif current_volume > avg_volume:
+            volume_level = 'medium'
+            description = f'Above average ({percentile:.0f}th percentile)'
+        elif current_volume > avg_volume - std_volume:
+            volume_level = 'medium'
+            description = f'Around average ({percentile:.0f}th percentile)'
+        else:
+            volume_level = 'low'
+            description = f'Below average (Bottom {percentile:.0f}%)'
+        
+        # Calculate comparison metrics
+        vs_avg_percent = ((current_volume - avg_volume) / avg_volume) * 100
+        vs_median_percent = ((current_volume - median_volume) / median_volume) * 100
+        
+        # Get recent trend (last 5 days vs previous 20 days)
+        if len(volumes) >= 25:
+            recent_avg = np.mean(volumes[-5:])
+            prior_avg = np.mean(volumes[-25:-5])
+            trend_change = ((recent_avg - prior_avg) / prior_avg) * 100
+            
+            if trend_change > 15:
+                trend = 'increasing'
+            elif trend_change < -15:
+                trend = 'decreasing'
+            else:
+                trend = 'stable'
+        else:
+            trend = 'insufficient_data'
+            trend_change = 0
+        
+        return JsonResponse({
+            'success': True,
+            'asset_name': asset_name,
+            'volume_level': volume_level,
+            'description': description,
+            'current_volume': int(current_volume),
+            'average_volume': int(avg_volume),
+            'median_volume': int(median_volume),
+            'vs_average_percent': round(vs_avg_percent, 2),
+            'vs_median_percent': round(vs_median_percent, 2),
+            'percentile': round(percentile, 1),
+            'trend': trend,
+            'trend_change_percent': round(trend_change, 2),
+            'analysis_period': analysis_period,
+            'data_points': len(volumes)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_fetch_latest_council_discussion_summary_for_frontend_v2(request):
+    """
+    Fetch the latest AI Trading Council discussion summary for frontend use
+    Very unique name to avoid conflicts in large codebase
+    """
+    try:
+        latest_council = AITradingCouncilConversation.objects.filter(
+            status='completed'
+        ).order_by('-created_at').first()
+        
+        if not latest_council:
+            return JsonResponse({
+                'success': False,
+                'error': 'No completed AI Trading Council discussions found'
+            }, status=404)
+        
+        return JsonResponse({
+            'success': True,
+            'council_data': {
+                'conversation_id': latest_council.conversation_id,
+                'title': latest_council.title,
+                'created_at': latest_council.created_at.isoformat(),
+                'completed_at': latest_council.completed_at.isoformat() if latest_council.completed_at else None,
+                'economic_outlook': latest_council.overall_economic_outlook,
+                'market_sentiment': latest_council.global_market_sentiment,
+                'volatility_level': latest_council.market_volatility_level,
+                'major_themes': latest_council.major_economic_themes,
+                'currency_strength': latest_council.currency_strength_rankings,
+                'risk_factors': latest_council.risk_factors_identified,
+                'opportunities': latest_council.opportunity_areas,
+                'summary': latest_council.conversation_summary,
+                'participating_assets': latest_council.participating_assets,
+                'sentiment_breakdown': {
+                    'bullish': latest_council.bullish_sentiment_count,
+                    'bearish': latest_council.bearish_sentiment_count,
+                    'neutral': latest_council.neutral_sentiment_count
+                },
+                'confidence_score': latest_council.average_confidence_score
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
+
+from sklearn.linear_model import LinearRegression
+
+@csrf_exempt
+def calculate_market_stability_score(request):
+    """
+    Calculate Market Stability Score for given assets using improved formula
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            period_days = data.get('period', 60)
+            
+            results = []
+            all_volatilities = []
+            temp_results = []
+            
+            # First pass: collect all data and volatilities for normalization
+            for symbol in symbols:
+                try:
+                    # Download data
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period=f"{period_days}d")
+                    
+                    if len(hist) < 20:
+                        continue
+                    
+                    # Calculate returns
+                    hist['returns'] = hist['Close'].pct_change()
+                    
+                    # Calculate volatility (σ)
+                    volatility = hist['returns'].std()
+                    
+                    # Calculate R² (trend clarity)
+                    prices = hist['Close'].values
+                    X = np.arange(len(prices)).reshape(-1, 1)
+                    y = prices.reshape(-1, 1)
+                    
+                    model = LinearRegression()
+                    model.fit(X, y)
+                    r_squared = model.score(X, y)
+                    
+                    # Calculate liquidity factor (0.8 to 1.2 based on volume)
+                    avg_volume = hist['Volume'].mean()
+                    
+                    # Normalize volume to liquidity factor
+                    if avg_volume > 10000000:  # High volume
+                        liquidity_factor = 1.2
+                    elif avg_volume > 1000000:  # Medium volume
+                        liquidity_factor = 1.0
+                    elif avg_volume > 100000:  # Low volume
+                        liquidity_factor = 0.9
+                    else:  # Very low volume
+                        liquidity_factor = 0.8
+                    
+                    # Get current price and change
+                    current_price = hist['Close'].iloc[-1]
+                    price_change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
+                    
+                    temp_results.append({
+                        'symbol': symbol,
+                        'volatility': volatility,
+                        'r_squared': r_squared,
+                        'liquidity_factor': liquidity_factor,
+                        'current_price': current_price,
+                        'price_change': price_change,
+                        'data_points': len(hist),
+                        'avg_volume': avg_volume
+                    })
+                    
+                    all_volatilities.append(volatility)
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    continue
+            
+            # Calculate max volatility for normalization
+            max_volatility = max(all_volatilities) if all_volatilities else 1.0
+            
+            # Second pass: calculate MSS with normalized volatility
+            for temp in temp_results:
+                # Normalize volatility (0 to 1, where 1 is highest volatility)
+                normalized_volatility = temp['volatility'] / max_volatility if max_volatility > 0 else 0
+                
+                # Improved MSS Formula:
+                # MSS = (R² × 100) × (1 - normalized_volatility) × liquidity_factor
+                # This naturally produces scores between 0-100
+                trend_score = temp['r_squared'] * 100  # 0-100
+                stability_factor = 1 - normalized_volatility  # Higher is better (less volatile)
+                
+                mss = trend_score * stability_factor * temp['liquidity_factor']
+                mss = min(max(mss, 0), 100)  # Ensure 0-100 range
+                
+                # Determine category
+                if mss >= 60:
+                    category = "stable"
+                    status = "Trending - Good Conditions"
+                    color = "#10b981"
+                elif mss >= 40:
+                    category = "choppy"
+                    status = "Choppy - Moderate Risk"
+                    color = "#f59e0b"
+                else:
+                    category = "volatile"
+                    status = "Volatile - Avoid Trading"
+                    color = "#ef4444"
+                
+                results.append({
+                    'symbol': temp['symbol'],
+                    'mss': round(mss, 2),
+                    'volatility': round(temp['volatility'], 4),
+                    'normalized_volatility': round(normalized_volatility, 4),
+                    'r_squared': round(temp['r_squared'], 4),
+                    'liquidity_factor': round(temp['liquidity_factor'], 2),
+                    'category': category,
+                    'status': status,
+                    'color': color,
+                    'current_price': round(temp['current_price'], 2),
+                    'price_change': round(temp['price_change'], 2),
+                    'data_points': temp['data_points'],
+                    'avg_volume': int(temp['avg_volume'])
+                })
+            
+            # Sort by MSS descending
+            results.sort(key=lambda x: x['mss'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def get_mss_historical_data(request):
+    """
+    Get historical MSS data for a specific symbol using improved formula
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            period_days = data.get('period', 180)
+            
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period=f"{period_days}d")
+            
+            if len(hist) < 30:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Insufficient data'
+                }, status=400)
+            
+            # Calculate rolling MSS
+            window = 20
+            mss_history = []
+            all_window_volatilities = []
+            
+            # First pass: collect all window volatilities for normalization
+            for i in range(window, len(hist)):
+                window_data = hist.iloc[i-window:i]
+                returns = window_data['Close'].pct_change()
+                volatility = returns.std()
+                all_window_volatilities.append(volatility)
+            
+            max_volatility = max(all_window_volatilities) if all_window_volatilities else 1.0
+            
+            # Second pass: calculate MSS with normalization
+            vol_index = 0
+            for i in range(window, len(hist)):
+                window_data = hist.iloc[i-window:i]
+                returns = window_data['Close'].pct_change()
+                volatility = returns.std()
+                
+                # Normalize volatility
+                normalized_volatility = volatility / max_volatility if max_volatility > 0 else 0
+                
+                # Calculate R²
+                prices = window_data['Close'].values
+                X = np.arange(len(prices)).reshape(-1, 1)
+                y = prices.reshape(-1, 1)
+                
+                model = LinearRegression()
+                model.fit(X, y)
+                r_squared = model.score(X, y)
+                
+                # Calculate liquidity factor
+                avg_volume = window_data['Volume'].mean()
+                if avg_volume > 10000000:
+                    liquidity_factor = 1.2
+                elif avg_volume > 1000000:
+                    liquidity_factor = 1.0
+                elif avg_volume > 100000:
+                    liquidity_factor = 0.9
+                else:
+                    liquidity_factor = 0.8
+                
+                # Improved MSS calculation
+                trend_score = r_squared * 100
+                stability_factor = 1 - normalized_volatility
+                mss = trend_score * stability_factor * liquidity_factor
+                mss = min(max(mss, 0), 100)
+                
+                mss_history.append({
+                    'date': window_data.index[-1].strftime('%Y-%m-%d'),
+                    'mss': round(mss, 2),
+                    'price': round(window_data['Close'].iloc[-1], 2)
+                })
+                
+                vol_index += 1
+            
+            return JsonResponse({
+                'success': True,
+                'symbol': symbol,
+                'data': mss_history
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def get_predefined_asset_lists(request):
+    """
+    Get predefined lists of assets by category
+    """
+    asset_lists = {
+        'forex': [
+            'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 
+            'USDCAD=X', 'USDCHF=X', 'NZDUSD=X'
+        ],
+        'stocks': [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 
+            'TSLA', 'META', 'JPM', 'V', 'WMT'
+        ],
+        'indices': [
+            '^GSPC', '^DJI', '^IXIC', '^FTSE', '^GDAXI',
+            '^N225', '^HSI'
+        ],
+        'commodities': [
+            'GC=F', 'SI=F', 'CL=F', 'NG=F', 'HG=F'
+        ],
+        'bonds': [
+            '^TNX', '^TYX', '^FVX'
+        ]
+    }
+    
+    return JsonResponse({
+        'success': True,
+        'asset_lists': asset_lists
+    })
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_all_hedge_funds(request):
+    """Get all hedge funds with their related data"""
+    try:
+        hedge_funds = SnowAIHedgeFundEntity.objects.all()
+        
+        data = []
+        for fund in hedge_funds:
+            key_people = fund.key_people.all()
+            resources = fund.resources.all()
+            performance = fund.performance_data.all()
+            
+            fund_data = {
+                'id': fund.id,
+                'name': fund.name,
+                'logo_url': fund.logo_url,
+                'description': fund.description,
+                'founded_year': fund.founded_year,
+                'aum': fund.aum,
+                'strategy': fund.strategy,
+                'headquarters': fund.headquarters,
+                'website': fund.website,
+                'key_people': [
+                    {
+                        'id': person.id,
+                        'name': person.name,
+                        'role': person.role,
+                        'wikipedia_url': person.wikipedia_url,
+                        'linkedin_url': person.linkedin_url,
+                        'bio': person.bio,
+                        'photo_url': person.photo_url
+                    } for person in key_people
+                ],
+                'resources': [
+                    {
+                        'id': resource.id,
+                        'title': resource.title,
+                        'url': resource.url,
+                        'description': resource.description,
+                        'resource_type': resource.resource_type
+                    } for resource in resources
+                ],
+                'performance': [
+                    {
+                        'id': perf.id,
+                        'year': perf.year,
+                        'return_percentage': float(perf.return_percentage),
+                        'notes': perf.notes
+                    } for perf in performance
+                ]
+            }
+            data.append(fund_data)
+        
+        return JsonResponse({'success': True, 'data': data})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_create_hedge_fund(request):
+    """Create a new hedge fund"""
+    try:
+        data = json.loads(request.body)
+        
+        fund = SnowAIHedgeFundEntity.objects.create(
+            name=data.get('name'),
+            logo_url=data.get('logo_url'),
+            description=data.get('description'),
+            founded_year=data.get('founded_year'),
+            aum=data.get('aum'),
+            strategy=data.get('strategy'),
+            headquarters=data.get('headquarters'),
+            website=data.get('website')
+        )
+        
+        return JsonResponse({
+            'success': True, 
+            'data': {
+                'id': fund.id,
+                'name': fund.name
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_hedge_fund(request, fund_id):
+    """Update an existing hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        for key, value in data.items():
+            if hasattr(fund, key):
+                setattr(fund, key, value)
+        
+        fund.save()
+        
+        return JsonResponse({'success': True, 'message': 'Fund updated successfully'})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_hedge_fund(request, fund_id):
+    """Delete a hedge fund"""
+    try:
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        fund.delete()
+        return JsonResponse({'success': True, 'message': 'Fund deleted successfully'})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_add_key_person(request, fund_id):
+    """Add a key person to a hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        person = SnowAIHedgeFundKeyPerson.objects.create(
+            hedge_fund=fund,
+            name=data.get('name'),
+            role=data.get('role'),
+            wikipedia_url=data.get('wikipedia_url'),
+            linkedin_url=data.get('linkedin_url'),
+            bio=data.get('bio'),
+            photo_url=data.get('photo_url')
+        )
+        
+        return JsonResponse({'success': True, 'data': {'id': person.id}})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_key_person(request, person_id):
+    """Delete a key person"""
+    try:
+        person = SnowAIHedgeFundKeyPerson.objects.get(id=person_id)
+        person.delete()
+        return JsonResponse({'success': True, 'message': 'Person deleted successfully'})
+    except SnowAIHedgeFundKeyPerson.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Person not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_add_resource(request, fund_id):
+    """Add a resource to a hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        resource = SnowAIHedgeFundResource.objects.create(
+            hedge_fund=fund,
+            title=data.get('title'),
+            url=data.get('url'),
+            description=data.get('description'),
+            resource_type=data.get('resource_type', 'article')
+        )
+        
+        return JsonResponse({'success': True, 'data': {'id': resource.id}})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_resource(request, resource_id):
+    """Delete a resource"""
+    try:
+        resource = SnowAIHedgeFundResource.objects.get(id=resource_id)
+        resource.delete()
+        return JsonResponse({'success': True, 'message': 'Resource deleted successfully'})
+    except SnowAIHedgeFundResource.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Resource not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_add_performance(request, fund_id):
+    """Add performance data to a hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        performance, created = SnowAIHedgeFundPerformance.objects.update_or_create(
+            hedge_fund=fund,
+            year=data.get('year'),
+            defaults={
+                'return_percentage': data.get('return_percentage'),
+                'notes': data.get('notes', '')
+            }
+        )
+        
+        return JsonResponse({'success': True, 'data': {'id': performance.id}})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_performance(request, performance_id):
+    """Delete performance data"""
+    try:
+        performance = SnowAIHedgeFundPerformance.objects.get(id=performance_id)
+        performance.delete()
+        return JsonResponse({'success': True, 'message': 'Performance data deleted successfully'})
+    except SnowAIHedgeFundPerformance.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Performance data not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# Add these to your views.py file
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_key_person(request, person_id):
+    """Update a key person"""
+    try:
+        data = json.loads(request.body)
+        person = SnowAIHedgeFundKeyPerson.objects.get(id=person_id)
+        
+        for key, value in data.items():
+            if hasattr(person, key) and key != 'id':
+                setattr(person, key, value)
+        
+        person.save()
+        
+        return JsonResponse({'success': True, 'message': 'Person updated successfully'})
+    except SnowAIHedgeFundKeyPerson.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Person not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_resource(request, resource_id):
+    """Update a resource"""
+    try:
+        data = json.loads(request.body)
+        resource = SnowAIHedgeFundResource.objects.get(id=resource_id)
+        
+        for key, value in data.items():
+            if hasattr(resource, key) and key != 'id':
+                setattr(resource, key, value)
+        
+        resource.save()
+        
+        return JsonResponse({'success': True, 'message': 'Resource updated successfully'})
+    except SnowAIHedgeFundResource.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Resource not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_performance(request, performance_id):
+    """Update performance data"""
+    try:
+        data = json.loads(request.body)
+        performance = SnowAIHedgeFundPerformance.objects.get(id=performance_id)
+        
+        for key, value in data.items():
+            if hasattr(performance, key) and key != 'id':
+                setattr(performance, key, value)
+        
+        performance.save()
+        
+        return JsonResponse({'success': True, 'message': 'Performance data updated successfully'})
+    except SnowAIHedgeFundPerformance.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Performance data not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+        
+
+
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
