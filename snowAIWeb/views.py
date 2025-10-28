@@ -21643,6 +21643,404 @@ def snowai_asset_correlation_get_all_classes(request):
     })
 
 
+import numpy as np
+from scipy.stats import pearsonr
+import yf
+from datetime import datetime, timedelta
+import json
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from .models import AITradingCouncilConversation
+
+# Asset ticker mappings
+ASSET_TICKERS = {
+    'forex': {
+        'EURUSD': 'EURUSD=X',
+        'GBPUSD': 'GBPUSD=X',
+        'USDJPY': 'USDJPY=X',
+        'USDCHF': 'USDCHF=X',
+        'AUDUSD': 'AUDUSD=X',
+        'NZDUSD': 'NZDUSD=X',
+        'USDCAD': 'USDCAD=X',
+        'DXY': 'DX-Y.NYB'
+    },
+    'bonds': {
+        'US30Y': 'ZB=F',
+        'US10Y': '^TNX',
+        'US5Y': '^FVX',
+        'US2Y': '^IRX',
+        'German 10Y': '^TNX',
+        'UK 10Y': '^TNX'
+    },
+    'commodities': {
+        'Gold': 'GC=F',
+        'Silver': 'SI=F',
+        'Crude Oil': 'CL=F',
+        'Copper': 'HG=F',
+        'Natural Gas': 'NG=F',
+        'Platinum': 'PL=F'
+    },
+    'indices': {
+        'S&P 500': '^GSPC',
+        'Nasdaq': '^IXIC',
+        'Dow Jones': '^DJI',
+        'Russell 2000': '^RUT',
+        'VIX': '^VIX',
+        'FTSE 100': '^FTSE',
+        'DAX': '^GDAXI',
+        'Nikkei': '^N225'
+    }
+}
+
+def calculate_price_changes(ticker, periods=['1d', '1wk', '1mo', '3mo']):
+    """Calculate price changes for different periods"""
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period='6mo')
+        
+        if hist.empty:
+            return None
+        
+        current_price = hist['Close'].iloc[-1]
+        changes = {'current_price': round(current_price, 4)}
+        
+        period_days = {
+            '1d': 1,
+            '1wk': 5,
+            '1mo': 21,
+            '3mo': 63
+        }
+        
+        for period, days in period_days.items():
+            if len(hist) > days:
+                past_price = hist['Close'].iloc[-(days + 1)]
+                change_pct = ((current_price - past_price) / past_price) * 100
+                change_abs = current_price - past_price
+                changes[period] = {
+                    'percent': round(change_pct, 2),
+                    'absolute': round(change_abs, 4),
+                    'past_price': round(past_price, 4)
+                }
+            else:
+                changes[period] = None
+        
+        return changes
+    except Exception as e:
+        print(f"Error calculating changes for {ticker}: {str(e)}")
+        return None
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_asset_correlation_get_data(request):
+    """Get asset price changes and correlation data"""
+    try:
+        asset_class = request.GET.get('asset_class', 'forex')
+        
+        if asset_class not in ASSET_TICKERS:
+            return JsonResponse({'error': 'Invalid asset class'}, status=400)
+        
+        assets = ASSET_TICKERS[asset_class]
+        result = {}
+        
+        for name, ticker in assets.items():
+            changes = calculate_price_changes(ticker)
+            if changes:
+                result[name] = changes
+        
+        return JsonResponse({
+            'success': True,
+            'asset_class': asset_class,
+            'data': result,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_intermarket_council_driven_asset_sentiment_analysis_v2(request):
+    """
+    Get AI-powered sentiment analysis for a specific asset based on latest AI Trading Council discussion
+    Very unique name to avoid conflicts in large codebase
+    """
+    try:
+        data = json.loads(request.body)
+        asset_name = data.get('asset_name')
+        asset_class = data.get('asset_class')
+        all_asset_movements = data.get('all_asset_movements', {})
+        openai_api_key = data.get('openai_api_key')
+        
+        if not asset_name or not asset_class:
+            return JsonResponse({'error': 'Asset name and class required'}, status=400)
+        
+        # Get the most recent AI Trading Council conversation
+        latest_council = AITradingCouncilConversation.objects.filter(
+            status='completed'
+        ).order_by('-created_at').first()
+        
+        if not latest_council:
+            return JsonResponse({
+                'error': 'No completed AI Trading Council discussions found'
+            }, status=404)
+        
+        # Prepare council summary
+        council_summary = {
+            'economic_outlook': latest_council.overall_economic_outlook,
+            'market_sentiment': latest_council.global_market_sentiment,
+            'volatility': latest_council.market_volatility_level,
+            'major_themes': latest_council.major_economic_themes,
+            'risk_factors': latest_council.risk_factors_identified,
+            'opportunities': latest_council.opportunity_areas,
+            'summary': latest_council.conversation_summary,
+            'timestamp': latest_council.created_at.isoformat()
+        }
+        
+        # Format all asset movements for context
+        movements_text = "\n".join([
+            f"{name}: Current ${info.get('current_price', 'N/A')}, "
+            f"Daily: {info.get('1d', {}).get('percent', 'N/A')}%, "
+            f"Weekly: {info.get('1wk', {}).get('percent', 'N/A')}%, "
+            f"Monthly: {info.get('1mo', {}).get('percent', 'N/A')}%"
+            for name, info in all_asset_movements.items()
+        ])
+        
+        # Create AI prompt
+        prompt = f"""You are a financial analyst. Based on the latest AI Trading Council discussion and current market movements, provide a sentiment analysis for {asset_name}.
+
+AI Trading Council Summary (MOST RECENT):
+- Economic Outlook: {council_summary['economic_outlook']}
+- Market Sentiment: {council_summary['market_sentiment']}
+- Volatility Level: {council_summary['volatility']}
+- Major Themes: {', '.join(council_summary['major_themes'][:5]) if council_summary['major_themes'] else 'None'}
+- Key Risks: {', '.join(council_summary['risk_factors'][:3]) if council_summary['risk_factors'] else 'None'}
+
+Current Market Movements:
+{movements_text}
+
+Provide analysis in this EXACT format:
+SENTIMENT: [bullish/bearish/neutral]
+CONFIDENCE: [number between 0-100]
+REASONING: [2-3 sentences explaining why, referencing the council discussion and current movements]
+
+Be specific and actionable. Reference the council's insights."""
+
+        # Call OpenAI API
+        import requests
+        response = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {openai_api_key}'
+            },
+            json={
+                'model': 'gpt-4o-mini',
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 250,
+                'temperature': 0.7
+            }
+        )
+        
+        ai_response = response.json()
+        analysis_text = ai_response['choices'][0]['message']['content'].strip()
+        
+        # Parse the response
+        lines = analysis_text.split('\n')
+        sentiment = 'neutral'
+        confidence = 50
+        reasoning = ''
+        
+        for line in lines:
+            if line.startswith('SENTIMENT:'):
+                sentiment = line.split(':', 1)[1].strip().lower()
+            elif line.startswith('CONFIDENCE:'):
+                try:
+                    confidence = int(''.join(filter(str.isdigit, line.split(':', 1)[1])))
+                except:
+                    confidence = 50
+            elif line.startswith('REASONING:'):
+                reasoning = line.split(':', 1)[1].strip()
+        
+        # Ensure valid sentiment
+        if sentiment not in ['bullish', 'bearish', 'neutral']:
+            sentiment = 'neutral'
+        
+        return JsonResponse({
+            'success': True,
+            'asset_name': asset_name,
+            'sentiment': sentiment,
+            'confidence': confidence,
+            'reasoning': reasoning,
+            'council_reference': {
+                'discussion_id': latest_council.conversation_id,
+                'timestamp': council_summary['timestamp'],
+                'economic_outlook': council_summary['economic_outlook']
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2(request):
+    """
+    Analyze current volume in proportion to historical volume for a specific asset
+    Very unique name to avoid conflicts in large codebase
+    """
+    try:
+        data = json.loads(request.body)
+        asset_name = data.get('asset_name')
+        asset_class = data.get('asset_class')
+        analysis_period = data.get('period', '1y')  # Default to 1 year
+        
+        if not asset_name or not asset_class:
+            return JsonResponse({'error': 'Asset name and class required'}, status=400)
+        
+        # Get the ticker for this asset
+        if asset_class not in ASSET_TICKERS:
+            return JsonResponse({'error': 'Invalid asset class'}, status=400)
+        
+        ticker = ASSET_TICKERS[asset_class].get(asset_name)
+        if not ticker:
+            return JsonResponse({'error': 'Asset not found'}, status=404)
+        
+        # Fetch volume data
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period=analysis_period)
+        
+        if hist.empty or 'Volume' not in hist.columns:
+            return JsonResponse({
+                'error': 'Volume data not available for this asset',
+                'success': False
+            }, status=404)
+        
+        # Get current volume (most recent day)
+        current_volume = hist['Volume'].iloc[-1]
+        
+        # Calculate volume statistics
+        volumes = hist['Volume'].values
+        avg_volume = np.mean(volumes)
+        std_volume = np.std(volumes)
+        median_volume = np.median(volumes)
+        
+        # Calculate percentile
+        percentile = (np.sum(volumes < current_volume) / len(volumes)) * 100
+        
+        # Determine volume level
+        if current_volume > avg_volume + std_volume:
+            volume_level = 'high'
+            description = f'Significantly above average (Top {100-percentile:.0f}%)'
+        elif current_volume > avg_volume:
+            volume_level = 'medium'
+            description = f'Above average ({percentile:.0f}th percentile)'
+        elif current_volume > avg_volume - std_volume:
+            volume_level = 'medium'
+            description = f'Around average ({percentile:.0f}th percentile)'
+        else:
+            volume_level = 'low'
+            description = f'Below average (Bottom {percentile:.0f}%)'
+        
+        # Calculate comparison metrics
+        vs_avg_percent = ((current_volume - avg_volume) / avg_volume) * 100
+        vs_median_percent = ((current_volume - median_volume) / median_volume) * 100
+        
+        # Get recent trend (last 5 days vs previous 20 days)
+        if len(volumes) >= 25:
+            recent_avg = np.mean(volumes[-5:])
+            prior_avg = np.mean(volumes[-25:-5])
+            trend_change = ((recent_avg - prior_avg) / prior_avg) * 100
+            
+            if trend_change > 15:
+                trend = 'increasing'
+            elif trend_change < -15:
+                trend = 'decreasing'
+            else:
+                trend = 'stable'
+        else:
+            trend = 'insufficient_data'
+            trend_change = 0
+        
+        return JsonResponse({
+            'success': True,
+            'asset_name': asset_name,
+            'volume_level': volume_level,
+            'description': description,
+            'current_volume': int(current_volume),
+            'average_volume': int(avg_volume),
+            'median_volume': int(median_volume),
+            'vs_average_percent': round(vs_avg_percent, 2),
+            'vs_median_percent': round(vs_median_percent, 2),
+            'percentile': round(percentile, 1),
+            'trend': trend,
+            'trend_change_percent': round(trend_change, 2),
+            'analysis_period': analysis_period,
+            'data_points': len(volumes)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_fetch_latest_council_discussion_summary_for_frontend_v2(request):
+    """
+    Fetch the latest AI Trading Council discussion summary for frontend use
+    Very unique name to avoid conflicts in large codebase
+    """
+    try:
+        latest_council = AITradingCouncilConversation.objects.filter(
+            status='completed'
+        ).order_by('-created_at').first()
+        
+        if not latest_council:
+            return JsonResponse({
+                'success': False,
+                'error': 'No completed AI Trading Council discussions found'
+            }, status=404)
+        
+        return JsonResponse({
+            'success': True,
+            'council_data': {
+                'conversation_id': latest_council.conversation_id,
+                'title': latest_council.title,
+                'created_at': latest_council.created_at.isoformat(),
+                'completed_at': latest_council.completed_at.isoformat() if latest_council.completed_at else None,
+                'economic_outlook': latest_council.overall_economic_outlook,
+                'market_sentiment': latest_council.global_market_sentiment,
+                'volatility_level': latest_council.market_volatility_level,
+                'major_themes': latest_council.major_economic_themes,
+                'currency_strength': latest_council.currency_strength_rankings,
+                'risk_factors': latest_council.risk_factors_identified,
+                'opportunities': latest_council.opportunity_areas,
+                'summary': latest_council.conversation_summary,
+                'participating_assets': latest_council.participating_assets,
+                'sentiment_breakdown': {
+                    'bullish': latest_council.bullish_sentiment_count,
+                    'bearish': latest_council.bearish_sentiment_count,
+                    'neutral': latest_council.neutral_sentiment_count
+                },
+                'confidence_score': latest_council.average_confidence_score
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
 
 
 from sklearn.linear_model import LinearRegression

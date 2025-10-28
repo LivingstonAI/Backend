@@ -337,6 +337,9 @@ urlpatterns = [
      path('snowai/hedge-funds/key-person/<int:person_id>/update/', snowai_update_key_person),
      path('snowai/hedge-funds/resource/<int:resource_id>/update/', snowai_update_resource),
      path('snowai/hedge-funds/performance/<int:performance_id>/update/', snowai_update_performance),
+
+     path('api/snowai_intermarket_council_driven_asset_sentiment_analysis_v2/', views.snowai_intermarket_council_driven_asset_sentiment_analysis_v2),
+     path('api/snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2/', views.snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
