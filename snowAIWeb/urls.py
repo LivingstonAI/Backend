@@ -340,6 +340,7 @@ urlpatterns = [
 
      path('api/snowai_intermarket_council_driven_asset_sentiment_analysis_v2/', views.snowai_intermarket_council_driven_asset_sentiment_analysis_v2),
      path('api/snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2/', views.snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2),
+     path('api/snowai_fetch_latest_council_discussion_summary_for_frontend_v2/', views.snowai_fetch_latest_council_discussion_summary_for_frontend_v2),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
