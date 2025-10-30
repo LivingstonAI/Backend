@@ -6526,3 +6526,15845 @@ def create_chill_data(request):
         return JsonResponse({'message': 'Invalid request method.'}, status=405)
 
 
+@csrf_exempt
+def fetch_chill_sections(request):
+    try:
+        sections = Chill.objects.all().order_by('id')  # Sort by id to maintain order
+        section_list = [{'section': section.section, 'text': section.text} for section in sections]
+        return JsonResponse({'sections': section_list}, status=200)
+    except Exception as e:
+        return JsonResponse({'message': str(e)}, status=500)
+
+
+@csrf_exempt
+def fetch_chill_data(request):
+    try:
+        if request.method == 'GET':
+            section = request.GET.get('section')
+            if section:
+                chill_data = Chill.objects.filter(section=section).first()  # Fetch the Chill data based on the section
+                if chill_data:
+                    return JsonResponse({'section': chill_data.section, 'text': chill_data.text})
+                else:
+                    return JsonResponse({'message': 'Section not found'}, status=404)
+            else:
+                return JsonResponse({'message': 'No section provided'}, status=400)
+        else:
+            return JsonResponse({'message': 'Invalid request method'}, status=405)
+    except Exception as e:
+        return JsonResponse({'message': f'Error fetching Chill data: {e}'})
+
+
+@csrf_exempt
+def edit_chill_data(request):
+    try:
+        if request.method == 'POST':
+            body = json.loads(request.body)
+            section = body.get('section')
+            text = body.get('text')
+
+            if not section or not text:
+                return JsonResponse({'message': 'Invalid data'}, status=400)
+
+            # Use update() to update the record
+            updated_count = Chill.objects.filter(section=section).update(text=text)
+
+            if updated_count == 0:
+                return JsonResponse({'message': 'Section not found'}, status=404)
+
+            return JsonResponse({'message': 'Section updated successfully'}, status=200)
+        else:
+            return JsonResponse({'message': 'Invalid request method'}, status=405)
+    except Chill.DoesNotExist:
+        return JsonResponse({'message': 'Section not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'message': str(e)}, status=500)
+
+@csrf_exempt
+def delete_chill_entry(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            section = data.get('section')
+            if section:
+                Chill.objects.filter(section=section).delete()  # Deletes entry with the specified section name
+                return JsonResponse({'message': 'Entry deleted successfully'}, status=200)
+            return JsonResponse({'message': 'Section name not provided'}, status=400)
+        except Chill.DoesNotExist:
+            return JsonResponse({'message': 'Entry does not exist'}, status=404)
+        except Exception as e:
+            return JsonResponse({'message': str(e)}, status=500)
+    return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+@csrf_exempt
+def fetch_trading_images(request):
+    try:
+        # Define the base directory for images
+        base_dir = os.path.join(os.path.dirname(__file__), 'image_folder')
+        
+        # Initialize an empty dictionary to hold folders and their images
+        images_data = {}
+        
+        # Loop through each subfolder in the base directory
+        for folder in os.listdir(base_dir):
+            folder_path = os.path.join(base_dir, folder)
+            if os.path.isdir(folder_path):
+                encoded_images = []
+                # Read and encode each image file in Base64
+                for img_file in os.listdir(folder_path):
+                    if img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                        img_path = os.path.join(folder_path, img_file)
+                        with open(img_path, "rb") as image_file:
+                            # Encode the image and add it to the list
+                            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                            encoded_images.append({
+                                "filename": img_file,
+                                "data": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"
+                            })
+                images_data[folder] = encoded_images
+        
+        return JsonResponse({"folders": images_data}, status=200)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def alert_bot(request):
+    if request.method == "GET":
+        # Fetch all alerts
+        alerts = AlertBot.objects.all()
+        alerts_data = [
+            {
+                "id": alert.id,
+                "asset": alert.asset,
+                "price": alert.price,
+                "condition": alert.condition,
+                "checked": alert.checked
+            }
+            for alert in alerts
+        ]
+        return JsonResponse({"alerts": alerts_data}, status=200)
+
+    elif request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            
+            if not isinstance(data, list):
+                return JsonResponse({"error": "Expected a list of alerts."}, status=400)
+            
+            responses = []
+            for alert in data:
+                asset = alert.get("asset")
+                price = alert.get("price")
+                condition = alert.get("condition")
+
+                if not asset or not price or not condition:
+                    responses.append({"asset": asset, "error": "Missing required fields."})
+                    continue
+
+                # Ensure uniqueness per asset
+                existing_alert = AlertBot.objects.filter(asset=asset).first()
+
+                if existing_alert:
+                    existing_alert.price = price
+                    existing_alert.condition = condition
+                    existing_alert.checked = False
+                    existing_alert.save()
+                    responses.append({"asset": asset, "message": "Asset alert updated."})
+                else:
+                    AlertBot.objects.create(asset=asset, price=price, condition=condition, checked=False)
+                    responses.append({"asset": asset, "message": "Asset alert created."})
+            
+            return JsonResponse({"results": responses}, status=200)
+        
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    elif request.method == "DELETE":
+        try:
+            alert_id = request.GET.get('id')
+            if not alert_id:
+                return JsonResponse({"error": "Alert ID is required."}, status=400)
+            
+            alert = AlertBot.objects.filter(id=alert_id).first()
+            if not alert:
+                return JsonResponse({"error": "Alert not found."}, status=404)
+            
+            alert.delete()
+            return JsonResponse({"message": "Alert deleted successfully."}, status=200)
+        
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+            
+    else:
+        return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+def send_whatsapp_message(asset, message):
+    
+    # Twilio setup after fix
+    ACCOUNT_SID = os.environ['TWILIO_SID']
+    AUTH_TOKEN = os.environ['TWILIO_AUTH_TOKEN']
+    TWILIO_CLIENT = Client(ACCOUNT_SID, AUTH_TOKEN)
+
+    """
+    Sends a WhatsApp message using Twilio.
+    """
+    
+    TWILIO_CLIENT.messages.create(
+        body=message,
+        from_='whatsapp:+14155238886',
+        to='whatsapp:+27847316417'
+    )
+    print(f"{asset}: {message}")
+
+
+def is_stock_index(asset):
+    """
+    Determines if an asset is a stock index based on the asset name.
+    """
+    stock_indices = ['S&P 500', 'NASDAQ', 'DOW JONES']
+    return asset in stock_indices
+
+
+def is_bond(asset):
+    """
+    Determines if an asset is a bond/treasury based on the asset name.
+    """
+    bonds = ['ZB1!', 'US10Y', 'US5Y']
+    return asset in bonds
+
+
+def is_commodity(asset):
+    """
+    Determines if an asset is a commodity (currently just Gold).
+    """
+    commodities = ['XAUUSD']
+    return asset in commodities
+
+
+def get_latest_price(asset):
+    """
+    Gets the latest price for an asset, using appropriate data source.
+    Returns the latest closing price as a float.
+    """
+    if is_stock_index(asset):
+        # Use get_index_data for stock indices
+        data = get_index_data(asset, timeframe="1d", lookback_days=1)
+        if data is None or data.empty:
+            return None
+        return round(float(data["Close"].iloc[-1]), 2)
+    
+    elif is_bond(asset):
+        # Use get_bond_data for bonds/treasuries
+        data = get_bond_data(asset, timeframe="1d", lookback_days=1)
+        if data is None or data.empty:
+            return None
+        return round(float(data["Close"].iloc[-1]), 3)
+    
+    elif is_commodity(asset):
+        # Use get_commodity_data for commodities (Gold)
+        data = get_commodity_data(asset, timeframe="1d", lookback_days=1)
+        if data is None or data.empty:
+            return None
+        return round(float(data["Close"].iloc[-1]), 2)
+    
+    else:
+        # Use existing obtain_dataset function for Forex
+        data = obtain_dataset(asset, interval="1m", num_days=1)
+        if data.empty:
+            return None
+        return round(float(data["Close"].iloc[-1]), 5)
+
+
+def manage_alerts():
+    """
+    Checks all alerts in the AlertBot model and sends notifications if conditions are met.
+    Designed to be called periodically by an external scheduler.
+    """
+
+    alerts = AlertBot.objects.filter(checked=False)  # Fetch unchecked alerts
+    for alert in alerts:
+        try:
+            asset = alert.asset
+            target_price = alert.price
+            condition = alert.condition  # e.g., ">" or "<"
+
+            # Get the latest price using appropriate data source
+            latest_price = get_latest_price(asset)
+
+            if latest_price is None:
+                print(f"No data available for {asset}. Skipping...")
+                continue
+
+            # Check the condition (compare scalar values only)
+            condition_met = (
+                (condition == ">" and latest_price > float(target_price)) or
+                (condition == "<" and latest_price < float(target_price))
+            )
+
+            if condition_met:
+                # Send notification
+                message = (
+                    f"Alert triggered for {asset}! Current price: {latest_price} "
+                    f"{condition} {target_price}"
+                )
+                send_whatsapp_message(asset, message)
+
+                # Mark the alert as checked
+                alert.checked = True
+                alert.save()
+
+        except Exception as e:
+            print(f"Error processing alert for {alert.asset}: {e}")
+
+
+def get_index_data(asset, timeframe, lookback_days):
+    """
+    Fetches historical data for a given index (S&P 500, Nasdaq, or Dow Jones).
+
+    Args:
+        asset (str): The index to fetch data for ('S&P 500', 'NASDAQ', or 'DOW JONES').
+        timeframe (str): The data interval (e.g., '1d', '1wk', '1mo').
+        lookback_days (int): The number of days to look back from the current date.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the historical data.
+                          Returns None if the asset is invalid.
+    """
+    # Define tickers for each index
+    tickers = {
+        'S&P 500': '^GSPC',
+        'NASDAQ': '^IXIC',
+        'DOW JONES': '^DJI'
+    }
+
+    # Get the ticker for the specified asset
+    ticker = tickers.get(asset.upper())
+
+    if ticker is None:
+        print(f"Invalid asset: {asset}. Please choose from 'S&P 500', 'NASDAQ', or 'DOW JONES'.")
+        return None
+
+    # Calculate start date based on lookback period
+    end_date = pd.to_datetime('today')
+    start_date = end_date - pd.Timedelta(days=lookback_days)
+
+    # Fetch data using yfinance
+    try:
+        data = yf.download(ticker, start=start_date, end=end_date, interval=timeframe)
+        return data
+    except Exception as e:
+        print(f"Error fetching data for {asset}: {e}")
+        return None
+
+
+def get_bond_data(asset, timeframe, lookback_days):
+    """
+    Fetches historical data for bonds and treasuries.
+
+    Args:
+        asset (str): The bond to fetch data for ('ZB1!', 'US10Y', or 'US5Y').
+        timeframe (str): The data interval (e.g., '1d', '1wk', '1mo').
+        lookback_days (int): The number of days to look back from the current date.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the historical data.
+                          Returns None if the asset is invalid.
+    """
+    # Define tickers for each bond
+    tickers = {
+        'ZB1!': 'ZB=F',       # 30-Year Treasury Bond Futures
+        'US10Y': '^TNX',      # 10-Year Treasury Yield
+        'US5Y': '^FVX'        # 5-Year Treasury Yield
+    }
+
+    # Get the ticker for the specified asset
+    ticker = tickers.get(asset.upper())
+
+    if ticker is None:
+        print(f"Invalid asset: {asset}. Please choose from 'ZB1!', 'US10Y', or 'US5Y'.")
+        return None
+
+    # Calculate start date based on lookback period
+    end_date = pd.to_datetime('today')
+    start_date = end_date - pd.Timedelta(days=lookback_days)
+
+    # Fetch data using yfinance
+    try:
+        data = yf.download(ticker, start=start_date, end=end_date, interval=timeframe)
+        return data
+    except Exception as e:
+        print(f"Error fetching data for {asset}: {e}")
+        return None
+
+
+def get_commodity_data(asset, timeframe, lookback_days):
+    """
+    Fetches historical data for commodities (currently Gold).
+
+    Args:
+        asset (str): The commodity to fetch data for ('XAUUSD').
+        timeframe (str): The data interval (e.g., '1d', '1wk', '1mo').
+        lookback_days (int): The number of days to look back from the current date.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the historical data.
+                          Returns None if the asset is invalid.
+    """
+    # Define tickers for each commodity
+    tickers = {
+        'XAUUSD': 'GC=F'  # Gold Futures
+    }
+
+    # Get the ticker for the specified asset
+    ticker = tickers.get(asset.upper())
+
+    if ticker is None:
+        print(f"Invalid asset: {asset}. Please choose from 'XAUUSD'.")
+        return None
+
+    # Calculate start date based on lookback period
+    end_date = pd.to_datetime('today')
+    start_date = end_date - pd.Timedelta(days=lookback_days)
+
+    # Fetch data using yfinance
+    try:
+        data = yf.download(ticker, start=start_date, end=end_date, interval=timeframe)
+        return data
+    except Exception as e:
+        print(f"Error fetching data for {asset}: {e}")
+        return None
+
+
+# Schedule the alert_bot function to run every 5 minutes
+scheduler.add_job(
+    manage_alerts,  # Replace with the name of your alert-checking function
+    trigger=IntervalTrigger(minutes=5),
+    id='manage_alerts_job',
+    name='Check alerts every 5 minutes',
+    replace_existing=True
+)
+
+
+@csrf_exempt
+def create_finetuning_data(request):
+    try:
+        # Query all CHILL entries
+        chill_data = Chill.objects.all()
+
+        # Prepare dataset for JSONL format
+        data_list = []
+        for entry in chill_data:
+            data_list.append({
+                "messages": [
+                    {"role": "system", "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."},
+                    {"role": "user", "content": entry.section},
+                    {"role": "assistant", "content": entry.text}
+                ]
+            })
+
+        # Define file path
+        file_path = 'chill_data.jsonl'
+
+        # Save as JSONL file
+        with open(file_path, 'w') as jsonl_file:
+            for item in data_list:
+                jsonl_file.write(json.dumps(item) + '\n')
+
+        # Serve the file as a download
+        with open(file_path, 'rb') as jsonl_file:
+            response = HttpResponse(jsonl_file.read(), content_type='application/jsonl')
+            response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
+            return response
+    except Exception as e:
+        return JsonResponse({'message': f"Error occurred: \n{e}"})
+
+@csrf_exempt
+def create_image_finetuning_data(request):
+    try:
+        # Define the base directory for images
+        base_dir = os.path.join(os.path.dirname(__file__), 'image_folder')
+
+        # Prepare dataset for JSONL format
+        data_list = []
+        for root, _, files in os.walk(base_dir):
+            for img_file in files:
+                if img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                    img_path = os.path.join(root, img_file)
+                    with open(img_path, "rb") as image_file:
+                        # Encode image in Base64
+                        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                        
+                        # Create a single message for the image with proper formatting
+                        image_content = {
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."
+                                },
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "What do you see in this image?"
+                                        },
+                                        {
+                                            "type": "image_url",
+                                            "image_url": {
+                                                "url": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    "role": "assistant",
+                                    "content": "This is a trading chart. I can help analyze it."
+                                }
+                            ]
+                        }
+                        data_list.append(image_content)
+
+        # Define file path
+        file_path = 'image_data.jsonl'
+
+        # Save as JSONL file
+        with open(file_path, 'w') as jsonl_file:
+            for item in data_list:
+                jsonl_file.write(json.dumps(item) + '\n')
+
+        # Serve the file as a download
+        with open(file_path, 'rb') as jsonl_file:
+            response = HttpResponse(jsonl_file.read(), content_type='application/jsonl')
+            response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
+            return response
+
+    except Exception as e:
+        return JsonResponse({'message': f"Error occurred: {str(e)}"})
+
+
+# @csrf_exempt
+# def create_combined_finetuning_data(request):
+#     try:
+#         # Prepare combined dataset
+#         data_list = []
+
+#         # Step 1: Add CHILL data
+#         chill_data = Chill.objects.all()
+#         for entry in chill_data:
+#             data_list.append({
+#                 "messages": [
+#                     {
+#                         "role": "system",
+#                         "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."
+#                     },
+#                     {
+#                         "role": "user",
+#                         "content": entry.section
+#                     },
+#                     {
+#                         "role": "assistant",
+#                         "content": entry.text
+#                     }
+#                 ]
+#             })
+
+#         # Step 2: Add Image data
+#         base_dir = os.path.join(os.path.dirname(__file__), 'image_folder')
+#         for root, _, files in os.walk(base_dir):
+#             for img_file in files:
+#                 if img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+#                     img_path = os.path.join(root, img_file)
+#                     with open(img_path, "rb") as image_file:
+#                         # Encode image in Base64
+#                         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                        
+#                         # Create properly formatted image entry
+#                         image_content = {
+#                             "messages": [
+#                                 {
+#                                     "role": "system",
+#                                     "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."
+#                                 },
+#                                 {
+#                                     "role": "user",
+#                                     "content": [
+#                                         {
+#                                             "type": "text",
+#                                             "text": "What do you see in this image?"
+#                                         },
+#                                         {
+#                                             "type": "image_url",
+#                                             "image_url": {
+#                                                 "url": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"
+#                                             }
+#                                         }
+#                                     ]
+#                                 },
+#                                 {
+#                                     "role": "assistant",
+#                                     "content": "This is a trading chart. I can help analyze it."
+#                                 }
+#                             ]
+#                         }
+#                         data_list.append(image_content)
+
+#         # Step 3: Save combined data as JSONL
+#         file_path = 'combined_finetuning_data.jsonl'
+#         with open(file_path, 'w') as jsonl_file:
+#             for item in data_list:
+#                 jsonl_file.write(json.dumps(item) + '\n')
+
+#         # Step 4: Serve the file as a download
+#         with open(file_path, 'rb') as jsonl_file:
+#             response = HttpResponse(jsonl_file.read(), content_type='application/jsonl')
+#             response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
+#             return response
+
+#     except Exception as e:
+#         return JsonResponse({'message': f"Error occurred: {str(e)}"})
+        
+
+@csrf_exempt
+def create_combined_finetuning_data(request):
+    try:
+        # Settings for chunking
+        MAX_ENTRIES_PER_FILE = 1000  # Adjust this number based on your needs
+        
+        # Prepare combined dataset
+        all_data = []
+        
+        # Step 1: Add CHILL data
+        chill_data = Chill.objects.all()
+        for entry in chill_data:
+            all_data.append({
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."
+                    },
+                    {
+                        "role": "user",
+                        "content": entry.section
+                    },
+                    {
+                        "role": "assistant",
+                        "content": entry.text
+                    }
+                ]
+            })
+
+        # Step 2: Add Image data
+        base_dir = os.path.join(os.path.dirname(__file__), 'image_folder')
+        for root, _, files in os.walk(base_dir):
+            for img_file in files:
+                if img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                    img_path = os.path.join(root, img_file)
+                    with open(img_path, "rb") as image_file:
+                        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                        image_content = {
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": "TraderGPT is a trading assistant that provides advanced market analysis and trading strategies."
+                                },
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "What do you see in this image?"
+                                        },
+                                        {
+                                            "type": "image_url",
+                                            "image_url": {
+                                                "url": f"data:image/{img_file.split('.')[-1]};base64,{encoded_string}"
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    "role": "assistant",
+                                    "content": "This is a trading chart. I can help analyze it."
+                                }
+                            ]
+                        }
+                        all_data.append(image_content)
+
+        # Step 3: Create chunks and save as separate JSONL files
+        chunk_files = []
+        for i in range(0, len(all_data), MAX_ENTRIES_PER_FILE):
+            chunk = all_data[i:i + MAX_ENTRIES_PER_FILE]
+            file_path = f'finetuning_data_part_{i//MAX_ENTRIES_PER_FILE + 1}.jsonl'
+            chunk_files.append(file_path)
+            
+            with open(file_path, 'w') as jsonl_file:
+                for item in chunk:
+                    jsonl_file.write(json.dumps(item) + '\n')
+
+        # Step 4: Create ZIP file containing all chunks
+        zip_file_path = 'chunked_finetuning_data.zip'
+        with zipfile.ZipFile(zip_file_path, 'w') as zipf:
+            for file_path in chunk_files:
+                zipf.write(file_path)
+                
+        # Step 5: Serve the ZIP file
+        with open(zip_file_path, 'rb') as zip_file:
+            response = HttpResponse(zip_file.read(), content_type='application/zip')
+            response['Content-Disposition'] = f'attachment; filename="{os.path.basename(zip_file_path)}"'
+
+        # Clean up temporary files
+        for file_path in chunk_files:
+            os.remove(file_path)
+        os.remove(zip_file_path)
+
+        return response
+
+    except Exception as e:
+        return JsonResponse({'message': f"Error occurred: {str(e)}"})
+
+
+# Fetch all accounts
+@csrf_exempt
+def get_accounts(request):
+    accounts = Account.objects.all()
+    accounts_data = [
+        {
+            "id": account.id,
+            "name": account.account_name,
+            "initial_capital": account.initial_capital,
+            "main_assets": account.main_assets,  # Include main_assets in the response
+        }
+        for account in accounts
+    ]
+    return JsonResponse(accounts_data, safe=False)
+
+
+@csrf_exempt
+def create_account(request):
+    if request.method == "POST":
+        data = json.loads(request.body)
+        account_name = data.get("name")
+        initial_capital = data.get("initial_capital")
+        main_assets = data.get("main_assets")  # Get main_assets from request
+
+        if account_name and initial_capital is not None and main_assets:
+            account = Account.objects.create(account_name=account_name, initial_capital=initial_capital, main_assets=main_assets)
+            return JsonResponse({"message": "Account created successfully!", "id": account.id}, status=201)
+        
+        return JsonResponse({"error": "Invalid data"}, status=400)
+
+
+# Delete an account
+@csrf_exempt
+def delete_account(request, account_id):
+    if request.method == "DELETE":
+        account = get_object_or_404(Account, id=account_id)
+        account.delete()
+        return JsonResponse({"message": "Account deleted successfully!"}, status=200)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+
+@csrf_exempt  # You may want to add CSRF handling or use Django's built-in token authentication
+def update_account(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            account_id = data.get('id')
+            name = data.get('name')
+            initial_capital = data.get('initial_capital')
+            main_assets = data.get('main_assets')  # Get the updated main_assets
+
+            # Find the account by ID
+            account = Account.objects.get(id=account_id)
+            account.account_name = name  # Update account name
+            account.initial_capital = initial_capital  # Update initial capital
+
+            # Update main_assets if it exists
+            if main_assets:
+                account.main_assets = main_assets  # Save the updated main assets
+
+            account.save()
+
+            return JsonResponse({
+                'id': account.id,
+                'name': account.account_name,
+                'initial_capital': account.initial_capital,
+                'main_assets': account.main_assets,  # Return updated main assets
+            })
+
+        except Account.DoesNotExist:
+            return JsonResponse({'error': 'Account not found'}, status=404)
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Invalid request method'}, status=400)
+
+
+@csrf_exempt
+def get_trading_analytics(request):
+    account_name = request.GET.get('account_name')  # Get account_name from the query params
+    print(f'Account name is: {account_name}')
+    error_count = 0
+    
+    try:
+        # Fetch the account data
+        error_count += 1
+        account = Account.objects.get(account_name=account_name)
+        error_count += 1
+        # Fetch related trades for this account
+        trades = AccountTrades.objects.filter(account=account)
+        error_count += 1
+
+        
+        # Prepare the data for response
+        analytics_data = {
+            'account_name': account.account_name,
+            'main_assets': account.main_assets,
+            'initial_capital': account.initial_capital,
+            'trades': [{
+                'asset': trade.asset,
+                'order_type': trade.order_type,
+                'amount': trade.amount,
+                'outcome': trade.outcome,
+                'strategy': trade.strategy,
+                'day_of_week_entered': trade.day_of_week_entered,
+                'day_of_week_closed': trade.day_of_week_closed,
+                'trading_session_entered': trade.trading_session_entered,
+                'trading_session_closed': trade.trading_session_closed,
+            } for trade in trades]
+        }
+        print('Test 4')
+        error_count += 1
+
+        
+        return JsonResponse(analytics_data, safe=False)
+    
+    except Account.DoesNotExist:
+        return JsonResponse({'error': f'Account not found with account name: {account_name} with error count: {error_count}'}, status=404)
+
+
+@csrf_exempt
+def create_new_trade_data(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            account_name = data.get('account_name')
+            asset = data.get('asset')
+            order_type = data.get('order_type')
+            strategy = data.get('strategy')
+            day_of_week_entered = data.get('day_of_week_entered')
+            trading_session_entered = data.get('trading_session_entered')
+            outcome = data.get('outcome')
+            amount = data.get('amount')
+            emotional_bias = data.get('emotional_bias', '')
+            reflection = data.get('reflection', '')
+            
+            # Retrieve the account based on the account_name
+            account = Account.objects.get(account_name=account_name)
+
+            # Create the trade entry with the current timestamp
+            trade = AccountTrades.objects.create(
+                account=account,
+                asset=asset,
+                order_type=order_type,
+                strategy=strategy,
+                day_of_week_entered=day_of_week_entered,
+                trading_session_entered=trading_session_entered,
+                amount=amount,
+                emotional_bias=emotional_bias,
+                reflection=reflection,
+                outcome=outcome,
+                date_entered=now(),  # Save the current timestamp
+            )
+
+            return JsonResponse({'message': 'Trade recorded successfully!'}, status=200)
+
+        except Account.DoesNotExist:
+            return JsonResponse({'error': 'Account not found.'}, status=404)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    return JsonResponse({'error': 'Invalid request method.'}, status=405)
+
+
+@csrf_exempt
+def fetch_trading_data(request):
+    if request.method == 'GET':
+        try:
+            # Fetching all trade data (you can filter based on the request if needed)
+            trades = AccountTrades.objects.all().values('account__account_name', 'asset', 'order_type', 'strategy', 'day_of_week_entered', 'day_of_week_closed', 'trading_session_entered', 'trading_session_closed', 'outcome', 'amount', 'emotional_bias', 'reflection')
+            # Return the data as JSON
+            return JsonResponse(list(trades), safe=False)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+def fetch_account_data(request):
+    if request.method == 'GET':
+        try:
+            # Get the account_name from the request
+            account_name = request.GET.get('account_name')
+            if account_name:
+                # Fetch the account data based on account_name
+                account = Account.objects.filter(account_name=account_name).first()
+                if account:
+                    # Serialize the account data
+                    account_data = {
+                        'account_name': account.account_name,
+                        'main_assets': account.main_assets,
+                        'initial_capital': account.initial_capital,
+                        'trades': list(
+                            account.trades.values(
+                                'asset',
+                                'order_type',
+                                'strategy',
+                                'day_of_week_entered',
+                                'day_of_week_closed',
+                                'trading_session_entered',
+                                'trading_session_closed',
+                                'outcome',
+                                'amount',
+                                'emotional_bias',
+                                'reflection',
+                                'date_entered',  # Add this field
+                            )
+                        )
+                    }
+                    return JsonResponse(account_data, safe=False)
+                else:
+                    return JsonResponse({'error': 'Account not found'}, status=404)
+            else:
+                return JsonResponse({'error': 'Account name is required'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def time_trading_analytics(request):
+    if request.method == 'GET':
+        account_name = request.GET.get('account_name')
+        time_frame = request.GET.get('time_frame', 'month')  # month, week, day
+        start_date = request.GET.get('start_date')
+        
+        # Get base queryset
+        trades = AccountTrades.objects.filter(
+            account__account_name=account_name,
+            date_entered__gte=start_date
+        )
+        
+        # Calculate basic metrics
+        total_trades = trades.count()
+        winning_trades = trades.filter(outcome='Profit').count()
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        total_profit = trades.filter(outcome='Profit').aggregate(Sum('amount'))['amount__sum'] or 0
+        total_loss = abs(trades.filter(outcome='Loss').aggregate(Sum('amount'))['amount__sum'] or 0)
+        
+        profit_factor = total_profit / total_loss if total_loss > 0 else float('inf')
+        
+        # Get performance by different dimensions
+        performance_by_day = list(trades.values('day_of_week_entered').annotate(
+            total=Sum('amount'),
+            count=Count('id'),
+            win_rate=Count(Case(When(outcome='Profit', then=1))) * 100.0 / Count('id')
+        ))
+        
+        performance_by_session = list(trades.values('trading_session_entered').annotate(
+            total=Sum('amount'),
+            count=Count('id'),
+            win_rate=Count(Case(When(outcome='Profit', then=1))) * 100.0 / Count('id')
+        ))
+        
+        performance_by_asset = list(trades.values('asset').annotate(
+            total=Sum('amount'),
+            count=Count('id'),
+            win_rate=Count(Case(When(outcome='Profit', then=1))) * 100.0 / Count('id')
+        ))
+        
+        performance_by_strategy = list(trades.values('strategy').annotate(
+            total=Sum('amount'),
+            count=Count('id'),
+            win_rate=Count(Case(When(outcome='Profit', then=1))) * 100.0 / Count('id')
+        ))
+        
+        # Time series data based on timeframe
+        if time_frame == 'month':
+            time_series = trades.annotate(
+                period=ExtractMonth('date_entered')
+            )
+        elif time_frame == 'week':
+            time_series = trades.annotate(
+                period=ExtractWeek('date_entered')
+            )
+        else:  # day
+            time_series = trades.annotate(
+                period=F('date_entered__date')
+            )
+        
+        time_series = list(time_series.values('period').annotate(
+            total=Sum('amount'),
+            count=Count('id'),
+            win_rate=Count(Case(When(outcome='Profit', then=1))) * 100.0 / Count('id')
+        ).order_by('period'))
+        
+        response_data = {
+            'summary': {
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'profit_factor': profit_factor,
+                'total_profit': total_profit,
+                'average_win': trades.filter(outcome='Profit').aggregate(Avg('amount'))['amount__avg'],
+                'average_loss': trades.filter(outcome='Loss').aggregate(Avg('amount'))['amount__avg'],
+            },
+            'by_day': performance_by_day,
+            'by_session': performance_by_session,
+            'by_asset': performance_by_asset,
+            'by_strategy': performance_by_strategy,
+            'time_series': time_series,
+        }
+        
+        return JsonResponse(response_data)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+def obtain_dataset(asset, interval, num_days):
+    # Calculate the end and start dates
+    import datetime
+    end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    start_date = (datetime.datetime.now() - datetime.timedelta(days=num_days)).strftime("%Y-%m-%d")
+
+    # Download data using yfinance
+    forex_asset = f"{asset}=X"
+    data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+    return data
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+import pandas as pd
+
+
+def generate_candlestick_chart(data, save_path="candlestick_chart.png"):
+    try:
+        # Ensure the data has required columns and clean up
+        data = data[['Open', 'High', 'Low', 'Close']]
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        for idx, row in enumerate(data.itertuples(index=False)):
+            # Access the values by position
+            open_price = row[0]
+            high_price = row[1]
+            low_price = row[2]
+            close_price = row[3]
+
+            # Determine the color of the candlestick
+            color = 'green' if close_price > open_price else 'red'
+
+            # Draw the candlestick body (rectangle)
+            body = Rectangle(
+                (idx - 0.4, min(open_price, close_price)),  # Bottom-left corner
+                0.8,  # Width
+                abs(close_price - open_price),  # Height
+                color=color
+            )
+            ax.add_patch(body)
+
+            # Draw the wick (high-low line)
+            ax.plot(
+                [idx, idx],  # X-coordinates
+                [low_price, high_price],  # Y-coordinates
+                color=color
+            )
+
+        # Set labels and title
+        ax.set_title("Candlestick Chart", fontsize=16)
+        ax.set_xlabel("Date", fontsize=12)
+        ax.set_ylabel("Price", fontsize=12)
+
+        # Remove x-axis labels
+        ax.set_xticks([])
+
+        plt.tight_layout()
+
+        # Save the chart
+        plt.savefig(save_path)
+        plt.close(fig)  # Close the figure to free up memory
+
+        print(f"Chart saved at: {save_path}")
+        return save_path
+
+    except Exception as e:
+        print(f"Error generating candlestick chart: {e}")
+        return None
+
+
+
+def analyse_image_from_file(image_path, news_data):
+    try:
+        # Read the image and encode in base64
+        with open(image_path, "rb") as image_file:
+            image_data = image_file.read()
+        return analyse_image(image_data, news_data)
+    except Exception as e:
+        print(f"Error in image analysis from file: {e}")
+
+
+
+
+
+@dataclass
+class TraderMessage:
+    trader_id: str
+    content: str
+    message_type: str = "discussion"  # Can be "discussion" or "consensus"
+    responding_to: Optional[str] = None
+
+class ChartAnnotator:
+    def __init__(self, data: pd.DataFrame, fig_size: Tuple[int, int] = (12, 8)):
+        self.data = data
+        self.fig_size = fig_size
+
+    def extract_price_levels(self, consensus_text: str) -> Dict[str, float]:
+        """Extract price levels from consensus text using regex."""
+        price_patterns = {
+            'support': r'support.*?(\d+\.?\d*)',
+            'resistance': r'resistance.*?(\d+\.?\d*)',
+            'entry': r'entry.*?(\d+\.?\d*)',
+            'stop_loss': r'stop[- ]?loss.*?(\d+\.?\d*)',
+            'target': r'target.*?(\d+\.?\d*)'
+        }
+
+        levels = {}
+        for level_type, pattern in price_patterns.items():
+            matches = re.findall(pattern, consensus_text.lower())
+            if matches:
+                levels[level_type] = float(matches[0])
+
+        return levels
+
+    def draw_annotated_chart(self, consensus_text: str, save_path: str = "annotated_chart.png"):
+        """Create an annotated candlestick chart based on consensus analysis."""
+        # Create figure and axis
+        fig, ax = plt.subplots(figsize=self.fig_size)
+
+        # Extract price levels from consensus
+        levels = self.extract_price_levels(consensus_text)
+
+        # Plot candlesticks
+        for idx, row in enumerate(self.data.itertuples(index=False)):
+            open_price, high_price, low_price, close_price = row[0], row[1], row[2], row[3]
+
+            # Candlestick body
+            color = 'green' if close_price > open_price else 'red'
+            body = Rectangle(
+                (idx - 0.4, min(open_price, close_price)),
+                0.8,
+                abs(close_price - open_price),
+                color=color
+            )
+            ax.add_patch(body)
+
+            # Wick
+            ax.plot([idx, idx], [low_price, high_price], color=color)
+
+        # Add horizontal lines for support and resistance
+        max_price = self.data['High'].max()
+        min_price = self.data['Low'].min()
+        price_range = max_price - min_price
+        x_range = len(self.data)
+
+        # Plot levels with different styles
+        level_styles = {
+            'support': {'color': 'green', 'linestyle': '--', 'alpha': 0.6, 'label': 'Support'},
+            'resistance': {'color': 'red', 'linestyle': '--', 'alpha': 0.6, 'label': 'Resistance'},
+            'entry': {'color': 'blue', 'linestyle': '-', 'alpha': 0.8, 'label': 'Entry'},
+            'stop_loss': {'color': 'red', 'linestyle': ':', 'alpha': 0.8, 'label': 'Stop Loss'},
+            'target': {'color': 'green', 'linestyle': ':', 'alpha': 0.8, 'label': 'Target'}
+        }
+
+        for level_type, price in levels.items():
+            if level_type in level_styles:
+                style = level_styles[level_type]
+                ax.axhline(y=price, **style)
+
+                # Add price label
+                ax.text(x_range + 0.5, price, f'{level_type.replace("_", " ").title()}: {price:.4f}',
+                       verticalalignment='center')
+
+        # Add trend arrows if mentioned in consensus
+        if 'uptrend' in consensus_text.lower():
+            self._add_trend_arrow(ax, 'up', x_range)
+        elif 'downtrend' in consensus_text.lower():
+            self._add_trend_arrow(ax, 'down', x_range)
+
+        # Formatting
+        ax.set_title("Consensus Trading Analysis", fontsize=16)
+        ax.set_xlabel("Date", fontsize=12)
+        ax.set_ylabel("Price", fontsize=12)
+        ax.set_xticks(range(len(self.data.index)))
+        ax.set_xticklabels(self.data.index.strftime('%Y-%m-%d'), rotation=45, ha='right')
+
+        # Add legend
+        ax.legend()
+
+        # Adjust layout and save
+        plt.tight_layout()
+        plt.savefig(save_path)
+        plt.close(fig)
+
+        return save_path
+
+    def _add_trend_arrow(self, ax, direction: str, x_range: int):
+        """Add trend arrow to the chart."""
+        y_range = ax.get_ylim()
+        y_mid = (y_range[0] + y_range[1]) / 2
+        arrow_length = x_range * 0.2
+
+        if direction == 'up':
+            dx = arrow_length
+            dy = (y_range[1] - y_range[0]) * 0.1
+            color = 'green'
+        else:
+            dx = arrow_length
+            dy = -(y_range[1] - y_range[0]) * 0.1
+            color = 'red'
+
+        arrow = Arrow(x_range * 0.1, y_mid, dx, dy,
+                     width=arrow_length * 0.1,
+                     color=color, alpha=0.5)
+        ax.add_patch(arrow)
+
+def get_economic_events_for_currency(currency_code):
+    """Get recent economic events for a specified currency."""
+    try:
+        # Get events from the last 30 days
+        thirty_days_ago = timezone.now() - timezone.timedelta(days=90)
+        events = EconomicEvent.objects.filter(
+            currency=currency_code,
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
+        
+        if not events:
+            return "No recent economic events found for this currency."
+        
+        # Format the events data
+        events_text = f"Recent Economic Events for {currency_code}:\n\n"
+        for event in events:
+            impact_symbol = "🔴" if event.impact == "high" else "🟠" if event.impact == "medium" else "🟢"
+            events_text += f"Date: {event.date_time.strftime('%Y-%m-%d %H:%M')}\n"
+            events_text += f"Event: {event.event_name} {impact_symbol}\n"
+            events_text += f"Actual: {event.actual or 'N/A'}\n"
+            events_text += f"Forecast: {event.forecast or 'N/A'}\n"
+            events_text += f"Previous: {event.previous or 'N/A'}\n\n"
+        
+        return events_text
+    
+    except Exception as e:
+        return f"Error retrieving economic events for {currency_code}: {str(e)}"
+
+
+def extract_currencies_from_pair(forex_pair):
+    """Extract base and quote currencies from a forex pair."""
+    # Remove any '=X' suffix that might be added for yfinance
+    clean_pair = forex_pair.replace('=X', '')
+    
+    # Dictionary mapping common forex pairs to their base and quote currencies
+    forex_pairs_map = {
+        'EURUSD': ('EUR', 'USD'),
+        'GBPUSD': ('GBP', 'USD'),
+        'USDJPY': ('USD', 'JPY'),
+        'AUDUSD': ('AUD', 'USD'),
+        'USDCHF': ('USD', 'CHF'),
+        'NZDUSD': ('NZD', 'USD'),
+        'USDCAD': ('USD', 'CAD'),
+        'EURJPY': ('EUR', 'JPY'),
+        'GBPJPY': ('GBP', 'JPY'),
+        'EURGBP': ('EUR', 'GBP'),
+        'EURAUD': ('EUR', 'AUD'),
+        'EURCAD': ('EUR', 'CAD'),
+        'EURCHF': ('EUR', 'CHF'),
+        'GBPAUD': ('GBP', 'AUD'),
+        'GBPCAD': ('GBP', 'CAD'),
+        'GBPCHF': ('GBP', 'CHF'),
+        'AUDCAD': ('AUD', 'CAD'),
+        'AUDCHF': ('AUD', 'CHF'),
+        'AUDJPY': ('AUD', 'JPY'),
+        'CADCHF': ('CAD', 'CHF'),
+        'CADJPY': ('CAD', 'JPY'),
+        'CHFJPY': ('CHF', 'JPY'),
+        'NZDCAD': ('NZD', 'CAD'),
+        'NZDCHF': ('NZD', 'CHF'),
+        'NZDJPY': ('NZD', 'JPY')
+    }
+    
+    if clean_pair in forex_pairs_map:
+        return forex_pairs_map[clean_pair]
+    else:
+        # Fallback: assume first 3 chars are base, last 3 are quote
+        if len(clean_pair) >= 6:
+            return (clean_pair[:3], clean_pair[3:6])
+        else:
+            return ('USD', 'USD')  # Default fallback
+
+
+def get_economic_events_for_pair(forex_pair):
+    """Get economic events for both currencies in a forex pair."""
+    try:
+        base_currency, quote_currency = extract_currencies_from_pair(forex_pair)
+        
+        # Get events for both currencies
+        base_events = get_economic_events_for_currency(base_currency)
+        quote_events = get_economic_events_for_currency(quote_currency)
+        
+        # Combine the events
+        combined_events = f"=== ECONOMIC EVENTS FOR {forex_pair} ===\n\n"
+        combined_events += f"BASE CURRENCY ({base_currency}):\n"
+        combined_events += base_events + "\n"
+        combined_events += f"QUOTE CURRENCY ({quote_currency}):\n"
+        combined_events += quote_events + "\n"
+        
+        return combined_events
+    
+    except Exception as e:
+        return f"Error retrieving economic events for pair {forex_pair}: {str(e)}"
+
+
+
+@csrf_exempt
+def fetch_news_data_api(request):
+    """Enhanced news data function that includes economic events."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+
+    try:
+        body = json.loads(request.body)
+        assets_to_fetch = body.get('assets', [])
+        user_email = body.get('user_email', None)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not assets_to_fetch or not user_email:
+        return JsonResponse({'error': 'Missing assets or user_email'}, status=400)
+
+    all_news_data = []
+
+    conn = http.client.HTTPSConnection('api.marketaux.com')
+    params_template = {
+        'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
+        'langauge': 'en',
+        'limit': 3,
+    }
+
+    for asset in assets_to_fetch:
+        params = params_template.copy()
+        params['symbols'] = asset
+        conn.request('GET', '/v1/news/all?{}'.format(urllib.parse.urlencode(params)))
+        res = conn.getresponse()
+        data = res.read().decode('utf-8')
+        news_data = json.loads(data)
+
+        for article in news_data.get('data', []):
+            # Extract highlights properly
+            highlights = ''
+            if article.get('entities'):
+                entity_highlights = article.get('entities')[0].get('highlights', '')
+                # Handle different highlight formats
+                if isinstance(entity_highlights, str):
+                    highlights = entity_highlights
+                elif isinstance(entity_highlights, dict):
+                    # Extract the actual highlight text
+                    highlights = entity_highlights.get('highlight', '') or entity_highlights.get('text', '')
+                elif isinstance(entity_highlights, list) and len(entity_highlights) > 0:
+                    highlights = entity_highlights[0] if isinstance(entity_highlights[0], str) else str(entity_highlights[0])
+            
+            news_entry_data = {
+                'asset': asset,
+                'title': article.get('title', ''),
+                'description': article.get('description', ''),
+                'source': article.get('source', ''),
+                'url': article.get('url', ''),
+                'highlights': highlights,  # Now always a string
+            }
+            all_news_data.append(news_entry_data)
+
+    economic_events_data = []
+    for asset in assets_to_fetch:
+        economic_events = get_economic_events_for_pair(asset)
+        economic_events_data.append({
+            'asset': asset,
+            'economic_events': economic_events
+        })
+
+    return JsonResponse({
+        'message': all_news_data,
+        'economic_events': economic_events_data
+    }, safe=False)
+
+
+
+def fetch_news_data(assets, user_email):
+    """Enhanced news data function that includes economic events."""
+    all_news_data = []
+
+    # List of assets to fetch news data for
+    assets_to_fetch = assets
+
+    # Establish a connection to the API
+    conn = http.client.HTTPSConnection('api.marketaux.com')
+
+    # Define query parameters
+    params_template = {
+        'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
+        'langauge': 'en',
+        'limit': 3,
+    }
+
+    # Iterate through the assets and make API requests
+    for asset in assets_to_fetch:
+        # Update the symbol in the query parameters
+        params = params_template.copy()
+        params['symbols'] = asset
+
+        # Send a GET request
+        conn.request('GET', '/v1/news/all?{}'.format(urllib.parse.urlencode(params)))
+
+        # Get the response
+        res = conn.getresponse()
+
+        # Read the response data
+        data = res.read()
+
+        # Decode the data from bytes to a string
+        data_str = data.decode('utf-8')
+
+        # Parse the JSON data
+        news_data = json.loads(data_str)
+
+        # Iterate through the news articles and save specific fields to the database
+        for article in news_data['data']:
+            title = article['title']
+            description = article['description']
+            source = article['source']
+            url = article['url']
+            highlights = article['entities'][0]['highlights'] if article.get('entities') else ''
+
+            # Create a dictionary with the specific fields
+            news_entry_data = {
+                'asset': asset,
+                'title': title,
+                'description': description,
+                'source': source,
+                'url': url,
+                'highlights': highlights,
+            }
+            all_news_data.append(news_entry_data)
+
+    # Add economic events data for each asset
+    economic_events_data = []
+    for asset in assets_to_fetch:
+        economic_events = get_economic_events_for_pair(asset)
+        economic_events_data.append({
+            'asset': asset,
+            'economic_events': economic_events
+        })
+
+    return {
+        'message': all_news_data,
+        'economic_events': economic_events_data
+    }
+
+
+def analyse_image(image_data, news_data):
+    """Enhanced image analysis function that includes economic events."""
+    try:
+        # Getting the base64 string
+        base64_image = base64.b64encode(image_data).decode('utf-8')
+
+        api_key = os.environ['OPENAI_API_KEY']
+
+        # Extract discussion prompt if it exists
+        discussion_prompt = news_data.get('discussion_prompt', '')
+
+        # Extract economic events data
+        economic_events_text = ""
+        if 'economic_events' in news_data:
+            for event_data in news_data['economic_events']:
+                economic_events_text += event_data['economic_events'] + "\n"
+
+        # Extract regular news data
+        regular_news_text = ""
+        if 'message' in news_data:
+            for news_item in news_data['message']:
+                regular_news_text += f"Title: {news_item['title']}\n"
+                regular_news_text += f"Description: {news_item['description']}\n"
+                regular_news_text += f"Source: {news_item['source']}\n"
+                if news_item['highlights']:
+                    regular_news_text += f"Highlights: {news_item['highlights']}\n"
+                regular_news_text += "\n"
+
+        # Construct a more interactive prompt
+        prompt = f"""
+        {discussion_prompt}
+
+        Based on the trading chart image and the following fundamental data, provide an analysis that addresses the above context.
+
+        ECONOMIC EVENTS DATA:
+        {economic_events_text}
+
+        RECENT NEWS DATA:
+        {regular_news_text}
+
+        Your response should be in JSON format with two keys:
+        1. 'analysis': A detailed analysis that:
+           - Incorporates both technical chart analysis and fundamental economic events
+           - Directly responds to any previous trader's points if they exist
+           - Explains how recent economic events might impact price action
+           - Considers the timing and impact level of economic releases
+           - Points out any correlation between economic events and chart patterns
+           - Explains your reasoning for agreeing or disagreeing with previous analyses
+        2. 'recommendation': Either 'buy', 'sell', or 'neutral'
+
+        Make sure to format as valid JSON and avoid line breaks in the text.
+        Pay special attention to high-impact economic events (🔴) as they can significantly move the market.
+        """
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 1500  # Increased to accommodate economic analysis
+        }
+
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+
+        json_data = response.json()
+        final_response = json_data['choices'][0]['message']['content']
+        return final_response
+
+    except Exception as e:
+        print(f"Error occurred in analyse image function: {e}")
+        return json.dumps({
+            "analysis": f"Error occurred in analysis: {str(e)}",
+            "recommendation": "neutral"
+        })
+
+
+def tradergpt(asset, interval, num_days, user_email):
+    """Enhanced tradergpt function with economic events integration."""
+    try:
+        # Step 1: Fetch dataset and generate chart
+        data = obtain_dataset(asset, interval, num_days)
+        chart_path = generate_candlestick_chart(data)
+
+        # Step 2: Fetch enhanced news data (including economic events)
+        news_data = fetch_news_data([asset], user_email)
+
+        # Step 3: Analyse chart with economic events
+        chart_analysis = analyse_image_from_file(chart_path, news_data)
+
+        # Combine analysis
+        return {
+            "chart_analysis": chart_analysis,
+            "economic_events": news_data.get('economic_events', [])
+        }
+    except Exception as e:
+        print(f"Error in combined analysis: {e}")
+
+
+class MultiTraderDialogue:
+    def __init__(self, trader1_settings: dict, trader2_settings: dict, max_messages: int = 6):
+        self.trader1_settings = trader1_settings
+        self.trader2_settings = trader2_settings
+        self.max_messages = max_messages
+        self.messages = []
+
+        # Initialize market data for both traders
+        self.trader1_data = obtain_dataset(
+            trader1_settings['asset'],
+            trader1_settings['interval'],
+            trader1_settings['numDays']
+        )
+        self.trader2_data = obtain_dataset(
+            trader2_settings['asset'],
+            trader2_settings['interval'],
+            trader2_settings['numDays']
+        )
+
+        # Generate charts for both traders
+        self.trader1_chart = generate_candlestick_chart(self.trader1_data)
+        self.trader2_chart = generate_candlestick_chart(self.trader2_data)
+
+        # Initialize enhanced news data for both assets (including economic events)
+        assets = list(set([trader1_settings['asset'], trader2_settings['asset']]))
+        self.news_data = fetch_news_data(assets, user_email=None)
+
+        # Initialize chart annotators
+        self.trader1_annotator = ChartAnnotator(self.trader1_data)
+        self.trader2_annotator = ChartAnnotator(self.trader2_data)
+
+        # Define trader personalities based on settings
+        self.trader_personalities = {
+            "Trader1": {
+                "style": trader1_settings.get('style', 'Conservative'),
+                "focus": trader1_settings.get('focus', 'long-term trends and fundamental analysis'),
+                "risk_tolerance": trader1_settings.get('risk_tolerance', 'low'),
+                "settings": trader1_settings,
+                "data": self.trader1_data,
+                "chart": self.trader1_chart
+            },
+            "Trader2": {
+                "style": trader2_settings.get('style', 'Aggressive'),
+                "focus": trader2_settings.get('focus', 'short-term momentum and technical patterns'),
+                "risk_tolerance": trader2_settings.get('risk_tolerance', 'high'),
+                "settings": trader2_settings,
+                "data": self.trader2_data,
+                "chart": self.trader2_chart
+            }
+        }
+
+    def _create_discussion_prompt(self, trader_id: str, previous_message: Optional[TraderMessage] = None) -> str:
+        personality = self.trader_personalities[trader_id]
+        settings = personality['settings']
+        data = personality['data']
+
+        # Get economic events for this trader's asset
+        economic_events_for_asset = ""
+        for event_data in self.news_data.get('economic_events', []):
+            if event_data['asset'] == settings['asset']:
+                economic_events_for_asset = event_data['economic_events']
+                break
+
+        base_prompt = f"""
+        As a {personality['style']} trader with {personality['risk_tolerance']} risk tolerance,
+        analyzing {settings['asset']} on the {settings['interval']} timeframe 
+        with a {settings['numDays']}-day lookback period, focusing on {personality['focus']},
+        and considering both technical analysis and fundamental economic events,
+        """
+
+        if previous_message:
+            base_prompt += f"""
+            analyze this chart and respond to the following analysis from another trader:
+
+            Previous Analysis: {previous_message.content}
+
+            Consider:
+            1. What points do you agree with and why?
+            2. What factors might need additional consideration?
+            3. How does your timeframe and trading style inform your perspective?
+            4. Are there any differences in market behavior between your timeframe and the other trader's timeframe?
+            5. How does your risk tolerance affect your view of the suggested trades?
+            6. How do the recent economic events support or contradict the previous analysis?
+            7. Are there any upcoming economic releases that could impact the trade setup?
+
+            ECONOMIC EVENTS CONTEXT:
+            {economic_events_for_asset}
+
+            Aim to find common ground while highlighting important considerations from your perspective.
+            Pay special attention to how economic fundamentals align with or contradict technical patterns.
+            """
+        else:
+            base_prompt += f"""
+            provide your initial analysis of this chart, incorporating both technical and fundamental analysis.
+
+            ECONOMIC EVENTS CONTEXT:
+            {economic_events_for_asset}
+
+            Consider how recent economic events might have influenced the current price action and 
+            what they suggest for future price movements.
+            """
+
+        # Add market context
+        current_close = data['Close'].iloc[-1].item()
+        current_open = data['Open'].iloc[-1].item()
+        price_change = current_close - current_open
+        price_change_pct = (price_change / current_open) * 100
+
+        market_context = f"""
+        Current market context for {settings['asset']} ({settings['interval']} timeframe):
+        - Price change: {price_change_pct:.2f}%
+        - Current price: {current_close:.4f}
+        """
+
+        return base_prompt + "\n" + market_context
+
+    def _create_consensus_prompt(self) -> str:
+        previous_analyses = "\n".join([
+            f"{msg.trader_id} ({self.trader_personalities[msg.trader_id]['settings']['interval']} timeframe, {self.trader_personalities[msg.trader_id]['style']} style): {msg.content}"
+            for msg in self.messages if msg.trader_id in ['Trader1', 'Trader2']
+        ])
+
+        # Combine all economic events data
+        all_economic_events = ""
+        for event_data in self.news_data.get('economic_events', []):
+            all_economic_events += f"\n{event_data['asset']}:\n{event_data['economic_events']}\n"
+
+        return f"""
+        Review the following discussion about market analysis from different timeframes and trading styles:
+
+        {previous_analyses}
+
+        COMBINED ECONOMIC EVENTS DATA:
+        {all_economic_events}
+
+        As a group of traders analyzing multiple timeframes and incorporating fundamental analysis, 
+        we need to reach a final consensus that considers both technical and fundamental factors.
+
+        Please provide specific levels in your analysis:
+        1. Key support and resistance levels from both timeframes
+        2. Suggested entry price considering both analyses and economic events
+        3. Stop-loss level that respects both timeframes and fundamental risks
+        4. Target price based on both technical and fundamental perspectives
+        5. Overall trend direction (uptrend/downtrend) on each timeframe
+        6. Economic event risks and opportunities
+
+        Also include:
+        1. Points of agreement between different timeframe analyses
+        2. How different risk tolerances and trading styles are balanced
+        3. How technical analysis aligns with or contradicts fundamental economic data
+        4. Final recommendation that considers both timeframes and economic events
+        5. Risk management suggestions that account for both technical and fundamental risks
+        6. Timing considerations based on upcoming economic releases
+
+        Format your response as JSON with 'analysis' and 'recommendation' keys.
+        Include numerical price levels in your analysis for chart annotation.
+        Give special weight to high-impact economic events (🔴) in your analysis.
+        """
+
+    def _generate_response(self, trader_id: str, previous_message: Optional[TraderMessage] = None,
+                         message_type: str = "discussion") -> str:
+        if message_type == "consensus":
+            prompt = self._create_consensus_prompt()
+            chart_path = self.trader1_chart
+        else:
+            prompt = self._create_discussion_prompt(trader_id, previous_message)
+            chart_path = self.trader_personalities[trader_id]['chart']
+
+        modified_news = self.news_data.copy()
+        modified_news['discussion_prompt'] = prompt
+
+        return analyse_image_from_file(chart_path, modified_news)
+
+    def conduct_dialogue(self) -> Tuple[List[TraderMessage], str]:
+        # First message from Trader1
+        initial_message = TraderMessage(
+            trader_id="Trader1",
+            content=self._generate_response("Trader1"),
+            message_type="discussion"
+        )
+        self.messages.append(initial_message)
+
+        # Continue discussion
+        current_msg_count = 1
+        discussion_messages = self.max_messages - 1
+
+        while current_msg_count < discussion_messages:
+            current_trader = "Trader2" if current_msg_count % 2 == 1 else "Trader1"
+            previous_message = self.messages[-1]
+
+            response = TraderMessage(
+                trader_id=current_trader,
+                content=self._generate_response(current_trader, previous_message),
+                message_type="discussion",
+                responding_to=previous_message.trader_id
+            )
+            self.messages.append(response)
+            current_msg_count += 1
+
+        # Final consensus
+        consensus = TraderMessage(
+            trader_id="Consensus",
+            content=self._generate_response(
+                trader_id="Consensus",
+                message_type="consensus"
+            ),
+            message_type="consensus"
+        )
+        self.messages.append(consensus)
+
+        # Create annotated chart based on consensus
+        annotated_chart_path = self.trader1_annotator.draw_annotated_chart(
+            consensus.content,
+            save_path=f"annotated_multi_timeframe_chart.png"
+        )
+
+        return self.messages, annotated_chart_path
+
+
+@csrf_exempt
+def get_trader_analysis(request):
+    """Enhanced trader analysis endpoint with economic events integration."""
+    try:
+        if request.method == 'POST':
+            data = json.loads(request.body)
+            traders_settings = data.get('traders', {})
+            
+            # Validate trader settings
+            if 'trader1' not in traders_settings or 'trader2' not in traders_settings:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Settings for both traders are required.',
+                    'type': 'ValidationError'
+                }, status=400)
+            
+            # Initialize multi-trader dialogue with enhanced economic events
+            dialogue = MultiTraderDialogue(
+                trader1_settings=traders_settings['trader1'],
+                trader2_settings=traders_settings['trader2']
+            )
+            
+            # Run the dialogue
+            conversation, chart_path = dialogue.conduct_dialogue()
+            
+            # Convert the conversation to a serializable format
+            conversation_data = []
+            for msg in conversation:
+                if isinstance(msg.content, str):
+                    content = msg.content.replace('```json\n', '').replace('\n```', '')
+                    try:
+                        parsed_content = json.loads(content)
+                        if 'analysis' in parsed_content:
+                            if isinstance(parsed_content['analysis'], str):
+                                parsed_content['analysis'] = parsed_content['analysis'][:2000]  # Increased limit for economic analysis
+                            else:
+                                parsed_content['analysis'] = str(parsed_content['analysis'])[:2000]
+                        content = parsed_content
+                    except json.JSONDecodeError:
+                        content = content[:2000]  # Increased limit for economic analysis
+                else:
+                    content = msg.content
+
+                conversation_data.append({
+                    'trader_id': msg.trader_id,
+                    'content': content,
+                    'message_type': msg.message_type,
+                    'responding_to': msg.responding_to,
+                    'settings': {
+                        'asset': dialogue.trader_personalities[msg.trader_id]['settings']['asset'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'interval': dialogue.trader_personalities[msg.trader_id]['settings']['interval'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'numDays': dialogue.trader_personalities[msg.trader_id]['settings']['numDays'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'style': dialogue.trader_personalities[msg.trader_id]['style'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'focus': dialogue.trader_personalities[msg.trader_id]['focus'] if msg.trader_id in dialogue.trader_personalities else None,
+                        'risk_tolerance': dialogue.trader_personalities[msg.trader_id]['risk_tolerance'] if msg.trader_id in dialogue.trader_personalities else None,
+                    } if msg.trader_id != 'Consensus' else None
+                })
+
+            # Process the chart image
+            image = Image.open(chart_path)
+            if image.mode == 'RGBA':
+                image = image.convert('RGB')
+            
+            max_size = (800, 800)
+            image.thumbnail(max_size)
+            
+            compressed_image_io = io.BytesIO()
+            image.save(compressed_image_io, format='JPEG', quality=50)
+            compressed_image_io.seek(0)
+            
+            encoded_image = base64.b64encode(compressed_image_io.read()).decode('utf-8')
+            
+            if os.path.exists(chart_path):
+                os.remove(chart_path)
+            
+            response_data = {
+                'status': 'success',
+                'conversation': conversation_data,
+                'chart_image': encoded_image,
+                'analysis_summary': {
+                    'trader1': traders_settings['trader1'],
+                    'trader2': traders_settings['trader2']
+                },
+                'economic_events_included': True,  # Flag to indicate economic events are included
+                'currencies_analyzed': []  # Will be populated with currency pairs
+            }
+            
+            # Add information about which currencies were analyzed
+            for asset in [traders_settings['trader1']['asset'], traders_settings['trader2']['asset']]:
+                base_curr, quote_curr = extract_currencies_from_pair(asset)
+                response_data['currencies_analyzed'].append({
+                    'pair': asset,
+                    'base_currency': base_curr,
+                    'quote_currency': quote_curr
+                })
+            
+            return JsonResponse(response_data)
+        else:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Invalid request method.',
+                'type': 'InvalidRequestMethod'
+            }, status=400)
+            
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e),
+            'type': type(e).__name__
+        }, status=500)
+
+
+# Additional utility function to help with currency mapping updates
+def update_currency_mapping():
+    """Utility function to add more currency pairs to the mapping if needed."""
+    additional_pairs = {
+        'GBPNZD': ('GBP', 'NZD'),
+        'AUDNZD': ('AUD', 'NZD'),
+        'EURCZK': ('EUR', 'CZK'),
+        'USDPLN': ('USD', 'PLN'),
+        'USDHUF': ('USD', 'HUF'),
+        'USDTRY': ('USD', 'TRY'),
+        'USDZAR': ('USD', 'ZAR'),
+        'USDMXN': ('USD', 'MXN'),
+        'USDSEK': ('USD', 'SEK'),
+        'USDNOK': ('USD', 'NOK'),
+        'USDDKK': ('USD', 'DKK')
+    }
+    
+    return additional_pairs
+
+def bullish_market_sentiment(asset):
+    
+    news_data = fetch_news_data([asset], None)
+    prompt = f'''
+    Please give me the sentiment reading for this news data in one word.
+
+    Either Bullish, Bearish or Neutral
+
+    {news_data}
+
+    '''
+    sentiment = chat_gpt(prompt)
+    if sentiment.lower() == 'bullish':
+        return True
+    else:
+        return False
+
+
+def bearish_market_sentiment(asset):
+
+    news_data = fetch_news_data([asset], None)
+    prompt = f'''
+    Please give me the sentiment reading for this news data in one word.
+
+    Either Bullish, Bearish or Neutral
+
+    {news_data}
+
+    '''
+    sentiment = chat_gpt(prompt)
+    if sentiment.lower() == 'bearish':
+        return True
+    else:
+        return False
+
+
+@csrf_exempt
+def save_backtest_model_data(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            backtest = BacktestModels.objects.create(
+                chosen_dataset=data.get('chosen_dataset'),
+                generated_code=data.get('generated_code'),
+                model_backtested=data.get('model_backtested', False),
+                dataset_start=data.get('dataset_start'),
+                dataset_end=data.get('dataset_end'),
+                initial_capital=data.get('initial_capital')
+            )
+            return JsonResponse({'message': 'Backtest data saved successfully!', 'id': backtest.id}, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+
+@csrf_exempt
+def generate_idea(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            # Create a new idea
+            idea = IdeaModel.objects.create(
+                idea_category=data.get('idea_category'),
+                idea_text=data.get('idea_text'),
+                idea_tracker=data.get('idea_tracker', 'Pending')
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Idea created successfully',
+                'idea': {
+                    'id': idea.id,
+                    'idea_category': idea.idea_category,
+                    'idea_text': idea.idea_text,
+                    'idea_tracker': idea.idea_tracker,
+                    'created_at': idea.created_at.isoformat()
+                }
+            })
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': str(e)
+            }, status=400)
+    
+    return JsonResponse({
+        'success': False,
+        'message': 'Invalid request method'
+    }, status=405)
+
+
+@csrf_exempt
+def fetch_ideas(request):
+    if request.method == 'GET':
+        try:
+            # Get all ideas, ordered by creation date (newest first)
+            ideas = IdeaModel.objects.all().order_by('-created_at')
+            
+            # Serialize the ideas
+            ideas_list = [{
+                'id': idea.id,
+                'idea_category': idea.idea_category,
+                'idea_text': idea.idea_text,
+                'idea_tracker': idea.idea_tracker,
+                'created_at': idea.created_at.isoformat()
+            } for idea in ideas]
+            
+            return JsonResponse(ideas_list, safe=False)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'message': 'Invalid request method'
+    }, status=405)
+
+
+@csrf_exempt
+def delete_idea(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            idea_id = data.get('idea_id')
+            
+            # Find and delete the idea
+            idea = IdeaModel.objects.get(id=idea_id)
+            idea.delete()
+            
+            return JsonResponse({'status': 'success', 'message': 'Idea deleted successfully'})
+        except IdeaModel.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Idea not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    
+    return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def update_idea_tracker(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            idea_id = data.get('idea_id')
+            new_tracker = data.get('idea_tracker')
+            
+            # Find and update the idea
+            idea = IdeaModel.objects.get(id=idea_id)
+            idea.idea_tracker = new_tracker
+            idea.save()
+            
+            return JsonResponse({'status': 'success', 'message': 'Idea tracker updated successfully'})
+        except IdeaModel.DoesNotExist:
+            return JsonResponse({'status': 'error', 'message': 'Idea not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    
+    return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def update_idea(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            idea_id = data.get('idea_id')
+            
+            # Find the idea by ID
+            idea = IdeaModel.objects.get(id=idea_id)
+            
+            # Update the idea fields
+            idea.idea_category = data.get('idea_category', idea.idea_category)
+            idea.idea_text = data.get('idea_text', idea.idea_text)
+            idea.idea_tracker = data.get('idea_tracker', idea.idea_tracker)
+            
+            # Save the updated idea
+            idea.save()
+            
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'Idea updated successfully',
+                'idea': {
+                    'id': idea.id,
+                    'idea_category': idea.idea_category,
+                    'idea_text': idea.idea_text,
+                    'idea_tracker': idea.idea_tracker,
+                    'created_at': idea.created_at.isoformat()
+                }
+            })
+        except IdeaModel.DoesNotExist:
+            return JsonResponse({
+                'status': 'error', 
+                'message': 'Idea not found'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error', 
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({
+        'status': 'error', 
+        'message': 'Method not allowed'
+    }, status=405)
+
+
+@csrf_exempt
+def get_ai_account_summary(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            account_name = data.get('account_name')
+            metrics = data.get('metrics', {})
+            trades = data.get('trades', [])
+            
+            # Create a prompt for the AI with professional guidance
+            prompt = f"""
+            Prepare a comprehensive trading performance analysis for account '{account_name}' with the following requirements:
+            - Maintain a professional and analytical tone
+            - Use clear, concise language
+            - Provide objective insights and data-driven recommendations
+            
+            Performance Metrics Overview:
+            - Win Rate: {metrics.get('winRate', 0)}%
+            - Average Win: ${metrics.get('averageWin', 0)}
+            - Average Loss: ${metrics.get('averageLoss', 0)}
+            - Profit Factor: {metrics.get('profitFactor', 0)}
+            - Number of Wins: {metrics.get('numberOfWins', 0)}
+            - Number of Losses: {metrics.get('numberOfLosses', 0)}
+
+            Trading Data: \n\n{trades}\n\n
+            
+            Analysis Guidelines:
+            1. Deliver a precise performance assessment
+            2. Identify key performance trends and patterns
+            3. Develop specific, actionable improvement strategies
+            4. Maintain a concise format (under 250 words)
+            5. Use professional terminology
+            6. Highlight both strengths and areas for potential improvement
+            7. AVOID USING ASTERISKS, HASHTAGS, OR MARKDOWN FORMATTING
+
+            
+            Presentation Instructions:
+            - AVOID USING ASTERISKS, HASHTAGS, OR MARKDOWN FORMATTING
+            - Use subtle emojis sparingly for visual emphasis 📊
+            - Ensure a structured, professional presentation
+
+            AVOID USING ASTERISKS, HASHTAGS, OR MARKDOWN FORMATTING
+
+            """
+            
+            # Get AI summary
+            summary = chat_gpt(prompt)
+            
+            return JsonResponse({'summary': summary})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Invalid request method'}, status=400)
+
+
+@csrf_exempt
+def save_quiz(request):
+    if request.method == 'POST':
+        try:
+            # Parse the incoming JSON data
+            data = json.loads(request.body)
+            
+            # Extract quiz details
+            quiz_name = data.get('quiz_name', 'Unnamed Quiz')
+            total_questions = data.get('total_questions', 0)
+            correct_answers = data.get('correct_answers', 0)
+            questions = data.get('questions', [])
+
+            # Create SavedQuiz instance
+            saved_quiz = SavedQuiz.objects.create(
+                quiz_name=quiz_name,
+                total_questions=total_questions,
+                correct_answers=correct_answers
+            )
+
+            # Create SavedQuizQuestion instances
+            for question_data in questions:
+                SavedQuizQuestion.objects.create(
+                    saved_quiz=saved_quiz,
+                    question=question_data.get('question', ''),
+                    selected_answer=question_data.get('selectedAnswer', ''),
+                    correct_answer=question_data.get('correctAnswer', ''),
+                    is_correct=question_data.get('isCorrect', False)
+                )
+
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'Quiz saved successfully',
+                'saved_quiz_id': saved_quiz.id
+            }, status=201)
+
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'status': 'error', 
+                'message': 'Invalid JSON data'
+            }, status=400)
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error', 
+                'message': str(e)
+            }, status=400)
+    
+    return JsonResponse({
+        'status': 'error', 
+        'message': 'Invalid request method'
+    }, status=405)
+
+
+@csrf_exempt
+def fetch_saved_quizzes(request):
+    if request.method != 'GET':
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Only GET method is allowed'
+        }, status=405)  # Method Not Allowed status code
+
+    try:
+        # Fetch all saved quizzes, ordered by most recent first
+        saved_quizzes = SavedQuiz.objects.order_by('-created_at')
+        
+        # Prepare the response data
+        quizzes_data = []
+        for quiz in saved_quizzes:
+            # Get associated questions for each quiz
+            questions = quiz.questions.all()
+            
+            quiz_details = {
+                'id': quiz.id,
+                'quiz_name': quiz.quiz_name,
+                'total_questions': quiz.total_questions,
+                'correct_answers': quiz.correct_answers,
+                'created_at': quiz.created_at.isoformat(),
+                'questions': [
+                    {
+                        'question': q.question,
+                        'selected_answer': q.selected_answer,
+                        'correct_answer': q.correct_answer,
+                        'is_correct': q.is_correct
+                    } for q in questions
+                ]
+            }
+            quizzes_data.append(quiz_details)
+        
+        return JsonResponse({
+            'status': 'success',
+            'quizzes': quizzes_data
+        }, safe=True)
+    
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+def delete_quiz(request, quiz_id):
+    """
+    Delete a saved quiz by its ID
+    """
+    if request.method == 'DELETE':
+        try:
+            # Get the quiz or return 404 if not found
+            quiz = get_object_or_404(SavedQuiz, id=quiz_id)
+            
+            # Delete the quiz (this will also delete related questions due to CASCADE)
+            quiz.delete()
+            
+            return JsonResponse({
+                'status': 'success', 
+                'message': 'Quiz deleted successfully'
+            }, status=200)
+        
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error', 
+                'message': str(e)
+            }, status=500)
+    
+    return JsonResponse({
+        'status': 'error', 
+        'message': 'Invalid request method'
+    }, status=405)
+
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+@csrf_exempt
+def delete_music(request):
+    MusicModel.objects.all().delete()
+    return JsonResponse({'message': 'Songs Deleted!'})
+
+
+@csrf_exempt
+def save_music(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST method is allowed'}, status=405)
+    
+    try:
+        name = request.POST.get('name')
+        file = request.FILES.get('file')
+        
+        if not name or not file:
+            return JsonResponse({'error': 'Name and file are required'}, status=400)
+        
+        # Read the file content
+        file_data = file.read()
+        file_name = file.name
+        content_type = file.content_type or 'audio/mpeg'
+        
+        # Check if a song with this name already exists
+        existing_song = MusicModel.objects.filter(name=name).first()
+        if existing_song:
+            # If it exists, update the record
+            existing_song.file_data = file_data
+            existing_song.file_name = file_name
+            existing_song.content_type = content_type
+            existing_song.save()
+            return JsonResponse({'success': True, 'message': f'Updated song: {name}'})
+        
+        # Create new song record
+        music = MusicModel(
+            name=name, 
+            file_data=file_data,
+            file_name=file_name,
+            content_type=content_type
+        )
+        music.save()
+        
+        return JsonResponse({'success': True, 'message': f'Saved song: {name}'})
+    
+    except Exception as e:
+        logger.error(f"Error saving music: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+from django.urls import reverse
+
+
+@csrf_exempt
+def fetch_music(request):
+    try:
+        songs = MusicModel.objects.all()
+        songs_data = []
+        
+        for song in songs:
+            # Generate a URL to stream this song
+            stream_url = request.build_absolute_uri(
+                reverse('stream_music', args=[song.id])
+            )
+            
+            songs_data.append({
+                'id': song.id,
+                'name': song.name,
+                'file': stream_url,
+                'file_name': song.file_name,
+                'updated_at': song.updated_at.isoformat()
+            })
+        
+        return JsonResponse({'songs': songs_data}, safe=False)
+    except Exception as e:
+        logger.error(f"Error fetching music: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def stream_music(request, song_id):
+    try:
+        song = get_object_or_404(MusicModel, id=song_id)
+        
+        # Create a response with the binary data
+        response = HttpResponse(song.file_data, content_type=song.content_type)
+        response['Content-Disposition'] = f'inline; filename="{song.file_name}"'
+        
+        return response
+    except Exception as e:
+        logger.error(f"Error streaming music: {str(e)}")
+        return HttpResponse(status=500)        
+
+
+@csrf_exempt
+def fetch_asset_update(request):
+    """Fetch current data for all tracked assets"""
+    try:
+        assets = AssetsTracker.objects.all()
+        asset_data = []
+
+        for asset_obj in assets:
+            asset = asset_obj.asset
+            
+            try:
+                # Use your existing obtain_dataset function - more reliable
+                data = obtain_dataset(asset, "1d", 5)  # Get daily data for the last 5 days
+                
+                if not data.empty and len(data) >= 2:
+                    # Get the most recent price
+                    current_price = float(data['Close'].iloc[-1])
+                    
+                    # Get the previous candle's close for comparison
+                    previous_price = float(data['Close'].iloc[-2])
+                    
+                    # Calculate the percentage change
+                    percent_change = round(((current_price - previous_price) / previous_price) * 100, 2)
+
+                    # Format the timestamp in a readable format
+                    last_updated = data.index[-1].strftime("%Y-%m-%d %H:%M")
+
+                    asset_data.append({
+                        'id': asset_obj.id,
+                        'asset': asset,
+                        'current_price': round(current_price, 4),
+                        'percent_change': percent_change,
+                        'last_updated': last_updated
+                    })
+                else:
+                    # Handle case where we don't have enough data
+                    asset_data.append({
+                        'id': asset_obj.id,
+                        'asset': asset,
+                        'current_price': 0,
+                        'percent_change': 0,
+                        'error': "Insufficient data"
+                    })
+            except Exception as e:
+                print(f"Error getting data for {asset}: {str(e)}")
+                # Include the asset in the response anyway with default values
+                asset_data.append({
+                    'id': asset_obj.id,
+                    'asset': asset,
+                    'current_price': 0,
+                    'percent_change': 0,
+                    'error': str(e)
+                })
+
+        return JsonResponse(asset_data, safe=False)
+    except Exception as e:
+        print(f"Error in fetch_asset_update: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_tracked_assets(request):
+    """Get all tracked assets"""
+    try:
+        assets = AssetsTracker.objects.all()
+        asset_data = []
+        
+        for asset_obj in assets:
+            asset = asset_obj.asset
+            
+            try:
+                # Use obtain_dataset function with daily interval to get day-over-day changes
+                data = obtain_dataset(asset, "1d", 5)  # Get daily data for the last 5 days
+                
+                if not data.empty and len(data) >= 2:
+                    # Get the most recent price
+                    current_price = float(data['Close'].iloc[-1])
+                    
+                    # Get yesterday's close for day-over-day comparison
+                    yesterday_close = float(data['Close'].iloc[-2])
+                    
+                    # Calculate the percentage change
+                    percent_change = round(((current_price - yesterday_close) / yesterday_close) * 100, 2)
+                    
+                    asset_data.append({
+                        'id': asset_obj.id,
+                        'asset': asset,
+                        'current_price': round(current_price, 4),
+                        'percent_change': percent_change,
+                        'last_updated': data.index[-1].strftime("%Y-%m-%d")
+                    })
+                else:
+                    # Handle case where we don't have enough data
+                    asset_data.append({
+                        'id': asset_obj.id,
+                        'asset': asset,
+                        'current_price': 0,
+                        'percent_change': 0,
+                        'error': "Insufficient data"
+                    })
+            except Exception as e:
+                print(f"Error getting data for {asset}: {str(e)}")
+                # Include the asset in the response anyway with default values
+                asset_data.append({
+                    'id': asset_obj.id,
+                    'asset': asset,
+                    'current_price': 0,
+                    'percent_change': 0,
+                    'error': str(e)
+                })
+        
+        return JsonResponse(asset_data, safe=False)
+    except Exception as e:
+        print(f"Error in get_tracked_assets: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+        
+        
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_tracked_asset(request):
+    """Add a new asset to track"""
+    
+    data = json.loads(request.body)
+    asset = data.get('asset')
+        
+    if not asset:
+        return JsonResponse({'error': 'Asset is required'}, status=400)
+        
+    # Check if asset already exists
+    if AssetsTracker.objects.filter(asset=asset).exists():
+        return JsonResponse({'error': 'Asset already tracked'}, status=400)
+        
+    # Create new asset tracker
+    asset_tracker = AssetsTracker.objects.create(asset=asset)
+        
+    return JsonResponse({
+        'id': asset_tracker.id,
+        'asset': asset_tracker.asset
+    })
+    # except Exception as e:
+    #     return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def remove_tracked_asset(request):
+    """Remove a tracked asset"""
+    
+    data = json.loads(request.body)
+    asset_id = data.get('id')
+        
+    if not asset_id:
+        return JsonResponse({'error': 'Asset ID is required'}, status=400)
+        
+    # Delete the asset tracker
+    AssetsTracker.objects.filter(id=asset_id).delete()
+        
+    return JsonResponse({'success': True})
+    # except Exception as e:
+    #     return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_trade_ideas(request):
+    trade_ideas = TradeIdea.objects.all().order_by('-date_created')
+    data = list(trade_ideas.values())
+    return JsonResponse({'trade_ideas': data})
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_trade_idea(request):
+    try:
+        data = json.loads(request.body)
+        trade_idea = TradeIdea.objects.create(
+            heading=data.get('heading'),
+            asset=data.get('asset'),
+            trade_idea=data.get('trade_idea'),
+            trade_status=data.get('trade_status', 'pending'),
+            target_price=data.get('target_price'),
+            stop_loss=data.get('stop_loss'),
+            entry_price=data.get('entry_price'),
+            outcome=data.get('outcome', 'pending')  # Added outcome field
+        )
+        return JsonResponse({
+            'success': True,
+            'trade_idea_id': trade_idea.id
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def update_trade_idea(request, id):
+    try:
+        data = json.loads(request.body)
+        trade_idea = TradeIdea.objects.get(id=id)
+        
+        # Update fields if they exist in request
+        if 'heading' in data:
+            trade_idea.heading = data['heading']
+        if 'asset' in data:
+            trade_idea.asset = data['asset']
+        if 'trade_idea' in data:
+            trade_idea.trade_idea = data['trade_idea']
+        if 'trade_status' in data:
+            trade_idea.trade_status = data['trade_status']
+        if 'target_price' in data:
+            trade_idea.target_price = data['target_price']
+        if 'stop_loss' in data:
+            trade_idea.stop_loss = data['stop_loss']
+        if 'entry_price' in data:
+            trade_idea.entry_price = data['entry_price']
+        if 'outcome' in data:  # Added outcome field handling
+            trade_idea.outcome = data['outcome']
+            
+        trade_idea.save()
+        
+        return JsonResponse({
+            'success': True,
+            'trade_idea_id': trade_idea.id
+        })
+    except TradeIdea.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Trade idea not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def delete_trade_idea(request, id):
+    try:
+        trade_idea = TradeIdea.objects.get(id=id)
+        trade_idea.delete()
+        return JsonResponse({
+            'success': True
+        })
+    except TradeIdea.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Trade idea not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+
+from django.conf import settings
+from datetime import datetime, date
+from decimal import Decimal
+import base64
+from django.core.files.base import ContentFile
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_prop_firms(request):
+    firms = PropFirm.objects.all()
+    data = []
+    
+    for firm in firms:
+        firm_data = {
+            'id': firm.id,
+            'name': firm.name,
+            'website': firm.website,
+            'description': firm.description
+        }
+        try:
+
+            if firm.logo:
+                # Read the file content directly from the model
+                image_file = firm.logo
+                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                image_type = firm.logo.name.split('.')[-1].lower()
+                firm_data['logo'] = f"data:image/{image_type};base64,{encoded_string}"
+            else:
+                firm_data['logo'] = None
+        except Exception as e:
+            print(f'Error occured in get_prop_firms function: {e}')
+            firm_data['logo'] = None
+
+
+            
+        data.append(firm_data)
+    
+    return JsonResponse({'firms': data})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_prop_firm(request):
+    try:
+        # Check if the request has files
+        if request.FILES and 'logo' in request.FILES:
+            # Handle form data with file upload
+            name = request.POST.get('name')
+            website = request.POST.get('website')
+            description = request.POST.get('description')
+            
+            # Create prop firm
+            firm = PropFirm.objects.create(
+                name=name,
+                website=website,
+                description=description
+            )
+            
+            # Handle logo upload
+            firm.logo = request.FILES['logo']
+            firm.save()
+        else:
+            # Handle JSON data without file upload
+            data = json.loads(request.body)
+            name = data.get('name')
+            website = data.get('website')
+            description = data.get('description')
+            
+            # Create prop firm
+            firm = PropFirm.objects.create(
+                name=name,
+                website=website,
+                description=description
+            )
+        
+        return JsonResponse({
+            'success': True,
+            'firm': {
+                'id': firm.id,
+                'name': firm.name,
+                'logo': firm.logo.url if firm.logo else None,
+                'website': firm.website,
+                'description': firm.description
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_prop_accounts(request):
+    accounts = PropFirmAccount.objects.all()
+    data = []
+    
+    for account in accounts:
+        account_data = {
+            'id': account.id,
+            'prop_firm': {
+                'id': account.prop_firm.id,
+                'name': account.prop_firm.name,
+                'logo': account.prop_firm.logo.url if account.prop_firm.logo else None
+            },
+            'account_name': account.account_name,
+            'account_id': account.account_id,
+            'account_type': account.account_type,
+            'status': account.status,
+            'initial_balance': float(account.initial_balance),
+            'current_balance': float(account.current_balance),
+            'current_equity': float(account.current_equity),
+            'daily_loss_limit': float(account.daily_loss_limit) if account.daily_loss_limit else None,
+            'max_loss_limit': float(account.max_loss_limit) if account.max_loss_limit else None,
+            'profit_target': float(account.profit_target) if account.profit_target else None,
+            'start_date': account.start_date.isoformat(),
+            'end_date': account.end_date.isoformat() if account.end_date else None,
+            'days_remaining': account.days_remaining(),
+            'percentage_to_target': account.percentage_to_target(),
+        }
+        data.append(account_data)
+    
+    return JsonResponse({'accounts': data})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_prop_account(request):
+    try:
+        data = json.loads(request.body)
+        
+        prop_firm = PropFirm.objects.get(id=data.get('prop_firm_id'))
+        
+        account = PropFirmAccount.objects.create(
+            prop_firm=prop_firm,
+            account_name=data.get('account_name'),
+            account_id=data.get('account_id'),
+            account_type=data.get('account_type'),
+            status=data.get('status', 'IN_PROGRESS'),
+            initial_balance=Decimal(data.get('initial_balance')),
+            current_balance=Decimal(data.get('initial_balance')),  # Start with initial balance
+            current_equity=Decimal(data.get('initial_balance')),   # Start with initial balance
+            daily_loss_limit=Decimal(data.get('daily_loss_limit')) if data.get('daily_loss_limit') else None,
+            max_loss_limit=Decimal(data.get('max_loss_limit')) if data.get('max_loss_limit') else None,
+            profit_target=Decimal(data.get('profit_target')) if data.get('profit_target') else None,
+            start_date=datetime.strptime(data.get('start_date'), '%Y-%m-%d').date(),
+            end_date=datetime.strptime(data.get('end_date'), '%Y-%m-%d').date() if data.get('end_date') else None,
+        )
+        
+        # Update metrics
+        update_prop_metrics()
+        
+        return JsonResponse({
+            'success': True,
+            'account': {
+                'id': account.id,
+                'account_name': account.account_name
+            }
+        })
+    except PropFirm.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Prop firm not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def update_prop_account_balance(request, account_id):
+    try:
+        data = json.loads(request.body)
+        account = PropFirmAccount.objects.get(id=account_id)
+        
+        account.current_balance = Decimal(data.get('current_balance'))
+        account.current_equity = Decimal(data.get('current_equity'))
+        account.save()
+        
+        # Update metrics
+        update_prop_metrics()
+        
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_prop_trading_day(request, account_id):
+    try:
+        # Check if the request has form data or JSON
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            # Handle form data
+            account = PropFirmAccount.objects.get(id=account_id)
+            
+            # Create trading day
+            trading_day = TradingDay.objects.create(
+                account=account,
+                date=datetime.strptime(request.POST.get('date'), '%Y-%m-%d').date(),
+                starting_balance=Decimal(request.POST.get('starting_balance')),
+                ending_balance=Decimal(request.POST.get('ending_balance')),
+                pnl=Decimal(request.POST.get('pnl')),
+                session_time_minutes=int(request.POST.get('session_time_minutes', 0)),
+                notes=request.POST.get('notes')
+            )
+            
+            # Handle voice memo if included
+            if 'voice_memo' in request.FILES:
+                trading_day.voice_memo = request.FILES['voice_memo']
+                trading_day.save()
+        else:
+            # Handle JSON data
+            data = json.loads(request.body)
+            account = PropFirmAccount.objects.get(id=account_id)
+            
+            # Create trading day
+            trading_day = TradingDay.objects.create(
+                account=account,
+                date=datetime.strptime(data.get('date'), '%Y-%m-%d').date(),
+                starting_balance=Decimal(data.get('starting_balance')),
+                ending_balance=Decimal(data.get('ending_balance')),
+                pnl=Decimal(data.get('pnl')),
+                session_time_minutes=int(data.get('session_time_minutes', 0)),
+                notes=data.get('notes')
+            )
+        
+        # Update account balance if it's the most recent day
+        if trading_day.date == date.today():
+            account.current_balance = trading_day.ending_balance
+            account.current_equity = trading_day.ending_balance  # Simplified, in real app equity might differ
+            account.save()
+        
+        # Update metrics
+        update_prop_metrics()
+        
+        return JsonResponse({'success': True, 'trading_day_id': trading_day.id})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_prop_trade(request, account_id):
+    try:
+        data = json.loads(request.body)
+        account = PropFirmAccount.objects.get(id=account_id)
+        
+        # Get trading day if specified
+        trading_day = None
+        if data.get('trading_day_id'):
+            trading_day = TradingDay.objects.get(id=data.get('trading_day_id'), account=account)
+        
+        # Calculate PnL if exit price is provided
+        pnl = None
+        if data.get('exit_price'):
+            price_diff = Decimal(data.get('exit_price')) - Decimal(data.get('entry_price'))
+            if data.get('trade_type') == 'SELL':
+                price_diff = -price_diff
+            pnl = price_diff * Decimal(data.get('size'))
+        
+        # Create trade
+        trade = PropTrade.objects.create(
+            account=account,
+            trading_day=trading_day,
+            asset=data.get('asset'),
+            trade_type=data.get('trade_type'),
+            entry_price=Decimal(data.get('entry_price')),
+            exit_price=Decimal(data.get('exit_price')) if data.get('exit_price') else None,
+            size=Decimal(data.get('size')),
+            entry_time=datetime.strptime(data.get('entry_time'), '%Y-%m-%dT%H:%M:%S'),
+            exit_time=datetime.strptime(data.get('exit_time'), '%Y-%m-%dT%H:%M:%S') if data.get('exit_time') else None,
+            pnl=pnl,
+            strategy=data.get('strategy'),
+            notes=data.get('notes')
+        )
+        
+        # Update metrics
+        update_prop_metrics()
+        
+        return JsonResponse({'success': True, 'trade_id': trade.id})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_prop_account_analytics(request, account_id):
+    try:
+        account = PropFirmAccount.objects.get(id=account_id)
+        
+        # Get trading days
+        trading_days = TradingDay.objects.filter(account=account).order_by('date')
+        trading_days_data = [{
+            'date': day.date.isoformat(),
+            'pnl': float(day.pnl),
+            'balance': float(day.ending_balance)
+        } for day in trading_days]
+        
+        # Get trades
+        trades = PropTrade.objects.filter(account=account, exit_time__isnull=False)
+        
+        # Calculate analytics
+        total_trades = trades.count()
+        winning_trades = trades.filter(pnl__gt=0).count()
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        avg_win = trades.filter(pnl__gt=0).aggregate(avg=models.Avg('pnl'))['avg'] or 0
+        avg_loss = trades.filter(pnl__lt=0).aggregate(avg=models.Avg('pnl'))['avg'] or 0
+        risk_reward = abs(float(avg_win) / float(avg_loss)) if avg_loss != 0 else 0
+        
+        # Group trades by strategy
+        strategies = {}
+        for trade in trades:
+            strategy = trade.strategy or 'Uncategorized'
+            if strategy not in strategies:
+                strategies[strategy] = {'count': 0, 'pnl': 0}
+            strategies[strategy]['count'] += 1
+            strategies[strategy]['pnl'] += float(trade.pnl or 0)
+        
+        # Group trades by asset
+        assets = {}
+        for trade in trades:
+            asset = trade.asset
+            if asset not in assets:
+                assets[asset] = {'count': 0, 'pnl': 0}
+            assets[asset]['count'] += 1
+            assets[asset]['pnl'] += float(trade.pnl or 0)
+        
+        return JsonResponse({
+            'success': True,
+            'trading_days': trading_days_data,
+            'analytics': {
+                'total_trades': total_trades,
+                'winning_trades': winning_trades,
+                'win_rate': win_rate,
+                'risk_reward_ratio': risk_reward,
+                'percentage_to_target': account.percentage_to_target(),
+                'days_remaining': account.days_remaining(),
+            },
+            'strategies': strategies,
+            'assets': assets
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_prop_metrics(request):
+    try:
+        metrics, created = ManagementMetrics.objects.get_or_create(id=1)
+        
+        return JsonResponse({
+            'success': True,
+            'metrics': {
+                'total_accounts': metrics.total_accounts,
+                'total_capital_managed': float(metrics.total_capital_managed),
+                'total_profit': float(metrics.total_profit),
+                'win_rate': float(metrics.win_rate),
+                'avg_risk_reward': float(metrics.avg_risk_reward),
+                'avg_session_time': metrics.avg_session_time,
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+def update_prop_metrics():
+    """Helper function to update aggregate metrics"""
+    from django.db import models
+    
+    accounts = PropFirmAccount.objects.all()
+    
+    # Calculate metrics
+    total_accounts = accounts.count()
+    total_capital = accounts.aggregate(sum=models.Sum('current_balance'))['sum'] or 0
+    
+    # Calculate profit
+    total_profit = 0
+    for account in accounts:
+        profit = account.current_balance - account.initial_balance
+        total_profit += profit
+    
+    # Calculate win rate and risk/reward
+    all_trades = PropTrade.objects.filter(exit_time__isnull=False)
+    total_trades = all_trades.count()
+    winning_trades = all_trades.filter(pnl__gt=0).count()
+    win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+    
+    avg_win = all_trades.filter(pnl__gt=0).aggregate(avg=models.Avg('pnl'))['avg'] or 0
+    avg_loss = all_trades.filter(pnl__lt=0).aggregate(avg=models.Avg('pnl'))['avg'] or 0
+    risk_reward = abs(float(avg_win) / float(avg_loss)) if avg_loss and avg_loss != 0 else 0
+    
+    # Calculate average session time
+    avg_session_time = TradingDay.objects.all().aggregate(avg=models.Avg('session_time_minutes'))['avg'] or 0
+    
+    # Update or create metrics object
+    metrics, created = ManagementMetrics.objects.get_or_create(id=1)
+    metrics.total_accounts = total_accounts
+    metrics.total_capital_managed = total_capital
+    metrics.total_profit = total_profit
+    metrics.win_rate = win_rate
+    metrics.avg_risk_reward = risk_reward
+    metrics.avg_session_time = avg_session_time
+    metrics.save()
+
+
+# Add this function to serve media files in development
+def serve_prop_firm_logo(request, path):
+    from django.http import FileResponse
+    from django.conf import settings
+    import os
+    
+    file_path = os.path.join(settings.MEDIA_ROOT, 'prop_firm_logos', path)
+    if os.path.exists(file_path):
+        return FileResponse(open(file_path, 'rb'))
+    else:
+        return JsonResponse({'error': 'File not found'}, status=404)
+
+
+# views.py
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+from .models import PropFirm, PropFirmManagementMetrics
+from django.core.exceptions import ObjectDoesNotExist
+
+@csrf_exempt
+def prop_firm_list(request):
+    if request.method == 'GET':
+        firms = PropFirm.objects.all()
+        return JsonResponse([{
+            'id': firm.id,
+            'name': firm.name,
+            'logo': firm.logo,
+            'website': firm.website
+        } for firm in firms], safe=False)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            new_firm = PropFirm.objects.create(
+                name=data.get('name'),
+                logo=data.get('logo', ''),
+                website=data.get('website', '')
+            )
+            return JsonResponse({
+                'id': new_firm.id,
+                'name': new_firm.name,
+                'logo': new_firm.logo,
+                'website': new_firm.website
+            }, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+@csrf_exempt
+def prop_firm_detail(request, firm_id):
+    try:
+        firm = PropFirm.objects.get(id=firm_id)
+    except ObjectDoesNotExist:
+        return JsonResponse({'error': 'Prop firm not found'}, status=404)
+    
+    if request.method == 'GET':
+        return JsonResponse({
+            'id': firm.id,
+            'name': firm.name,
+            'logo': firm.logo,
+            'website': firm.website
+        })
+    
+    elif request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            firm.name = data.get('name', firm.name)
+            firm.logo = data.get('logo', firm.logo)
+            firm.website = data.get('website', firm.website)
+            firm.save()
+            return JsonResponse({
+                'id': firm.id,
+                'name': firm.name,
+                'logo': firm.logo,
+                'website': firm.website
+            })
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    
+    elif request.method == 'DELETE':
+        firm.delete()
+        return JsonResponse({'message': 'Prop firm deleted successfully'})
+
+@csrf_exempt
+def metrics_list(request):
+    if request.method == 'GET':
+        metrics = PropFirmManagementMetrics.objects.all()
+        return JsonResponse([{
+            'id': metric.id,
+            'prop_firm': {
+                'id': metric.prop_firm.id,
+                'name': metric.prop_firm.name,
+                'logo': metric.prop_firm.logo
+            },
+            'account_type': metric.account_type,
+            'status': metric.status,
+            'account_id': metric.account_id,
+            'starting_balance': float(metric.starting_balance),
+            'current_balance': float(metric.current_balance),
+            'current_equity': float(metric.current_equity),
+            'profit_target': float(metric.profit_target) if metric.profit_target else None,
+            'max_drawdown': float(metric.max_drawdown) if metric.max_drawdown else None,
+            'start_date': metric.start_date.isoformat(),
+            'notes': metric.notes
+        } for metric in metrics], safe=False)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            prop_firm = PropFirm.objects.get(id=data.get('prop_firm_id'))
+            
+            new_metric = PropFirmManagementMetrics.objects.create(
+                prop_firm=prop_firm,
+                account_type=data.get('account_type'),
+                status=data.get('status'),
+                account_id=data.get('account_id', ''),
+                starting_balance=data.get('starting_balance'),
+                current_balance=data.get('current_balance'),
+                current_equity=data.get('current_equity'),
+                profit_target=data.get('profit_target', None),
+                max_drawdown=data.get('max_drawdown', None),
+                start_date=data.get('start_date'),
+                notes=data.get('notes', '')
+            )
+            
+            return JsonResponse({
+                'id': new_metric.id,
+                'prop_firm': {
+                    'id': new_metric.prop_firm.id,
+                    'name': new_metric.prop_firm.name
+                },
+                'account_type': new_metric.account_type,
+                'status': new_metric.status
+            }, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+@csrf_exempt
+def metric_detail(request, metric_id):
+    try:
+        metric = PropFirmManagementMetrics.objects.get(id=metric_id)
+    except ObjectDoesNotExist:
+        return JsonResponse({'error': 'Metric not found'}, status=404)
+    
+    if request.method == 'GET':
+        return JsonResponse({
+            'id': metric.id,
+            'prop_firm': {
+                'id': metric.prop_firm.id,
+                'name': metric.prop_firm.name,
+                'logo': metric.prop_firm.logo
+            },
+            'account_type': metric.account_type,
+            'status': metric.status,
+            'account_id': metric.account_id,
+            'starting_balance': float(metric.starting_balance),
+            'current_balance': float(metric.current_balance),
+            'current_equity': float(metric.current_equity),
+            'profit_target': float(metric.profit_target) if metric.profit_target else None,
+            'max_drawdown': float(metric.max_drawdown) if metric.max_drawdown else None,
+            'start_date': metric.start_date.isoformat(),
+            'notes': metric.notes
+        })
+    
+    elif request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            
+            if 'prop_firm_id' in data:
+                metric.prop_firm = PropFirm.objects.get(id=data.get('prop_firm_id'))
+            
+            fields = ['account_type', 'status', 'account_id', 'starting_balance', 
+                     'current_balance', 'current_equity', 'profit_target', 
+                     'max_drawdown', 'start_date', 'notes']
+            
+            for field in fields:
+                if field in data:
+                    setattr(metric, field, data.get(field))
+            
+            metric.save()
+            
+            return JsonResponse({
+                'id': metric.id,
+                'prop_firm': {
+                    'id': metric.prop_firm.id,
+                    'name': metric.prop_firm.name
+                },
+                'status': metric.status,
+                'current_balance': float(metric.current_balance),
+                'current_equity': float(metric.current_equity)
+            })
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    
+    elif request.method == 'DELETE':
+        metric.delete()
+        return JsonResponse({'message': 'Metric deleted successfully'})
+
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.shortcuts import get_object_or_404
+import json
+from datetime import datetime
+from .models import EconomicEvent
+
+# Helper function to serialize EconomicEvent objects to dictionaries
+def event_to_dict(event):
+    return {
+        'id': event.id,
+        'date_time': event.date_time.isoformat() if hasattr(event.date_time, 'isoformat') else event.date_time,
+        'currency': event.currency,
+        'impact': event.impact,
+        'event_name': event.event_name,
+        'actual': event.actual,
+        'forecast': event.forecast,
+        'previous': event.previous,
+        'created_at': event.created_at.isoformat() if hasattr(event.created_at, 'isoformat') else event.created_at,
+        'updated_at': event.updated_at.isoformat() if hasattr(event.updated_at, 'isoformat') else event.updated_at
+    }
+
+@csrf_exempt
+def economic_events_list(request):
+    """List all economic events or create a new one"""
+    if request.method == 'GET':
+        # Filter by date range if provided
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        events = EconomicEvent.objects.all()
+        
+        if start_date and end_date:
+            # Format: YYYY-MM-DD
+            start_datetime = datetime.strptime(f"{start_date} 00:00:00", "%Y-%m-%d %H:%M:%S")
+            end_datetime = datetime.strptime(f"{end_date} 23:59:59", "%Y-%m-%d %H:%M:%S")
+            events = events.filter(date_time__range=(start_datetime, end_datetime))
+        
+        events_data = [event_to_dict(event) for event in events]
+        return JsonResponse(events_data, safe=False)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            # Create a new event
+            event = EconomicEvent(
+                date_time=data['date_time'],
+                currency=data['currency'],
+                impact=data['impact'],
+                event_name=data['event_name'],
+                actual=data.get('actual'),
+                forecast=data.get('forecast'),
+                previous=data.get('previous')
+            )
+            event.save()
+            
+            return JsonResponse(event_to_dict(event), status=201)
+        except (KeyError, json.JSONDecodeError):
+            return JsonResponse({'error': 'Invalid data provided'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+@csrf_exempt
+def economic_event_detail(request, pk):
+    """Retrieve, update or delete an economic event"""
+    event = get_object_or_404(EconomicEvent, pk=pk)
+    
+    if request.method == 'GET':
+        return JsonResponse(event_to_dict(event))
+    
+    elif request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            
+            # Update fields
+            if 'date_time' in data:
+                event.date_time = data['date_time']
+            if 'currency' in data:
+                event.currency = data['currency']
+            if 'impact' in data:
+                event.impact = data['impact']
+            if 'event_name' in data:
+                event.event_name = data['event_name']
+            if 'actual' in data:
+                event.actual = data['actual']
+            if 'forecast' in data:
+                event.forecast = data['forecast']
+            if 'previous' in data:
+                event.previous = data['previous']
+            
+            event.save()
+            return JsonResponse(event_to_dict(event))
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid data provided'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    
+    elif request.method == 'DELETE':
+        event.delete()
+        return JsonResponse({}, status=204)
+
+
+
+# views.py
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.shortcuts import get_object_or_404
+import json
+from .models import EconomicEvent
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def data_calendar_economic_events_list(request):
+    # Get query parameters
+    currency = request.GET.get('currency', '')
+    impact = request.GET.get('impact', '')
+    
+    # Start with all events
+    events = EconomicEvent.objects.all()
+    
+    # Apply filters if provided
+    if currency:
+        events = events.filter(currency=currency)
+    
+    if impact:
+        events = events.filter(impact=impact)
+    
+    # Convert to list of dictionaries
+    events_data = []
+    for event in events:
+        events_data.append({
+            'id': event.id,
+            'date_time': event.date_time.isoformat(),
+            'currency': event.currency,
+            'impact': event.impact,
+            'event_name': event.event_name,
+            'actual': event.actual,
+            'forecast': event.forecast,
+            'previous': event.previous,
+        })
+    
+    return JsonResponse(events_data, safe=False)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def data_calendar_economic_event_detail(request, event_id):
+    event = get_object_or_404(EconomicEvent, id=event_id)
+    
+    event_data = {
+        'id': event.id,
+        'date_time': event.date_time.isoformat(),
+        'currency': event.currency,
+        'impact': event.impact,
+        'event_name': event.event_name,
+        'actual': event.actual,
+        'forecast': event.forecast,
+        'previous': event.previous,
+        'created_at': event.created_at.isoformat(),
+        'updated_at': event.updated_at.isoformat(),
+    }
+    
+    return JsonResponse(event_data)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def unique_economic_events_list(request):
+    # Get query parameters
+    currency = request.GET.get('currency', '')
+    impact = request.GET.get('impact', '')
+    search_term = request.GET.get('search', '')
+    
+    # Get filtered QuerySet
+    query = EconomicEvent.objects.all()
+    
+    # Apply filters if provided
+    if currency:
+        query = query.filter(currency=currency)
+    
+    if impact:
+        query = query.filter(impact=impact)
+        
+    if search_term:
+        query = query.filter(event_name__icontains=search_term)
+    
+    # Get distinct event names (case insensitive)
+    # Use a dictionary to track unique event names with case insensitivity
+    unique_events = {}
+    
+    for event in query:
+        # Use lowercase as the key to ensure case insensitivity
+        event_key = event.event_name.lower().strip()
+        
+        # Only add if we haven't seen this event name before
+        if event_key not in unique_events:
+            unique_events[event_key] = {
+                'id': event.id,
+                'event_name': event.event_name,
+                'currency': event.currency,
+                'impact': event.impact,
+            }
+    
+    # Convert the dictionary values to a list
+    events_data = list(unique_events.values())
+    
+    # Sort the results by event_name
+    events_data.sort(key=lambda x: x['event_name'])
+    
+    return JsonResponse(events_data, safe=False)
+    
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def event_history(request, event_name):
+    # Get query parameters for additional filtering
+    currency = request.GET.get('currency', '')
+    impact = request.GET.get('impact', '')
+    
+    # Initialize query to get all matching events with the same name
+    query = EconomicEvent.objects.filter(event_name=event_name)
+    
+    # Apply additional filters if provided
+    if currency:
+        query = query.filter(currency=currency)
+    
+    if impact:
+        query = query.filter(impact=impact)
+    
+    # Order by date_time
+    query = query.order_by('date_time')
+    
+    # Process the data for charts
+    events_data = []
+    for event in query:
+        # Clean the actual and forecast values for chart display
+        actual_value = clean_numeric_value(event.actual)
+        forecast_value = clean_numeric_value(event.forecast)
+        previous_value = clean_numeric_value(event.previous)
+        
+        events_data.append({
+            'id': event.id,
+            'date': event.date_time.strftime('%Y-%m-%d'),
+            'currency': event.currency,
+            'impact': event.impact,
+            'event_name': event.event_name,
+            'actual': event.actual,  # Original string value
+            'forecast': event.forecast,  # Original string value
+            'previous': event.previous,  # Original string value
+            'actual_value': actual_value,  # Cleaned numeric value for charts
+            'forecast_value': forecast_value,  # Cleaned numeric value for charts
+            'previous_value': previous_value,  # Cleaned numeric value for charts
+        })
+    
+    return JsonResponse({
+        'event_name': event_name,
+        'currency': currency if currency else 'All',
+        'impact': impact if impact else 'All',
+        'data_points': len(events_data),
+        'history': events_data
+    })
+
+def clean_numeric_value(value_str):
+    """
+    Convert string values like '3.2%', '$50.4B', etc. to float values
+    for charting purposes
+    """
+    if not value_str or value_str.strip() == '':
+        return None
+    
+    try:
+        # Remove common symbols and convert to float
+        cleaned = value_str.replace('%', '').replace('$', '')
+        cleaned = cleaned.replace('K', '').replace('M', '').replace('B', '').replace('T', '')
+        cleaned = cleaned.replace(',', '')
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return None
+
+@csrf_exempt
+def generate_econ_ai_summary(request):
+    """Generate an AI summary based on COT data and economic events with improved styling."""
+    try:
+        if request.method != 'POST':
+            return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
+        
+        data = json.loads(request.body)
+        prompt = data.get('prompt', '')
+        api_key = data.get('api_key', '')
+        currency_code = data.get('currency_code', '')
+        
+        if not prompt:
+            return JsonResponse({'error': 'Prompt is required'}, status=400)
+        
+        if not api_key:
+            return JsonResponse({'error': 'API key is required'}, status=400)
+            
+        if not currency_code:
+            return JsonResponse({'error': 'Currency code is required'}, status=400)
+        
+        # Get economic events for the currency
+        economic_events = get_economic_events_for_currency(currency_code)
+        
+        # Append economic events data to the prompt
+        prompt_with_events = prompt + "\n\n" + economic_events
+        
+        # Enhanced system prompt for more engaging responses
+        system_prompt = """You are a financial analyst specializing in economic data and market analysis. 
+        Provide concise, insightful analyses of economic data and recent economic events.
+        
+        Follow these style guidelines to make your response more visually appealing:
+        1. Use appropriate emojis to highlight key points (1-2 emojis per section, don't overuse)
+        2. Add clear section headers with emojis (e.g., "📊 Market Positioning")
+        3. Use bullet points for key takeaways
+        4. Include a "Bottom Line" summary at the end
+        5. Ensure the content is well-organized and easy to scan
+        6. Keep the overall analysis professional but engaging
+        7. Bold important terms or conclusions
+        8. DO NOT USE MARKDOWN FORMATTING
+        
+        Sections to include:
+        - 📊 Current Positioning Analysis
+        - 🔮 Economic Outlook
+        - 📅 Recent Events Impact
+        - 💹 Market Implications
+        - 💡 Bottom Line
+        """
+        
+        # Set the API key
+        openai.api_key = api_key
+        
+        # Generate summary using GPT-4o-mini with enhanced prompt
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt_with_events}
+            ],
+            max_tokens=600,  # Slightly increased to accommodate formatting
+            temperature=0.7
+        )
+        
+        summary = response.choices[0].message.content.replace('**', '')
+        
+        return JsonResponse({'summary': summary})
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+# def get_economic_events_for_currency(currency_code):
+#     """Get recent economic events for a specified currency."""
+#     try:
+#         # Get events from the last 30 days
+#         thirty_days_ago = timezone.now() - timezone.timedelta(days=90)
+#         events = EconomicEvent.objects.filter(
+#             currency=currency_code,
+#             date_time__gte=thirty_days_ago
+#         ).order_by('-date_time')
+        
+#         if not events:
+#             return "No recent economic events found for this currency."
+        
+#         # Format the events data
+#         events_text = "Recent Economic Events for this currency:\n\n"
+#         for event in events:
+#             impact_symbol = "🔴" if event.impact == "high" else "🟠" if event.impact == "medium" else "🟢"
+#             events_text += f"Date: {event.date_time.strftime('%Y-%m-%d %H:%M')}\n"
+#             events_text += f"Event: {event.event_name} {impact_symbol}\n"
+#             events_text += f"Actual: {event.actual or 'N/A'}\n"
+#             events_text += f"Forecast: {event.forecast or 'N/A'}\n"
+#             events_text += f"Previous: {event.previous or 'N/A'}\n\n"
+        
+#         return events_text
+    
+#     except Exception as e:
+#         return f"Error retrieving economic events: {str(e)}"
+
+
+@csrf_exempt
+def generate_econ_cot_data(request):
+    try:
+        # Get requested assets from POST data if provided
+        if request.method == 'POST':
+            requested_assets = json.loads(request.body).get('assets', [])
+        else:
+            # Default assets for GET requests
+            requested_assets = [
+                'USD INDEX - ICE FUTURES U.S.',
+                'EURO FX - CHICAGO MERCANTILE EXCHANGE',
+                'BRITISH POUND - CHICAGO MERCANTILE EXCHANGE',
+                'CANADIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE',
+                'SWISS FRANC - CHICAGO MERCANTILE EXCHANGE',
+                'JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE',
+                'NZ DOLLAR - CHICAGO MERCANTILE EXCHANGE',
+                'AUSTRALIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE',
+                'GOLD - COMMODITY EXCHANGE INC.',
+                'UST BOND - CHICAGO BOARD OF TRADE',
+                'UST 10Y NOTE - CHICAGO BOARD OF TRADE',
+                'UST 5Y NOTE - CHICAGO BOARD OF TRADE',
+                'NASDAQ MINI - CHICAGO MERCANTILE EXCHANGE',
+                'E-MINI S&P 500 -',
+                'DOW JONES U.S. REAL ESTATE IDX - CHICAGO BOARD OF TRADE'
+            ]
+
+        # Get the current year and previous year
+        current_year = pd.Timestamp.now().year
+        previous_year = current_year - 1
+
+        # Create list to store DataFrames
+        df_list = []
+
+        # Fetch data for previous and current year
+        for year in range(previous_year, current_year + 1):
+            single_year = cot.cot_year(year, cot_report_type='legacy_futopt')
+            df_list.append(single_year)
+
+        # Concatenate all DataFrames
+        df = pd.concat(df_list, ignore_index=True)
+
+        # Convert dates to datetime
+        df['As of Date in Form YYYY-MM-DD'] = pd.to_datetime(df['As of Date in Form YYYY-MM-DD'])
+
+        # Filter for current year data
+        unfiltered_currency_df = df[df['As of Date in Form YYYY-MM-DD'].dt.year == current_year]
+
+        # Filter for requested assets
+        unfiltered_currency_df = unfiltered_currency_df[
+            unfiltered_currency_df['Market and Exchange Names'].isin(requested_assets)
+        ]
+
+        # Remove specific exclusions (e.g., MICRO GOLD)
+        unfiltered_currency_df = unfiltered_currency_df[
+            unfiltered_currency_df['Market and Exchange Names'] != 'MICRO GOLD - COMMODITY EXCHANGE INC.'
+        ]
+
+        # Fill missing values and ensure numeric columns
+        numeric_columns = [
+            'Noncommercial Positions-Long (All)',
+            'Noncommercial Positions-Short (All)',
+            'Commercial Positions-Long (All)',
+            'Commercial Positions-Short (All)'
+        ]
+        
+        unfiltered_currency_df[numeric_columns] = unfiltered_currency_df[numeric_columns].fillna(0).astype(float)
+
+        # Calculate net positions for unfiltered data
+        unfiltered_currency_df['Net Noncommercial Positions'] = (
+            unfiltered_currency_df['Noncommercial Positions-Long (All)'] - 
+            unfiltered_currency_df['Noncommercial Positions-Short (All)']
+        )
+        unfiltered_currency_df['Net Commercial Positions'] = (
+            unfiltered_currency_df['Commercial Positions-Long (All)'] - 
+            unfiltered_currency_df['Commercial Positions-Short (All)']
+        )
+
+        # Get the rows with maximum open interest for each market
+        idx = unfiltered_currency_df.groupby('Market and Exchange Names')['Open Interest (All)'].idxmax()
+        currency_df = unfiltered_currency_df.loc[idx]
+
+        # Calculate total positions
+        currency_df['Total Noncommercial Positions'] = (
+            currency_df['Noncommercial Positions-Long (All)'] + 
+            currency_df['Noncommercial Positions-Short (All)']
+        )
+        currency_df['Total Commercial Positions'] = (
+            currency_df['Commercial Positions-Long (All)'] + 
+            currency_df['Commercial Positions-Short (All)']
+        )
+        currency_df['Total Positions'] = (
+            currency_df['Total Noncommercial Positions'] + 
+            currency_df['Total Commercial Positions']
+        )
+
+        # Calculate percentages
+        currency_df['Percentage Noncommercial Long'] = (
+            currency_df['Noncommercial Positions-Long (All)'] / 
+            currency_df['Total Noncommercial Positions']
+        ) * 100
+        currency_df['Percentage Noncommercial Short'] = (
+            currency_df['Noncommercial Positions-Short (All)'] / 
+            currency_df['Total Noncommercial Positions']
+        ) * 100
+        currency_df['Percentage Commercial Long'] = (
+            currency_df['Commercial Positions-Long (All)'] / 
+            currency_df['Total Commercial Positions']
+        ) * 100
+        currency_df['Percentage Commercial Short'] = (
+            currency_df['Commercial Positions-Short (All)'] / 
+            currency_df['Total Commercial Positions']
+        ) * 100
+
+        # Generate plots
+        plot_urls = plot_net_positions(unfiltered_currency_df)
+
+        # Prepare response data
+        data = {}
+        round_off_number = 2
+
+        for asset in requested_assets:
+            asset_df = currency_df[currency_df['Market and Exchange Names'] == asset]
+            
+            if not asset_df.empty:
+                latest_data = asset_df.iloc[0]
+                data[asset] = {
+                    'Date': latest_data['As of Date in Form YYYY-MM-DD'].strftime('%Y-%m-%d'),
+                    'Percentage_Noncommercial_Long': round(latest_data['Percentage Noncommercial Long'], round_off_number),
+                    'Percentage_Noncommercial_Short': round(latest_data['Percentage Noncommercial Short'], round_off_number),
+                    'Percentage_Commercial_Long': round(latest_data['Percentage Commercial Long'], round_off_number),
+                    'Percentage_Commercial_Short': round(latest_data['Percentage Commercial Short'], round_off_number),
+                    'Plot_URL': plot_urls.get(asset, '')
+                }
+
+        return JsonResponse(data)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+logger = logging.getLogger(__name__)
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def save_forex_factory_news(request):
+#     try:
+#         # Parse JSON data from request body
+#         data = json.loads(request.body)
+#         events_data = data.get('events', [])
+        
+#         if not events_data:
+#             return JsonResponse({
+#                 'success': False,
+#                 'error': 'No events data provided'
+#             }, status=400)
+        
+#         saved_events = []
+#         errors = []
+        
+#         for i, event_data in enumerate(events_data):
+#             try:
+#                 # Validate required fields
+#                 required_fields = ['date_time', 'currency', 'impact', 'event_name']
+#                 missing_fields = [field for field in required_fields if not event_data.get(field)]
+                
+#                 if missing_fields:
+#                     errors.append(f"Event {i+1}: Missing required fields: {', '.join(missing_fields)}")
+#                     continue
+                
+#                 # Parse and validate datetime
+#                 date_time_str = event_data.get('date_time')
+#                 try:
+#                     parsed_datetime = parse_datetime(date_time_str)
+#                     if not parsed_datetime:
+#                         # Try alternative format if the first parsing fails
+#                         from datetime import datetime
+#                         parsed_datetime = datetime.fromisoformat(date_time_str.replace('Z', '+00:00'))
+#                 except (ValueError, TypeError) as e:
+#                     errors.append(f"Event {i+1}: Invalid datetime format: {date_time_str}")
+#                     continue
+                
+#                 # Validate currency
+#                 valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']
+#                 currency = event_data.get('currency', '').upper()
+#                 if currency not in valid_currencies:
+#                     errors.append(f"Event {i+1}: Invalid currency: {currency}")
+#                     continue
+                
+#                 # Validate impact
+#                 valid_impacts = ['low', 'medium', 'high']
+#                 impact = event_data.get('impact', '').lower()
+#                 if impact not in valid_impacts:
+#                     errors.append(f"Event {i+1}: Invalid impact level: {impact}")
+#                     continue
+                
+#                 # Prepare event data for saving
+#                 event_kwargs = {
+#                     'date_time': parsed_datetime,
+#                     'currency': currency,
+#                     'impact': impact,
+#                     'event_name': event_data.get('event_name', '').strip(),
+#                     'actual': event_data.get('actual') or None,
+#                     'forecast': event_data.get('forecast') or None,
+#                     'previous': event_data.get('previous') or None,
+#                 }
+                
+#                 # Check for duplicates (same datetime, currency, and event_name)
+#                 existing_event = EconomicEvent.objects.filter(
+#                     date_time=parsed_datetime,
+#                     currency=currency,
+#                     event_name=event_kwargs['event_name']
+#                 ).first()
+                
+#                 if existing_event:
+#                     # Update existing event
+#                     for key, value in event_kwargs.items():
+#                         setattr(existing_event, key, value)
+#                     existing_event.save()
+#                     saved_events.append({
+#                         'id': existing_event.id,
+#                         'action': 'updated',
+#                         'event_name': existing_event.event_name
+#                     })
+#                     logger.info(f"Updated existing event: {existing_event}")
+#                 else:
+#                     # Create new event
+#                     new_event = EconomicEvent.objects.create(**event_kwargs)
+#                     saved_events.append({
+#                         'id': new_event.id,
+#                         'action': 'created',
+#                         'event_name': new_event.event_name
+#                     })
+#                     logger.info(f"Created new event: {new_event}")
+                    
+#             except Exception as e:
+#                 logger.error(f"Error processing event {i+1}: {str(e)}")
+#                 errors.append(f"Event {i+1}: {str(e)}")
+#                 continue
+        
+#         # Prepare response
+#         response_data = {
+#             'success': True,
+#             'saved_count': len(saved_events),
+#             'error_count': len(errors),
+#             'saved_events': saved_events
+#         }
+        
+#         if errors:
+#             response_data['errors'] = errors
+#             response_data['message'] = f"Saved {len(saved_events)} events with {len(errors)} errors"
+#         else:
+#             response_data['message'] = f"Successfully saved {len(saved_events)} events"
+        
+#         # Return appropriate status code
+#         status_code = 200 if saved_events else 400
+        
+#         return JsonResponse(response_data, status=status_code)
+        
+#     except json.JSONDecodeError:
+#         logger.error("Invalid JSON data received")
+#         return JsonResponse({
+#             'success': False,
+#             'error': 'Invalid JSON data'
+#         }, status=400)
+        
+#     except Exception as e:
+#         logger.error(f"Unexpected error in save_forex_factory_news: {str(e)}")
+#         return JsonResponse({
+#             'success': False,
+#             'error': 'Internal server error'
+#         }, status=500)
+
+
+# Optional: Add a view to retrieve saved events for verification
+# @csrf_exempt
+# @require_http_methods(["GET"])
+# def get_forex_factory_events(request):
+#     """
+#     Retrieve economic events with optional filtering
+#     """
+#     try:
+#         # Get query parameters for filtering
+#         currency = request.GET.get('currency')
+#         impact = request.GET.get('impact')
+#         start_date = request.GET.get('start_date')
+#         end_date = request.GET.get('end_date')
+#         limit = int(request.GET.get('limit', 100))  # Default limit of 100
+        
+#         # Start with all events
+#         queryset = EconomicEvent.objects.all()
+        
+#         # Apply filters
+#         if currency:
+#             queryset = queryset.filter(currency=currency.upper())
+        
+#         if impact:
+#             queryset = queryset.filter(impact=impact.lower())
+            
+#         if start_date:
+#             try:
+#                 start_dt = parse_datetime(start_date)
+#                 if start_dt:
+#                     queryset = queryset.filter(date_time__gte=start_dt)
+#             except ValueError:
+#                 pass
+                
+#         if end_date:
+#             try:
+#                 end_dt = parse_datetime(end_date)
+#                 if end_dt:
+#                     queryset = queryset.filter(date_time__lte=end_dt)
+#             except ValueError:
+#                 pass
+        
+#         # Limit results and order by date
+#         events = queryset.order_by('-date_time')[:limit]
+        
+#         # Serialize events
+#         events_data = []
+#         for event in events:
+#             events_data.append({
+#                 'id': event.id,
+#                 'date_time': event.date_time.isoformat(),
+#                 'currency': event.currency,
+#                 'impact': event.impact,
+#                 'event_name': event.event_name,
+#                 'actual': event.actual,
+#                 'forecast': event.forecast,
+#                 'previous': event.previous,
+#                 'created_at': event.created_at.isoformat(),
+#                 'updated_at': event.updated_at.isoformat(),
+#             })
+        
+#         return JsonResponse({
+#             'success': True,
+#             'events': events_data,
+#             'count': len(events_data)
+#         })
+        
+#     except Exception as e:
+#         logger.error(f"Error retrieving events: {str(e)}")
+#         return JsonResponse({
+#             'success': False,
+#             'error': 'Failed to retrieve events'
+#         }, status=500)
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def process_forex_screenshot(request):
+#     """
+#     Process Forex Factory screenshot using OpenAI GPT-4o-mini
+#     """
+#     try:
+#         data = json.loads(request.body)
+#         image_base64 = data.get('image')
+#         api_key = data.get('api_key')
+        
+#         if not image_base64 or not api_key:
+#             return JsonResponse({
+#                 'error': 'Missing image or API key'
+#             }, status=400)
+        
+#         # Initialize OpenAI client with the new syntax
+#         client = OpenAI(api_key=api_key)
+        
+#         # Prepare the prompt for GPT-4o-mini
+#         prompt = """
+#         Analyze this Forex Factory economic calendar screenshot and extract all economic events.
+#         Return a JSON response with an 'events' array containing objects with these fields:
+#         - date_time: ISO format datetime (YYYY-MM-DDTHH:MM)
+#         - currency: 3-letter currency code (USD, EUR, GBP, JPY, AUD, CAD, CHF, CNY)
+#         - impact: 'low', 'medium', or 'high'
+#         - event_name: Name of the economic event
+#         - actual: Actual value (can be empty string if not available)
+#         - forecast: Forecasted value (can be empty string if not available)  
+#         - previous: Previous value (can be empty string if not available)
+        
+#         Example response format:
+#         {
+#           "events": [
+#             {
+#               "date_time": "2024-12-01T10:00",
+#               "currency": "USD",
+#               "impact": "high",
+#               "event_name": "Non-Farm Payrolls",
+#               "actual": "227K",
+#               "forecast": "220K",
+#               "previous": "12K"
+#             }
+#           ]
+#         }
+        
+#         Extract ALL visible events from the screenshot. Pay attention to:
+#         - Time stamps and convert to 24-hour format
+#         - Currency flags/symbols
+#         - Impact levels (usually shown as colored indicators)
+#         - Event names
+#         - Actual, forecast, and previous values
+        
+#         Return only valid JSON without any additional text or formatting.
+#         """
+        
+#         # Make API call to OpenAI using the new client syntax
+#         response = client.chat.completions.create(
+#             model="gpt-4o-mini",
+#             messages=[
+#                 {
+#                     "role": "user",
+#                     "content": [
+#                         {
+#                             "type": "text",
+#                             "text": prompt
+#                         },
+#                         {
+#                             "type": "image_url",
+#                             "image_url": {
+#                                 "url": f"data:image/jpeg;base64,{image_base64}"
+#                             }
+#                         }
+#                     ]
+#                 }
+#             ],
+#             max_tokens=2000,
+#             temperature=0.1
+#         )
+        
+#         # Extract and parse the response
+#         gpt_response = response.choices[0].message.content.strip()
+        
+#         # Try to parse JSON response
+#         try:
+#             parsed_data = json.loads(gpt_response)
+#             events = parsed_data.get('events', [])
+            
+#             # Validate and clean the events data
+#             cleaned_events = []
+#             for event in events:
+#                 try:
+#                     # Validate required fields
+#                     if not all(field in event for field in ['date_time', 'currency', 'impact', 'event_name']):
+#                         continue
+                    
+#                     # Validate currency
+#                     valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']
+#                     if event['currency'] not in valid_currencies:
+#                         event['currency'] = 'USD'  # Default fallback
+                    
+#                     # Validate impact
+#                     valid_impacts = ['low', 'medium', 'high']
+#                     if event['impact'] not in valid_impacts:
+#                         event['impact'] = 'medium'  # Default fallback
+                    
+#                     # Ensure optional fields exist
+#                     event['actual'] = event.get('actual', '')
+#                     event['forecast'] = event.get('forecast', '')
+#                     event['previous'] = event.get('previous', '')
+                    
+#                     # Validate datetime format
+#                     try:
+#                         datetime.fromisoformat(event['date_time'].replace('Z', '+00:00'))
+#                     except ValueError:
+#                         # If invalid datetime, skip this event
+#                         continue
+                    
+#                     cleaned_events.append(event)
+                    
+#                 except Exception as e:
+#                     # Skip invalid events
+#                     continue
+            
+#             return JsonResponse({
+#                 'success': True,
+#                 'events': cleaned_events,
+#                 'message': f'Successfully extracted {len(cleaned_events)} events'
+#             })
+            
+#         except json.JSONDecodeError:
+#             return JsonResponse({
+#                 'error': 'Failed to parse GPT response as JSON',
+#                 'gpt_response': gpt_response
+#             }, status=500)
+            
+#     except Exception as e:
+#         # More specific error handling
+#         print(f'Error occured in process_fx function: {e}')
+#         if "OpenAI" in str(type(e)):
+#             return JsonResponse({
+#                 'error': f'OpenAI API error: {str(e)}'
+#             }, status=500)
+#         else:
+#             return JsonResponse({
+#                 'error': f'Server error: {str(e)}'
+#             }, status=500)
+
+
+
+logger = logging.getLogger(__name__)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def save_forex_factory_news(request):
+    """
+    Save economic events from forex factory screenshot analysis
+    Expected JSON format:
+    {
+        "events": [
+            {
+                "date_time": "2024-12-01T14:30:00",
+                "currency": "USD",
+                "impact": "high",
+                "event_name": "Non-Farm Payrolls",
+                "actual": "150K",
+                "forecast": "160K",
+                "previous": "140K"
+            }
+        ]
+    }
+    """
+    try:
+        # Parse JSON data
+        data = json.loads(request.body)
+        events_data = data.get('events', [])
+        
+        if not events_data:
+            return JsonResponse({
+                'success': False,
+                'error': 'No events provided'
+            }, status=400)
+        
+        # Validate and save events
+        saved_events = []
+        errors = []
+        
+        for i, event_data in enumerate(events_data):
+            try:
+                # Validate required fields
+                required_fields = ['date_time', 'currency', 'impact', 'event_name']
+                for field in required_fields:
+                    if not event_data.get(field):
+                        raise ValidationError(f"Missing required field: {field}")
+                
+                # Parse datetime
+                try:
+                    if isinstance(event_data['date_time'], str):
+                        # Handle different datetime formats
+                        dt_str = event_data['date_time']
+                        if 'T' in dt_str:
+                            if dt_str.endswith('Z'):
+                                dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+                            else:
+                                dt = datetime.fromisoformat(dt_str)
+                        else:
+                            dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+                    else:
+                        dt = event_data['date_time']
+                except (ValueError, TypeError) as e:
+                    raise ValidationError(f"Invalid date_time format: {e}")
+                
+                # Validate currency
+                valid_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'CNY']
+                if event_data['currency'] not in valid_currencies:
+                    raise ValidationError(f"Invalid currency: {event_data['currency']}")
+                
+                # Validate impact
+                valid_impacts = ['low', 'medium', 'high']
+                if event_data['impact'] not in valid_impacts:
+                    raise ValidationError(f"Invalid impact: {event_data['impact']}")
+                
+                # Create or update event
+                # Check if event already exists (same datetime, currency, event_name)
+                existing_event = EconomicEvent.objects.filter(
+                    date_time=dt,
+                    currency=event_data['currency'],
+                    event_name=event_data['event_name']
+                ).first()
+                
+                if existing_event:
+                    # Update existing event
+                    existing_event.impact = event_data['impact']
+                    existing_event.actual = event_data.get('actual', '') or ''
+                    existing_event.forecast = event_data.get('forecast', '') or ''
+                    existing_event.previous = event_data.get('previous', '') or ''
+                    existing_event.save()
+                    saved_events.append({
+                        'id': existing_event.id,
+                        'action': 'updated',
+                        'event_name': existing_event.event_name
+                    })
+                else:
+                    # Create new event
+                    new_event = EconomicEvent.objects.create(
+                        date_time=dt,
+                        currency=event_data['currency'],
+                        impact=event_data['impact'],
+                        event_name=event_data['event_name'],
+                        actual=event_data.get('actual', '') or '',
+                        forecast=event_data.get('forecast', '') or '',
+                        previous=event_data.get('previous', '') or ''
+                    )
+                    saved_events.append({
+                        'id': new_event.id,
+                        'action': 'created',
+                        'event_name': new_event.event_name
+                    })
+                
+            except ValidationError as e:
+                errors.append(f"Event {i+1}: {str(e)}")
+                logger.error(f"Validation error for event {i+1}: {e}")
+            except Exception as e:
+                errors.append(f"Event {i+1}: Unexpected error - {str(e)}")
+                logger.error(f"Unexpected error for event {i+1}: {e}")
+        
+        # Prepare response
+        response_data = {
+            'success': True,
+            'saved_count': len(saved_events),
+            'total_count': len(events_data),
+            'saved_events': saved_events
+        }
+        
+        if errors:
+            response_data['errors'] = errors
+            response_data['error_count'] = len(errors)
+        
+        status_code = 200 if saved_events else 400
+        return JsonResponse(response_data, status=status_code)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON format'
+        }, status=400)
+    
+    except Exception as e:
+        logger.error(f"Unexpected error in save_forex_factory_news: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': 'Internal server error'
+        }, status=500)
+
+
+# views.py
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from .models import Account, AccountTrades
+import json
+from django.core.serializers import serialize
+from django.forms.models import model_to_dict
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_trades_by_account_calendar(request):
+    """
+    Get all trades for a specific account
+    """
+    try:
+        account_name = request.GET.get('account_name')
+        
+        if not account_name:
+            return JsonResponse({
+                'error': 'account_name parameter is required'
+            }, status=400)
+        
+        # Get the account
+        try:
+            account = Account.objects.get(account_name=account_name)
+        except Account.DoesNotExist:
+            return JsonResponse({
+                'error': f'Account with name "{account_name}" not found'
+            }, status=404)
+        
+        # Get all trades for this account
+        trades = AccountTrades.objects.filter(account=account).order_by('-date_entered')
+        
+        # Convert trades to list of dictionaries
+        trades_data = []
+        for trade in trades:
+            trade_dict = {
+                'id': trade.id,
+                'account_name': trade.account.account_name,
+                'asset': trade.asset,
+                'order_type': trade.order_type,
+                'strategy': trade.strategy,
+                'day_of_week_entered': trade.day_of_week_entered,
+                'day_of_week_closed': trade.day_of_week_closed,
+                'trading_session_entered': trade.trading_session_entered,
+                'trading_session_closed': trade.trading_session_closed,
+                'outcome': trade.outcome,
+                'amount': trade.amount,
+                'emotional_bias': trade.emotional_bias,
+                'reflection': trade.reflection,
+                'date_entered': trade.date_entered.isoformat() if trade.date_entered else None,
+            }
+            trades_data.append(trade_dict)
+        
+        return JsonResponse(trades_data, safe=False)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_trades_by_date_range_calendar(request):
+    """
+    Get trades for a specific account within a date range
+    """
+    try:
+        account_name = request.GET.get('account_name')
+        start_date = request.GET.get('start_date')  # Format: YYYY-MM-DD
+        end_date = request.GET.get('end_date')      # Format: YYYY-MM-DD
+        
+        if not account_name:
+            return JsonResponse({
+                'error': 'account_name parameter is required'
+            }, status=400)
+        
+        # Get the account
+        try:
+            account = Account.objects.get(account_name=account_name)
+        except Account.DoesNotExist:
+            return JsonResponse({
+                'error': f'Account with name "{account_name}" not found'
+            }, status=404)
+        
+        # Start with base query
+        trades_query = AccountTrades.objects.filter(account=account)
+        
+        # Add date filters if provided
+        if start_date:
+            trades_query = trades_query.filter(date_entered__date__gte=start_date)
+        if end_date:
+            trades_query = trades_query.filter(date_entered__date__lte=end_date)
+        
+        trades = trades_query.order_by('-date_entered')
+        
+        # Convert trades to list of dictionaries
+        trades_data = []
+        for trade in trades:
+            trade_dict = {
+                'id': trade.id,
+                'account_name': trade.account.account_name,
+                'asset': trade.asset,
+                'order_type': trade.order_type,
+                'strategy': trade.strategy,
+                'day_of_week_entered': trade.day_of_week_entered,
+                'day_of_week_closed': trade.day_of_week_closed,
+                'trading_session_entered': trade.trading_session_entered,
+                'trading_session_closed': trade.trading_session_closed,
+                'outcome': trade.outcome,
+                'amount': trade.amount,
+                'emotional_bias': trade.emotional_bias,
+                'reflection': trade.reflection,
+                'date_entered': trade.date_entered.isoformat() if trade.date_entered else None,
+            }
+            trades_data.append(trade_dict)
+        
+        return JsonResponse(trades_data, safe=False)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_trade_summary_calendar(request):
+    """
+    Get summary statistics for trades by account
+    """
+    try:
+        account_name = request.GET.get('account_name')
+        
+        if not account_name:
+            return JsonResponse({
+                'error': 'account_name parameter is required'
+            }, status=400)
+        
+        # Get the account
+        try:
+            account = Account.objects.get(account_name=account_name)
+        except Account.DoesNotExist:
+            return JsonResponse({
+                'error': f'Account with name "{account_name}" not found'
+            }, status=404)
+        
+        # Get all trades for this account
+        trades = AccountTrades.objects.filter(account=account)
+        
+        # Calculate summary statistics
+        total_trades = trades.count()
+        profitable_trades = trades.filter(outcome='Profit').count()
+        losing_trades = trades.filter(outcome='Loss').count()
+        
+        total_profit = sum(trade.amount for trade in trades.filter(outcome='Profit'))
+        total_loss = sum(abs(trade.amount) for trade in trades.filter(outcome='Loss'))
+        net_profit = total_profit - total_loss
+        
+        win_rate = (profitable_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        summary = {
+            'account_name': account_name,
+            'total_trades': total_trades,
+            'profitable_trades': profitable_trades,
+            'losing_trades': losing_trades,
+            'total_profit': total_profit,
+            'total_loss': total_loss,
+            'net_profit': net_profit,
+            'win_rate': round(win_rate, 2)
+        }
+        
+        return JsonResponse(summary)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_trade_calendar(request):
+    """
+    Create a new trade
+    """
+    try:
+        data = json.loads(request.body)
+        
+        account_name = data.get('account_name')
+        if not account_name:
+            return JsonResponse({
+                'error': 'account_name is required'
+            }, status=400)
+        
+        # Get the account
+        try:
+            account = Account.objects.get(account_name=account_name)
+        except Account.DoesNotExist:
+            return JsonResponse({
+                'error': f'Account with name "{account_name}" not found'
+            }, status=404)
+        
+        # Create the trade
+        trade = AccountTrades.objects.create(
+            account=account,
+            asset=data.get('asset', ''),
+            order_type=data.get('order_type', ''),
+            strategy=data.get('strategy', ''),
+            day_of_week_entered=data.get('day_of_week_entered', ''),
+            day_of_week_closed=data.get('day_of_week_closed'),
+            trading_session_entered=data.get('trading_session_entered', ''),
+            trading_session_closed=data.get('trading_session_closed'),
+            outcome=data.get('outcome', ''),
+            amount=float(data.get('amount', 0)),
+            emotional_bias=data.get('emotional_bias'),
+            reflection=data.get('reflection'),
+            date_entered=data.get('date_entered')
+        )
+        
+        trade_dict = {
+            'id': trade.id,
+            'account_name': trade.account.account_name,
+            'asset': trade.asset,
+            'order_type': trade.order_type,
+            'strategy': trade.strategy,
+            'day_of_week_entered': trade.day_of_week_entered,
+            'day_of_week_closed': trade.day_of_week_closed,
+            'trading_session_entered': trade.trading_session_entered,
+            'trading_session_closed': trade.trading_session_closed,
+            'outcome': trade.outcome,
+            'amount': trade.amount,
+            'emotional_bias': trade.emotional_bias,
+            'reflection': trade.reflection,
+            'date_entered': trade.date_entered.isoformat() if trade.date_entered else None,
+        }
+        
+        return JsonResponse({
+            'message': 'Trade created successfully',
+            'trade': trade_dict
+        }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'error': 'Invalid JSON data'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
+
+
+# In your Django view, make sure the POST handler includes category:
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def paper_gpt(request):
+    if request.method == 'GET':
+        papers = PaperGPT.objects.all()
+        papers_data = []
+        
+        for paper in papers:
+            papers_data.append({
+                'id': paper.id,
+                'title': paper.title,
+                'fileName': paper.file_name,
+                'fileSize': paper.file_size,
+                'uploadDate': paper.upload_date.isoformat(),
+                'aiSummary': paper.ai_summary,
+                'category': paper.category,  # Make sure this field exists
+                'personalNotes': paper.personal_notes,
+                'extractedText': paper.extracted_text,
+                'fileData': paper.file_data,
+            })
+        
+        return JsonResponse(papers_data, safe=False)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            # Add validation and debugging
+            print("Received data:", data.keys())  # Debug line
+            
+            paper = PaperGPT.objects.create(
+                title=data.get('title', ''),
+                file_name=data.get('fileName', ''),
+                file_data=data.get('fileData', ''),
+                file_size=data.get('fileSize', 0),
+                category=data.get('category', ''),  # Handle missing category gracefully
+                extracted_text=data.get('extractedText', ''),
+                ai_summary=data.get('aiSummary', ''),
+                personal_notes=data.get('personalNotes', '')
+            )
+            return JsonResponse({
+                'id': paper.id,
+                'title': paper.title,
+                'message': 'Paper saved successfully'
+            })
+        except KeyError as e:
+            return JsonResponse({'error': f'Missing required field: {str(e)}'}, status=400)
+        except Exception as e:
+            print("Error saving paper:", str(e))  # Debug line
+            return JsonResponse({'error': str(e)}, status=400)
+            
+
+@csrf_exempt
+@require_http_methods(["PUT", "DELETE"])
+def paper_detail(request, paper_id):
+    try:
+        paper = PaperGPT.objects.get(id=paper_id)
+        
+        if request.method == 'PUT':
+            data = json.loads(request.body)
+            paper.personal_notes = data.get('personalNotes', paper.personal_notes)
+            paper.category = data.get('category', paper.category)
+            paper.save()
+            return JsonResponse({'message': 'Paper updated successfully'})
+            
+        elif request.method == 'DELETE':
+            paper.delete()
+            return JsonResponse({'message': 'Paper deleted successfully'})
+            
+    except PaperGPT.DoesNotExist:
+        return JsonResponse({'error': 'Paper not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_categories(request):
+    """Get all unique categories"""
+    categories = PaperGPT.objects.values_list('category', flat=True).distinct()
+    categories = [cat for cat in categories if cat]  # Remove empty categories
+    return JsonResponse(list(categories), safe=False)
+
+@csrf_exempt
+def extract_pdf_text(request):
+   """Extract text from uploaded PDF"""
+   if request.method == 'POST':
+       try:
+           import PyPDF2
+           import io
+           
+           # Get the uploaded file
+           pdf_file = request.FILES.get('pdf')
+           if not pdf_file:
+               return JsonResponse({'error': 'No PDF file provided'}, status=400)
+           
+           # Extract text using PyPDF2
+           pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_file.read()))
+           extracted_text = ""
+           
+           for page_num in range(len(pdf_reader.pages)):
+               page = pdf_reader.pages[page_num]
+               extracted_text += page.extract_text()
+           
+           return JsonResponse({'extracted_text': extracted_text})
+           
+       except Exception as e:
+           return JsonResponse({'error': f'Error extracting text: {str(e)}'}, status=400)
+
+@csrf_exempt
+def generate_paper_summary(request):
+   """Generate AI summary using OpenAI"""
+   if request.method == 'POST':
+       try:
+           data = json.loads(request.body)
+           text = data.get('text', '')
+           
+           if not text:
+               return JsonResponse({'error': 'No text provided'}, status=400)
+           
+           # Get OpenAI API key from settings or environment
+           client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+           
+           response = client.chat.completions.create(
+               model="gpt-4o-mini",
+               messages=[
+                   {
+                       "role": "system", 
+                       "content": "You are an academic research assistant. Provide concise, insightful summaries of research papers highlighting key findings, methodology, and implications."
+                   },
+                   {
+                       "role": "user", 
+                       "content": f"Please summarize this research paper: {text[:4000]}"  # Limit text length
+                   }
+               ],
+               max_tokens=500,
+               temperature=0.7
+           )
+           
+           summary = response.choices[0].message.content
+           return JsonResponse({'summary': summary})
+           
+       except Exception as e:
+           return JsonResponse({'error': f'Error generating summary: {str(e)}'}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def retrieve_economic_data_for_selected_currency(request, currency_code):
+    """
+    Retrieve economic data for a specific currency to be used by EconomicsGPT
+    """
+    try:
+        # Get recent economic events for the selected currency (last 30 days)
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        
+        economic_events = EconomicEvent.objects.filter(
+            currency=currency_code.upper(),
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
+        
+        # Format the data for the AI model
+        formatted_data = []
+        for event in economic_events:
+            formatted_data.append({
+                'date_time': event.date_time.strftime('%Y-%m-%d %H:%M'),
+                'currency': event.currency,
+                'impact': event.impact,
+                'event_name': event.event_name,
+                'actual': event.actual,
+                'forecast': event.forecast,
+                'previous': event.previous,
+                'impact_level': event.impact,
+            })
+        
+        # Add summary statistics
+        total_events = len(formatted_data)
+        high_impact_events = len([e for e in formatted_data if e['impact'] == 'high'])
+        medium_impact_events = len([e for e in formatted_data if e['impact'] == 'medium'])
+        low_impact_events = len([e for e in formatted_data if e['impact'] == 'low'])
+        
+        response_data = {
+            'currency': currency_code.upper(),
+            'data_period': '30 days',
+            'total_events': total_events,
+            'impact_summary': {
+                'high_impact': high_impact_events,
+                'medium_impact': medium_impact_events,
+                'low_impact': low_impact_events
+            },
+            'economic_events': formatted_data,
+            'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        return JsonResponse(response_data, safe=False)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': f'Failed to retrieve economic data: {str(e)}',
+            'currency': currency_code.upper()
+        }, status=500)
+
+
+import matplotlib.dates as mdates
+from io import BytesIO
+@csrf_exempt
+def generate_dynamic_chart(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            currency_pair = data.get('currency_pair')
+            timeframe = data.get('timeframe')
+            lookback = data.get('lookback')
+            
+            # Convert lookback to number of days
+            lookback_days_map = {
+                '1d': 1,
+                '7d': 7,
+                '30d': 30,
+                '90d': 90,
+                '1y': 365
+            }
+            
+            # Use your existing function to get the dataset
+            hist = obtain_dataset(currency_pair, timeframe, lookback_days_map[lookback])
+            
+            # Check if data is available
+            if hist.empty:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'No data available for {currency_pair}'
+                }, status=400)
+            
+            # Create candlestick chart using your existing function logic
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            # Clean up the data
+            hist = hist[['Open', 'High', 'Low', 'Close']]
+            
+            for idx, row in enumerate(hist.itertuples(index=False)):
+                # Access the values by position
+                open_price = row[0]
+                high_price = row[1]
+                low_price = row[2]
+                close_price = row[3]
+                
+                # Determine the color of the candlestick
+                color = '#10b981' if close_price > open_price else '#ef4444'
+                
+                # Draw the candlestick body (rectangle)
+                body = Rectangle(
+                    (idx - 0.4, min(open_price, close_price)),  # Bottom-left corner
+                    0.8,  # Width
+                    abs(close_price - open_price),  # Height
+                    color=color
+                )
+                ax.add_patch(body)
+                
+                # Draw the wick (high-low line)
+                ax.plot(
+                    [idx, idx],  # X-coordinates
+                    [low_price, high_price],  # Y-coordinates
+                    color=color,
+                    linewidth=1
+                )
+            
+            # Set labels and title
+            ax.set_title(f'{currency_pair} Candlestick Chart - {timeframe} timeframe, {lookback} lookback', 
+                        fontsize=16, fontweight='bold', color='#1e40af')
+            ax.set_xlabel('Time', fontsize=12)
+            ax.set_ylabel('Price', fontsize=12)
+            ax.grid(True, alpha=0.3)
+            
+            # Format x-axis with actual dates (show fewer labels to avoid crowding)
+            step = max(1, len(hist) // 10)  # Show max 10 labels
+            ax.set_xticks(range(0, len(hist), step))
+            ax.set_xticklabels([hist.index[i].strftime('%Y-%m-%d %H:%M') for i in range(0, len(hist), step)], 
+                             rotation=45)
+            
+            plt.tight_layout()
+            
+            # Convert to base64
+            buffer = BytesIO()
+            plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
+            buffer.seek(0)
+            image_base64 = base64.b64encode(buffer.getvalue()).decode()
+            plt.close()
+            
+            return JsonResponse({
+                'success': True,
+                'chart_image': image_base64,
+                'currency_pair': currency_pair,
+                'timeframe': timeframe,
+                'lookback': lookback
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+           
+
+import uuid
+import random
+from datetime import datetime, timedelta
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+import json
+
+def get_economic_events_for_pair_two(currency_pair):
+    """Get relevant economic events for a currency pair"""
+    try:
+        # Extract currencies from pair (e.g., EURUSD -> EUR, USD)
+        base_currency = currency_pair[:3]
+        quote_currency = currency_pair[3:6]
+        
+        # Get events for the next 7 days for both currencies
+        start_date = timezone.now()
+        end_date = start_date + timedelta(days=7)
+        
+        events = EconomicEvent.objects.filter(
+            currency__in=[base_currency, quote_currency],
+            date_time__gte=start_date,
+            date_time__lte=end_date
+        ).order_by('date_time')[:5]
+        
+        return [
+            {
+                'date_time': event.date_time.isoformat(),
+                'currency': event.currency,
+                'impact': event.impact,
+                'event_name': event.event_name,
+                'actual': event.actual,
+                'forecast': event.forecast,
+                'previous': event.previous,
+            }
+            for event in events
+        ]
+    except Exception as e:
+        return []
+
+def generate_trader_gpt_analysis(currency_pair, news_data, economic_events):
+    """Generate realistic TraderGPT analysis based on actual market data"""
+    
+    # Extract currencies
+    base_currency = currency_pair[:3]
+    quote_currency = currency_pair[3:6]
+    
+    # Analyze news sentiment
+    bullish_keywords = ['strong', 'growth', 'rise', 'positive', 'boost', 'rally', 'gains', 'support', 'optimistic']
+    bearish_keywords = ['weak', 'decline', 'fall', 'negative', 'concern', 'drop', 'losses', 'pressure', 'pessimistic']
+    
+    news_text = ' '.join([item.get('title', '') + ' ' + item.get('description', '') for item in news_data]).lower()
+    
+    bullish_count = sum(1 for keyword in bullish_keywords if keyword in news_text)
+    bearish_count = sum(1 for keyword in bearish_keywords if keyword in news_text)
+    
+    # Determine sentiment based on news and economic events
+    if bullish_count > bearish_count:
+        sentiment = 'bullish'
+        confidence = min(95, 65 + (bullish_count - bearish_count) * 5)
+    elif bearish_count > bullish_count:
+        sentiment = 'bearish'
+        confidence = min(95, 65 + (bearish_count - bullish_count) * 5)
+    else:
+        sentiment = 'neutral'
+        confidence = random.randint(50, 70)
+    
+    # Analyze economic events impact
+    high_impact_events = [event for event in economic_events if event.get('impact') == 'high']
+    medium_impact_events = [event for event in economic_events if event.get('impact') == 'medium']
+    
+    # Generate entry strategy based on sentiment and events
+    entry_strategies = {
+        'bullish': [
+            f"Buy on dips near support levels with confirmation from {base_currency} strength indicators",
+            f"Breakout strategy above resistance with {base_currency} momentum confirmation",
+            f"Accumulate on pullbacks during {base_currency} positive economic releases"
+        ],
+        'bearish': [
+            f"Sell rallies near resistance with {quote_currency} strength confirmation",
+            f"Short breakdowns below support with {base_currency} weakness signals",
+            f"Scale in on bounces during {base_currency} negative economic data"
+        ],
+        'neutral': [
+            f"Range trading strategy between support and resistance levels",
+            f"Wait for clear directional break with volume confirmation",
+            f"Scalping approach around key economic event times"
+        ]
+    }
+    
+    # Risk assessment
+    risk_level = 'high' if len(high_impact_events) > 1 else 'medium' if len(medium_impact_events) > 2 else 'low'
+    
+    # Time horizon based on economic events
+    if len(high_impact_events) > 0:
+        time_horizon = '1-3 days (Event-driven)'
+    elif sentiment == 'neutral':
+        time_horizon = '4-8 hours (Intraday)'
+    else:
+        time_horizon = '3-7 days (Short-term swing)'
+    
+    # Generate target price (simplified)
+    current_price_simulation = random.uniform(0.8, 1.8)  # Simulated current price
+    if sentiment == 'bullish':
+        target_multiplier = random.uniform(1.002, 1.015)
+    elif sentiment == 'bearish':
+        target_multiplier = random.uniform(0.985, 0.998)
+    else:
+        target_multiplier = random.uniform(0.995, 1.005)
+    
+    target_price = f"{current_price_simulation * target_multiplier:.4f}"
+    
+    # Key factors analysis
+    key_factors_components = []
+    
+    if news_data:
+        key_factors_components.append(f"{base_currency} economic fundamentals")
+    
+    if high_impact_events:
+        key_factors_components.append("High-impact economic events this week")
+    
+    if 'USD' in currency_pair:
+        key_factors_components.append("USD monetary policy expectations")
+    
+    key_factors_components.extend([
+        "Technical support/resistance levels",
+        "Market risk sentiment",
+        "Central bank communications"
+    ])
+    
+    key_factors = ". ".join(key_factors_components[:4]) + "."
+    
+    return {
+        'currency_pair': currency_pair,
+        'sentiment': sentiment,
+        'confidence_score': confidence,
+        'entry_strategy': random.choice(entry_strategies[sentiment]),
+        'risk_level': risk_level,
+        'time_horizon': time_horizon,
+        'target_price': target_price,
+        'key_factors': key_factors,
+        'economic_events': economic_events,
+        'recent_news': news_data
+    }
+
+@csrf_exempt
+def advanced_trader_gpt_forex_analysis_endpoint(request):
+    """Advanced TraderGPT forex analysis endpoint"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST method allowed'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        currency_pairs = data.get('currency_pairs', [])
+        user_email = data.get('user_email', 'anonymous@example.com')
+        
+        if not currency_pairs:
+            return JsonResponse({'error': 'No currency pairs provided'}, status=400)
+        
+        # Create analysis session
+        session_id = str(uuid.uuid4())
+        session = TraderGPTForexAnalysisSession.objects.create(
+            session_id=session_id,
+            user_email=user_email,
+            currency_pairs=currency_pairs,
+            status='pending'
+        )
+        
+        analyses = []
+        
+        for pair in currency_pairs:
+            try:
+                # Get news data for the currency pair
+                news_data = fetch_news_data([pair], user_email)
+                pair_news = [item for item in news_data.get('message', []) if item.get('asset') == pair]
+                
+                # Get economic events
+                economic_events = get_economic_events_for_pair_two(pair)
+                
+                # Generate TraderGPT analysis
+                analysis = generate_trader_gpt_analysis(pair, pair_news, economic_events)
+                
+                # Save analysis result
+                analysis_result = TraderGPTForexAnalysisResult.objects.create(
+                    analysis_session=session,
+                    currency_pair=pair,
+                    sentiment=analysis['sentiment'],
+                    confidence_score=analysis['confidence_score'],
+                    entry_strategy=analysis['entry_strategy'],
+                    risk_level=analysis['risk_level'],
+                    time_horizon=analysis['time_horizon'],
+                    target_price=analysis['target_price'],
+                    key_factors=analysis['key_factors']
+                )
+                
+                # Link news articles
+                for news_item in pair_news[:3]:  # Limit to top 3 news items
+                    TraderGPTAnalysisNewsLink.objects.create(
+                        analysis_result=analysis_result,
+                        title=news_item.get('title', ''),
+                        description=news_item.get('description', ''),
+                        source=news_item.get('source', ''),
+                        url=news_item.get('url', ''),
+                        highlights=news_item.get('highlights', ''),
+                        relevance_score=random.randint(70, 95)
+                    )
+                
+                # Link economic events
+                for event_data in economic_events[:3]:  # Limit to top 3 events
+                    try:
+                        event = EconomicEvent.objects.filter(
+                            currency=event_data['currency'],
+                            event_name=event_data['event_name'],
+                            date_time__date=datetime.fromisoformat(event_data['date_time'].replace('Z', '+00:00')).date()
+                        ).first()
+                        
+                        if event:
+                            TraderGPTAnalysisEconomicEventLink.objects.create(
+                                analysis_result=analysis_result,
+                                economic_event=event,
+                                relevance_score=random.randint(75, 95),
+                                impact_assessment=f"Expected to impact {pair} volatility"
+                            )
+                    except Exception as e:
+                        continue
+                
+                analyses.append(analysis)
+                
+            except Exception as e:
+                # If individual pair analysis fails, continue with others
+                continue
+        
+        # Update session status
+        session.status = 'completed' if analyses else 'failed'
+        session.save()
+        
+        return JsonResponse({
+            'session_id': session_id,
+            'analyses': analyses,
+            'timestamp': timezone.now().isoformat(),
+            'total_pairs_analyzed': len(analyses)
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': f'Analysis failed: {str(e)}'}, status=500)
+
+def fetch_trader_gpt_analysis_history_endpoint(request):
+    """Fetch TraderGPT analysis history for a user"""
+    try:
+        user_email = request.GET.get('user_email', 'anonymous@example.com')
+        limit = int(request.GET.get('limit', 10))
+        
+        sessions = TraderGPTForexAnalysisSession.objects.filter(
+            user_email=user_email,
+            status='completed'
+        ).order_by('-created_at')[:limit]
+        
+        history = []
+        for session in sessions:
+            results = session.results.all()
+            session_data = {
+                'session_id': session.session_id,
+                'timestamp': session.analysis_timestamp.isoformat(),
+                'currency_pairs': session.currency_pairs,
+                'total_analyses': results.count(),
+                'analyses': [
+                    {
+                        'currency_pair': result.currency_pair,
+                        'sentiment': result.sentiment,
+                        'confidence_score': result.confidence_score,
+                        'risk_level': result.risk_level,
+                        'time_horizon': result.time_horizon
+                    }
+                    for result in results
+                ]
+            }
+            history.append(session_data)
+        
+        return JsonResponse({
+            'history': history,
+            'total_sessions': len(history)
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to fetch history: {str(e)}'}, status=500)
+
+
+
+
+# views.py - Add these views to your existing views file
+
+import json
+import time
+import http.client
+import urllib.parse
+import threading
+from datetime import datetime, timedelta
+from django.shortcuts import render
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.utils import timezone
+from django.db import transaction
+from django.conf import settings
+from .models import (
+    WatchedTradingAsset, 
+    TraderGPTAnalysisRecord, 
+    AnalysisExecutionLog,
+    EconomicEvent
+)
+import openai
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Global scheduler instance
+trader_analysis_scheduler = None
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_watched_trading_assets_view(request):
+    """Fetch all watched trading assets"""
+    try:
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True).order_by('asset')
+        assets_data = [
+            {
+                'id': asset.id,
+                'asset': asset.asset,
+                'created_at': asset.created_at.isoformat()
+            }
+            for asset in watched_assets
+        ]
+        
+        return JsonResponse({
+            'success': True,
+            'watched_assets': assets_data
+        })
+    except Exception as e:
+        logger.error(f"Error fetching watched assets: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_trading_asset_to_watch_view(request):
+    """Add a trading asset to the watch list"""
+    try:
+        data = json.loads(request.body)
+        asset = data.get('asset')
+        
+        if not asset:
+            return JsonResponse({'success': False, 'error': 'Asset is required'}, status=400)
+        
+        # Check if asset is already being watched
+        if WatchedTradingAsset.objects.filter(asset=asset, is_active=True).exists():
+            return JsonResponse({'success': False, 'error': 'Asset is already being watched'}, status=400)
+        
+        # Create or reactivate the watched asset
+        watched_asset, created = WatchedTradingAsset.objects.get_or_create(
+            asset=asset,
+            defaults={'is_active': True}
+        )
+        
+        if not created:
+            watched_asset.is_active = True
+            watched_asset.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'{asset} added to watch list',
+            'asset_id': watched_asset.id
+        })
+    except Exception as e:
+        logger.error(f"Error adding asset to watch: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def remove_watched_trading_asset_view(request):
+    """Remove a trading asset from the watch list"""
+    try:
+        data = json.loads(request.body)
+        asset_id = data.get('asset_id')
+        
+        if not asset_id:
+            return JsonResponse({'success': False, 'error': 'Asset ID is required'}, status=400)
+        
+        watched_asset = WatchedTradingAsset.objects.get(id=asset_id)
+        watched_asset.is_active = False
+        watched_asset.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Asset removed from watch list'
+        })
+    except WatchedTradingAsset.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Asset not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error removing watched asset: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_trader_gpt_analyses_view(request):
+    """Fetch the latest TraderGPT analyses for all watched assets"""
+    try:
+        # Get the most recent analysis for each asset
+        analyses = []
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True)
+        
+        for asset in watched_assets:
+            latest_analysis = TraderGPTAnalysisRecord.objects.filter(
+                asset=asset.asset
+            ).first()
+            
+            if latest_analysis:
+                analyses.append({
+                    'id': latest_analysis.id,
+                    'asset': latest_analysis.asset,
+                    'market_sentiment': latest_analysis.market_sentiment,
+                    'confidence_score': latest_analysis.confidence_score,
+                    'risk_level': latest_analysis.risk_level,
+                    'time_horizon': latest_analysis.time_horizon,
+                    'entry_strategy': latest_analysis.entry_strategy,
+                    'key_factors': latest_analysis.key_factors,
+                    'stop_loss_level': latest_analysis.stop_loss_level,
+                    'take_profit_level': latest_analysis.take_profit_level,
+                    'support_level': latest_analysis.support_level,
+                    'resistance_level': latest_analysis.resistance_level,
+                    'analysis_timestamp': latest_analysis.analysis_timestamp.isoformat(),
+                    'updated_at': latest_analysis.updated_at.isoformat(),
+                })
+        
+        return JsonResponse({
+            'success': True,
+            'analyses': analyses
+        })
+    except Exception as e:
+        logger.error(f"Error fetching analyses: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+logger = logging.getLogger(__name__)
+
+
+def validate_choice_field(value, valid_choices, default):
+    """Validate that a value matches one of the valid choices"""
+    if value and str(value).lower() in [choice[0] for choice in valid_choices]:
+        return str(value).lower()
+    return default
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def run_fresh_trader_analysis_view(request):
+    """Run a fresh analysis for a specific asset"""
+    try:
+        data = json.loads(request.body)
+        asset = data.get('asset')
+        
+        if not asset:
+            return JsonResponse({'success': False, 'error': 'Asset is required'}, status=400)
+        
+        # Check if asset is being watched
+        if not WatchedTradingAsset.objects.filter(asset=asset, is_active=True).exists():
+            return JsonResponse({'success': False, 'error': 'Asset is not in watch list'}, status=400)
+        
+        # Create execution log
+        execution_log = AnalysisExecutionLog.objects.create(
+            asset=asset,
+            status='running'
+        )
+        
+        start_time = time.time()
+        
+        try:
+            # Run the analysis
+            analysis_result = execute_trader_gpt_analysis_for_asset(asset)
+            
+            if analysis_result['success']:
+                execution_log.status = 'completed'
+                execution_log.completed_at = timezone.now()
+                execution_log.execution_time_seconds = time.time() - start_time
+                execution_log.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Fresh analysis completed for {asset}',
+                    'analysis_id': analysis_result['analysis_id']
+                })
+            else:
+                execution_log.status = 'failed'
+                execution_log.error_message = analysis_result.get('error', 'Unknown error')
+                execution_log.execution_time_seconds = time.time() - start_time
+                execution_log.save()
+                
+                return JsonResponse({
+                    'success': False,
+                    'error': analysis_result.get('error', 'Analysis failed')
+                }, status=500)
+                
+        except Exception as analysis_error:
+            execution_log.status = 'failed'
+            execution_log.error_message = str(analysis_error)
+            execution_log.execution_time_seconds = time.time() - start_time
+            execution_log.save()
+            raise
+            
+    except Exception as e:
+        logger.error(f"Error running fresh analysis: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+def get_economic_events_objects_for_currency(currency_code):
+    """Get recent economic events objects for a specified currency (for data processing)."""
+    try:
+        # Get events from the last 30 days
+        thirty_days_ago = timezone.now() - timezone.timedelta(days=30)
+        events = EconomicEvent.objects.filter(
+            currency=currency_code,
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
+        
+        return events
+    
+    except Exception as e:
+        logger.error(f"Error retrieving economic events objects for {currency_code}: {str(e)}")
+        return EconomicEvent.objects.none()  # Return empty queryset
+
+
+
+def get_economic_events_objects_for_pair(forex_pair):
+    """Get economic events objects for both currencies in a forex pair."""
+    try:
+        base_currency, quote_currency = extract_currencies_from_pair(forex_pair)
+        
+        # Get events for both currencies
+        base_events = get_economic_events_objects_for_currency(base_currency)
+        quote_events = get_economic_events_objects_for_currency(quote_currency)
+        
+        # Combine the querysets
+        from django.db.models import Q
+        combined_events = EconomicEvent.objects.filter(
+            Q(currency=base_currency) | Q(currency=quote_currency),
+            date_time__gte=timezone.now() - timezone.timedelta(days=90)
+        ).order_by('-date_time')
+        
+        return combined_events
+    
+    except Exception as e:
+        logger.error(f"Error retrieving economic events objects for pair {forex_pair}: {str(e)}")
+        return EconomicEvent.objects.none()
+
+
+def execute_trader_gpt_analysis_for_asset(asset):
+    """Execute TraderGPT analysis for a specific asset"""
+    try:
+        # Fetch news and economic data
+        user_email = "system@tradergpt.com"  # System email for automated analysis
+        news_and_events_data = fetch_news_data([asset], user_email)
+        
+        # Get recent economic events for the asset (formatted string for GPT)
+        recent_events_text = get_economic_events_for_pair(asset)
+        
+        # Get economic events objects for data storage
+        recent_events_objects = get_economic_events_objects_for_pair(asset)
+        
+        # Prepare the prompt for GPT
+        prompt = f"""
+        Analyze the {asset} currency pair and provide a comprehensive trading analysis.
+        
+        Recent News Data:
+        {json.dumps(news_and_events_data.get('message', [])[:5], indent=2)}
+        
+        Economic Events for asset:
+        {recent_events_text}
+        
+        Please provide your analysis in the following JSON format with strict character limits:
+        {{
+            "market_sentiment": "bullish|bearish|neutral (must be exactly one of these three words)",
+            "confidence_score": 85,
+            "risk_level": "low|medium|high (must be exactly one of these three words)",
+            "time_horizon": "short|medium|long (must be exactly one of these three words)",
+            "entry_strategy": "Detailed entry strategy with specific levels (max 1000 chars)",
+            "key_factors": "Key factors influencing this analysis (max 1000 chars)",
+            "stop_loss_level": "Recommended stop loss level (max 200 chars)",
+            "take_profit_level": "Recommended take profit level (max 200 chars)",
+            "support_level": "Current support level (max 200 chars)",
+            "resistance_level": "Current resistance level (max 200 chars)",
+            "summary": "Brief overall summary of the analysis (max 500 chars)"
+        }}
+        
+        IMPORTANT: 
+        - Use ONLY the exact words for sentiment (bullish/bearish/neutral), risk_level (low/medium/high), and time_horizon (short/medium/long)
+        - Keep all responses within the specified character limits
+        - Use concise, specific language with actual price levels where possible
+        - Base your analysis on current market conditions, news sentiment, economic events, and technical factors
+        """
+        
+        # Call GPT
+        gpt_response = chat_gpt(prompt)
+        
+        # Try to parse JSON from the response
+        try:
+            # Extract JSON from the response (in case there's additional text)
+            start_idx = gpt_response.find('{')
+            end_idx = gpt_response.rfind('}') + 1
+            
+            if start_idx != -1 and end_idx != -1:
+                json_str = gpt_response[start_idx:end_idx]
+                analysis_data = json.loads(json_str)
+            else:
+                # If JSON extraction fails, try parsing the whole response
+                analysis_data = json.loads(gpt_response)
+                
+        except json.JSONDecodeError as json_error:
+            logger.error(f"JSON parsing error for {asset}: {str(json_error)}")
+            logger.error(f"GPT Response: {gpt_response}")
+            
+            # If JSON parsing fails, create a basic analysis
+            analysis_data = {
+                "market_sentiment": "neutral",
+                "confidence_score": 50,
+                "risk_level": "medium",
+                "time_horizon": "medium",
+                "entry_strategy": "Wait for clearer market signals before entering position",
+                "key_factors": "Analysis could not be parsed properly from GPT response",
+                "stop_loss_level": "TBD - Analysis parsing failed",
+                "take_profit_level": "TBD - Analysis parsing failed",
+                "support_level": "TBD - Analysis parsing failed",
+                "resistance_level": "TBD - Analysis parsing failed",
+                "summary": "Analysis parsing failed, manual review required"
+            }
+        
+        # Validate choice fields against model choices
+        sentiment = validate_choice_field(
+            analysis_data.get('market_sentiment'),
+            TraderGPTAnalysisRecord.SENTIMENT_CHOICES,
+            'neutral'
+        )
+        
+        risk_level = validate_choice_field(
+            analysis_data.get('risk_level'),
+            TraderGPTAnalysisRecord.RISK_CHOICES,
+            'medium'
+        )
+        
+        time_horizon = validate_choice_field(
+            analysis_data.get('time_horizon'),
+            TraderGPTAnalysisRecord.TIME_HORIZON_CHOICES,
+            'medium'
+        )
+        
+        # Ensure confidence score is within valid range
+        confidence_score = analysis_data.get('confidence_score', 50)
+        if isinstance(confidence_score, str):
+            try:
+                confidence_score = int(confidence_score)
+            except ValueError:
+                confidence_score = 50
+        confidence_score = min(100, max(1, confidence_score))
+        
+        # Create the analysis record with validated and truncated data
+        analysis_record = TraderGPTAnalysisRecord.objects.create(
+            asset=asset,
+            market_sentiment=sentiment,
+            confidence_score=confidence_score,
+            risk_level=risk_level,
+            time_horizon=time_horizon,
+            entry_strategy=str(analysis_data.get('entry_strategy', ''))[:1000],
+            key_factors=str(analysis_data.get('key_factors', ''))[:1000],
+            stop_loss_level=str(analysis_data.get('stop_loss_level', ''))[:200],
+            take_profit_level=str(analysis_data.get('take_profit_level', ''))[:200],
+            support_level=str(analysis_data.get('support_level', ''))[:200],
+            resistance_level=str(analysis_data.get('resistance_level', ''))[:200],
+            raw_analysis=gpt_response,
+            news_data_used=news_and_events_data.get('message', []),
+            economic_events_used=[{
+                'date': event.date_time.isoformat(),
+                'currency': event.currency,
+                'event': event.event_name,
+                'impact': event.impact,
+                'actual': event.actual,
+                'forecast': event.forecast,
+                'previous': event.previous
+            } for event in recent_events_objects[:10]],  # Now using the objects queryset
+            analysis_timestamp=timezone.now()
+        )
+        
+        logger.info(f"Successfully created analysis record {analysis_record.id} for {asset}")
+        
+        return {
+            'success': True,
+            'analysis_id': analysis_record.id,
+            'message': f'Analysis completed for {asset}'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in execute_trader_gpt_analysis_for_asset for {asset}: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def run_scheduled_trader_gpt_analyses():
+    """
+    Scheduled function to run TraderGPT analyses for all watched assets.
+    This should be called by a scheduler (like Celery, cron, or Django-RQ)
+    """
+    try:
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True)
+        
+        if not watched_assets.exists():
+            logger.info("No watched assets found for analysis")
+            return
+        
+        logger.info(f"Starting scheduled analysis for {watched_assets.count()} assets")
+        
+        results = {
+            'successful': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+        for asset in watched_assets:
+            try:
+                # Check if we already have a recent analysis (within last 4 hours)
+                recent_analysis = TraderGPTAnalysisRecord.objects.filter(
+                    asset=asset.asset,
+                    analysis_timestamp__gte=timezone.now() - timedelta(hours=4)
+                ).exists()
+                
+                if not recent_analysis:
+                    logger.info(f"Running analysis for {asset.asset}")
+                    result = execute_trader_gpt_analysis_for_asset(asset.asset)
+                    
+                    if result['success']:
+                        results['successful'] += 1
+                        logger.info(f"Analysis completed for {asset.asset}")
+                    else:
+                        results['failed'] += 1
+                        results['errors'].append(f"{asset.asset}: {result.get('error', 'Unknown error')}")
+                        logger.error(f"Analysis failed for {asset.asset}: {result.get('error')}")
+                else:
+                    logger.info(f"Skipping {asset.asset} - recent analysis exists")
+                    
+                # Add a small delay between analyses to avoid rate limits
+                time.sleep(2)
+                
+            except Exception as e:
+                results['failed'] += 1
+                results['errors'].append(f"{asset.asset}: {str(e)}")
+                logger.error(f"Error analyzing {asset.asset}: {str(e)}")
+        
+        logger.info(f"Scheduled analysis completed. Successful: {results['successful']}, Failed: {results['failed']}")
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error in run_scheduled_trader_gpt_analyses: {str(e)}")
+        return {
+            'successful': 0,
+            'failed': 0,
+            'errors': [str(e)]
+        }
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def trigger_bulk_analysis_view(request):
+    """Manual trigger for bulk analysis of all watched assets"""
+    try:
+        results = run_scheduled_trader_gpt_analyses()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Bulk analysis completed',
+            'results': results
+        })
+    except Exception as e:
+        logger.error(f"Error in trigger_bulk_analysis_view: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+def get_economic_events_for_pair_council(currency_pair):
+    """
+    Enhanced function to get relevant economic events for a currency pair
+    """
+    try:
+        # Extract currencies from the pair (e.g., EURUSD -> EUR, USD)
+        if len(currency_pair) == 6:
+            base_currency = currency_pair[:3]
+            quote_currency = currency_pair[3:]
+        else:
+            # Handle other formats if needed
+            return []
+        
+        # Get events for both currencies in the pair
+        relevant_currencies = [base_currency, quote_currency]
+        
+        # Get upcoming events (next 7 days) and recent events (past 3 days)
+        start_date = timezone.now() - timedelta(days=3)
+        end_date = timezone.now() + timedelta(days=7)
+        
+        events = EconomicEvent.objects.filter(
+            currency__in=relevant_currencies,
+            date_time__range=[start_date, end_date]
+        ).order_by('date_time')
+        
+        return [{
+            'date_time': event.date_time.isoformat(),
+            'currency': event.currency,
+            'impact': event.impact,
+            'event_name': event.event_name,
+            'actual': event.actual,
+            'forecast': event.forecast,
+            'previous': event.previous,
+        } for event in events]
+        
+    except Exception as e:
+        logger.error(f"Error getting economic events for {currency_pair}: {str(e)}")
+        return []
+
+
+class TraderAnalysisScheduler:
+    """
+    Simple threading-based scheduler for TraderGPT analyses
+    """
+    def __init__(self, interval_hours=4):
+        self.interval_hours = interval_hours
+        self.running = False
+        self.thread = None
+        self.last_run = None
+        
+    def start(self):
+        """Start the scheduler"""
+        if self.running:
+            logger.info("Scheduler is already running")
+            return
+            
+        self.running = True
+        self.thread = threading.Thread(target=self._run_scheduler, daemon=True)
+        self.thread.start()
+        logger.info(f"TraderGPT analysis scheduler started with {self.interval_hours} hour intervals")
+        
+    def stop(self):
+        """Stop the scheduler"""
+        if not self.running:
+            return
+            
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=5)
+        logger.info("TraderGPT analysis scheduler stopped")
+        
+    def is_running(self):
+        """Check if scheduler is running"""
+        return self.running and self.thread and self.thread.is_alive()
+        
+    def get_status(self):
+        """Get scheduler status"""
+        return {
+            'running': self.is_running(),
+            'interval_hours': self.interval_hours,
+            'last_run': self.last_run.isoformat() if self.last_run else None,
+            'next_run': (self.last_run + timedelta(hours=self.interval_hours)).isoformat() if self.last_run else None
+        }
+        
+    def _run_scheduler(self):
+        """Internal method to run the scheduled analysis"""
+        logger.info("Starting TraderGPT analysis scheduler loop")
+        
+        while self.running:
+            try:
+                current_time = timezone.now()
+                
+                # Check if it's time to run (either first run or interval has passed)
+                if (self.last_run is None or 
+                    current_time >= self.last_run + timedelta(hours=self.interval_hours)):
+                    
+                    logger.info("Running scheduled TraderGPT analysis...")
+                    self.last_run = current_time
+                    
+                    results = run_scheduled_trader_gpt_analyses()
+                    logger.info(f"Scheduled analysis completed: {results}")
+                
+                # Sleep for 1 minute before checking again
+                for _ in range(60):  # 60 seconds = 1 minute
+                    if not self.running:
+                        break
+                    time.sleep(1)
+                    
+            except Exception as e:
+                logger.error(f"Error in scheduler loop: {str(e)}")
+                # Sleep for 5 minutes on error before retrying
+                for _ in range(300):  # 300 seconds = 5 minutes
+                    if not self.running:
+                        break
+                    time.sleep(1)
+
+
+def start_trader_analysis_scheduler():
+    """Start the global scheduler instance"""
+    global trader_analysis_scheduler
+    
+    if trader_analysis_scheduler is None:
+        trader_analysis_scheduler = TraderAnalysisScheduler(interval_hours=4)
+    
+    if not trader_analysis_scheduler.is_running():
+        trader_analysis_scheduler.start()
+        return True
+    return False
+
+
+def stop_trader_analysis_scheduler():
+    """Stop the global scheduler instance"""
+    global trader_analysis_scheduler
+    
+    if trader_analysis_scheduler and trader_analysis_scheduler.is_running():
+        trader_analysis_scheduler.stop()
+        return True
+    return False
+
+
+def get_scheduler_status():
+    """Get the current scheduler status"""
+    global trader_analysis_scheduler
+    
+    if trader_analysis_scheduler is None:
+        return {
+            'running': False,
+            'interval_hours': 8,
+            'last_run': None,
+            'next_run': None
+        }
+    
+    return trader_analysis_scheduler.get_status()
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def start_scheduler_view(request):
+    """API endpoint to start the scheduler"""
+    try:
+        started = start_trader_analysis_scheduler()
+        
+        if started:
+            return JsonResponse({
+                'success': True,
+                'message': 'Scheduler started successfully',
+                'status': get_scheduler_status()
+            })
+        else:
+            return JsonResponse({
+                'success': True,
+                'message': 'Scheduler is already running',
+                'status': get_scheduler_status()
+            })
+    except Exception as e:
+        logger.error(f"Error starting scheduler: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def stop_scheduler_view(request):
+    """API endpoint to stop the scheduler"""
+    try:
+        stopped = stop_trader_analysis_scheduler()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Scheduler stopped successfully' if stopped else 'Scheduler was not running',
+            'status': get_scheduler_status()
+        })
+    except Exception as e:
+        logger.error(f"Error stopping scheduler: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def scheduler_status_view(request):
+    """API endpoint to get scheduler status"""
+    try:
+        return JsonResponse({
+            'success': True,
+            'status': get_scheduler_status()
+        })
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# Auto-start scheduler when Django starts (optional)
+def auto_start_scheduler():
+    """Auto-start the scheduler when Django starts"""
+    try:
+        # Only start if we're in production or if AUTO_START_SCHEDULER is True
+        if getattr(settings, 'AUTO_START_TRADER_SCHEDULER', False):
+            start_trader_analysis_scheduler()
+            logger.info("Auto-started TraderGPT analysis scheduler")
+    except Exception as e:
+        logger.error(f"Error auto-starting scheduler: {str(e)}")
+
+
+# Call auto-start when this module is imported (optional)
+# Uncomment the line below if you want the scheduler to auto-start
+# auto_start_scheduler()
+
+# Add this to your existing views.py where you have the BackgroundScheduler defined
+
+# Assuming you already have this at the top of your views.py:
+# from apscheduler.schedulers.background import BackgroundScheduler
+# scheduler = BackgroundScheduler()
+# scheduler.start()
+
+# Add this job registration after your scheduler.start() line:
+
+def setup_trader_gpt_analysis_scheduler():
+    """Setup the TraderGPT analysis job in the existing scheduler"""
+    try:
+        # Add job to run every 4 hours
+        scheduler.add_job(
+            func=run_scheduled_trader_gpt_analyses,
+            trigger='interval',
+            hours=8,
+            id='trader_gpt_analysis_job',
+            name='TraderGPT Analysis Job',
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info("TraderGPT analysis job added to scheduler - runs every 8 hours")
+        
+        # Optional: Add a job to clean up old analyses (runs daily at 2 AM)
+        scheduler.add_job(
+            func=cleanup_old_analyses,
+            trigger='cron',
+            hour=2,
+            minute=0,
+            id='cleanup_old_analyses_job',
+            name='Cleanup Old Analyses Job',
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info("Cleanup job added to scheduler - runs daily at 2 AM")
+        
+    except Exception as e:
+        logger.error(f"Error setting up TraderGPT scheduler: {str(e)}")
+
+def cleanup_old_analyses():
+    """Clean up analyses older than 30 days"""
+    try:
+        cutoff_date = timezone.now() - timedelta(days=30)
+        deleted_count = TraderGPTAnalysisRecord.objects.filter(
+            created_at__lt=cutoff_date
+        ).count()
+        
+        TraderGPTAnalysisRecord.objects.filter(
+            created_at__lt=cutoff_date
+        ).delete()
+        
+        # Also clean up old execution logs
+        AnalysisExecutionLog.objects.filter(
+            started_at__lt=cutoff_date
+        ).delete()
+        
+        logger.info(f"Cleaned up {deleted_count} old analysis records")
+        
+    except Exception as e:
+        logger.error(f"Error cleaning up old analyses: {str(e)}")
+
+# Call this function after your scheduler.start() line
+setup_trader_gpt_analysis_scheduler()
+
+# Optional: Add these utility functions to manage the scheduler
+
+def start_trader_analysis_job():
+    """Manually start the trader analysis job"""
+    try:
+        scheduler.add_job(
+            func=run_scheduled_trader_gpt_analyses,
+            trigger='interval',
+            hours=8,
+            id='trader_gpt_analysis_job',
+            name='TraderGPT Analysis Job',
+            replace_existing=True,
+            max_instances=1
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Error starting trader analysis job: {str(e)}")
+        return False
+
+def stop_trader_analysis_job():
+    """Manually stop the trader analysis job"""
+    try:
+        scheduler.remove_job('trader_gpt_analysis_job')
+        return True
+    except Exception as e:
+        logger.error(f"Error stopping trader analysis job: {str(e)}")
+        return False
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def manage_scheduler_view(request):
+    """Endpoint to manage the scheduler (start/stop/status)"""
+    try:
+        data = json.loads(request.body)
+        action = data.get('action')
+        
+        if action == 'start':
+            success = start_trader_analysis_job()
+            message = 'Scheduler started successfully' if success else 'Failed to start scheduler'
+        elif action == 'stop':
+            success = stop_trader_analysis_job()
+            message = 'Scheduler stopped successfully' if success else 'Failed to stop scheduler'
+        elif action == 'status':
+            jobs = scheduler.get_jobs()
+            trader_job = next((job for job in jobs if job.id == 'trader_gpt_analysis_job'), None)
+            success = True
+            message = {
+                'running': trader_job is not None,
+                'next_run_time': trader_job.next_run_time.isoformat() if trader_job and trader_job.next_run_time else None,
+                'total_jobs': len(jobs)
+            }
+        else:
+            return JsonResponse({'success': False, 'error': 'Invalid action'}, status=400)
+        
+        return JsonResponse({
+            'success': success,
+            'message': message
+        })
+        
+    except Exception as e:
+        logger.error(f"Error managing scheduler: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# If you want to run the analysis immediately on startup (optional)
+def run_initial_analysis():
+    """Run analysis once on startup"""
+    try:
+        # Add a one-time job to run analysis after 30 seconds
+        scheduler.add_job(
+            func=run_scheduled_trader_gpt_analyses,
+            trigger='date',
+            run_date=timezone.now() + timedelta(seconds=30),
+            id='initial_analysis_job',
+            name='Initial Analysis Job'
+        )
+        logger.info("Initial analysis scheduled to run in 30 seconds")
+    except Exception as e:
+        logger.error(f"Error scheduling initial analysis: {str(e)}")
+
+# Uncomment the line below if you want to run analysis immediately on startup
+# run_initial_analysis()
+
+# Add these views to your views.py
+
+import json
+import time
+import uuid
+import logging
+from datetime import datetime
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.utils import timezone
+from django.core.paginator import Paginator
+from django.db.models import Q
+
+# Import your existing models and functions
+from .models import (
+    WatchedTradingAsset, 
+    AITradingCouncilConversation, 
+    AITradingCouncilParticipant,
+    TraderGPTAnalysisRecord
+)
+
+logger = logging.getLogger(__name__)
+
+def execute_ai_trading_council_conversation():
+    """Execute an AI Trading Council conversation with all active watched assets"""
+    try:
+        # Get all active watched assets
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True)
+        
+        if not watched_assets.exists():
+            return {
+                'success': False,
+                'error': 'No active watched assets found for council discussion'
+            }
+        
+        # Create conversation record
+        conversation_id = f"council_{uuid.uuid4().hex[:12]}_{int(time.time())}"
+        
+        conversation = AITradingCouncilConversation.objects.create(
+            conversation_id=conversation_id,
+            title=f"AI Trading Council Discussion - {timezone.now().strftime('%Y-%m-%d %H:%M')}",
+            participating_assets=[asset.asset for asset in watched_assets],
+            total_participants=watched_assets.count(),
+            status='running'
+        )
+        
+        start_time = time.time()
+        
+        try:
+            # Execute the conversation
+            conversation_result = run_council_discussion(conversation, watched_assets)
+            
+            if conversation_result['success']:
+                # Update conversation with results
+                conversation.status = 'completed'
+                conversation.completed_at = timezone.now()
+                conversation.execution_time_seconds = time.time() - start_time
+                conversation.conversation_data = conversation_result['conversation_data']
+                conversation.conversation_summary = conversation_result['summary']
+                conversation.overall_economic_outlook = conversation_result['economic_outlook']
+                conversation.global_market_sentiment = conversation_result['market_sentiment']
+                conversation.market_volatility_level = conversation_result['volatility_level']
+                conversation.major_economic_themes = conversation_result['themes']
+                conversation.currency_strength_rankings = conversation_result['currency_rankings']
+                conversation.risk_factors_identified = conversation_result['risk_factors']
+                conversation.opportunity_areas = conversation_result['opportunities']
+                conversation.bullish_sentiment_count = conversation_result['sentiment_counts']['bullish']
+                conversation.bearish_sentiment_count = conversation_result['sentiment_counts']['bearish']
+                conversation.neutral_sentiment_count = conversation_result['sentiment_counts']['neutral']
+                conversation.average_confidence_score = conversation_result['avg_confidence']
+                conversation.save()
+                
+                return {
+                    'success': True,
+                    'conversation_id': conversation.conversation_id,
+                    'message': 'AI Trading Council conversation completed successfully'
+                }
+            else:
+                conversation.status = 'failed'
+                conversation.error_message = conversation_result.get('error', 'Unknown error')
+                conversation.execution_time_seconds = time.time() - start_time
+                conversation.save()
+                
+                return {
+                    'success': False,
+                    'error': conversation_result.get('error', 'Council conversation failed')
+                }
+                
+        except Exception as conversation_error:
+            conversation.status = 'failed'
+            conversation.error_message = str(conversation_error)
+            conversation.execution_time_seconds = time.time() - start_time
+            conversation.save()
+            raise
+            
+    except Exception as e:
+        logger.error(f"Error executing AI Trading Council conversation: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def run_council_discussion(conversation, watched_assets):
+    """Run the actual AI council discussion"""
+    try:
+        conversation_turns = []
+        participants_data = {}
+        sentiment_counts = {'bullish': 0, 'bearish': 0, 'neutral': 0}
+        total_confidence = 0
+        confidence_count = 0
+        
+        # Get recent analysis for each asset to base the discussion on
+        for asset in watched_assets:
+            recent_analysis = TraderGPTAnalysisRecord.objects.filter(
+                asset=asset.asset
+            ).order_by('-analysis_timestamp').first()
+            
+            if recent_analysis:
+                participant_name = f"{asset.get_asset_display()} Analyst"
+                participants_data[asset.asset] = {
+                    'name': participant_name,
+                    'analysis': recent_analysis,
+                    'turns_count': 0
+                }
+        
+        # Run 3 rounds of discussion
+        for round_num in range(1, 4):
+            round_prompt = get_round_prompt(round_num, participants_data, conversation_turns)
+            
+            for asset_code, participant_data in participants_data.items():
+                if participant_data['analysis']:
+                    # Generate participant's response for this round
+                    participant_response = generate_participant_response(
+                        participant_data, 
+                        round_num, 
+                        conversation_turns,
+                        round_prompt
+                    )
+                    
+                    conversation_turns.append({
+                        'round': round_num,
+                        'participant': participant_data['name'],
+                        'asset': asset_code,
+                        'message': participant_response['message'],
+                        'timestamp': timezone.now().isoformat(),
+                        'sentiment': participant_response['sentiment'],
+                        'confidence': participant_response['confidence']
+                    })
+                    
+                    # Update counts
+                    sentiment_counts[participant_response['sentiment']] += 1
+                    total_confidence += participant_response['confidence']
+                    confidence_count += 1
+                    participants_data[asset_code]['turns_count'] += 1
+        
+        # Generate overall summary and insights
+        summary_data = generate_conversation_summary(conversation_turns, participants_data)
+        
+        # Create participant records
+        for asset_code, participant_data in participants_data.items():
+            if participant_data['analysis']:
+                AITradingCouncilParticipant.objects.create(
+                    conversation=conversation,
+                    asset_code=asset_code,
+                    participant_name=participant_data['name'],
+                    market_sentiment=participant_data['analysis'].market_sentiment,
+                    confidence_score=participant_data['analysis'].confidence_score,
+                    risk_assessment=participant_data['analysis'].risk_level,
+                    key_insights=extract_participant_insights(asset_code, conversation_turns),
+                    turns_spoken=participant_data['turns_count']
+                )
+        
+        return {
+            'success': True,
+            'conversation_data': {'turns': conversation_turns},
+            'summary': summary_data['summary'],
+            'economic_outlook': summary_data['economic_outlook'],
+            'market_sentiment': summary_data['market_sentiment'],
+            'volatility_level': summary_data['volatility_level'],
+            'themes': summary_data['themes'],
+            'currency_rankings': summary_data['currency_rankings'],
+            'risk_factors': summary_data['risk_factors'],
+            'opportunities': summary_data['opportunities'],
+            'sentiment_counts': sentiment_counts,
+            'avg_confidence': total_confidence / confidence_count if confidence_count > 0 else 0
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in council discussion: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def get_round_prompt(round_num, participants_data, conversation_turns):
+    """Get the prompt for each discussion round"""
+    if round_num == 1:
+        return "Present your current market analysis and outlook for your currency pair."
+    elif round_num == 2:
+        return "Discuss how global economic factors are affecting your market and respond to other analysts' viewpoints."
+    else:
+        return "Provide your final assessment and key recommendations based on the full discussion."
+
+
+def generate_participant_response(participant_data, round_num, conversation_turns, round_prompt):
+    """Generate a participant's response using GPT"""
+    try:
+        analysis = participant_data['analysis']
+        participant_name = participant_data['name']
+        
+        # Build context from previous turns
+        previous_context = ""
+        if conversation_turns:
+            recent_turns = conversation_turns[-6:]  # Last 6 turns for context
+            for turn in recent_turns:
+                previous_context += f"{turn['participant']}: {turn['message'][:200]}...\n"
+        
+        prompt = f"""
+        You are {participant_name}, an expert analyst specializing in {analysis.asset}.
+        
+        Current Analysis Data:
+        - Market Sentiment: {analysis.market_sentiment}
+        - Confidence: {analysis.confidence_score}%
+        - Risk Level: {analysis.risk_level}
+        - Entry Strategy: {analysis.entry_strategy}
+        - Key Factors: {analysis.key_factors}
+        
+        Previous Discussion Context:
+        {previous_context}
+        
+        Round {round_num} Task: {round_prompt}
+        
+        Provide your response as a trading expert in exactly this JSON format:
+        {{
+            "message": "Your response as the {participant_name} (max 500 characters, professional trading discussion style)",
+            "sentiment": "bullish|bearish|neutral",
+            "confidence": {analysis.confidence_score},
+            "key_point": "One key insight from your analysis (max 200 characters)"
+        }}
+        
+        Keep responses concise, professional, and focused on trading insights.
+        """
+        
+        # Call GPT (using your existing chat_gpt function)
+        gpt_response = chat_gpt(prompt)
+        
+        try:
+            # Parse JSON response
+            start_idx = gpt_response.find('{')
+            end_idx = gpt_response.rfind('}') + 1
+            
+            if start_idx != -1 and end_idx != -1:
+                json_str = gpt_response[start_idx:end_idx]
+                response_data = json.loads(json_str)
+            else:
+                response_data = json.loads(gpt_response)
+                
+        except json.JSONDecodeError:
+            # Fallback response if JSON parsing fails
+            response_data = {
+                "message": f"Based on my {analysis.asset} analysis, I maintain a {analysis.market_sentiment} outlook with {analysis.confidence_score}% confidence.",
+                "sentiment": analysis.market_sentiment,
+                "confidence": analysis.confidence_score,
+                "key_point": "Technical and fundamental factors support current assessment"
+            }
+        
+        return response_data
+        
+    except Exception as e:
+        logger.error(f"Error generating participant response: {str(e)}")
+        return {
+            "message": f"Currently analyzing {participant_data['analysis'].asset} market conditions.",
+            "sentiment": "neutral",
+            "confidence": 50,
+            "key_point": "Analysis in progress"
+        }
+
+
+def generate_conversation_summary(conversation_turns, participants_data):
+    """Generate overall conversation summary and insights"""
+    try:
+        # Prepare conversation summary for GPT
+        conversation_text = ""
+        for turn in conversation_turns:
+            conversation_text += f"{turn['participant']}: {turn['message']}\n"
+        
+        prompt = f"""
+        Analyze this AI Trading Council discussion and provide insights about the global economy:
+        
+        Discussion:
+        {conversation_text}
+        
+        Provide analysis in this JSON format:
+        {{
+            "summary": "Comprehensive summary of the discussion and key conclusions (max 1000 chars)",
+            "economic_outlook": "very_positive|positive|neutral|negative|very_negative",
+            "market_sentiment": "bullish|bearish|neutral",
+            "volatility_level": "low|medium|high|extreme",
+            "themes": ["theme1", "theme2", "theme3"],
+            "currency_rankings": {{"strongest": "USD", "weakest": "EUR", "neutral": ["GBP", "JPY"]}},
+            "risk_factors": ["risk1", "risk2", "risk3"],
+            "opportunities": ["opportunity1", "opportunity2"]
+        }}
+        """
+        
+        gpt_response = chat_gpt(prompt)
+        
+        try:
+            start_idx = gpt_response.find('{')
+            end_idx = gpt_response.rfind('}') + 1
+            
+            if start_idx != -1 and end_idx != -1:
+                json_str = gpt_response[start_idx:end_idx]
+                summary_data = json.loads(json_str)
+            else:
+                summary_data = json.loads(gpt_response)
+        except json.JSONDecodeError:
+            # Fallback summary
+            summary_data = {
+                "summary": "AI Trading Council discussed current market conditions across multiple currency pairs with varying outlooks.",
+                "economic_outlook": "neutral",
+                "market_sentiment": "neutral",
+                "volatility_level": "medium",
+                "themes": ["Market Analysis", "Economic Indicators", "Risk Assessment"],
+                "currency_rankings": {"strongest": "USD", "weakest": "EUR", "neutral": []},
+                "risk_factors": ["Market Volatility", "Economic Uncertainty"],
+                "opportunities": ["Technical Setups", "Fundamental Shifts"]
+            }
+        
+        return summary_data
+        
+    except Exception as e:
+        logger.error(f"Error generating conversation summary: {str(e)}")
+        return {
+            "summary": "Discussion summary unavailable due to processing error.",
+            "economic_outlook": "neutral",
+            "market_sentiment": "neutral",
+            "volatility_level": "medium",
+            "themes": [],
+            "currency_rankings": {},
+            "risk_factors": [],
+            "opportunities": []
+        }
+
+
+def extract_participant_insights(asset_code, conversation_turns):
+    """Extract key insights made by a specific participant"""
+    insights = []
+    for turn in conversation_turns:
+        if turn['asset'] == asset_code:
+            insights.append(turn['message'][:200])
+    return insights
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def run_manual_council_conversation_view(request):
+    """API endpoint to manually trigger a council conversation"""
+    try:
+        result = execute_ai_trading_council_conversation()
+        
+        if result['success']:
+            return JsonResponse({
+                'success': True,
+                'message': result['message'],
+                'conversation_id': result['conversation_id']
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': result['error']
+            }, status=500)
+            
+    except Exception as e:
+        logger.error(f"Error in manual council conversation view: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_council_conversations_view(request):
+    """API endpoint to get council conversations with pagination"""
+    try:
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 10))
+        
+        conversations = AITradingCouncilConversation.objects.all().order_by('-created_at')
+        paginator = Paginator(conversations, page_size)
+        page_obj = paginator.get_page(page)
+        
+        conversations_data = []
+        for conversation in page_obj:
+            conversations_data.append({
+                'id': conversation.id,
+                'conversation_id': conversation.conversation_id,
+                'title': conversation.title,
+                'status': conversation.status,
+                'created_at': conversation.created_at.isoformat(),
+                'completed_at': conversation.completed_at.isoformat() if conversation.completed_at else None,
+                'participating_assets': conversation.participating_assets,
+                'total_participants': conversation.total_participants,
+                'conversation_summary': conversation.conversation_summary,
+                'overall_economic_outlook': conversation.overall_economic_outlook,
+                'global_market_sentiment': conversation.global_market_sentiment,
+                'market_volatility_level': conversation.market_volatility_level,
+                'major_economic_themes': conversation.major_economic_themes,
+                'currency_strength_rankings': conversation.currency_strength_rankings,
+                'risk_factors_identified': conversation.risk_factors_identified,
+                'opportunity_areas': conversation.opportunity_areas,
+                'bullish_sentiment_count': conversation.bullish_sentiment_count,
+                'bearish_sentiment_count': conversation.bearish_sentiment_count,
+                'neutral_sentiment_count': conversation.neutral_sentiment_count,
+                'average_confidence_score': conversation.average_confidence_score,
+                'execution_time_seconds': conversation.execution_time_seconds,
+                'conversation_turns_count': conversation.get_conversation_turns_count(),
+                'dominant_sentiment': conversation.get_dominant_sentiment()
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'conversations': conversations_data,
+            'pagination': {
+                'current_page': page,
+                'total_pages': paginator.num_pages,
+                'total_conversations': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting council conversations: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_council_conversation_details_view(request, conversation_id):
+    """API endpoint to get detailed conversation data"""
+    try:
+        conversation = AITradingCouncilConversation.objects.get(conversation_id=conversation_id)
+        participants = AITradingCouncilParticipant.objects.filter(conversation=conversation)
+        
+        participants_data = []
+        for participant in participants:
+            participants_data.append({
+                'asset_code': participant.asset_code,
+                'participant_name': participant.participant_name,
+                'market_sentiment': participant.market_sentiment,
+                'confidence_score': participant.confidence_score,
+                'risk_assessment': participant.risk_assessment,
+                'key_insights': participant.key_insights,
+                'turns_spoken': participant.turns_spoken
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'conversation': {
+                'conversation_id': conversation.conversation_id,
+                'title': conversation.title,
+                'status': conversation.status,
+                'created_at': conversation.created_at.isoformat(),
+                'completed_at': conversation.completed_at.isoformat() if conversation.completed_at else None,
+                'conversation_data': conversation.conversation_data,
+                'conversation_summary': conversation.conversation_summary,
+                'overall_economic_outlook': conversation.overall_economic_outlook,
+                'global_market_sentiment': conversation.global_market_sentiment,
+                'market_volatility_level': conversation.market_volatility_level,
+                'major_economic_themes': conversation.major_economic_themes,
+                'currency_strength_rankings': conversation.currency_strength_rankings,
+                'risk_factors_identified': conversation.risk_factors_identified,
+                'opportunity_areas': conversation.opportunity_areas,
+                'execution_time_seconds': conversation.execution_time_seconds
+            },
+            'participants': participants_data
+        })
+        
+    except AITradingCouncilConversation.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Conversation not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error getting conversation details: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# Add this to your scheduler setup (where you have BackgroundScheduler)
+
+import logging
+from apscheduler.schedulers.background import BackgroundScheduler
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+def schedule_ai_council_conversations():
+    """Schedule AI Trading Council conversations"""
+    try:
+        # Import here to avoid circular imports
+        from .views import execute_ai_trading_council_conversation
+        
+        logger.info("Starting scheduled AI Trading Council conversation...")
+        result = execute_ai_trading_council_conversation()
+        
+        if result['success']:
+            logger.info(f"Scheduled AI Council conversation completed: {result['conversation_id']}")
+        else:
+            logger.error(f"Scheduled AI Council conversation failed: {result['error']}")
+            
+    except Exception as e:
+        logger.error(f"Error in scheduled AI Council conversation: {str(e)}")
+
+# Add this job to your existing scheduler
+# scheduler = BackgroundScheduler()  # You already have this
+
+# Schedule AI Council conversations to run every 24 hours
+scheduler.add_job(
+    schedule_ai_council_conversations,
+    'interval',
+    hours=24,
+    id='ai_trading_council_conversations',
+    replace_existing=True,
+    max_instances=1
+)
+
+# # You can also add different schedules:
+
+# # Run daily at 9 AM UTC
+# scheduler.add_job(
+#     schedule_ai_council_conversations,
+#     'cron',
+#     hour=9,
+#     minute=0,
+#     id='daily_council_morning',
+#     replace_existing=True,
+#     max_instances=1
+# )
+
+# # Run daily at 3 PM UTC (market close)
+# scheduler.add_job(
+#     schedule_ai_council_conversations,
+#     'cron',
+#     hour=15,
+#     minute=0,
+#     id='daily_council_afternoon',
+#     replace_existing=True,
+#     max_instances=1
+# )
+
+
+from django.shortcuts import render, get_object_or_404
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+from django.db.models import Q
+import json
+import base64
+import os
+from .models import FirmCompliance
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def firm_compliance_list(request):
+    """List all firm compliance records or create a new one"""
+    
+    if request.method == "GET":
+        # Get search query if provided
+        search_query = request.GET.get('search', '')
+        
+        # Filter records based on search query
+        if search_query:
+            records = FirmCompliance.objects.filter(
+                Q(firm_name__icontains=search_query) | 
+                Q(personal_notes__icontains=search_query)
+            )
+        else:
+            records = FirmCompliance.objects.all()
+        
+        # Serialize data
+        data = []
+        for record in records:
+            data.append({
+                'id': str(record.id),
+                'firm_name': record.firm_name,
+                'personal_notes': record.personal_notes,
+                'logo_url': record.logo_url,  # This will now return base64 data URL
+                'created_at': record.created_at.isoformat(),
+                'updated_at': record.updated_at.isoformat(),
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'data': data,
+            'count': len(data)
+        })
+    
+    elif request.method == "POST":
+        try:
+            # Handle both JSON and form data
+            if request.content_type == 'application/json':
+                data = json.loads(request.body)
+                firm_name = data.get('firm_name', '').strip()
+                personal_notes = data.get('personal_notes', '').strip()
+                logo_data = data.get('logo_data')  # Base64 encoded image
+                logo_filename = data.get('logo_filename')
+            else:
+                firm_name = request.POST.get('firm_name', '').strip()
+                personal_notes = request.POST.get('personal_notes', '').strip()
+                logo_file = request.FILES.get('firm_logo')
+            
+            # Validate required fields
+            if not firm_name:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Firm name is required'
+                }, status=400)
+            
+            # Create new record
+            record = FirmCompliance.objects.create(
+                firm_name=firm_name,
+                personal_notes=personal_notes
+            )
+            
+            # Handle logo upload
+            if request.content_type == 'application/json' and logo_data and logo_filename:
+                # Handle base64 encoded image
+                try:
+                    format, imgstr = logo_data.split(';base64,')
+                    ext = format.split('/')[-1]
+                    
+                    # Ensure we have a valid file extension
+                    if ext not in ['jpeg', 'jpg', 'png', 'gif', 'webp']:
+                        ext = 'png'  # default to png
+                    
+                    filename = f"{record.id}_{logo_filename}"
+                    if not filename.lower().endswith(('.' + ext)):
+                        filename = f"{filename}.{ext}"
+                    
+                    logo_file = ContentFile(
+                        base64.b64decode(imgstr),
+                        name=filename
+                    )
+                    record.firm_logo.save(logo_file.name, logo_file, save=True)
+                except Exception as e:
+                    print(f"Error saving logo: {e}")
+                    # If logo upload fails, continue without it
+                    pass
+            elif 'firm_logo' in request.FILES:
+                # Handle direct file upload
+                record.firm_logo = request.FILES['firm_logo']
+                record.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Firm compliance record created successfully',
+                'data': {
+                    'id': str(record.id),
+                    'firm_name': record.firm_name,
+                    'personal_notes': record.personal_notes,
+                    'logo_url': record.logo_url,  # This will now return base64 data URL
+                    'created_at': record.created_at.isoformat(),
+                    'updated_at': record.updated_at.isoformat(),
+                }
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'success': False,
+                'message': 'Invalid JSON data'
+            }, status=400)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': f'Error creating record: {str(e)}'
+            }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT", "DELETE"])
+def firm_compliance_detail(request, compliance_id):
+    """Get, update, or delete a specific firm compliance record"""
+    
+    try:
+        record = get_object_or_404(FirmCompliance, id=compliance_id)
+    except Exception:
+        return JsonResponse({
+            'success': False,
+            'message': 'Record not found'
+        }, status=404)
+    
+    if request.method == "GET":
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'id': str(record.id),
+                'firm_name': record.firm_name,
+                'personal_notes': record.personal_notes,
+                'logo_url': record.logo_url,  # This will now return base64 data URL
+                'created_at': record.created_at.isoformat(),
+                'updated_at': record.updated_at.isoformat(),
+            }
+        })
+    
+    elif request.method == "PUT":
+        try:
+            data = json.loads(request.body)
+            
+            # Update fields if provided
+            if 'firm_name' in data:
+                firm_name = data['firm_name'].strip()
+                if not firm_name:
+                    return JsonResponse({
+                        'success': False,
+                        'message': 'Firm name cannot be empty'
+                    }, status=400)
+                record.firm_name = firm_name
+            
+            if 'personal_notes' in data:
+                record.personal_notes = data['personal_notes'].strip()
+            
+            # Handle logo update
+            if 'logo_data' in data and 'logo_filename' in data:
+                try:
+                    format, imgstr = data['logo_data'].split(';base64,')
+                    ext = format.split('/')[-1]
+                    
+                    # Ensure we have a valid file extension
+                    if ext not in ['jpeg', 'jpg', 'png', 'gif', 'webp']:
+                        ext = 'png'  # default to png
+                    
+                    # Delete old logo if exists
+                    if record.firm_logo:
+                        default_storage.delete(record.firm_logo.name)
+                    
+                    filename = f"{record.id}_{data['logo_filename']}"
+                    if not filename.lower().endswith(('.' + ext)):
+                        filename = f"{filename}.{ext}"
+                    
+                    logo_file = ContentFile(
+                        base64.b64decode(imgstr),
+                        name=filename
+                    )
+                    record.firm_logo.save(logo_file.name, logo_file, save=False)
+                except Exception as e:
+                    print(f"Error updating logo: {e}")
+                    pass
+            
+            record.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Record updated successfully',
+                'data': {
+                    'id': str(record.id),
+                    'firm_name': record.firm_name,
+                    'personal_notes': record.personal_notes,
+                    'logo_url': record.logo_url,  # This will now return base64 data URL
+                    'created_at': record.created_at.isoformat(),
+                    'updated_at': record.updated_at.isoformat(),
+                }
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'success': False,
+                'message': 'Invalid JSON data'
+            }, status=400)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': f'Error updating record: {str(e)}'
+            }, status=500)
+    
+    elif request.method == "DELETE":
+        try:
+            # Delete the logo file if it exists
+            if record.firm_logo:
+                default_storage.delete(record.firm_logo.name)
+            
+            record.delete()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Record deleted successfully'
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': f'Error deleting record: {str(e)}'
+            }, status=500)
+
+import json
+import numpy as np
+import pandas as pd
+from datetime import datetime, timedelta
+from collections import defaultdict
+from django.db.models import Q
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+import yfinance as yf
+
+def clean_numeric_value_esi(value_str):
+    """
+    Convert string values like '3.2%', '$50.4B', etc. to float values
+    Enhanced version for ESI calculation
+    """
+    if not value_str or value_str.strip() == '' or value_str.lower() in ['n/a', 'na', '-']:
+        return None
+    
+    try:
+        # Handle special cases
+        value_str = str(value_str).strip()
+        
+        # Remove common symbols
+        multipliers = {'K': 1000, 'M': 1000000, 'B': 1000000000, 'T': 1000000000000}
+        multiplier = 1
+        
+        # Check for multiplier suffixes
+        for suffix, mult in multipliers.items():
+            if value_str.upper().endswith(suffix):
+                multiplier = mult
+                value_str = value_str[:-1]
+                break
+        
+        # Remove other symbols
+        cleaned = value_str.replace('%', '').replace('$', '').replace(',', '')
+        cleaned = cleaned.replace('€', '').replace('£', '').replace('¥', '')
+        
+        # Handle negative values
+        is_negative = cleaned.startswith('-') or cleaned.startswith('(')
+        cleaned = cleaned.replace('-', '').replace('(', '').replace(')', '')
+        
+        # Convert to float
+        result = float(cleaned) * multiplier
+        return -result if is_negative else result
+        
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+def calculate_percentage_deviation(actual, forecast):
+    """
+    Calculate percentage deviation from forecast
+    Returns standardized deviation score
+    """
+    if actual is None or forecast is None:
+        return 0
+    
+    actual_val = clean_numeric_value_esi(actual)
+    forecast_val = clean_numeric_value_esi(forecast)
+    
+    if actual_val is None or forecast_val is None:
+        return 0
+    
+    # Handle division by zero
+    if forecast_val == 0:
+        return 100 if actual_val > 0 else -100 if actual_val < 0 else 0
+    
+    # Calculate percentage deviation
+    deviation = ((actual_val - forecast_val) / abs(forecast_val)) * 100
+    
+    # Cap extreme values to prevent outliers from skewing the index
+    return max(-200, min(200, deviation))
+
+def get_impact_weight(impact):
+    """
+    Return weight based on impact level
+    """
+    weights = {
+        'high': 3.0,
+        'medium': 2.0,
+        'low': 1.0
+    }
+    return weights.get(impact.lower(), 1.0)
+
+def normalize_esi_scores(scores):
+    """
+    Normalize ESI scores using z-score normalization
+    Then scale to a more interpretable range
+    """
+    if not scores:
+        return scores
+    
+    # Calculate mean and standard deviation
+    mean_score = np.mean(scores)
+    std_score = np.std(scores)
+    
+    if std_score == 0:
+        return [50 for _ in scores]  # Return neutral scores if no variation
+    
+    # Apply z-score normalization
+    normalized = [(score - mean_score) / std_score for score in scores]
+    
+    # Scale to 0-100 range with 50 as neutral
+    # Values above 50 indicate stronger than average performance
+    # Values below 50 indicate weaker than average performance
+    scaled = [max(0, min(100, 50 + (norm * 15))) for norm in normalized]
+    
+    return scaled
+
+def obtain_dataset(asset, interval, num_days):
+    """
+    Generic function to obtain data from yfinance
+    """
+    # Calculate the end and start dates
+    end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=num_days)).strftime("%Y-%m-%d")
+
+    # Download data using yfinance - handle both forex and stock indices
+    if '=' not in asset and asset.startswith('^'):
+        # Stock index (already has ^ symbol)
+        data = yf.download(asset, start=start_date, end=end_date, interval=interval)
+    elif '=' not in asset:
+        # Forex pair - add =X suffix
+        forex_asset = f"{asset}=X"
+        data = yf.download(forex_asset, start=start_date, end=end_date, interval=interval)
+    else:
+        # Already formatted
+        data = yf.download(asset, start=start_date, end=end_date, interval=interval)
+    
+    return data
+
+def calculate_relative_volume(volume_data, lookback_period=20):
+    """
+    Calculate relative volume as current volume / average volume over lookback period
+    """
+    if len(volume_data) < lookback_period:
+        return [1.0] * len(volume_data)  # Return neutral ratio if insufficient data
+    
+    relative_volumes = []
+    for i in range(len(volume_data)):
+        if i < lookback_period:
+            # Use available data for early points
+            avg_volume = np.mean(volume_data[:i+1]) if i > 0 else volume_data[0]
+        else:
+            # Use rolling window
+            avg_volume = np.mean(volume_data[i-lookback_period:i])
+        
+        current_volume = volume_data[i]
+        
+        if avg_volume > 0:
+            relative_volume = current_volume / avg_volume
+        else:
+            relative_volume = 1.0
+        
+        relative_volumes.append(relative_volume)
+    
+    return relative_volumes
+
+def get_volume_data(assets, date_range):
+    """
+    Fetch volume data for specified assets and calculate relative volume ratios
+    """
+    range_days = {
+        '7d': 7,
+        '30d': 30,
+        '90d': 90,
+        '180d': 180,
+        '365d': 365
+    }
+    
+    days = range_days.get(date_range, 30)
+    
+    # Add extra days for volume calculation lookback
+    volume_lookback_days = days + 25  # Extra days for better volume average calculation
+    
+    # Determine interval based on date range
+    if days <= 7:
+        interval = '1h'
+    elif days <= 30:
+        interval = '1d'
+    else:
+        interval = '1d'
+    
+    volume_data = {}
+    
+    for asset_id in assets:
+        try:
+            print(f"Fetching volume data for {asset_id} with {volume_lookback_days} days, interval {interval}")
+            
+            # Use obtain_dataset function
+            data = obtain_dataset(asset_id, interval, volume_lookback_days)
+            
+            if not data.empty:
+                print(f"Got {len(data)} data points for volume calculation on {asset_id}")
+                
+                # Process the volume data
+                volume_entries = []
+                
+                # Handle MultiIndex columns
+                if isinstance(data.columns, pd.MultiIndex):
+                    volume_col = None
+                    close_col = None
+                    
+                    for col in data.columns:
+                        if col[0] == 'Volume':
+                            volume_col = col
+                        if col[0] == 'Close':
+                            close_col = col
+                    
+                    if volume_col is None:
+                        print(f"No Volume column found for {asset_id}")
+                        volume_data[asset_id] = []
+                        continue
+                        
+                    # Extract volume and close data
+                    for date_idx, volume in data[volume_col].items():
+                        try:
+                            if hasattr(date_idx, 'strftime'):
+                                date_str = date_idx.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_idx)[:10]
+                            
+                            if pd.notna(volume) and volume > 0:
+                                close_price = data[close_col].loc[date_idx] if close_col else None
+                                volume_entries.append({
+                                    'date': date_str,
+                                    'volume': float(volume),
+                                    'close_price': float(close_price) if pd.notna(close_price) else None
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing volume data point for {asset_id}: {str(row_error)}")
+                            continue
+                
+                else:
+                    # Handle regular columns
+                    data_reset = data.reset_index()
+                    
+                    for _, row in data_reset.iterrows():
+                        try:
+                            # Get date
+                            date_value = row['Date'] if 'Date' in row else row.index[0]
+                            if hasattr(date_value, 'strftime'):
+                                date_str = date_value.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_value)[:10]
+                            
+                            # Get volume and close price
+                            volume = row['Volume'] if 'Volume' in row else None
+                            close_price = row['Close'] if 'Close' in row else None
+                            
+                            if volume is not None and pd.notna(volume) and volume > 0:
+                                volume_entries.append({
+                                    'date': date_str,
+                                    'volume': float(volume),
+                                    'close_price': float(close_price) if pd.notna(close_price) else None
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing volume row for {asset_id}: {str(row_error)}")
+                            continue
+                
+                # Sort by date for proper calculation
+                volume_entries.sort(key=lambda x: x['date'])
+                
+                # Calculate relative volumes
+                volumes_only = [entry['volume'] for entry in volume_entries]
+                relative_volumes = calculate_relative_volume(volumes_only, lookback_period=20)
+                
+                # Filter to requested date range (remove extra lookback days)
+                current_date = datetime.now()
+                cutoff_date = (current_date - timedelta(days=days)).strftime('%Y-%m-%d')
+                
+                filtered_data = []
+                for i, entry in enumerate(volume_entries):
+                    if entry['date'] >= cutoff_date:
+                        filtered_data.append({
+                            'date': entry['date'],
+                            'volume': entry['volume'],
+                            'volume_ratio': relative_volumes[i],
+                            'close_price': entry['close_price']
+                        })
+                
+                volume_data[asset_id] = filtered_data
+                print(f"Processed {len(filtered_data)} volume data points for {asset_id}")
+                        
+        except Exception as e:
+            print(f"Error fetching volume data for {asset_id}: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            volume_data[asset_id] = []
+    
+    return volume_data
+
+def get_forex_data(forex_pairs, date_range):
+    """
+    Fetch forex data for specified pairs and date range
+    """
+    range_days = {
+        '7d': 7,
+        '30d': 30,
+        '90d': 90,
+        '180d': 180,
+        '365d': 365
+    }
+    
+    days = range_days.get(date_range, 30)
+    
+    # Determine interval based on date range
+    if days <= 7:
+        interval = '1h'
+    elif days <= 30:
+        interval = '1d'
+    else:
+        interval = '1d'
+    
+    forex_data = {}
+    
+    for pair in forex_pairs:
+        try:
+            print(f"Fetching forex data for {pair} with {days} days, interval {interval}")
+            
+            # Use obtain_dataset function
+            data = obtain_dataset(pair, interval, days)
+            
+            if not data.empty:
+                print(f"Got {len(data)} data points for {pair}")
+                
+                # Process the data
+                forex_data[pair] = []
+                
+                # Handle MultiIndex columns - flatten them
+                if isinstance(data.columns, pd.MultiIndex):
+                    close_col = None
+                    for col in data.columns:
+                        if col[0] == 'Close':
+                            close_col = col
+                            break
+                    
+                    if close_col is None:
+                        print(f"No Close column found in MultiIndex columns for {pair}")
+                        forex_data[pair] = []
+                        continue
+                        
+                    # Extract the close prices and dates
+                    for date_idx, close_price in data[close_col].items():
+                        try:
+                            if hasattr(date_idx, 'strftime'):
+                                date_str = date_idx.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_idx)[:10]
+                            
+                            if pd.notna(close_price):
+                                forex_data[pair].append({
+                                    'date': date_str,
+                                    'price': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing data point for {pair}: {str(row_error)}")
+                            continue
+                
+                else:
+                    # Handle regular columns
+                    data_reset = data.reset_index()
+                    
+                    for _, row in data_reset.iterrows():
+                        try:
+                            # Get date
+                            date_value = row['Date'] if 'Date' in row else row.index[0]
+                            if hasattr(date_value, 'strftime'):
+                                date_str = date_value.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_value)[:10]
+                            
+                            # Get close price
+                            close_price = row['Close'] if 'Close' in row else None
+                            
+                            if close_price is not None and pd.notna(close_price):
+                                forex_data[pair].append({
+                                    'date': date_str,
+                                    'price': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing row for {pair}: {str(row_error)}")
+                            continue
+                
+                print(f"Processed {len(forex_data[pair])} valid data points for {pair}")
+                        
+        except Exception as e:
+            print(f"Error fetching forex data for {pair}: {str(e)}")
+            forex_data[pair] = []
+    
+    return forex_data
+
+def get_stock_indices_data(stock_indices, date_range):
+    """
+    Fetch stock indices data for specified symbols and date range
+    """
+    range_days = {
+        '7d': 7,
+        '30d': 30,
+        '90d': 90,
+        '180d': 180,
+        '365d': 365
+    }
+    
+    days = range_days.get(date_range, 30)
+    
+    # Determine interval based on date range
+    if days <= 7:
+        interval = '1h'
+    elif days <= 30:
+        interval = '1d'
+    else:
+        interval = '1d'
+    
+    stock_data = {}
+    
+    for symbol in stock_indices:
+        try:
+            print(f"Fetching stock index data for {symbol} with {days} days, interval {interval}")
+            
+            # Use obtain_dataset function
+            data = obtain_dataset(symbol, interval, days)
+            
+            if not data.empty:
+                print(f"Got {len(data)} data points for {symbol}")
+                
+                # Process the data
+                stock_data[symbol] = []
+                
+                # Handle MultiIndex columns
+                if isinstance(data.columns, pd.MultiIndex):
+                    close_col = None
+                    for col in data.columns:
+                        if col[0] == 'Close':
+                            close_col = col
+                            break
+                    
+                    if close_col is None:
+                        print(f"No Close column found in MultiIndex columns for {symbol}")
+                        stock_data[symbol] = []
+                        continue
+                        
+                    # Extract the close prices and dates
+                    for date_idx, close_price in data[close_col].items():
+                        try:
+                            if hasattr(date_idx, 'strftime'):
+                                date_str = date_idx.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_idx)[:10]
+                            
+                            if pd.notna(close_price):
+                                stock_data[symbol].append({
+                                    'date': date_str,
+                                    'value': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing data point for {symbol}: {str(row_error)}")
+                            continue
+                
+                else:
+                    # Handle regular columns
+                    data_reset = data.reset_index()
+                    
+                    for _, row in data_reset.iterrows():
+                        try:
+                            # Get date
+                            date_value = row['Date'] if 'Date' in row else row.index[0]
+                            if hasattr(date_value, 'strftime'):
+                                date_str = date_value.strftime('%Y-%m-%d')
+                            else:
+                                date_str = str(date_value)[:10]
+                            
+                            # Get close price
+                            close_price = row['Close'] if 'Close' in row else None
+                            
+                            if close_price is not None and pd.notna(close_price):
+                                stock_data[symbol].append({
+                                    'date': date_str,
+                                    'value': float(close_price)
+                                })
+                                
+                        except Exception as row_error:
+                            print(f"Error processing row for {symbol}: {str(row_error)}")
+                            continue
+                
+                print(f"Processed {len(stock_data[symbol])} valid data points for {symbol}")
+                        
+        except Exception as e:
+            print(f"Error fetching stock index data for {symbol}: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            stock_data[symbol] = []
+    
+    print(f"Final stock_data keys: {list(stock_data.keys())}")
+    for symbol, data in stock_data.items():
+        print(f"{symbol}: {len(data)} data points")
+    
+    return stock_data
+
+def merge_multi_asset_data(esi_data, forex_data, stock_data, volume_data):
+    """
+    Merge ESI data with forex price data, stock indices data, and volume data
+    """
+    # Create a comprehensive date-based dictionary using YYYY-MM-DD as keys
+    merged_data = {}
+    
+    # First, convert ESI dates to YYYY-MM-DD format for consistent matching
+    esi_date_map = {}  # Maps YYYY-MM-DD to MM/DD display format
+    
+    for point in esi_data:
+        display_date = point['date']  # This is MM/DD format
+        
+        # Try to convert MM/DD to YYYY-MM-DD for matching
+        try:
+            current_year = datetime.now().year
+            if '/' in display_date:
+                month_day = display_date
+                # Try current year first, then previous year if needed
+                for year_offset in [0, -1]:
+                    try:
+                        test_year = current_year + year_offset
+                        full_date_str = f"{month_day}/{test_year}"
+                        date_obj = datetime.strptime(full_date_str, '%m/%d/%Y')
+                        iso_date = date_obj.strftime('%Y-%m-%d')
+                        
+                        # Store the mapping
+                        esi_date_map[iso_date] = display_date
+                        
+                        # Store ESI data
+                        if iso_date not in merged_data:
+                            merged_data[iso_date] = {'date': display_date}
+                        
+                        # Add all ESI values
+                        for key, value in point.items():
+                            if key != 'date':
+                                merged_data[iso_date][key] = value
+                        break
+                    except ValueError:
+                        continue
+            else:
+                # If it's already in a different format, store as-is
+                merged_data[display_date] = point.copy()
+        except Exception as e:
+            print(f"Error processing ESI date {display_date}: {str(e)}")
+            # Fallback: use original date as key
+            merged_data[display_date] = point.copy()
+    
+    # Create a complete date range for asset data interpolation
+    all_asset_dates = set()
+    
+    # Add forex dates
+    for pair, price_data in forex_data.items():
+        for price_point in price_data:
+            all_asset_dates.add(price_point['date'])
+    
+    # Add stock index dates
+    for symbol, index_data in stock_data.items():
+        for index_point in index_data:
+            all_asset_dates.add(index_point['date'])
+    
+    # Add volume dates
+    for asset_id, vol_data in volume_data.items():
+        for vol_point in vol_data:
+            all_asset_dates.add(vol_point['date'])
+    
+    # Sort dates for interpolation
+    sorted_asset_dates = sorted(all_asset_dates)
+    
+    # Add forex data with interpolation for missing values
+    for pair, price_data in forex_data.items():
+        forex_prices_by_date = {point['date']: point['price'] for point in price_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in forex_prices_by_date:
+                    merged_data[date_key][f"{pair}_price"] = forex_prices_by_date[date_key]
+                else:
+                    # Interpolation logic for forex (same as before)
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_price = None
+                    closest_after_price = None
+                    
+                    for forex_date_str, price in forex_prices_by_date.items():
+                        try:
+                            forex_date = datetime.strptime(forex_date_str, '%Y-%m-%d')
+                            
+                            if forex_date <= target_date:
+                                if closest_before is None or forex_date > closest_before:
+                                    closest_before = forex_date
+                                    closest_before_price = price
+                            
+                            if forex_date >= target_date:
+                                if closest_after is None or forex_date < closest_after:
+                                    closest_after = forex_date
+                                    closest_after_price = price
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_price is not None and closest_after_price is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_price = closest_before_price + (closest_after_price - closest_before_price) * weight
+                            merged_data[date_key][f"{pair}_price"] = interpolated_price
+                        else:
+                            merged_data[date_key][f"{pair}_price"] = closest_before_price
+                    elif closest_before_price is not None:
+                        merged_data[date_key][f"{pair}_price"] = closest_before_price
+                    elif closest_after_price is not None:
+                        merged_data[date_key][f"{pair}_price"] = closest_after_price
+                        
+            except Exception as e:
+                print(f"Error processing forex data for {date_key}: {str(e)}")
+                continue
+        
+        # Add forex-only dates
+        for forex_date_str, price in forex_prices_by_date.items():
+            if forex_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(forex_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[forex_date_str] = {
+                        'date': display_date,
+                        f"{pair}_price": price
+                    }
+                except Exception as e:
+                    print(f"Error adding forex-only date {forex_date_str}: {str(e)}")
+                    continue
+    
+    # Add stock index data with interpolation
+    for symbol, index_data in stock_data.items():
+        stock_values_by_date = {point['date']: point['value'] for point in index_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in stock_values_by_date:
+                    merged_data[date_key][f"{symbol}_index"] = stock_values_by_date[date_key]
+                else:
+                    # Interpolation logic for stock indices (similar to forex)
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_value = None
+                    closest_after_value = None
+                    
+                    for stock_date_str, value in stock_values_by_date.items():
+                        try:
+                            stock_date = datetime.strptime(stock_date_str, '%Y-%m-%d')
+                            
+                            if stock_date <= target_date:
+                                if closest_before is None or stock_date > closest_before:
+                                    closest_before = stock_date
+                                    closest_before_value = value
+                            
+                            if stock_date >= target_date:
+                                if closest_after is None or stock_date < closest_after:
+                                    closest_after = stock_date
+                                    closest_after_value = value
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_value is not None and closest_after_value is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_value = closest_before_value + (closest_after_value - closest_before_value) * weight
+                            merged_data[date_key][f"{symbol}_index"] = interpolated_value
+                        else:
+                            merged_data[date_key][f"{symbol}_index"] = closest_before_value
+                    elif closest_before_value is not None:
+                        merged_data[date_key][f"{symbol}_index"] = closest_before_value
+                    elif closest_after_value is not None:
+                        merged_data[date_key][f"{symbol}_index"] = closest_after_value
+                        
+            except Exception as e:
+                print(f"Error processing stock index data for {date_key}: {str(e)}")
+                continue
+        
+        # Add stock-index-only dates
+        for stock_date_str, value in stock_values_by_date.items():
+            if stock_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(stock_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[stock_date_str] = {
+                        'date': display_date,
+                        f"{symbol}_index": value
+                    }
+                except Exception as e:
+                    print(f"Error adding stock-index-only date {stock_date_str}: {str(e)}")
+                    continue
+    
+    # Add volume data with interpolation
+    for asset_id, vol_data in volume_data.items():
+        volume_ratios_by_date = {point['date']: point['volume_ratio'] for point in vol_data}
+        
+        all_merged_dates = list(merged_data.keys())
+        
+        for date_key in all_merged_dates:
+            try:
+                if date_key in volume_ratios_by_date:
+                    merged_data[date_key][f"{asset_id}_volume_ratio"] = volume_ratios_by_date[date_key]
+                else:
+                    # Interpolation logic for volume ratios
+                    try:
+                        target_date = datetime.strptime(date_key, '%Y-%m-%d')
+                    except:
+                        continue
+                        
+                    closest_before = None
+                    closest_after = None
+                    closest_before_ratio = None
+                    closest_after_ratio = None
+                    
+                    for vol_date_str, ratio in volume_ratios_by_date.items():
+                        try:
+                            vol_date = datetime.strptime(vol_date_str, '%Y-%m-%d')
+                            
+                            if vol_date <= target_date:
+                                if closest_before is None or vol_date > closest_before:
+                                    closest_before = vol_date
+                                    closest_before_ratio = ratio
+                            
+                            if vol_date >= target_date:
+                                if closest_after is None or vol_date < closest_after:
+                                    closest_after = vol_date
+                                    closest_after_ratio = ratio
+                        except:
+                            continue
+                    
+                    # Use interpolation or nearest value
+                    if closest_before_ratio is not None and closest_after_ratio is not None and closest_before != closest_after:
+                        time_diff = (closest_after - closest_before).days
+                        target_diff = (target_date - closest_before).days
+                        
+                        if time_diff > 0:
+                            weight = target_diff / time_diff
+                            interpolated_ratio = closest_before_ratio + (closest_after_ratio - closest_before_ratio) * weight
+                            merged_data[date_key][f"{asset_id}_volume_ratio"] = interpolated_ratio
+                        else:
+                            merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_before_ratio
+                    elif closest_before_ratio is not None:
+                        merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_before_ratio
+                    elif closest_after_ratio is not None:
+                        merged_data[date_key][f"{asset_id}_volume_ratio"] = closest_after_ratio
+                        
+            except Exception as e:
+                print(f"Error processing volume data for {date_key}: {str(e)}")
+                continue
+        
+        # Add volume-only dates
+        for vol_date_str, ratio in volume_ratios_by_date.items():
+            if vol_date_str not in merged_data:
+                try:
+                    date_obj = datetime.strptime(vol_date_str, '%Y-%m-%d')
+                    display_date = date_obj.strftime('%m/%d')
+                    
+                    merged_data[vol_date_str] = {
+                        'date': display_date,
+                        f"{asset_id}_volume_ratio": ratio
+                    }
+                except Exception as e:
+                    print(f"Error adding volume-only date {vol_date_str}: {str(e)}")
+                    continue
+    
+    # Convert back to list format and sort by actual date
+    merged_list = []
+    sorted_dates = sorted(merged_data.keys(), key=lambda x: datetime.strptime(x, '%Y-%m-%d') if x.count('-') == 2 else datetime.now())
+    
+    for date_key in sorted_dates:
+        data_point = merged_data[date_key].copy()
+        merged_list.append(data_point)
+    
+    # Debug: Print sample of merged data
+    print(f"Merged data sample: {merged_list[:3] if merged_list else 'No data'}")
+    if volume_data:
+        print(f"Volume data sample: {list(volume_data.items())[0] if volume_data else 'No volume data'}")
+    
+    return merged_list
+
+@api_view(['POST'])
+def economic_strength_index(request):
+    """
+    Calculate and return Economic Strength Index for selected currencies
+    Now with forex, stock indices, and volume overlay capability
+    """
+    try:
+        data = json.loads(request.body)
+        currencies = data.get('currencies', ['USD'])
+        forex_pairs = data.get('forex_pairs', [])
+        stock_indices = data.get('stock_indices', [])
+        volume_assets = data.get('volume_assets', [])
+        date_range = data.get('date_range', '30d')
+        
+        print(f"Received request: currencies={currencies}, forex={forex_pairs}, stocks={stock_indices}, volume={volume_assets}, range={date_range}")
+        
+        # Calculate date range
+        range_days = {
+            '7d': 7,
+            '30d': 30,
+            '90d': 90,
+            '180d': 180,
+            '365d': 365
+        }
+        
+        days = range_days.get(date_range, 30)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        # Fetch economic events for selected currencies within date range
+        events = EconomicEvent.objects.filter(
+            currency__in=currencies,
+            date_time__gte=start_date,
+            date_time__lte=end_date,
+            actual__isnull=False,
+            forecast__isnull=False
+        ).exclude(
+            Q(actual='') | Q(forecast='')
+        ).order_by('date_time')
+        
+        # Group events by currency and date
+        currency_data = defaultdict(lambda: defaultdict(list))
+        
+        for event in events:
+            date_key = event.date_time.date().isoformat()
+            currency_data[event.currency][date_key].append(event)
+        
+        # Calculate daily ESI scores for each currency
+        chart_data_dict = defaultdict(dict)
+        
+        # Get all unique dates across all currencies for consistency
+        all_dates = set()
+        for curr_data in currency_data.values():
+            all_dates.update(curr_data.keys())
+        
+        # If no ESI dates, create a basic date range
+        if not all_dates:
+            current_date = start_date
+            while current_date <= end_date:
+                all_dates.add(current_date.strftime('%Y-%m-%d'))
+                current_date += timedelta(days=1)
+        
+        sorted_dates = sorted(all_dates)
+        
+        for currency in currencies:
+            daily_scores = []
+            dates = []
+            
+            for date_str in sorted_dates:
+                events_for_date = currency_data[currency].get(date_str, [])
+                
+                if events_for_date:
+                    # Calculate weighted ESI score for this date
+                    weighted_deviations = []
+                    
+                    for event in events_for_date:
+                        deviation = calculate_percentage_deviation(event.actual, event.forecast)
+                        weight = get_impact_weight(event.impact)
+                        weighted_deviations.append(deviation * weight)
+                    
+                    # Average weighted deviations for the day
+                    if weighted_deviations:
+                        daily_score = np.mean(weighted_deviations)
+                        daily_scores.append(daily_score)
+                        dates.append(date_str)
+                    else:
+                        daily_scores.append(None)
+                        dates.append(date_str)
+                else:
+                    daily_scores.append(None)
+                    dates.append(date_str)
+            
+            # Fill gaps with interpolation BEFORE smoothing and normalization
+            filled_scores = []
+            for i, score in enumerate(daily_scores):
+                if score is not None:
+                    filled_scores.append(score)
+                else:
+                    # Find nearest non-null values for interpolation
+                    before_idx = None
+                    after_idx = None
+                    before_score = None
+                    after_score = None
+                    
+                    # Look backwards for nearest score
+                    for j in range(i - 1, -1, -1):
+                        if daily_scores[j] is not None:
+                            before_idx = j
+                            before_score = daily_scores[j]
+                            break
+                    
+                    # Look forwards for nearest score
+                    for j in range(i + 1, len(daily_scores)):
+                        if daily_scores[j] is not None:
+                            after_idx = j
+                            after_score = daily_scores[j]
+                            break
+                    
+                    # Interpolate or use nearest value
+                    if before_score is not None and after_score is not None:
+                        distance_total = after_idx - before_idx
+                        distance_from_before = i - before_idx
+                        weight = distance_from_before / distance_total if distance_total > 0 else 0
+                        interpolated_score = before_score + (after_score - before_score) * weight
+                        filled_scores.append(interpolated_score)
+                    elif before_score is not None:
+                        filled_scores.append(before_score)
+                    elif after_score is not None:
+                        filled_scores.append(after_score)
+                    else:
+                        filled_scores.append(0)
+            
+            daily_scores = filled_scores
+            
+            # Apply smoothing (7-day moving average) for cleaner visualization
+            if len(daily_scores) > 7:
+                smoothed_scores = []
+                for i in range(len(daily_scores)):
+                    start_idx = max(0, i - 3)
+                    end_idx = min(len(daily_scores), i + 4)
+                    window_scores = daily_scores[start_idx:end_idx]
+                    smoothed_scores.append(np.mean(window_scores))
+                daily_scores = smoothed_scores
+            
+            # Store data for each currency with dates
+            for i, date_str in enumerate(dates):
+                if i < len(daily_scores):
+                    chart_data_dict[date_str][currency] = daily_scores[i]
+        
+        # Convert to chart format with proper date handling
+        chart_data = []
+        for date_str in sorted_dates:
+            point = {'date': datetime.strptime(date_str, '%Y-%m-%d').strftime('%m/%d')}
+            
+            # Add ESI scores for each currency
+            for currency in currencies:
+                if currency in chart_data_dict[date_str]:
+                    point[currency] = chart_data_dict[date_str][currency]
+                else:
+                    point[currency] = None
+            
+            chart_data.append(point)
+        
+        # Normalize ESI scores across all currencies to 0-100 scale
+        all_scores = []
+        for point in chart_data:
+            for currency in currencies:
+                if point.get(currency) is not None:
+                    all_scores.append(point[currency])
+        
+        if all_scores:
+            normalized_scores = normalize_esi_scores(all_scores)
+            score_idx = 0
+            
+            for point in chart_data:
+                for currency in currencies:
+                    if point.get(currency) is not None:
+                        point[currency] = normalized_scores[score_idx]
+                        score_idx += 1
+        
+        print(f"Generated {len(chart_data)} ESI data points")
+        
+        # Fetch forex data if requested
+        forex_data = {}
+        if forex_pairs:
+            forex_data = get_forex_data(forex_pairs, date_range)
+            print(f"Fetched forex data for {len(forex_pairs)} pairs")
+        
+        # Fetch stock indices data if requested
+        stock_data = {}
+        if stock_indices:
+            stock_data = get_stock_indices_data(stock_indices, date_range)
+            print(f"Fetched stock data for {len(stock_indices)} indices")
+        
+        # Fetch volume data if requested
+        volume_data = {}
+        if volume_assets:
+            volume_data = get_volume_data(volume_assets, date_range)
+            print(f"Fetched volume data for {len(volume_assets)} assets")
+        
+        # Merge ESI data with forex, stock indices, and volume data
+        if forex_data or stock_data or volume_data:
+            merged_data = merge_multi_asset_data(chart_data, forex_data, stock_data, volume_data)
+            print(f"Merged data contains {len(merged_data)} points")
+        else:
+            merged_data = chart_data
+        
+        # Calculate summary statistics
+        summary_stats = {}
+        for currency in currencies:
+            currency_scores = [point.get(currency) for point in merged_data if point.get(currency) is not None]
+            if currency_scores:
+                summary_stats[currency] = {
+                    'average': np.mean(currency_scores),
+                    'current': currency_scores[-1] if currency_scores else None,
+                    'trend': 'positive' if len(currency_scores) > 1 and currency_scores[-1] > currency_scores[0] else 'negative',
+                    'volatility': np.std(currency_scores)
+                }
+        
+        return Response({
+            'success': True,
+            'chart_data': merged_data,
+            'summary': summary_stats,
+            'metadata': {
+                'date_range': date_range,
+                'currencies': currencies,
+                'forex_pairs': forex_pairs,
+                'stock_indices': stock_indices,
+                'volume_assets': volume_assets,
+                'data_points': len(merged_data),
+                'events_processed': events.count()
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error in economic_strength_index: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return Response({
+            'error': str(e),
+            'success': False
+        }, status=500)
+        
+from django.shortcuts import render
+from django.core.paginator import Paginator
+from django.db.models import Q, Count, Avg, Max, Min
+
+logger = logging.getLogger(__name__)
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def snowai_research_logbook_api_entries(request):
+    """
+    GET: Retrieve ML model entries with filtering and pagination
+    POST: Create new ML model entry
+    """
+    try:
+        if request.method == 'GET':
+            return snowai_get_ml_entries(request)
+        elif request.method == 'POST':
+            return snowai_create_ml_entry(request)
+    except Exception as e:
+        logger.error(f"SnowAI Research Logbook API error: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+def snowai_get_ml_entries(request):
+    """Get ML entries with filtering and search"""
+    # Get query parameters
+    snowai_search_query = request.GET.get('search', '').strip()
+    snowai_model_type = request.GET.get('model_type', '')
+    snowai_status = request.GET.get('status', '')
+    snowai_market_type = request.GET.get('market_type', '')
+    snowai_tags_filter = request.GET.get('tags', '')
+    snowai_page = int(request.GET.get('page', 1))
+    snowai_per_page = int(request.GET.get('per_page', 12))
+    snowai_sort_by = request.GET.get('sort_by', '-snowai_created_at')
+    
+    # Build queryset
+    queryset = SnowAIMLModelLogEntry.objects.all()
+    
+    # Apply filters
+    if snowai_search_query:
+        queryset = queryset.filter(
+            Q(snowai_model_name__icontains=snowai_search_query) |
+            Q(snowai_description__icontains=snowai_search_query) |
+            Q(snowai_tags__icontains=snowai_search_query) |
+            Q(snowai_notes__icontains=snowai_search_query)
+        )
+    
+    if snowai_model_type:
+        queryset = queryset.filter(snowai_model_type=snowai_model_type)
+    
+    if snowai_status:
+        queryset = queryset.filter(snowai_status=snowai_status)
+    
+    if snowai_market_type:
+        queryset = queryset.filter(snowai_financial_market_type=snowai_market_type)
+    
+    if snowai_tags_filter:
+        for tag in snowai_tags_filter.split(','):
+            queryset = queryset.filter(snowai_tags__icontains=tag.strip())
+    
+    # Apply sorting
+    if snowai_sort_by in ['snowai_created_at', '-snowai_created_at', 'snowai_model_name', '-snowai_model_name', 
+                         'snowai_accuracy_score', '-snowai_accuracy_score', 'snowai_r2_score', '-snowai_r2_score']:
+        queryset = queryset.order_by(snowai_sort_by)
+    
+    # Paginate
+    paginator = Paginator(queryset, snowai_per_page)
+    snowai_page_obj = paginator.get_page(snowai_page)
+    
+    # Serialize data
+    snowai_entries = []
+    for entry in snowai_page_obj:
+        snowai_entry_data = {
+            'id': entry.id,
+            'snowai_model_name': entry.snowai_model_name,
+            'snowai_model_type': entry.snowai_model_type,
+            'snowai_tags': entry.snowai_tags_list,
+            'snowai_description': entry.snowai_description,
+            'snowai_created_at': entry.snowai_created_at.isoformat(),
+            'snowai_updated_at': entry.snowai_updated_at.isoformat(),
+            'snowai_status': entry.snowai_status,
+            'snowai_financial_market_type': entry.snowai_financial_market_type,
+            'snowai_dataset_name': entry.snowai_dataset_name,
+            'snowai_framework_used': entry.snowai_framework_used,
+            
+            # Metrics
+            'snowai_accuracy_score': entry.snowai_accuracy_score,
+            'snowai_precision_score': entry.snowai_precision_score,
+            'snowai_recall_score': entry.snowai_recall_score,
+            'snowai_f1_score': entry.snowai_f1_score,
+            'snowai_mae_score': entry.snowai_mae_score,
+            'snowai_mse_score': entry.snowai_mse_score,
+            'snowai_rmse_score': entry.snowai_rmse_score,
+            'snowai_r2_score': entry.snowai_r2_score,
+            'snowai_auc_score': entry.snowai_auc_score,
+            
+            # Financial metrics
+            'snowai_profit_loss': entry.snowai_profit_loss,
+            'snowai_sharpe_ratio': entry.snowai_sharpe_ratio,
+            'snowai_max_drawdown': entry.snowai_max_drawdown,
+            'snowai_win_rate': entry.snowai_win_rate,
+            'snowai_roi_percentage': entry.snowai_roi_percentage,
+            
+            # Training info
+            'snowai_training_duration': entry.snowai_training_duration,
+            'snowai_epochs_trained': entry.snowai_epochs_trained,
+            
+            # Primary metric for display
+            'snowai_primary_metric': entry.snowai_get_primary_metric(),
+        }
+        snowai_entries.append(snowai_entry_data)
+    
+    return JsonResponse({
+        'entries': snowai_entries,
+        'pagination': {
+            'current_page': snowai_page_obj.number,
+            'total_pages': paginator.num_pages,
+            'total_entries': paginator.count,
+            'has_next': snowai_page_obj.has_next(),
+            'has_previous': snowai_page_obj.has_previous(),
+        }
+    })
+
+def snowai_create_ml_entry(request):
+    """Create new ML model entry"""
+    try:
+        snowai_data = json.loads(request.body)
+        
+        # Create new entry
+        snowai_entry = SnowAIMLModelLogEntry.objects.create(
+            snowai_model_name=snowai_data.get('snowai_model_name', ''),
+            snowai_model_type=snowai_data.get('snowai_model_type', 'other'),
+            snowai_tags=', '.join(snowai_data.get('snowai_tags', [])) if snowai_data.get('snowai_tags') else '',
+            snowai_description=snowai_data.get('snowai_description', ''),
+            snowai_code_used=snowai_data.get('snowai_code_used', ''),
+            snowai_colab_notebook_url=snowai_data.get('snowai_colab_notebook_url', ''),
+            snowai_framework_used=snowai_data.get('snowai_framework_used', ''),
+            
+            # Dataset info
+            snowai_dataset_name=snowai_data.get('snowai_dataset_name', ''),
+            snowai_dataset_description=snowai_data.get('snowai_dataset_description', ''),
+            snowai_dataset_size=snowai_data.get('snowai_dataset_size'),
+            snowai_dataset_features=snowai_data.get('snowai_dataset_features'),
+            snowai_dataset_source=snowai_data.get('snowai_dataset_source', ''),
+            snowai_financial_market_type=snowai_data.get('snowai_financial_market_type', ''),
+            
+            # Metrics
+            snowai_accuracy_score=snowai_data.get('snowai_accuracy_score'),
+            snowai_precision_score=snowai_data.get('snowai_precision_score'),
+            snowai_recall_score=snowai_data.get('snowai_recall_score'),
+            snowai_f1_score=snowai_data.get('snowai_f1_score'),
+            snowai_mae_score=snowai_data.get('snowai_mae_score'),
+            snowai_mse_score=snowai_data.get('snowai_mse_score'),
+            snowai_rmse_score=snowai_data.get('snowai_rmse_score'),
+            snowai_r2_score=snowai_data.get('snowai_r2_score'),
+            snowai_auc_score=snowai_data.get('snowai_auc_score'),
+            snowai_custom_metrics=snowai_data.get('snowai_custom_metrics'),
+            
+            # Training info
+            snowai_training_duration=snowai_data.get('snowai_training_duration'),
+            snowai_epochs_trained=snowai_data.get('snowai_epochs_trained'),
+            snowai_batch_size=snowai_data.get('snowai_batch_size'),
+            snowai_learning_rate=snowai_data.get('snowai_learning_rate'),
+            snowai_optimizer_used=snowai_data.get('snowai_optimizer_used', ''),
+            
+            # Financial metrics
+            snowai_profit_loss=snowai_data.get('snowai_profit_loss'),
+            snowai_sharpe_ratio=snowai_data.get('snowai_sharpe_ratio'),
+            snowai_max_drawdown=snowai_data.get('snowai_max_drawdown'),
+            snowai_win_rate=snowai_data.get('snowai_win_rate'),
+            snowai_roi_percentage=snowai_data.get('snowai_roi_percentage'),
+            
+            # Metadata
+            snowai_status=snowai_data.get('snowai_status', 'experimental'),
+            snowai_notes=snowai_data.get('snowai_notes', ''),
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'id': snowai_entry.id,
+            'message': 'ML model entry created successfully'
+        }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error creating ML entry: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT", "DELETE"])
+def snowai_research_logbook_api_entry_detail(request, entry_id):
+    """
+    GET: Retrieve single ML model entry
+    PUT: Update ML model entry
+    DELETE: Delete ML model entry
+    """
+    try:
+        snowai_entry = SnowAIMLModelLogEntry.objects.get(id=entry_id)
+        
+        if request.method == 'GET':
+            snowai_entry_data = {
+                'id': snowai_entry.id,
+                'snowai_model_name': snowai_entry.snowai_model_name,
+                'snowai_model_type': snowai_entry.snowai_model_type,
+                'snowai_tags': snowai_entry.snowai_tags_list,
+                'snowai_description': snowai_entry.snowai_description,
+                'snowai_code_used': snowai_entry.snowai_code_used,
+                'snowai_colab_notebook_url': snowai_entry.snowai_colab_notebook_url,
+                'snowai_framework_used': snowai_entry.snowai_framework_used,
+                'snowai_created_at': snowai_entry.snowai_created_at.isoformat(),
+                'snowai_updated_at': snowai_entry.snowai_updated_at.isoformat(),
+                'snowai_status': snowai_entry.snowai_status,
+                'snowai_notes': snowai_entry.snowai_notes,
+                
+                # Dataset info
+                'snowai_dataset_name': snowai_entry.snowai_dataset_name,
+                'snowai_dataset_description': snowai_entry.snowai_dataset_description,
+                'snowai_dataset_size': snowai_entry.snowai_dataset_size,
+                'snowai_dataset_features': snowai_entry.snowai_dataset_features,
+                'snowai_dataset_source': snowai_entry.snowai_dataset_source,
+                'snowai_financial_market_type': snowai_entry.snowai_financial_market_type,
+                
+                # All metrics
+                'snowai_accuracy_score': snowai_entry.snowai_accuracy_score,
+                'snowai_precision_score': snowai_entry.snowai_precision_score,
+                'snowai_recall_score': snowai_entry.snowai_recall_score,
+                'snowai_f1_score': snowai_entry.snowai_f1_score,
+                'snowai_mae_score': snowai_entry.snowai_mae_score,
+                'snowai_mse_score': snowai_entry.snowai_mse_score,
+                'snowai_rmse_score': snowai_entry.snowai_rmse_score,
+                'snowai_r2_score': snowai_entry.snowai_r2_score,
+                'snowai_auc_score': snowai_entry.snowai_auc_score,
+                'snowai_custom_metrics': snowai_entry.snowai_custom_metrics,
+                
+                # Training info
+                'snowai_training_duration': snowai_entry.snowai_training_duration,
+                'snowai_epochs_trained': snowai_entry.snowai_epochs_trained,
+                'snowai_batch_size': snowai_entry.snowai_batch_size,
+                'snowai_learning_rate': snowai_entry.snowai_learning_rate,
+                'snowai_optimizer_used': snowai_entry.snowai_optimizer_used,
+                
+                # Financial metrics
+                'snowai_profit_loss': snowai_entry.snowai_profit_loss,
+                'snowai_sharpe_ratio': snowai_entry.snowai_sharpe_ratio,
+                'snowai_max_drawdown': snowai_entry.snowai_max_drawdown,
+                'snowai_win_rate': snowai_entry.snowai_win_rate,
+                'snowai_roi_percentage': snowai_entry.snowai_roi_percentage,
+            }
+            return JsonResponse(snowai_entry_data)
+            
+        elif request.method == 'PUT':
+            try:
+                snowai_data = json.loads(request.body)
+                
+                # Update basic model information
+                if 'snowai_model_name' in snowai_data:
+                    snowai_entry.snowai_model_name = snowai_data['snowai_model_name']
+                if 'snowai_model_type' in snowai_data:
+                    snowai_entry.snowai_model_type = snowai_data['snowai_model_type']
+                if 'snowai_description' in snowai_data:
+                    snowai_entry.snowai_description = snowai_data['snowai_description']
+                if 'snowai_status' in snowai_data:
+                    snowai_entry.snowai_status = snowai_data['snowai_status']
+                if 'snowai_notes' in snowai_data:
+                    snowai_entry.snowai_notes = snowai_data['snowai_notes']
+                
+                # Update tags
+                if 'snowai_tags' in snowai_data:
+                    if isinstance(snowai_data['snowai_tags'], list):
+                        snowai_entry.snowai_tags = ', '.join(snowai_data['snowai_tags'])
+                    else:
+                        snowai_entry.snowai_tags = snowai_data['snowai_tags']
+                
+                # Update code and implementation
+                if 'snowai_code_used' in snowai_data:
+                    snowai_entry.snowai_code_used = snowai_data['snowai_code_used']
+                if 'snowai_colab_notebook_url' in snowai_data:
+                    snowai_entry.snowai_colab_notebook_url = snowai_data['snowai_colab_notebook_url']
+                if 'snowai_framework_used' in snowai_data:
+                    snowai_entry.snowai_framework_used = snowai_data['snowai_framework_used']
+                
+                # Update dataset information
+                if 'snowai_dataset_name' in snowai_data:
+                    snowai_entry.snowai_dataset_name = snowai_data['snowai_dataset_name']
+                if 'snowai_dataset_description' in snowai_data:
+                    snowai_entry.snowai_dataset_description = snowai_data['snowai_dataset_description']
+                if 'snowai_dataset_size' in snowai_data:
+                    snowai_entry.snowai_dataset_size = snowai_data['snowai_dataset_size']
+                if 'snowai_dataset_features' in snowai_data:
+                    snowai_entry.snowai_dataset_features = snowai_data['snowai_dataset_features']
+                if 'snowai_dataset_source' in snowai_data:
+                    snowai_entry.snowai_dataset_source = snowai_data['snowai_dataset_source']
+                if 'snowai_financial_market_type' in snowai_data:
+                    snowai_entry.snowai_financial_market_type = snowai_data['snowai_financial_market_type']
+                
+                # Update performance metrics
+                if 'snowai_accuracy_score' in snowai_data:
+                    snowai_entry.snowai_accuracy_score = snowai_data['snowai_accuracy_score'] if snowai_data['snowai_accuracy_score'] else None
+                if 'snowai_precision_score' in snowai_data:
+                    snowai_entry.snowai_precision_score = snowai_data['snowai_precision_score'] if snowai_data['snowai_precision_score'] else None
+                if 'snowai_recall_score' in snowai_data:
+                    snowai_entry.snowai_recall_score = snowai_data['snowai_recall_score'] if snowai_data['snowai_recall_score'] else None
+                if 'snowai_f1_score' in snowai_data:
+                    snowai_entry.snowai_f1_score = snowai_data['snowai_f1_score'] if snowai_data['snowai_f1_score'] else None
+                if 'snowai_mae_score' in snowai_data:
+                    snowai_entry.snowai_mae_score = snowai_data['snowai_mae_score'] if snowai_data['snowai_mae_score'] else None
+                if 'snowai_mse_score' in snowai_data:
+                    snowai_entry.snowai_mse_score = snowai_data['snowai_mse_score'] if snowai_data['snowai_mse_score'] else None
+                if 'snowai_rmse_score' in snowai_data:
+                    snowai_entry.snowai_rmse_score = snowai_data['snowai_rmse_score'] if snowai_data['snowai_rmse_score'] else None
+                if 'snowai_r2_score' in snowai_data:
+                    snowai_entry.snowai_r2_score = snowai_data['snowai_r2_score'] if snowai_data['snowai_r2_score'] else None
+                if 'snowai_auc_score' in snowai_data:
+                    snowai_entry.snowai_auc_score = snowai_data['snowai_auc_score'] if snowai_data['snowai_auc_score'] else None
+                if 'snowai_custom_metrics' in snowai_data:
+                    snowai_entry.snowai_custom_metrics = snowai_data['snowai_custom_metrics']
+                
+                # Update training information
+                if 'snowai_training_duration' in snowai_data:
+                    snowai_entry.snowai_training_duration = snowai_data['snowai_training_duration'] if snowai_data['snowai_training_duration'] else None
+                if 'snowai_epochs_trained' in snowai_data:
+                    snowai_entry.snowai_epochs_trained = snowai_data['snowai_epochs_trained'] if snowai_data['snowai_epochs_trained'] else None
+                if 'snowai_batch_size' in snowai_data:
+                    snowai_entry.snowai_batch_size = snowai_data['snowai_batch_size'] if snowai_data['snowai_batch_size'] else None
+                if 'snowai_learning_rate' in snowai_data:
+                    snowai_entry.snowai_learning_rate = snowai_data['snowai_learning_rate'] if snowai_data['snowai_learning_rate'] else None
+                if 'snowai_optimizer_used' in snowai_data:
+                    snowai_entry.snowai_optimizer_used = snowai_data['snowai_optimizer_used']
+                
+                # Update financial metrics
+                if 'snowai_profit_loss' in snowai_data:
+                    snowai_entry.snowai_profit_loss = snowai_data['snowai_profit_loss'] if snowai_data['snowai_profit_loss'] else None
+                if 'snowai_sharpe_ratio' in snowai_data:
+                    snowai_entry.snowai_sharpe_ratio = snowai_data['snowai_sharpe_ratio'] if snowai_data['snowai_sharpe_ratio'] else None
+                if 'snowai_max_drawdown' in snowai_data:
+                    snowai_entry.snowai_max_drawdown = snowai_data['snowai_max_drawdown'] if snowai_data['snowai_max_drawdown'] else None
+                if 'snowai_win_rate' in snowai_data:
+                    snowai_entry.snowai_win_rate = snowai_data['snowai_win_rate'] if snowai_data['snowai_win_rate'] else None
+                if 'snowai_roi_percentage' in snowai_data:
+                    snowai_entry.snowai_roi_percentage = snowai_data['snowai_roi_percentage'] if snowai_data['snowai_roi_percentage'] else None
+                
+                # Save the updated entry
+                snowai_entry.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': 'ML model entry updated successfully',
+                    'id': snowai_entry.id
+                })
+                
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+            except ValueError as e:
+                return JsonResponse({'error': f'Invalid data format: {str(e)}'}, status=400)
+            
+        elif request.method == 'DELETE':
+            snowai_entry.delete()
+            return JsonResponse({'success': True, 'message': 'Entry deleted successfully'})
+            
+    except SnowAIMLModelLogEntry.DoesNotExist:
+        return JsonResponse({'error': 'Entry not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error in entry detail API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+        
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_research_logbook_api_analytics(request):
+    """Get analytics and statistics for the research logbook"""
+    try:
+        # Basic counts
+        snowai_total_entries = SnowAIMLModelLogEntry.objects.count()
+        snowai_model_type_counts = SnowAIMLModelLogEntry.objects.values('snowai_model_type').annotate(count=Count('id'))
+        snowai_status_counts = SnowAIMLModelLogEntry.objects.values('snowai_status').annotate(count=Count('id'))
+        snowai_market_type_counts = SnowAIMLModelLogEntry.objects.values('snowai_financial_market_type').annotate(count=Count('id'))
+        
+        # Performance statistics
+        snowai_accuracy_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_accuracy_score__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_accuracy_score'),
+            max=Max('snowai_accuracy_score'),
+            min=Min('snowai_accuracy_score'),
+            count=Count('snowai_accuracy_score')
+        )
+        
+        snowai_r2_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_r2_score__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_r2_score'),
+            max=Max('snowai_r2_score'),
+            min=Min('snowai_r2_score'),
+            count=Count('snowai_r2_score')
+        )
+        
+        # Financial performance stats
+        snowai_roi_stats = SnowAIMLModelLogEntry.objects.filter(
+            snowai_roi_percentage__isnull=False
+        ).aggregate(
+            avg=Avg('snowai_roi_percentage'),
+            max=Max('snowai_roi_percentage'),
+            min=Min('snowai_roi_percentage'),
+            count=Count('snowai_roi_percentage')
+        )
+        
+        # Recent activity
+        snowai_recent_entries = SnowAIMLModelLogEntry.objects.order_by('-snowai_created_at')[:5]
+        snowai_recent_data = []
+        for entry in snowai_recent_entries:
+            snowai_recent_data.append({
+                'id': entry.id,
+                'snowai_model_name': entry.snowai_model_name,
+                'snowai_model_type': entry.snowai_model_type,
+                'snowai_created_at': entry.snowai_created_at.isoformat(),
+                'snowai_primary_metric': entry.snowai_get_primary_metric()
+            })
+        
+        return JsonResponse({
+            'snowai_total_entries': snowai_total_entries,
+            'snowai_model_type_distribution': list(snowai_model_type_counts),
+            'snowai_status_distribution': list(snowai_status_counts),
+            'snowai_market_type_distribution': list(snowai_market_type_counts),
+            'snowai_accuracy_statistics': snowai_accuracy_stats,
+            'snowai_r2_statistics': snowai_r2_stats,
+            'snowai_roi_statistics': snowai_roi_stats,
+            'snowai_recent_entries': snowai_recent_data,
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in analytics API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+
+@csrf_exempt  
+@require_http_methods(["GET"])
+def snowai_research_logbook_api_tags(request):
+    """Get all unique tags used in the system"""
+    try:
+        snowai_all_entries = SnowAIMLModelLogEntry.objects.exclude(snowai_tags='').exclude(snowai_tags__isnull=True)
+        snowai_all_tags = set()
+        
+        for entry in snowai_all_entries:
+            snowai_all_tags.update(entry.snowai_tags_list)
+        
+        return JsonResponse({'snowai_tags': sorted(list(snowai_all_tags))})
+        
+    except Exception as e:
+        logger.error(f"Error in tags API: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
+                
+
+# Fixed Django Views - Remove the email override
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def check_fingerprint_status(request):
+    """Check if fingerprint is registered in backend"""
+    try:
+        # Get email from request, fallback to your actual email
+        email = request.GET.get('email', 'butterrobot83@gmail.com')
+        # Remove this line that was overriding the email:
+        # email = 'butterrobot83@gmail'
+        
+        domain = request.GET.get('domain', '')
+        
+        fingerprint_status, created = FingerprintStatus.objects.get_or_create(
+            user_email=email,
+            defaults={'is_registered': False, 'domain': domain}
+        )
+        
+        # Add debugging info
+        print(f"Checking fingerprint status for: {email}, Domain: {domain}, Registered: {fingerprint_status.is_registered}")
+        
+        return JsonResponse({
+            'is_registered': fingerprint_status.is_registered,
+            'domain': fingerprint_status.domain,
+            'email_used': email,  # Add this for debugging
+            'message': 'Fingerprint status retrieved successfully'
+        })
+    except Exception as e:
+        print(f"Error checking fingerprint status: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def register_fingerprint_backend(request):
+    """Register fingerprint in backend after successful local registration"""
+    try:
+        data = json.loads(request.body)
+        # Get email from request data, fallback to your actual email
+        email = data.get('email', 'butterrobot83@gmail.com')
+        # Remove this line that was overriding the email:
+        # email = 'butterrobot83@gmail'
+        
+        domain = data.get('domain', '')
+        
+        fingerprint_status, created = FingerprintStatus.objects.get_or_create(
+            user_email=email,
+            defaults={'is_registered': True, 'domain': domain}
+        )
+        
+        if not created:
+            fingerprint_status.is_registered = True
+            fingerprint_status.domain = domain
+            fingerprint_status.save()
+        
+        print(f"Fingerprint registered for: {email}, Domain: {domain}, Created: {created}")
+        
+        return JsonResponse({
+            'success': True,
+            'is_registered': True,
+            'email_used': email,  # Add this for debugging
+            'message': 'Fingerprint registered successfully in backend'
+        })
+    except Exception as e:
+        print(f"Error registering fingerprint: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def reset_fingerprint_backend(request):
+    """Reset fingerprint registration in backend"""
+    try:
+        data = json.loads(request.body)
+        # Get email from request data, fallback to your actual email
+        email = data.get('email', 'butterrobot83@gmail.com')
+        # Remove this line that was overriding the email:
+        # email = 'butterrobot83@gmail'
+        
+        try:
+            fingerprint_status = FingerprintStatus.objects.get(user_email=email)
+            fingerprint_status.is_registered = False
+            fingerprint_status.domain = ''
+            fingerprint_status.save()
+            
+            print(f"Fingerprint reset for: {email}")
+            
+            return JsonResponse({
+                'success': True,
+                'is_registered': False,
+                'message': 'Fingerprint registration reset successfully'
+            })
+        except FingerprintStatus.DoesNotExist:
+            print(f"No fingerprint status found for: {email}")
+            return JsonResponse({'error': f'Fingerprint status not found for {email}'}, status=404)
+            
+    except Exception as e:
+        print(f"Error resetting fingerprint: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+# Add this new endpoint for debugging
+@csrf_exempt
+@require_http_methods(["GET"])
+def debug_fingerprint_status(request):
+    """Debug endpoint to see all fingerprint statuses"""
+    try:
+        all_statuses = FingerprintStatus.objects.all().values()
+        return JsonResponse({
+            'all_statuses': list(all_statuses),
+            'count': len(all_statuses)
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_trader_history_gpt_summary_endpoint(request):
+    try:
+        # Get trading data (not economic events)
+        all_trades = AccountTrades.objects.all()
+        accounts_data = Account.objects.all()
+        
+        if not all_trades.exists():
+            return JsonResponse({
+                'status': 'No trading data available',
+                'summary': 'No trading history found to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate trading metrics
+        total_trades = all_trades.count()
+        profit_trades = all_trades.filter(outcome='Profit').count()
+        loss_trades = all_trades.filter(outcome='Loss').count()
+        win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        total_pnl = all_trades.aggregate(Sum('amount'))['amount__sum'] or 0
+        avg_trade_amount = all_trades.aggregate(Avg('amount'))['amount__avg'] or 0
+        best_trade = all_trades.aggregate(Max('amount'))['amount__max'] or 0
+        worst_trade = all_trades.aggregate(Min('amount'))['amount__min'] or 0
+        
+        # Strategy analysis
+        strategy_performance = all_trades.values('strategy').annotate(
+            total_trades=Count('id'),
+            total_pnl=Sum('amount')
+        ).order_by('-total_pnl')
+        
+        best_strategy = strategy_performance.first()['strategy'] if strategy_performance else 'N/A'
+        worst_strategy = strategy_performance.last()['strategy'] if strategy_performance else 'N/A'
+        
+        # Asset analysis
+        asset_counts = all_trades.values('asset').annotate(count=Count('id')).order_by('-count')
+        most_traded_asset = asset_counts.first()['asset'] if asset_counts else 'N/A'
+        
+        # Get news data for context (if needed)
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
+        try:
+            news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        except:
+            news_data = {'message': []}
+        
+        # Create comprehensive prompt for GPT
+        prompt = f"""
+        Analyze this comprehensive trading performance data and provide a detailed, professional summary:
+
+        TRADING PERFORMANCE METRICS:
+        - Total Trades: {total_trades}
+        - Win Rate: {win_rate:.2f}%
+        - Total P&L: ${total_pnl:,.2f}
+        - Average Trade Size: ${avg_trade_amount:,.2f}
+        - Best Trade: ${best_trade:,.2f}
+        - Worst Trade: ${worst_trade:,.2f}
+        - Most Traded Asset: {most_traded_asset}
+        - Best Performing Strategy: {best_strategy}
+        - Worst Performing Strategy: {worst_strategy}
+
+        DETAILED BREAKDOWN:
+        - Profitable Trades: {profit_trades}
+        - Losing Trades: {loss_trades}
+
+        RECENT MARKET NEWS THEMES:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:5]])}
+
+        Please provide:
+        1. A comprehensive performance assessment
+        2. Key strengths and weaknesses in the trading approach
+        3. Risk management analysis
+        4. Recommendations for improvement
+        5. Strategic insights based on the data
+        6. Asset allocation observations
+        7. Future trading suggestions
+
+        Format the response as a professional trading report with clear sections and actionable insights.
+        """
+        
+        # Get AI summary
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAITraderHistoryGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'total_profit_loss': total_pnl,
+                'best_performing_strategy': best_strategy,
+                'worst_performing_strategy': worst_strategy,
+                'most_traded_asset': most_traded_asset,
+                'average_trade_amount': avg_trade_amount,
+            }
+        )
+        
+        if not created:
+            # Update existing summary
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_trades = total_trades
+            summary_obj.win_rate = win_rate
+            summary_obj.total_profit_loss = total_pnl
+            summary_obj.best_performing_strategy = best_strategy
+            summary_obj.worst_performing_strategy = worst_strategy
+            summary_obj.most_traded_asset = most_traded_asset
+            summary_obj.average_trade_amount = avg_trade_amount
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_trades': total_trades,
+                'win_rate': f"{win_rate:.2f}%",
+                'total_pnl': f"${total_pnl:,.2f}",
+                'avg_trade_amount': f"${avg_trade_amount:,.2f}",
+                'most_traded_asset': most_traded_asset,
+                'best_strategy': best_strategy
+            }
+        })
+        
+    except Exception as e:
+        print(f'Error in Trader History GPT Endpoint: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_macro_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         # Get recent macro context with more detailed information
+#         recent_events = EconomicEvent.objects.filter(date_time__gte=datetime.now() - timedelta(days=7))
+#         high_impact_recent = recent_events.filter(impact='high')
+        
+#         # Get some upcoming events too
+#         upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:5]
+        
+#         context_prompt = f"""
+#         You are MacroGPT, an AI specialized in macro economic analysis, market trends, and economic event impact assessment.
+        
+#         Recent economic context (Last 7 days):
+#         - Total events: {recent_events.count()}
+#         - High impact events: {high_impact_recent.count()}
+        
+#         Recent high-impact events:
+#         {chr(10).join([f"- {event.currency}: {event.event_name} ({event.impact} impact) - {event.date_time.strftime('%Y-%m-%d')}" for event in high_impact_recent[:5]])}
+        
+#         Upcoming events:
+#         {chr(10).join([f"- {event.currency}: {event.event_name} - {event.date_time.strftime('%Y-%m-%d %H:%M')}" for event in upcoming_events])}
+        
+#         User question: {user_message}
+        
+#         Provide expert macro economic analysis and insights based on current market conditions and economic data. 
+#         Be specific and actionable in your response. If the user asks about specific currencies or events, 
+#         reference the available data context above.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         # Ensure we have a response
+#         if not ai_response or ai_response.strip() == '':
+#             ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question about macro economic analysis."
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='MacroGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         print(f'Error in MacroGPT chat function: {e}')
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_idea_gpt_summary_endpoint(request):
+    try:
+        all_ideas = IdeaModel.objects.all()
+        trade_ideas = TradeIdea.objects.all()
+        
+        if not all_ideas.exists() and not trade_ideas.exists():
+            return JsonResponse({
+                'status': 'No ideas available',
+                'summary': 'No ideas found in the system to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate metrics for regular ideas
+        total_ideas = all_ideas.count()
+        pending_ideas = all_ideas.filter(idea_tracker='Pending').count()
+        in_progress_ideas = all_ideas.filter(idea_tracker='In Progress').count()
+        completed_ideas = all_ideas.filter(idea_tracker='Completed').count()
+        
+        completion_rate = (completed_ideas / total_ideas * 100) if total_ideas > 0 else 0
+        
+        # Category analysis
+        categories = all_ideas.values('idea_category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['idea_category'] if categories else 'N/A'
+        
+        # Trade ideas metrics
+        total_trade_ideas = trade_ideas.count()
+        pending_trade_ideas = trade_ideas.filter(trade_status='pending').count()
+        executed_trade_ideas = trade_ideas.filter(trade_status='executed').count()
+        
+        # Get recent ideas for context
+        recent_ideas = all_ideas.order_by('-created_at')[:10]
+        recent_trade_ideas = trade_ideas.order_by('-date_created')[:5]
+        
+        oldest_pending = all_ideas.filter(idea_tracker='Pending').order_by('created_at').first()
+        newest_idea = all_ideas.order_by('-created_at').first()
+        
+        prompt = f"""
+        Analyze this comprehensive idea management data and provide detailed insights:
+
+        GENERAL IDEAS ANALYSIS:
+        - Total Ideas: {total_ideas}
+        - Pending Ideas: {pending_ideas}
+        - In Progress Ideas: {in_progress_ideas}
+        - Completed Ideas: {completed_ideas}
+        - Completion Rate: {completion_rate:.2f}%
+        - Most Common Category: {most_common_category}
+
+        TRADE IDEAS ANALYSIS:
+        - Total Trade Ideas: {total_trade_ideas}
+        - Pending Trade Ideas: {pending_trade_ideas}
+        - Executed Trade Ideas: {executed_trade_ideas}
+
+        RECENT IDEAS SAMPLE:
+        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:5]])}
+
+        RECENT TRADE IDEAS:
+        {chr(10).join([f"- [{trade.trade_status}] {trade.asset}: {trade.heading}" for trade in recent_trade_ideas])}
+
+        Please provide:
+        1. Comprehensive idea pipeline analysis
+        2. Productivity and execution assessment
+        3. Category-wise performance breakdown
+        4. Bottleneck identification
+        5. Recommendations for better idea management
+        6. Trading idea conversion analysis
+        7. Strategic prioritization suggestions
+        8. Innovation and creativity assessment
+
+        Format as a professional idea management report with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIIdeaGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_ideas': total_ideas,
+                'pending_ideas': pending_ideas,
+                'in_progress_ideas': in_progress_ideas,
+                'completed_ideas': completed_ideas,
+                'most_common_category': most_common_category,
+                'completion_rate': completion_rate,
+                'oldest_pending_idea': oldest_pending.idea_text[:200] if oldest_pending else 'N/A',
+                'newest_idea': newest_idea.idea_text[:200] if newest_idea else 'N/A',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_ideas = total_ideas
+            summary_obj.pending_ideas = pending_ideas
+            summary_obj.in_progress_ideas = in_progress_ideas
+            summary_obj.completed_ideas = completed_ideas
+            summary_obj.completion_rate = completion_rate
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_ideas': total_ideas,
+                'completion_rate': f"{completion_rate:.2f}%",
+                'most_common_category': most_common_category,
+                'pending_ideas': pending_ideas,
+                'trade_ideas': total_trade_ideas
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_idea_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_ideas = IdeaModel.objects.order_by('-created_at')[:10]
+        
+#         context_prompt = f"""
+#         You are IdeaGPT, an AI specialized in idea management, creativity enhancement, and innovation strategy.
+        
+#         Recent ideas context:
+#         - Total ideas in system: {IdeaModel.objects.count()}
+#         - Recent ideas: {recent_ideas.count()}
+        
+#         Sample recent ideas:
+#         {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:3]])}
+        
+#         User question: {user_message}
+        
+#         Provide creative and strategic insights for idea management, development, and execution.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='IdeaGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_backtesting_gpt_summary_endpoint(request):
+    try:
+        all_backtests = BacktestModels.objects.all()
+        all_results = BacktestResult.objects.all()
+        
+        if not all_backtests.exists():
+            return JsonResponse({
+                'status': 'No backtesting data available',
+                'summary': 'No backtesting history found to analyze.',
+                'metrics': {}
+            })
+        
+        total_backtests = all_backtests.count()
+        successful_backtests = all_backtests.filter(model_backtested=True).count()
+        
+        # Results analysis
+        if all_results.exists():
+            avg_sharpe = all_results.aggregate(Avg('sharpe_ratio'))['sharpe_ratio__avg'] or 0
+            avg_annual_return = all_results.aggregate(Avg('annual_return'))['annual_return__avg'] or 0
+            avg_max_drawdown = all_results.aggregate(Avg('max_drawdown'))['max_drawdown__avg'] or 0
+            best_sharpe = all_results.aggregate(Max('sharpe_ratio'))['sharpe_ratio__max'] or 0
+            worst_sharpe = all_results.aggregate(Min('sharpe_ratio'))['sharpe_ratio__min'] or 0
+            
+            best_result = all_results.filter(sharpe_ratio=best_sharpe).first()
+            worst_result = all_results.filter(sharpe_ratio=worst_sharpe).first()
+        else:
+            avg_sharpe = avg_annual_return = avg_max_drawdown = 0
+            best_result = worst_result = None
+        
+        # Dataset analysis
+        datasets = all_backtests.values('chosen_dataset').annotate(count=Count('id')).order_by('-count')
+        most_used_dataset = datasets.first()['chosen_dataset'] if datasets else 'N/A'
+        
+        # Recent backtests
+        recent_backtests = all_backtests.order_by('-id')[:5]
+        
+        prompt = f"""
+        Analyze this comprehensive backtesting performance data:
+
+        BACKTESTING OVERVIEW:
+        - Total Backtests: {total_backtests}
+        - Successful Backtests: {successful_backtests}
+        - Success Rate: {(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%
+        - Most Used Dataset: {most_used_dataset}
+
+        PERFORMANCE METRICS:
+        - Average Sharpe Ratio: {avg_sharpe:.3f}
+        - Average Annual Return: {avg_annual_return:.2f}%
+        - Average Max Drawdown: {avg_max_drawdown:.2f}%
+        - Best Sharpe Ratio: {best_sharpe:.3f}
+        - Worst Sharpe Ratio: {worst_sharpe:.3f}
+
+        RECENT BACKTESTS:
+        {chr(10).join([f"- Dataset: {bt.chosen_dataset} | Period: {bt.dataset_start} to {bt.dataset_end} | Capital: ${bt.initial_capital:,.2f}" for bt in recent_backtests])}
+
+        BEST PERFORMING STRATEGY:
+        {f"Sharpe: {best_result.sharpe_ratio:.3f} | Annual Return: {best_result.annual_return:.2f}% | Drawdown: {best_result.max_drawdown:.2f}%" if best_result else "No results available"}
+
+        WORST PERFORMING STRATEGY:
+        {f"Sharpe: {worst_result.sharpe_ratio:.3f} | Annual Return: {worst_result.annual_return:.2f}% | Drawdown: {worst_result.max_drawdown:.2f}%" if worst_result else "No results available"}
+
+        Please provide:
+        1. Comprehensive backtesting performance assessment
+        2. Strategy effectiveness analysis
+        3. Risk-adjusted returns evaluation
+        4. Dataset utilization insights
+        5. Performance consistency analysis
+        6. Recommendations for strategy improvement
+        7. Risk management effectiveness
+        8. Future backtesting suggestions
+
+        Format as a professional quantitative analysis report.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIBacktestingGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_backtests': total_backtests,
+                'successful_backtests': successful_backtests,
+                'average_sharpe_ratio': avg_sharpe,
+                'average_annual_return': avg_annual_return,
+                'average_max_drawdown': avg_max_drawdown,
+                'best_performing_strategy': f"Sharpe: {best_sharpe:.3f}" if best_result else 'N/A',
+                'worst_performing_strategy': f"Sharpe: {worst_sharpe:.3f}" if worst_result else 'N/A',
+                'most_used_dataset': most_used_dataset,
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_backtests = total_backtests
+            summary_obj.successful_backtests = successful_backtests
+            summary_obj.average_sharpe_ratio = avg_sharpe
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_backtests': total_backtests,
+                'success_rate': f"{(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%",
+                'avg_sharpe_ratio': f"{avg_sharpe:.3f}",
+                'avg_annual_return': f"{avg_annual_return:.2f}%",
+                'most_used_dataset': most_used_dataset
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_backtesting_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_results = BacktestResult.objects.order_by('-created_at')[:5]
+        
+#         context_prompt = f"""
+#         You are BacktestingGPT, an AI specialized in quantitative strategy analysis, backtesting methodology, and trading system optimization.
+        
+#         Recent backtesting context:
+#         - Total backtests: {BacktestModels.objects.count()}
+#         - Total results: {BacktestResult.objects.count()}
+        
+#         Recent performance:
+#         {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
+        
+#         User question: {user_message}
+        
+#         Provide expert quantitative analysis and backtesting insights based on the available strategy performance data.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='BacktestingGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_paper_gpt_summary_endpoint(request):
+    try:
+        all_papers = PaperGPT.objects.all()
+        
+        if not all_papers.exists():
+            return JsonResponse({
+                'status': 'No research papers available',
+                'summary': 'No research papers found in the system to analyze.',
+                'metrics': {}
+            })
+        
+        total_papers = all_papers.count()
+        
+        # Calculate total file size safely
+        total_file_size = 0
+        for paper in all_papers:
+            if paper.file_size:
+                total_file_size += paper.file_size
+        total_file_size_mb = total_file_size / (1024 * 1024)  # Convert to MB
+        
+        # Category analysis
+        categories = all_papers.exclude(category__isnull=True).exclude(category='').values('category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['category'] if categories else 'Uncategorized'
+        
+        # Length analysis (approximate based on extracted text)
+        papers_with_text = all_papers.exclude(extracted_text__isnull=True).exclude(extracted_text='')
+        avg_paper_length = 0
+        if papers_with_text.exists():
+            total_length = sum([len(paper.extracted_text) for paper in papers_with_text])
+            avg_paper_length = total_length / papers_with_text.count()
+        
+        # Recent uploads
+        recent_papers = all_papers.order_by('-upload_date')[:5]
+        latest_upload = recent_papers.first()
+        
+        # Get AI summaries for analysis
+        papers_with_summaries = all_papers.exclude(ai_summary__isnull=True).exclude(ai_summary='')
+        paper_summaries = []
+        if papers_with_summaries.exists():
+            paper_summaries = [paper.ai_summary[:200] + "..." for paper in papers_with_summaries[:10]]
+        
+        # Get personal notes
+        papers_with_notes = all_papers.exclude(personal_notes__isnull=True).exclude(personal_notes='')
+        personal_notes = []
+        if papers_with_notes.exists():
+            personal_notes = [paper.personal_notes[:100] + "..." for paper in papers_with_notes[:5]]
+        
+        prompt = f"""
+        Analyze this comprehensive research paper collection and provide insights:
+
+        PAPER COLLECTION OVERVIEW:
+        - Total Papers: {total_papers}
+        - Total File Size: {total_file_size_mb:.2f} MB
+        - Most Common Category: {most_common_category}
+        - Average Paper Length: ~{avg_paper_length:.0f} characters
+
+        RECENT UPLOADS:
+        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'} | Size: {(paper.file_size/(1024*1024)):.1f}MB" for paper in recent_papers if paper.file_size])}
+
+        EXISTING AI SUMMARIES SAMPLE:
+        {chr(10).join([f"- {summary}" for summary in paper_summaries[:5]])}
+
+        PERSONAL NOTES SAMPLE:
+        {chr(10).join([f"- {note}" for note in personal_notes])}
+
+        CATEGORY BREAKDOWN:
+        {chr(10).join([f"- {cat['category']}: {cat['count']} papers" for cat in categories[:5]])}
+
+        Please provide:
+        1. Comprehensive research collection assessment
+        2. Knowledge domain analysis
+        3. Research gap identification
+        4. Cross-paper insight synthesis
+        5. Future research recommendations
+        6. Practical application opportunities
+        7. Knowledge management suggestions
+        8. Research methodology insights
+        9. Literature review conclusions
+        10. Strategic research directions
+
+        Format as a comprehensive research portfolio analysis with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Generate research recommendations
+        recommendations_prompt = f"""
+        Based on the {total_papers} research papers in categories like {most_common_category}, provide specific future research applications and recommendations:
+
+        1. Identify 3-5 key research themes
+        2. Suggest practical applications for trading/finance
+        3. Recommend next research directions
+        4. Identify knowledge gaps that need filling
+
+        Keep recommendations specific and actionable.
+        """
+        
+        research_recommendations = chat_gpt(recommendations_prompt)
+        
+        summary_obj, created = SnowAIPaperGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_papers': total_papers,
+                'most_common_category': most_common_category,
+                'total_file_size_mb': total_file_size_mb,
+                'average_paper_length': avg_paper_length,
+                'latest_upload': latest_upload.title if latest_upload else 'N/A',
+                'research_recommendations': research_recommendations,
+                'key_insights': ', '.join([summary[:50] for summary in paper_summaries[:3]]),
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_papers = total_papers
+            summary_obj.research_recommendations = research_recommendations
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_papers': total_papers,
+                'total_size_mb': f"{total_file_size_mb:.2f} MB",
+                'most_common_category': most_common_category,
+                'categories_count': len(categories),
+                'avg_length': f"{avg_paper_length:.0f} chars"
+            }
+        })
+        
+    except Exception as e:
+        print(f'Error in paper_gpt function: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_paper_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        
+#         context_prompt = f"""
+#         You are PaperGPT, an AI specialized in research paper analysis, academic literature synthesis, and research methodology.
+        
+#         Research paper context:
+#         - Total papers in collection: {PaperGPT.objects.count()}
+#         - Recent papers: {recent_papers.count()}
+        
+#         Sample recent papers:
+#         {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
+        
+#         User question: {user_message}
+        
+#         Provide expert academic and research insights based on the available paper collection and research methodology expertise.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='PaperGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_research_gpt_summary_endpoint(request):
+    try:
+        # Combine all research sources
+        all_papers = PaperGPT.objects.all()
+        ml_models = SnowAIMLModelLogEntry.objects.all()
+        backtests = BacktestModels.objects.all()
+
+        if not any([all_papers.exists(), ml_models.exists(), backtests.exists()]):
+            return JsonResponse({
+                'status': 'No research data available',
+                'summary': 'No research data found across papers, ML models, or backtests.',
+                'metrics': {}
+            })
+
+        total_papers = all_papers.count()
+        total_ml_models = ml_models.count()
+        total_backtests = backtests.count()
+        total_research_entries = total_papers + total_ml_models + total_backtests
+
+        # ML Model analysis
+        model_types = ml_models.values('snowai_model_type').annotate(count=Count('id')).order_by('-count')
+        financial_markets = ml_models.values('snowai_financial_market_type').annotate(count=Count('id')).order_by('-count')
+
+        # Paper categories
+        paper_categories = all_papers.exclude(category__isnull=True).values('category').annotate(count=Count('id')).order_by('-count')
+
+        # Recent research activity
+        recent_papers = all_papers.order_by('-upload_date')[:3]
+        recent_models = ml_models.order_by('-snowai_created_at')[:3]
+
+        # Performance metrics from ML models
+        avg_accuracy = ml_models.exclude(snowai_accuracy_score__isnull=True).aggregate(Avg('snowai_accuracy_score'))['snowai_accuracy_score__avg'] or 0
+        avg_sharpe = ml_models.exclude(snowai_sharpe_ratio__isnull=True).aggregate(Avg('snowai_sharpe_ratio'))['snowai_sharpe_ratio__avg'] or 0
+
+        # Prompt for GPT summary
+        prompt = f"""
+        Analyze this comprehensive research ecosystem and provide strategic insights:
+
+        RESEARCH PORTFOLIO OVERVIEW:
+        - Total Research Entries: {total_research_entries}
+        - Research Papers: {total_papers}
+        - ML Models: {total_ml_models}
+        - Backtesting Strategies: {total_backtests}
+
+        ML MODEL RESEARCH:
+        - Most Common Model Type: {model_types[0]['snowai_model_type'] if model_types else 'N/A'}
+        - Primary Financial Market: {financial_markets[0]['snowai_financial_market_type'] if financial_markets else 'N/A'}
+        - Average Model Accuracy: {avg_accuracy:.3f}
+        - Average Sharpe Ratio: {avg_sharpe:.3f}
+
+        PAPER RESEARCH:
+        - Primary Research Category: {paper_categories[0]['category'] if paper_categories else 'N/A'}
+        - Category Distribution: {len(paper_categories)} different categories
+
+        RECENT RESEARCH ACTIVITY:
+        Papers:
+        {chr(10).join([f"- {paper.title}" for paper in recent_papers])}
+
+        Models:
+        {chr(10).join([f"- {model.snowai_model_name} ({model.snowai_model_type})" for model in recent_models])}
+
+        MODEL TYPE DISTRIBUTION:
+        {chr(10).join([f"- {mt['snowai_model_type']}: {mt['count']} models" for mt in model_types[:5]])}
+
+        FINANCIAL MARKET FOCUS:
+        {chr(10).join([f"- {fm['snowai_financial_market_type']}: {fm['count']} models" for fm in financial_markets[:5]])}
+
+        Please provide:
+        1. Comprehensive research ecosystem analysis
+        2. Cross-disciplinary knowledge synthesis
+        3. Research methodology assessment
+        4. Knowledge gap identification and prioritization
+        5. Future research direction recommendations
+        6. Practical application opportunities
+        7. Research ROI analysis
+        8. Strategic research roadmap
+        9. Innovation potential assessment
+        10. Academic-industry bridge recommendations
+
+        Format as a strategic research portfolio review with actionable insights.
+        """
+
+        ai_summary = chat_gpt(prompt)
+
+        # Generate specific research directions
+        directions_prompt = f"""
+        Based on {total_research_entries} research entries including {total_ml_models} ML models and {total_papers} papers,
+        provide 5 specific future research directions that bridge theory and practical trading applications.
+        Focus on unexplored combinations and high-impact opportunities.
+        """
+
+        future_directions = chat_gpt(directions_prompt)
+
+        # You can optionally include future_directions in the response or save it
+
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'future_directions': future_directions,
+            'metrics': {
+                'total_papers': total_papers,
+                'total_ml_models': total_ml_models,
+                'total_backtests': total_backtests,
+                'avg_accuracy': round(avg_accuracy, 3),
+                'avg_sharpe': round(avg_sharpe, 3)
+            }
+        })
+
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_paper_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_papers = PaperGPT.objects.order_by('-upload_date')[:5]
+        
+#         context_prompt = f"""
+#         You are PaperGPT, an AI specialized in research paper analysis, academic literature synthesis, and research methodology.
+        
+#         Research paper context:
+#         - Total papers in collection: {PaperGPT.objects.count()}
+#         - Recent papers: {recent_papers.count()}
+        
+#         Sample recent papers:
+#         {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'}" for paper in recent_papers])}
+        
+#         User question: {user_message}
+        
+#         Provide expert academic and research insights based on the available paper collection and research methodology expertise.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='PaperGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_backtesting_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         recent_results = BacktestResult.objects.order_by('-created_at')[:5]
+        
+#         context_prompt = f"""
+#         You are BacktestingGPT, an AI specialized in quantitative strategy analysis, backtesting methodology, and trading system optimization.
+        
+#         Recent backtesting context:
+#         - Total backtests: {BacktestModels.objects.count()}
+#         - Total results: {BacktestResult.objects.count()}
+        
+#         Recent performance:
+#         {chr(10).join([f"- Sharpe: {result.sharpe_ratio:.3f} | Return: {result.annual_return:.2f}% | Drawdown: {result.max_drawdown:.2f}%" for result in recent_results])}
+        
+#         User question: {user_message}
+        
+#         Provide expert quantitative analysis and backtesting insights based on the available strategy performance data.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='BacktestingGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# @csrf_exempt
+# @require_http_methods(["POST"])
+# def snowai_trader_history_gpt_chat_endpoint(request):
+#     try:
+#         data = json.loads(request.body)
+#         user_message = data.get('message', '')
+        
+#         if not user_message:
+#             return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+#         # Get recent trading context
+#         recent_trades = AccountTrades.objects.all()[:50]  # Last 50 trades for context
+        
+#         context_prompt = f"""
+#         You are TraderHistoryGPT, an AI specialized in analyzing trading performance and providing trading insights.
+        
+#         Current trading context:
+#         - Total trades in system: {AccountTrades.objects.count()}
+#         - Recent activity: {recent_trades.count()} recent trades available
+        
+#         User question: {user_message}
+        
+#         Provide a helpful, accurate response based on the available trading data and your expertise in trading analysis.
+#         If the user asks about specific metrics, calculate them from the available data context.
+#         """
+        
+#         ai_response = chat_gpt(context_prompt)
+        
+#         # Save conversation
+#         SnowAIConversationHistory.objects.create(
+#             gpt_system='TraderHistoryGPT',
+#             user_message=user_message,
+#             ai_response=ai_response
+#         )
+        
+#         return JsonResponse({'status': 'success', 'response': ai_response})
+        
+#     except Exception as e:
+#         return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_macro_gpt_summary_endpoint(request):
+    try:
+        # Get economic events from the last month (NOT trading data)
+        one_month_ago = datetime.now() - timedelta(days=30)
+        recent_events = EconomicEvent.objects.filter(date_time__gte=one_month_ago)
+        
+        if not recent_events.exists():
+            return JsonResponse({
+                'status': 'No recent economic data available',
+                'summary': 'No economic events found in the last month to analyze.',
+                'metrics': {}
+            })
+        
+        # Calculate economic event metrics
+        total_events = recent_events.count()
+        high_impact_events = recent_events.filter(impact='high').count()
+        medium_impact_events = recent_events.filter(impact='medium').count()
+        low_impact_events = recent_events.filter(impact='low').count()
+        
+        # Currency analysis
+        currency_counts = recent_events.values('currency').annotate(count=Count('id')).order_by('-count')
+        most_active_currency = currency_counts.first()['currency'] if currency_counts else 'N/A'
+        
+        # Get news data for major assets
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
+        try:
+            news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        except:
+            news_data = {'message': []}
+        
+        # Upcoming events
+        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:10]
+        
+        # Create comprehensive prompt
+        prompt = f"""
+        Analyze this comprehensive macro economic data and provide a detailed market analysis:
+
+        ECONOMIC EVENTS ANALYSIS (Last 30 Days):
+        - Total Economic Events: {total_events}
+        - High Impact Events: {high_impact_events}
+        - Medium Impact Events: {medium_impact_events}  
+        - Low Impact Events: {low_impact_events}
+        - Most Active Currency: {most_active_currency}
+        
+        RECENT HIGH IMPACT EVENTS:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d')})" for event in recent_events.filter(impact='high')[:10]])}
+        
+        UPCOMING EVENTS PREVIEW:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d %H:%M')})" for event in upcoming_events])}
+        
+        NEWS THEMES FROM MAJOR ASSETS:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:10]])}
+
+        Please provide:
+        1. Comprehensive macro economic assessment
+        2. Key market themes and trends
+        3. Currency strength analysis
+        4. Risk assessment for upcoming events
+        5. Trading opportunities and recommendations
+        6. Market sentiment analysis
+        7. Geopolitical impact assessment
+        8. Central bank policy implications
+
+        Format as a professional macro economic briefing with actionable market insights.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAIMacroGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_economic_events': total_events,
+                'high_impact_events_count': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'key_market_themes': ', '.join([item['title'][:50] for item in news_data.get('message', [])[:5]]),
+                'upcoming_events_preview': ', '.join([f"{event.currency}: {event.event_name}" for event in upcoming_events[:5]]),
+                'market_sentiment': 'Mixed' if high_impact_events > 5 else 'Stable',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_economic_events = total_events
+            summary_obj.high_impact_events_count = high_impact_events
+            summary_obj.most_active_currency = most_active_currency
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'summary': ai_summary,
+            'metrics': {
+                'total_events': total_events,
+                'high_impact_events': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'upcoming_events': len(upcoming_events),
+                'news_items': len(news_data.get('message', []))
+            }
+        })
+        
+    except Exception as e:
+        print(f'Error in Macro GPT Endpoint: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# Add these new endpoints to your Django views.py
+from django.core.paginator import Paginator
+
+# Endpoint to get conversation history for a specific GPT
+@csrf_exempt 
+@require_http_methods(["GET"])
+def get_conversation_history(request, gpt_system):
+    try:
+        # Get conversation history for the specific GPT system
+        conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system=gpt_system
+        ).order_by('timestamp')[:50]  # Get last 50 conversations
+        
+        # Convert to list of dictionaries
+        conversation_data = []
+        for conv in conversations:
+            conversation_data.append({
+                'gpt_system': conv.gpt_system,
+                'user_message': conv.user_message,
+                'ai_response': conv.ai_response,
+                'timestamp': conv.timestamp.isoformat()
+            })
+        
+        return JsonResponse({
+            'status': 'success',
+            'conversation_history': conversation_data,
+            'total_messages': len(conversation_data)
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# Endpoint to clear conversation history for a specific GPT
+@csrf_exempt
+@require_http_methods(["POST"])
+def clear_conversation_history(request, gpt_system):
+    try:
+        # Delete all conversation history for the specific GPT system
+        deleted_count, _ = SnowAIConversationHistory.objects.filter(
+            gpt_system=gpt_system
+        ).delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Cleared {deleted_count} messages for {gpt_system}',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+# Updated chat endpoints with conversation memory context
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_paper_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context (last 10 exchanges)
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='PaperGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get paper data with limited fields to avoid large payloads
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:10]
+        total_papers = PaperGPT.objects.count()
+        
+        # Create lightweight paper summaries (avoid large text fields)
+        papers_summary = []
+        for paper in recent_papers:
+            paper_info = {
+                'title': paper.title,
+                'category': paper.category,
+                'upload_date': paper.upload_date.isoformat(),
+                'file_name': paper.file_name,
+                'summary_preview': paper.ai_summary[:200] + "..." if paper.ai_summary and len(paper.ai_summary) > 200 else paper.ai_summary,
+                'has_notes': bool(paper.personal_notes),
+                'text_length': len(paper.extracted_text) if paper.extracted_text else 0
+            }
+            papers_summary.append(paper_info)
+        
+        context_prompt = f"""
+        You are PaperGPT, an AI assistant who specializes in research paper analysis, academic literature synthesis, and research methodology. 
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available research papers data (use only when relevant to the conversation):
+        Total papers in collection: {total_papers}
+        
+        Recent papers summary:
+        {json.dumps(papers_summary, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed paper analysis or summaries if the user specifically asks for research insights, paper analysis, or academic information
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing paper-related content
+        - Be helpful and friendly while staying true to your research expertise
+        - Reference the research data when it's actually relevant to what the user is asking
+        - You have access to paper metadata and summaries; if full text is needed, acknowledge the limitation
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        # Ensure we have a valid response
+        if not ai_response or ai_response.strip() == '':
+            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question."
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='PaperGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        print(f'Error in PaperGPT chat function: {e}')
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_backtesting_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='BacktestingGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get backtest data with essential fields only
+        recent_results = BacktestResult.objects.order_by('-created_at')[:10]
+        backtest_models = BacktestModels.objects.all()[:10]
+        
+        total_results = BacktestResult.objects.count()
+        total_models = BacktestModels.objects.count()
+        
+        # Create lightweight summaries (avoid JSON field which might be large)
+        results_summary = []
+        for result in recent_results:
+            result_info = {
+                'start': result.start.isoformat(),
+                'end': result.end.isoformat(),
+                'duration': result.duration,
+                'return_percent': result.return_percent,
+                'annual_return': result.annual_return,
+                'sharpe_ratio': result.sharpe_ratio,
+                'max_drawdown': result.max_drawdown,
+                'num_trades': result.num_trades,
+                'win_rate': result.win_rate,
+                'equity_final': result.equity_final,
+                'created_at': result.created_at.isoformat()
+            }
+            results_summary.append(result_info)
+        
+        # Serialize models data with essential fields including generated code
+        models_summary = []
+        for model in backtest_models:
+            model_info = {
+                'chosen_dataset': model.chosen_dataset,
+                'dataset_start': model.dataset_start,
+                'dataset_end': model.dataset_end,
+                'initial_capital': model.initial_capital,
+                'model_backtested': model.model_backtested,
+                'generated_code': model.generated_code[:2000] + "..." if model.generated_code and len(model.generated_code) > 2000 else model.generated_code
+            }
+            models_summary.append(model_info)
+        
+        context_prompt = f"""
+        You are BacktestingGPT, an AI assistant who specializes in quantitative strategy analysis, backtesting methodology, and trading system optimization.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available backtesting data (use only when relevant to the conversation):
+        Total backtests: {total_models}
+        Total results: {total_results}
+        
+        Recent backtest results summary:
+        {json.dumps(results_summary, indent=2)}
+        
+        Backtest models summary:
+        {json.dumps(models_summary, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed backtesting analysis or performance summaries if the user specifically asks about trading strategies, backtesting, or quantitative analysis
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing backtesting-related content
+        - Be helpful and friendly while staying true to your quantitative expertise
+        - Reference the backtesting data when it's actually relevant to what the user is asking
+        - You have access to backtest results and model configuration summaries
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        # Ensure we have a valid response
+        if not ai_response or ai_response.strip() == '':
+            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question."
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='BacktestingGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        print(f'Error in BacktestingGPT chat function: {e}')
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_research_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='ResearchGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get actual research data
+        ml_models = SnowAIMLModelLogEntry.objects.all()[:10]
+        
+        # Serialize ML models data
+        ml_models_data = []
+        for model in ml_models:
+            model_dict = {}
+            for field in model._meta.fields:
+                field_value = getattr(model, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    model_dict[field.name] = field_value.isoformat()
+                else:
+                    model_dict[field.name] = str(field_value) if field_value is not None else None
+            ml_models_data.append(model_dict)
+        
+        context_prompt = f"""
+        You are ResearchGPT, an AI assistant who specializes in comprehensive research analysis, cross-disciplinary synthesis, and strategic research planning.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available research ecosystem data (use only when relevant to the conversation):
+        Total ML models: {SnowAIMLModelLogEntry.objects.count()}
+        
+        ML Models data:
+        {json.dumps(ml_models_data, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed research analysis or comprehensive summaries if the user specifically asks about research insights, cross-disciplinary analysis, or strategic planning
+        - Be helpful and friendly while staying true to your research expertise
+        - Reference the research ecosystem data when it's actually relevant to what the user is asking
+        - You have access to full ML model data and research context
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='ResearchGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trader_history_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='TraderHistoryGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get actual trading data
+        recent_trades = AccountTrades.objects.all()[:50]
+        
+        # Serialize trades data
+        trades_data = []
+        for trade in recent_trades:
+            trade_dict = {}
+            for field in trade._meta.fields:
+                field_value = getattr(trade, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    trade_dict[field.name] = field_value.isoformat()
+                else:
+                    trade_dict[field.name] = str(field_value) if field_value is not None else None
+            trades_data.append(trade_dict)
+        
+        context_prompt = f"""
+        You are TraderHistoryGPT, an AI assistant who specializes in analyzing trading performance and providing trading insights.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available trading data (use only when relevant to the conversation):
+        Total trades in system: {AccountTrades.objects.count()}
+        
+        Recent trades data:
+        {json.dumps(trades_data, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed trading analysis or performance summaries if the user specifically asks about trading performance, metrics, or trading-related questions
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing trading-related content
+        - Be helpful and friendly while staying true to your trading expertise
+        - Reference the trading data when it's actually relevant to what the user is asking
+        - You have access to full trade data including all fields and can calculate any metrics from this data
+        - If the user asks about specific metrics, calculate them from the available trade data
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='TraderHistoryGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_idea_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='IdeaGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get actual ideas data
+        recent_ideas = IdeaModel.objects.order_by('-created_at')[:20]
+        
+        # Serialize ideas data
+        ideas_data = []
+        for idea in recent_ideas:
+            idea_dict = {}
+            for field in idea._meta.fields:
+                field_value = getattr(idea, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    idea_dict[field.name] = field_value.isoformat()
+                else:
+                    idea_dict[field.name] = str(field_value) if field_value is not None else None
+            ideas_data.append(idea_dict)
+        
+        context_prompt = f"""
+        You are IdeaGPT, an AI assistant who specializes in idea management, creativity enhancement, and innovation strategy.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available ideas data (use only when relevant to the conversation):
+        Total ideas in system: {IdeaModel.objects.count()}
+        
+        Recent ideas data:
+        {json.dumps(ideas_data, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed idea analysis or creativity insights if the user specifically asks about ideas, creativity, innovation, or brainstorming
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing idea-related content
+        - Be helpful and friendly while staying true to your creativity and innovation expertise
+        - Reference the ideas data when it's actually relevant to what the user is asking
+        - You have access to full idea data including all fields and content
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='IdeaGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_macro_gpt_chat_endpoint(request):
+    try:
+        data = json.loads(request.body)
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return JsonResponse({'status': 'error', 'message': 'No message provided'})
+        
+        # Get recent conversation history for context
+        recent_conversations = SnowAIConversationHistory.objects.filter(
+            gpt_system='MacroGPT'
+        ).order_by('-timestamp')[:10]
+        
+        conversation_context = ""
+        if recent_conversations:
+            conversation_context = "\n\nRecent conversation history:\n"
+            for conv in reversed(recent_conversations):
+                conversation_context += f"User: {conv.user_message}\n"
+                conversation_context += f"Assistant: {conv.ai_response}\n\n"
+        
+        # Get actual economic data - PAST EVENTS FROM LAST 30 DAYS
+        past_events = EconomicEvent.objects.filter(
+            date_time__gte=datetime.now() - timedelta(days=30),
+            date_time__lt=datetime.now()
+        ).order_by('-date_time')
+        
+        # Serialize past events data
+        past_events_data = []
+        for event in past_events:
+            event_dict = {}
+            for field in event._meta.fields:
+                field_value = getattr(event, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    event_dict[field.name] = field_value.isoformat()
+                else:
+                    event_dict[field.name] = str(field_value) if field_value is not None else None
+            past_events_data.append(event_dict)
+        
+        context_prompt = f"""
+        You are MacroGPT, an AI assistant who specializes in macro economic analysis, market trends, and economic event impact assessment.
+        You maintain conversation continuity and remember our previous discussions.
+        
+        {conversation_context}
+        
+        Available economic data (use only when relevant to the conversation):
+        
+        Past economic events (Last 30 days):
+        {json.dumps(past_events_data, indent=2)}
+        
+        Current user message: {user_message}
+        
+        Instructions:
+        - Maintain conversation continuity by referencing previous discussions when relevant
+        - Have a natural, conversational response that builds on our chat history
+        - Only provide detailed macro economic analysis or market insights if the user specifically asks about economic events, market trends, or macro analysis
+        - For casual conversation (greetings, thanks, general questions), respond naturally without forcing economic content
+        - Be helpful and friendly while staying true to your macro economic expertise
+        - Reference the economic data when it's actually relevant to what the user is asking
+        - You have access to past economic event data including all fields and details
+        - If the user asks about specific currencies or past events, reference the available data context
+        """
+        
+        ai_response = chat_gpt(context_prompt)
+        
+        # Ensure we have a response
+        if not ai_response or ai_response.strip() == '':
+            ai_response = "I apologize, but I'm having trouble generating a response right now. Please try rephrasing your question."
+        
+        SnowAIConversationHistory.objects.create(
+            gpt_system='MacroGPT',
+            user_message=user_message,
+            ai_response=ai_response
+        )
+        
+        return JsonResponse({'status': 'success', 'response': ai_response})
+        
+    except Exception as e:
+        print(f'Error in MacroGPT chat function: {e}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+        
+
+def init_scheduler():
+    """Initialize the background scheduler"""
+    global scheduler
+    if scheduler is None:
+        scheduler = BackgroundScheduler()
+        
+        # Add job to run all GPT summaries every 24 hours at 2 AM
+        scheduler.add_job(
+            func=generate_all_gpt_summaries,
+            trigger="cron",
+            hour=2,  # Run at 2 AM
+            minute=0,
+            id='gpt_summaries_job',
+            replace_existing=True
+        )
+        
+        # Add job to run every hour for testing (remove this in production)
+        # scheduler.add_job(
+        #     func=generate_all_gpt_summaries,
+        #     trigger="interval",
+        #     hours=1,
+        #     id='gpt_summaries_hourly_test',
+        #     replace_existing=True
+        # )
+        
+        scheduler.start()
+        logger.info("Scheduler started successfully")
+        
+        # Shutdown scheduler when the application exits
+        # atexit.register(lambda: scheduler.shutdown() if scheduler else None)
+    
+    return scheduler
+
+def generate_all_gpt_summaries():
+    """Function to generate all GPT summaries - called by scheduler"""
+    logger.info("Starting scheduled GPT summary generation...")
+    
+    summary_functions = [
+        ('TraderHistoryGPT', generate_trader_history_summary),
+        ('MacroGPT', generate_macro_gpt_summary), 
+        ('IdeaGPT', generate_idea_gpt_summary),
+        ('BacktestingGPT', generate_backtesting_gpt_summary),
+        ('PaperGPT', generate_paper_gpt_summary),
+        ('ResearchGPT', generate_research_gpt_summary),
+    ]
+    
+    results = {}
+    for gpt_name, func in summary_functions:
+        try:
+            logger.info(f"Generating {gpt_name} summary...")
+            result = func()
+            results[gpt_name] = 'success' if result else 'failed'
+            logger.info(f"{gpt_name} summary generation completed")
+        except Exception as e:
+            logger.error(f"Error generating {gpt_name} summary: {str(e)}")
+            results[gpt_name] = f'error: {str(e)}'
+    
+    logger.info(f"Scheduled summary generation completed. Results: {results}")
+    return results
+
+
+# NEW ENDPOINT: Get existing summary without generating
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_existing_summary(request, gpt_type):
+    """Retrieve existing summary from database without generating new one"""
+    try:
+        gpt_type_map = {
+            'TraderHistoryGPT': SnowAITraderHistoryGPTSummary,
+            'MacroGPT': SnowAIMacroGPTSummary,
+            'IdeaGPT': SnowAIIdeaGPTSummary, 
+            'BacktestingGPT': SnowAIBacktestingGPTSummary,
+            'PaperGPT': SnowAIPaperGPTSummary,
+            'ResearchGPT': SnowAIResearchGPTSummary,
+        }
+        
+        model_class = gpt_type_map.get(gpt_type)
+        if not model_class:
+            return JsonResponse({'status': 'error', 'message': 'Invalid GPT type'})
+        
+        # Get the most recent summary
+        try:
+            summary_obj = model_class.objects.latest('created_at')
+            
+            # Build metrics based on available fields
+            metrics = {}
+            
+            # Common fields across different models
+            if hasattr(summary_obj, 'total_trades'):
+                metrics['total_trades'] = summary_obj.total_trades
+            if hasattr(summary_obj, 'win_rate'): 
+                metrics['win_rate'] = f"{summary_obj.win_rate:.2f}%"
+            if hasattr(summary_obj, 'total_profit_loss'):
+                metrics['total_pnl'] = f"${summary_obj.total_profit_loss:,.2f}"
+            if hasattr(summary_obj, 'most_traded_asset'):
+                metrics['most_traded_asset'] = summary_obj.most_traded_asset
+            if hasattr(summary_obj, 'best_performing_strategy'):
+                metrics['best_strategy'] = summary_obj.best_performing_strategy
+            if hasattr(summary_obj, 'total_ideas'):
+                metrics['total_ideas'] = summary_obj.total_ideas
+            if hasattr(summary_obj, 'completion_rate'):
+                metrics['completion_rate'] = f"{summary_obj.completion_rate:.2f}%"
+            if hasattr(summary_obj, 'total_backtests'):
+                metrics['total_backtests'] = summary_obj.total_backtests
+            if hasattr(summary_obj, 'average_sharpe_ratio'):
+                metrics['avg_sharpe_ratio'] = f"{summary_obj.average_sharpe_ratio:.3f}"
+            if hasattr(summary_obj, 'total_papers'):
+                metrics['total_papers'] = summary_obj.total_papers
+            if hasattr(summary_obj, 'most_common_category'):
+                metrics['most_common_category'] = summary_obj.most_common_category
+            if hasattr(summary_obj, 'total_economic_events'):
+                metrics['total_events'] = summary_obj.total_economic_events
+            if hasattr(summary_obj, 'high_impact_events_count'):
+                metrics['high_impact_events'] = summary_obj.high_impact_events_count
+            if hasattr(summary_obj, 'most_active_currency'):
+                metrics['most_active_currency'] = summary_obj.most_active_currency
+            
+            return JsonResponse({
+                'status': 'success',
+                'summary': summary_obj.summary_text,
+                'metrics': metrics,
+                'last_updated': summary_obj.updated_at.isoformat() if hasattr(summary_obj, 'updated_at') and summary_obj.updated_at else summary_obj.created_at.isoformat()
+            })
+            
+        except model_class.DoesNotExist:
+            return JsonResponse({
+                'status': 'No summary available',
+                'summary': None,
+                'metrics': {},
+                'last_updated': None
+            })
+            
+    except Exception as e:
+        logger.error(f'Error fetching existing summary for {gpt_type}: {str(e)}')
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+# SEPARATED SUMMARY GENERATION FUNCTIONS (for scheduler use)
+def generate_trader_history_summary():
+    """Generate TraderHistoryGPT summary - for scheduler use"""
+    try:
+        # Get trading data
+        all_trades = AccountTrades.objects.all()
+        
+        if not all_trades.exists():
+            return False
+        
+        # Calculate trading metrics
+        total_trades = all_trades.count()
+        profit_trades = all_trades.filter(outcome='Win').count()
+        loss_trades = all_trades.filter(outcome='Loss').count()
+        win_rate = (profit_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        total_pnl = all_trades.aggregate(Sum('amount'))['amount__sum'] or 0
+        avg_trade_amount = all_trades.aggregate(Avg('amount'))['amount__avg'] or 0
+        best_trade = all_trades.aggregate(Max('amount'))['amount__max'] or 0
+        worst_trade = all_trades.aggregate(Min('amount'))['amount__min'] or 0
+        
+        # Strategy analysis
+        strategy_performance = all_trades.values('strategy').annotate(
+            total_trades=Count('id'),
+            total_pnl=Sum('amount')
+        ).order_by('-total_pnl')
+        
+        best_strategy = strategy_performance.first()['strategy'] if strategy_performance else 'N/A'
+        worst_strategy = strategy_performance.last()['strategy'] if strategy_performance else 'N/A'
+        
+        # Asset analysis
+        asset_counts = all_trades.values('asset').annotate(count=Count('id')).order_by('-count')
+        most_traded_asset = asset_counts.first()['asset'] if asset_counts else 'N/A'
+        
+        # Get news data for context
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
+        try:
+            news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        except:
+            news_data = {'message': []}
+        
+        # Create comprehensive prompt for GPT
+        prompt = f"""
+        Analyze this comprehensive trading performance data and provide a detailed, professional summary:
+
+        TRADING PERFORMANCE METRICS:
+        - Total Trades: {total_trades}
+        - Win Rate: {win_rate:.2f}%
+        - Total P&L: ${total_pnl:,.2f}
+        - Average Trade Size: ${avg_trade_amount:,.2f}
+        - Best Trade: ${best_trade:,.2f}
+        - Worst Trade: ${worst_trade:,.2f}
+        - Most Traded Asset: {most_traded_asset}
+        - Best Performing Strategy: {best_strategy}
+        - Worst Performing Strategy: {worst_strategy}
+
+        DETAILED BREAKDOWN:
+        - Profitable Trades: {profit_trades}
+        - Losing Trades: {loss_trades}
+
+        RECENT MARKET NEWS THEMES:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:5]])}
+
+        Please provide:
+        1. A comprehensive performance assessment
+        2. Key strengths and weaknesses in the trading approach
+        3. Risk management analysis
+        4. Recommendations for improvement
+        5. Strategic insights based on the data
+        6. Asset allocation observations
+        7. Future trading suggestions
+
+        Format the response as a professional trading report with clear sections and actionable insights.
+        """
+        
+        # Get AI summary
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAITraderHistoryGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_trades': total_trades,
+                'win_rate': win_rate,
+                'total_profit_loss': total_pnl,
+                'best_performing_strategy': best_strategy,
+                'worst_performing_strategy': worst_strategy,
+                'most_traded_asset': most_traded_asset,
+                'average_trade_amount': avg_trade_amount,
+            }
+        )
+        
+        if not created:
+            # Update existing summary
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_trades = total_trades
+            summary_obj.win_rate = win_rate
+            summary_obj.total_profit_loss = total_pnl
+            summary_obj.best_performing_strategy = best_strategy
+            summary_obj.worst_performing_strategy = worst_strategy
+            summary_obj.most_traded_asset = most_traded_asset
+            summary_obj.average_trade_amount = avg_trade_amount
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'Error in generate_trader_history_summary: {e}')
+        return False
+
+
+def generate_macro_gpt_summary():
+    """Generate MacroGPT summary - for scheduler use"""
+    try:
+        one_month_ago = datetime.now() - timedelta(days=30)
+        recent_events = EconomicEvent.objects.filter(date_time__gte=one_month_ago)
+        
+        if not recent_events.exists():
+            return False
+        
+        # Calculate economic event metrics
+        total_events = recent_events.count()
+        high_impact_events = recent_events.filter(impact='high').count()
+        medium_impact_events = recent_events.filter(impact='medium').count()
+        low_impact_events = recent_events.filter(impact='low').count()
+        
+        # Currency analysis
+        currency_counts = recent_events.values('currency').annotate(count=Count('id')).order_by('-count')
+        most_active_currency = currency_counts.first()['currency'] if currency_counts else 'N/A'
+        
+        # Get news data for major assets
+        major_assets = ['EURUSD', 'GBPUSD', 'USDJPY']
+        try:
+            news_data = fetch_news_data(major_assets, 'butterrobot83@gmail.com')
+        except:
+            news_data = {'message': []}
+        
+        # Upcoming events
+        upcoming_events = EconomicEvent.objects.filter(date_time__gt=datetime.now())[:10]
+        
+        # Create comprehensive prompt
+        prompt = f"""
+        Analyze this comprehensive macro economic data and provide a detailed market analysis:
+
+        ECONOMIC EVENTS ANALYSIS (Last 30 Days):
+        - Total Economic Events: {total_events}
+        - High Impact Events: {high_impact_events}
+        - Medium Impact Events: {medium_impact_events}  
+        - Low Impact Events: {low_impact_events}
+        - Most Active Currency: {most_active_currency}
+        
+        RECENT HIGH IMPACT EVENTS:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d')})" for event in recent_events.filter(impact='high')[:10]])}
+        
+        UPCOMING EVENTS PREVIEW:
+        {chr(10).join([f"- {event.currency}: {event.event_name} ({event.date_time.strftime('%Y-%m-%d %H:%M')})" for event in upcoming_events])}
+        
+        NEWS THEMES FROM MAJOR ASSETS:
+        {chr(10).join([f"- {item['asset']}: {item['title'][:100]}..." for item in news_data.get('message', [])[:10]])}
+
+        Please provide:
+        1. Comprehensive macro economic assessment
+        2. Key market themes and trends
+        3. Currency strength analysis
+        4. Risk assessment for upcoming events
+        5. Trading opportunities and recommendations
+        6. Market sentiment analysis
+        7. Geopolitical impact assessment
+        8. Central bank policy implications
+
+        Format as a professional macro economic briefing with actionable market insights.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Save to database
+        summary_obj, created = SnowAIMacroGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_economic_events': total_events,
+                'high_impact_events_count': high_impact_events,
+                'most_active_currency': most_active_currency,
+                'key_market_themes': ', '.join([item['title'][:50] for item in news_data.get('message', [])[:5]]),
+                'upcoming_events_preview': ', '.join([f"{event.currency}: {event.event_name}" for event in upcoming_events[:5]]),
+                'market_sentiment': 'Mixed' if high_impact_events > 5 else 'Stable',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_economic_events = total_events
+            summary_obj.high_impact_events_count = high_impact_events
+            summary_obj.most_active_currency = most_active_currency
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'Error in generate_macro_gpt_summary: {e}')
+        return False
+
+
+def generate_idea_gpt_summary():
+    """Generate IdeaGPT summary - for scheduler use"""
+    try:
+        all_ideas = IdeaModel.objects.all()
+        trade_ideas = TradeIdea.objects.all()
+        
+        if not all_ideas.exists() and not trade_ideas.exists():
+            return False
+        
+        # Calculate metrics for regular ideas
+        total_ideas = all_ideas.count()
+        pending_ideas = all_ideas.filter(idea_tracker='Pending').count()
+        in_progress_ideas = all_ideas.filter(idea_tracker='In Progress').count()
+        completed_ideas = all_ideas.filter(idea_tracker='Completed').count()
+        
+        completion_rate = (completed_ideas / total_ideas * 100) if total_ideas > 0 else 0
+        
+        # Category analysis
+        categories = all_ideas.values('idea_category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['idea_category'] if categories else 'N/A'
+        
+        # Trade ideas metrics
+        total_trade_ideas = trade_ideas.count()
+        pending_trade_ideas = trade_ideas.filter(trade_status='pending').count()
+        executed_trade_ideas = trade_ideas.filter(trade_status='executed').count()
+        
+        # Get recent ideas for context
+        recent_ideas = all_ideas.order_by('-created_at')[:10]
+        recent_trade_ideas = trade_ideas.order_by('-date_created')[:5]
+        
+        oldest_pending = all_ideas.filter(idea_tracker='Pending').order_by('created_at').first()
+        newest_idea = all_ideas.order_by('-created_at').first()
+        
+        prompt = f"""
+        Analyze this comprehensive idea management data and provide detailed insights:
+
+        GENERAL IDEAS ANALYSIS:
+        - Total Ideas: {total_ideas}
+        - Pending Ideas: {pending_ideas}
+        - In Progress Ideas: {in_progress_ideas}
+        - Completed Ideas: {completed_ideas}
+        - Completion Rate: {completion_rate:.2f}%
+        - Most Common Category: {most_common_category}
+
+        TRADE IDEAS ANALYSIS:
+        - Total Trade Ideas: {total_trade_ideas}
+        - Pending Trade Ideas: {pending_trade_ideas}
+        - Executed Trade Ideas: {executed_trade_ideas}
+
+        RECENT IDEAS SAMPLE:
+        {chr(10).join([f"- [{idea.idea_tracker}] {idea.idea_category}: {idea.idea_text[:100]}..." for idea in recent_ideas[:5]])}
+
+        RECENT TRADE IDEAS:
+        {chr(10).join([f"- [{trade.trade_status}] {trade.asset}: {trade.heading}" for trade in recent_trade_ideas])}
+
+        Please provide:
+        1. Comprehensive idea pipeline analysis
+        2. Productivity and execution assessment
+        3. Category-wise performance breakdown
+        4. Bottleneck identification
+        5. Recommendations for better idea management
+        6. Trading idea conversion analysis
+        7. Strategic prioritization suggestions
+        8. Innovation and creativity assessment
+
+        Format as a professional idea management report with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIIdeaGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_ideas': total_ideas,
+                'pending_ideas': pending_ideas,
+                'in_progress_ideas': in_progress_ideas,
+                'completed_ideas': completed_ideas,
+                'most_common_category': most_common_category,
+                'completion_rate': completion_rate,
+                'oldest_pending_idea': oldest_pending.idea_text[:200] if oldest_pending else 'N/A',
+                'newest_idea': newest_idea.idea_text[:200] if newest_idea else 'N/A',
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_ideas = total_ideas
+            summary_obj.pending_ideas = pending_ideas
+            summary_obj.in_progress_ideas = in_progress_ideas
+            summary_obj.completed_ideas = completed_ideas
+            summary_obj.completion_rate = completion_rate
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'Error in generate_idea_gpt_summary: {e}')
+        return False
+
+
+def generate_backtesting_gpt_summary():
+    """Generate BacktestingGPT summary - for scheduler use"""
+    try:
+        all_backtests = BacktestModels.objects.all()
+        all_results = BacktestResult.objects.all()
+        
+        if not all_backtests.exists():
+            return False
+        
+        total_backtests = all_backtests.count()
+        successful_backtests = all_backtests.filter(model_backtested=True).count()
+        
+        # Results analysis
+        if all_results.exists():
+            avg_sharpe = all_results.aggregate(Avg('sharpe_ratio'))['sharpe_ratio__avg'] or 0
+            avg_annual_return = all_results.aggregate(Avg('annual_return'))['annual_return__avg'] or 0
+            avg_max_drawdown = all_results.aggregate(Avg('max_drawdown'))['max_drawdown__avg'] or 0
+            best_sharpe = all_results.aggregate(Max('sharpe_ratio'))['sharpe_ratio__max'] or 0
+            worst_sharpe = all_results.aggregate(Min('sharpe_ratio'))['sharpe_ratio__min'] or 0
+            
+            best_result = all_results.filter(sharpe_ratio=best_sharpe).first()
+            worst_result = all_results.filter(sharpe_ratio=worst_sharpe).first()
+        else:
+            avg_sharpe = avg_annual_return = avg_max_drawdown = 0
+            best_result = worst_result = None
+        
+        # Dataset analysis
+        datasets = all_backtests.values('chosen_dataset').annotate(count=Count('id')).order_by('-count')
+        most_used_dataset = datasets.first()['chosen_dataset'] if datasets else 'N/A'
+        
+        # Recent backtests
+        recent_backtests = all_backtests.order_by('-id')[:5]
+        
+        prompt = f"""
+        Analyze this comprehensive backtesting performance data:
+
+        BACKTESTING OVERVIEW:
+        - Total Backtests: {total_backtests}
+        - Successful Backtests: {successful_backtests}
+        - Success Rate: {(successful_backtests/total_backtests*100) if total_backtests > 0 else 0:.2f}%
+        - Most Used Dataset: {most_used_dataset}
+
+        PERFORMANCE METRICS:
+        - Average Sharpe Ratio: {avg_sharpe:.3f}
+        - Average Annual Return: {avg_annual_return:.2f}%
+        - Average Max Drawdown: {avg_max_drawdown:.2f}%
+        - Best Sharpe Ratio: {best_sharpe:.3f}
+        - Worst Sharpe Ratio: {worst_sharpe:.3f}
+
+        RECENT BACKTESTS:
+        {chr(10).join([f"- Dataset: {bt.chosen_dataset} | Period: {bt.dataset_start} to {bt.dataset_end} | Capital: ${bt.initial_capital:,.2f}" for bt in recent_backtests])}
+
+        BEST PERFORMING STRATEGY:
+        {f"Sharpe: {best_result.sharpe_ratio:.3f} | Annual Return: {best_result.annual_return:.2f}% | Drawdown: {best_result.max_drawdown:.2f}%" if best_result else "No results available"}
+
+        WORST PERFORMING STRATEGY:
+        {f"Sharpe: {worst_result.sharpe_ratio:.3f} | Annual Return: {worst_result.annual_return:.2f}% | Drawdown: {worst_result.max_drawdown:.2f}%" if worst_result else "No results available"}
+
+        Please provide:
+        1. Comprehensive backtesting performance assessment
+        2. Strategy effectiveness analysis
+        3. Risk-adjusted returns evaluation
+        4. Dataset utilization insights
+        5. Performance consistency analysis
+        6. Recommendations for strategy improvement
+        7. Risk management effectiveness
+        8. Future backtesting suggestions
+
+        Format as a professional quantitative analysis report.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        summary_obj, created = SnowAIBacktestingGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_backtests': total_backtests,
+                'successful_backtests': successful_backtests,
+                'average_sharpe_ratio': avg_sharpe,
+                'average_annual_return': avg_annual_return,
+                'average_max_drawdown': avg_max_drawdown,
+                'best_performing_strategy': f"Sharpe: {best_sharpe:.3f}" if best_result else 'N/A',
+                'worst_performing_strategy': f"Sharpe: {worst_sharpe:.3f}" if worst_result else 'N/A',
+                'most_used_dataset': most_used_dataset,
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_backtests = total_backtests
+            summary_obj.successful_backtests = successful_backtests
+            summary_obj.average_sharpe_ratio = avg_sharpe
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'Error in generate_backtesting_gpt_summary: {e}')
+        return False
+
+
+def generate_paper_gpt_summary():
+    """Generate PaperGPT summary - for scheduler use"""
+    try:
+        all_papers = PaperGPT.objects.all()
+        
+        if not all_papers.exists():
+            return False
+        
+        total_papers = all_papers.count()
+        
+        # Calculate total file size safely
+        total_file_size = 0
+        for paper in all_papers:
+            if paper.file_size:
+                total_file_size += paper.file_size
+        total_file_size_mb = total_file_size / (1024 * 1024)  # Convert to MB
+        
+        # Category analysis
+        categories = all_papers.exclude(category__isnull=True).exclude(category='').values('category').annotate(count=Count('id')).order_by('-count')
+        most_common_category = categories.first()['category'] if categories else 'Uncategorized'
+        
+        # Length analysis
+        papers_with_text = all_papers.exclude(extracted_text__isnull=True).exclude(extracted_text='')
+        avg_paper_length = 0
+        if papers_with_text.exists():
+            total_length = sum([len(paper.extracted_text) for paper in papers_with_text])
+            avg_paper_length = total_length / papers_with_text.count()
+        
+        # Recent uploads
+        recent_papers = all_papers.order_by('-upload_date')[:5]
+        latest_upload = recent_papers.first()
+        
+        # Get AI summaries for analysis
+        papers_with_summaries = all_papers.exclude(ai_summary__isnull=True).exclude(ai_summary='')
+        paper_summaries = []
+        if papers_with_summaries.exists():
+            paper_summaries = [paper.ai_summary[:200] + "..." for paper in papers_with_summaries[:10]]
+        
+        # Get personal notes
+        papers_with_notes = all_papers.exclude(personal_notes__isnull=True).exclude(personal_notes='')
+        personal_notes = []
+        if papers_with_notes.exists():
+            personal_notes = [paper.personal_notes[:100] + "..." for paper in papers_with_notes[:5]]
+        
+        prompt = f"""
+        Analyze this comprehensive research paper collection and provide insights:
+
+        PAPER COLLECTION OVERVIEW:
+        - Total Papers: {total_papers}
+        - Total File Size: {total_file_size_mb:.2f} MB
+        - Most Common Category: {most_common_category}
+        - Average Paper Length: ~{avg_paper_length:.0f} characters
+
+        RECENT UPLOADS:
+        {chr(10).join([f"- {paper.title} | Category: {paper.category or 'N/A'} | Size: {(paper.file_size/(1024*1024)):.1f}MB" for paper in recent_papers if paper.file_size])}
+
+        EXISTING AI SUMMARIES SAMPLE:
+        {chr(10).join([f"- {summary}" for summary in paper_summaries[:5]])}
+
+        PERSONAL NOTES SAMPLE:
+        {chr(10).join([f"- {note}" for note in personal_notes])}
+
+        CATEGORY BREAKDOWN:
+        {chr(10).join([f"- {cat['category']}: {cat['count']} papers" for cat in categories[:5]])}
+
+        Please provide:
+        1. Comprehensive research collection assessment
+        2. Knowledge domain analysis
+        3. Research gap identification
+        4. Cross-paper insight synthesis
+        5. Future research recommendations
+        6. Practical application opportunities
+        7. Knowledge management suggestions
+        8. Research methodology insights
+        9. Literature review conclusions
+        10. Strategic research directions
+
+        Format as a comprehensive research portfolio analysis with actionable recommendations.
+        """
+        
+        ai_summary = chat_gpt(prompt)
+        
+        # Generate research recommendations
+        recommendations_prompt = f"""
+        Based on the {total_papers} research papers in categories like {most_common_category}, provide specific future research applications and recommendations:
+
+        1. Identify 3-5 key research themes
+        2. Suggest practical applications for trading/finance
+        3. Recommend next research directions
+        4. Identify knowledge gaps that need filling
+
+        Keep recommendations specific and actionable.
+        """
+        
+        research_recommendations = chat_gpt(recommendations_prompt)
+        
+        summary_obj, created = SnowAIPaperGPTSummary.objects.get_or_create(
+            created_at__date=datetime.now().date(),
+            defaults={
+                'summary_text': ai_summary,
+                'total_papers': total_papers,
+                'most_common_category': most_common_category,
+                'total_file_size_mb': total_file_size_mb,
+                'average_paper_length': avg_paper_length,
+                'latest_upload': latest_upload.title if latest_upload else 'N/A',
+                'research_recommendations': research_recommendations,
+                'key_insights': ', '.join([summary[:50] for summary in paper_summaries[:3]]),
+            }
+        )
+        
+        if not created:
+            summary_obj.summary_text = ai_summary
+            summary_obj.total_papers = total_papers
+            summary_obj.research_recommendations = research_recommendations
+            summary_obj.updated_at = datetime.now()
+            summary_obj.save()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f'Error in generate_paper_gpt_summary: {e}')
+        return False
+
+
+def generate_research_gpt_summary():
+    """Generate ResearchGPT summary - focuses only on ML models research"""
+    try:
+        # Only analyze ML models (no papers or backtests)
+        ml_models = SnowAIMLModelLogEntry.objects.all()
+
+        if not ml_models.exists():
+            return False
+
+        total_ml_models = ml_models.count()
+
+        # ML Model analysis
+        model_types = ml_models.values('snowai_model_type').annotate(count=Count('id')).order_by('-count')
+        financial_markets = ml_models.values('snowai_financial_market_type').annotate(count=Count('id')).order_by('-count')
+
+        # Recent ML model activity
+        recent_models = ml_models.order_by('-snowai_created_at')[:5]
+
+        # Performance metrics from ML models
+        avg_accuracy = ml_models.exclude(snowai_accuracy_score__isnull=True).aggregate(Avg('snowai_accuracy_score'))['snowai_accuracy_score__avg'] or 0
+        avg_sharpe = ml_models.exclude(snowai_sharpe_ratio__isnull=True).aggregate(Avg('snowai_sharpe_ratio'))['snowai_sharpe_ratio__avg'] or 0
+
+        # Model performance distribution
+        high_performing_models = ml_models.filter(snowai_accuracy_score__gte=0.7).count()
+        profitable_models = ml_models.filter(snowai_sharpe_ratio__gte=1.0).count()
+
+        # Training data analysis
+        avg_training_samples = ml_models.exclude(snowai_dataset_size__isnull=True).aggregate(Avg('snowai_dataset_size'))['snowai_dataset_size__avg'] or 0
+
+        # Prompt for GPT summary focusing on ML research
+        prompt = f"""
+        Analyze this machine learning research ecosystem and provide strategic ML insights:
+
+        ML MODEL RESEARCH OVERVIEW:
+        - Total ML Models: {total_ml_models}
+        - High-Performing Models (>70% accuracy): {high_performing_models}
+        - Profitable Models (Sharpe >1.0): {profitable_models}
+        - Average Model Accuracy: {avg_accuracy}
+        - Average Sharpe Ratio: {avg_sharpe}
+        - Average Training Samples: {avg_training_samples}
+
+        MODEL TYPE DISTRIBUTION:
+        {chr(10).join([f"- {mt['snowai_model_type']}: {mt['count']} models" for mt in model_types[:10]])}
+
+        FINANCIAL MARKET FOCUS:
+        {chr(10).join([f"- {fm['snowai_financial_market_type']}: {fm['count']} models" for fm in financial_markets[:10]])}
+
+        RECENT ML MODEL DEVELOPMENT:
+        {chr(10).join([f"- {model.snowai_model_name} ({model.snowai_model_type}) - Accuracy: {model.snowai_accuracy_score or 'N/A'}" for model in recent_models])}
+
+        Please provide:
+        1. ML model performance analysis and trends
+        2. Algorithm effectiveness assessment across different markets
+        3. Model architecture optimization insights
+        4. Feature engineering opportunities identified
+        5. Cross-market model transferability analysis
+        6. Overfitting and generalization patterns
+        7. Training data quality and quantity recommendations
+        8. Model ensemble and combination strategies
+        9. Risk management through ML model diversification
+        10. Next-generation ML research directions
+
+        Focus specifically on machine learning research insights, model development patterns, and algorithmic trading applications.
+        """
+
+        ai_summary = chat_gpt(prompt)
+
+        # Generate ML-specific knowledge gaps
+        gaps_prompt = f"""
+        Based on {total_ml_models} ML models with average accuracy of {avg_accuracy}, 
+        identify 3-5 specific knowledge gaps in our ML research that could significantly improve model performance.
+        Focus on algorithmic gaps, data gaps, and methodology gaps.
+        """
+
+        knowledge_gaps = chat_gpt(gaps_prompt)
+
+        # Generate ML research directions
+        directions_prompt = f"""
+        Based on current ML model portfolio analysis, suggest 5 specific future ML research directions 
+        that could improve trading performance. Consider model architectures, feature engineering, 
+        ensemble methods, and novel ML approaches for financial markets.
+        """
+
+        future_directions = chat_gpt(directions_prompt)
+
+        # Generate cross-model insights
+        insights_prompt = f"""
+        Analyze patterns across {total_ml_models} ML models to identify 3-5 key insights about 
+        what makes models successful vs unsuccessful in financial markets. Focus on 
+        transferable learnings and best practices.
+        """
+
+        cross_insights = chat_gpt(insights_prompt)
+
+        # Generate practical applications
+        applications_prompt = f"""
+        Based on ML model analysis, suggest 3-5 practical applications or improvements 
+        that could be immediately implemented to enhance trading performance.
+        """
+
+        practical_apps = chat_gpt(applications_prompt)
+
+        # Generate methodology suggestions
+        methodology_prompt = f"""
+        Recommend 3-5 ML research methodology improvements based on current model portfolio.
+        Focus on training approaches, validation techniques, and evaluation metrics.
+        """
+
+        methodology_suggestions = chat_gpt(methodology_prompt)
+
+        # SIMPLE FIX: Use update_or_create instead of get_or_create
+        # and get today's date at the start of the day
+        today = datetime.now().date()
+        today_start = datetime.combine(today, datetime.min.time())
+        today_end = datetime.combine(today, datetime.max.time())
+
+        summary_obj, created = SnowAIResearchGPTSummary.objects.update_or_create(
+            created_at__range=[today_start, today_end],
+            defaults={
+                'summary_text': ai_summary,
+                'total_research_entries': total_ml_models,
+                'total_papers_analyzed': 0,
+                'knowledge_gaps_identified': knowledge_gaps,
+                'future_research_directions': future_directions,
+                'cross_paper_insights': cross_insights,
+                'practical_applications': practical_apps,
+                'research_methodology_suggestions': methodology_suggestions,
+            }
+        )
+
+        logger.info(f'ResearchGPT summary {"created" if created else "updated"} successfully for {total_ml_models} ML models')
+        return True
+
+    except Exception as e:
+        logger.error(f'Error in generate_research_gpt_summary: {str(e)}')
+        return False
+        
+        
+# OPTIONAL: Manual trigger endpoint for testing
+@csrf_exempt
+# @require_http_methods(["POST"])
+def manual_trigger_summaries(request):
+    """Manually trigger summary generation - useful for testing"""
+    try:
+        results = generate_all_gpt_summaries()
+        return JsonResponse({
+            'status': 'success', 
+            'message': 'Summary generation triggered',
+            'results': results
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_custom_global_interest_rates_data_v2024(request):
+    """
+    Fetch interest rates data from local database instead of external API
+    Returns data in the same format as the original API for frontend compatibility
+    """
+    try:
+        # Define the mapping of currencies to their interest rate event names
+        interest_rate_mappings = {
+            'USD': 'Federal Funds Rate',
+            'EUR': 'Main Refinancing Rate', 
+            'GBP': 'Official Bank Rate',
+            'JPY': 'BOJ Policy Rate',
+            'AUD': 'Cash Rate',
+            'CAD': 'Overnight Rate',
+            'CHF': 'SNB Policy Rate',
+            'CNY': '1-y Loan Prime Rate',  # Using 1-year as primary, you can change this
+        }
+        
+        # Define central bank names for display
+        central_bank_names = {
+            'USD': 'Federal Reserve (USA)',
+            'EUR': 'European Central Bank',
+            'GBP': 'Bank of England',
+            'JPY': 'Bank of Japan',
+            'AUD': 'Reserve Bank of Australia', 
+            'CAD': 'Bank of Canada',
+            'CHF': 'Swiss National Bank',
+            'CNY': 'People\'s Bank of China',
+        }
+        
+        central_bank_rates = []
+        
+        for currency, event_name in interest_rate_mappings.items():
+            try:
+                # Get the most recent interest rate data for each currency
+                latest_event = EconomicEvent.objects.filter(
+                    currency=currency,
+                    event_name=event_name,
+                    actual__isnull=False
+                ).exclude(
+                    actual=''
+                ).order_by('-date_time').first()
+                
+                if latest_event:
+                    # Clean and convert the actual rate to float
+                    actual_rate = latest_event.actual.strip()
+                    
+                    # Handle percentage signs and convert to float
+                    if '%' in actual_rate:
+                        rate_value = float(actual_rate.replace('%', ''))
+                    else:
+                        rate_value = float(actual_rate)
+                    
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency, f'{currency} Central Bank'),
+                        'currency': currency,
+                        'rate_pct': rate_value,
+                        'event_name': event_name,
+                        'last_updated': latest_event.date_time.isoformat()
+                    })
+                else:
+                    # If no data found, add with 0 rate or skip
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency, f'{currency} Central Bank'),
+                        'currency': currency,
+                        'rate_pct': 0.0,
+                        'event_name': event_name,
+                        'last_updated': None
+                    })
+                    
+            except (ValueError, TypeError) as e:
+                # Handle conversion errors
+                print(f"Error processing {currency} rate: {e}")
+                central_bank_rates.append({
+                    'central_bank': central_bank_names.get(currency, f'{currency} Central Bank'),
+                    'currency': currency,
+                    'rate_pct': 0.0,
+                    'event_name': event_name,
+                    'last_updated': None
+                })
+        
+        # Sort by rate for better visualization
+        central_bank_rates.sort(key=lambda x: x['rate_pct'], reverse=True)
+        
+        # Format response to match the original API structure
+        response_data = {
+            'Interest Rates': json.dumps({
+                'central_bank_rates': central_bank_rates,
+                'data_source': 'local_database',
+                'total_banks': len(central_bank_rates)
+            })
+        }
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': 'Failed to fetch interest rates data',
+            'message': str(e)
+        }, status=500)
+
+
+# Alternative view if you want to include both 1-year and 5-year CNY rates
+@csrf_exempt 
+@require_http_methods(["GET"])
+def fetch_custom_global_interest_rates_extended_cny_v2024(request):
+    """
+    Extended version that includes both CNY 1-year and 5-year rates
+    """
+    try:
+        # Extended mapping including both CNY rates
+        interest_rate_mappings = {
+            'USD': 'Federal Funds Rate',
+            'EUR': 'Main Refinancing Rate',
+            'GBP': 'Official Bank Rate', 
+            'JPY': 'BOJ Policy Rate',
+            'AUD': 'Cash Rate',
+            'CAD': 'Overnight Rate',
+            'CHF': 'SNB Policy Rate',
+            'CNY_1Y': '1-y Loan Prime Rate',
+            'CNY_5Y': '5-y Loan Prime Rate',
+        }
+        
+        central_bank_names = {
+            'USD': 'Federal Reserve (USA)',
+            'EUR': 'European Central Bank',
+            'GBP': 'Bank of England',
+            'JPY': 'Bank of Japan', 
+            'AUD': 'Reserve Bank of Australia',
+            'CAD': 'Bank of Canada',
+            'CHF': 'Swiss National Bank',
+            'CNY_1Y': 'People\'s Bank of China (1Y)',
+            'CNY_5Y': 'People\'s Bank of China (5Y)',
+        }
+        
+        central_bank_rates = []
+        
+        for currency_key, event_name in interest_rate_mappings.items():
+            try:
+                # Extract base currency (handle CNY_1Y, CNY_5Y cases)
+                base_currency = currency_key.split('_')[0] if '_' in currency_key else currency_key
+                
+                latest_event = EconomicEvent.objects.filter(
+                    currency=base_currency,
+                    event_name=event_name,
+                    actual__isnull=False
+                ).exclude(
+                    actual=''
+                ).order_by('-date_time').first()
+                
+                if latest_event:
+                    actual_rate = latest_event.actual.strip()
+                    
+                    if '%' in actual_rate:
+                        rate_value = float(actual_rate.replace('%', ''))
+                    else:
+                        rate_value = float(actual_rate)
+                    
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency_key, f'{base_currency} Central Bank'),
+                        'currency': base_currency,
+                        'rate_pct': rate_value,
+                        'event_name': event_name,
+                        'last_updated': latest_event.date_time.isoformat()
+                    })
+                else:
+                    central_bank_rates.append({
+                        'central_bank': central_bank_names.get(currency_key, f'{base_currency} Central Bank'),
+                        'currency': base_currency, 
+                        'rate_pct': 0.0,
+                        'event_name': event_name,
+                        'last_updated': None
+                    })
+                    
+            except (ValueError, TypeError) as e:
+                print(f"Error processing {currency_key} rate: {e}")
+                base_currency = currency_key.split('_')[0] if '_' in currency_key else currency_key
+                central_bank_rates.append({
+                    'central_bank': central_bank_names.get(currency_key, f'{base_currency} Central Bank'),
+                    'currency': base_currency,
+                    'rate_pct': 0.0,
+                    'event_name': event_name,
+                    'last_updated': None
+                })
+        
+        central_bank_rates.sort(key=lambda x: x['rate_pct'], reverse=True)
+        
+        response_data = {
+            'Interest Rates': json.dumps({
+                'central_bank_rates': central_bank_rates,
+                'data_source': 'local_database',
+                'total_banks': len(central_bank_rates)
+            })
+        }
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': 'Failed to fetch interest rates data',
+            'message': str(e)
+        }, status=500)
+
+
+# Country to currency mapping
+COUNTRY_CURRENCY_MAPPING = {
+    'United States': 'USD',
+    'USA': 'USD',
+    'US': 'USD',
+    'Canada': 'CAD',
+    'United Kingdom': 'GBP',
+    'UK': 'GBP',
+    'Britain': 'GBP',
+    'European Union': 'EUR',
+    'Germany': 'EUR',
+    'France': 'EUR',
+    'Italy': 'EUR',
+    'Spain': 'EUR',
+    'Netherlands': 'EUR',
+    'Belgium': 'EUR',
+    'Austria': 'EUR',
+    'Portugal': 'EUR',
+    'Ireland': 'EUR',
+    'Greece': 'EUR',
+    'Finland': 'EUR',
+    'Japan': 'JPY',
+    'Australia': 'AUD',
+    'Switzerland': 'CHF',
+    'China': 'CNY',
+    'Brazil': 'BRL',
+    'Mexico': 'MXN',
+    'South Africa': 'ZAR',
+    'India': 'INR',
+    'Russia': 'RUB',
+    'South Korea': 'KRW',
+    'Sweden': 'SEK',
+    'Norway': 'NOK',
+    'Denmark': 'DKK',
+    'Poland': 'PLN',
+    'Czech Republic': 'CZK',
+    'Hungary': 'HUF',
+    'Turkey': 'TRY',
+    'Singapore': 'SGD',
+    'Hong Kong': 'HKD',
+    'New Zealand': 'NZD',
+    'Thailand': 'THB',
+    'Malaysia': 'MYR',
+    'Indonesia': 'IDR',
+    'Philippines': 'PHP',
+    'Taiwan': 'TWD',
+    'Israel': 'ILS',
+    'Chile': 'CLP',
+    'Colombia': 'COP',
+    'Peru': 'PEN',
+    'Argentina': 'ARS',
+    'Egypt': 'EGP',
+    'Saudi Arabia': 'SAR',
+    'UAE': 'AED',
+    'Kuwait': 'KWD',
+    'Qatar': 'QAR'
+}
+
+def get_currency_from_country(country_name):
+    """Convert country name to currency code"""
+    # Try direct match first
+    if country_name in COUNTRY_CURRENCY_MAPPING:
+        return COUNTRY_CURRENCY_MAPPING[country_name]
+    
+    # Try partial matches (case insensitive)
+    country_lower = country_name.lower()
+    for country, currency in COUNTRY_CURRENCY_MAPPING.items():
+        if country.lower() in country_lower or country_lower in country.lower():
+            return currency
+    
+    return None
+
+def chat_gpt_economic_analysis(economic_data, country_name, currency):
+    """Generate AI analysis of economic data"""
+    
+    # Prepare the data for AI analysis
+    events_summary = []
+    for event in economic_data:
+        events_summary.append({
+            'date': event.date_time.strftime('%Y-%m-%d'),
+            'event': event.event_name,
+            'impact': event.impact,
+            'actual': event.actual,
+            'forecast': event.forecast,
+            'previous': event.previous
+        })
+    
+    prompt = f"""
+    Analyze the following economic data for {country_name} ({currency}) over the last 30 days and provide a comprehensive economic summary.
+    
+    Economic Events:
+    {json.dumps(events_summary, indent=2)}
+    
+    Please provide your analysis in the following JSON format (no markdown, just pure JSON):
+    {{
+        "country": "{country_name}",
+        "currency": "{currency}",
+        "analysis_period": "Last 30 days",
+        "overall_sentiment": "positive/negative/neutral",
+        "key_highlights": [
+            "highlight 1",
+            "highlight 2",
+            "highlight 3"
+        ],
+        "economic_outlook": "Brief outlook summary",
+        "major_events": [
+            {{
+                "event_name": "Event name",
+                "impact_level": "high/medium/low",
+                "summary": "Brief event summary"
+            }}
+        ],
+        "risk_factors": [
+            "risk factor 1",
+            "risk factor 2"
+        ],
+        "opportunities": [
+            "opportunity 1",
+            "opportunity 2"
+        ],
+        "summary": "Overall economic summary in 2-3 sentences"
+    }}
+    
+    Ensure the response is valid JSON only, no additional text or formatting.
+    """
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+        
+        ai_response = response.choices[0].message['content'].strip()
+        
+        # Try to parse as JSON to validate
+        try:
+            json.loads(ai_response)
+            return ai_response
+        except json.JSONDecodeError:
+            # If parsing fails, return a structured error response
+            return json.dumps({
+                "country": country_name,
+                "currency": currency,
+                "analysis_period": "Last 30 days",
+                "overall_sentiment": "neutral",
+                "key_highlights": ["Analysis could not be completed due to formatting issues"],
+                "economic_outlook": "Unable to generate outlook",
+                "major_events": [],
+                "risk_factors": ["Analysis incomplete"],
+                "opportunities": [],
+                "summary": "Economic analysis could not be completed due to technical issues."
+            })
+            
+    except Exception as e:
+        return json.dumps({
+            "country": country_name,
+            "currency": currency,
+            "analysis_period": "Last 30 days",
+            "overall_sentiment": "neutral",
+            "key_highlights": [f"Error generating analysis: {str(e)}"],
+            "economic_outlook": "Analysis unavailable",
+            "major_events": [],
+            "risk_factors": ["Analysis service unavailable"],
+            "opportunities": [],
+            "summary": "Economic analysis is currently unavailable due to technical issues."
+        })
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def get_country_economic_data(request):
+    """Get economic data and AI analysis for a specific country"""
+    try:
+        data = json.loads(request.body)
+        country_name = data.get('country_name', '').strip()
+        
+        if not country_name:
+            return JsonResponse({
+                'success': False,
+                'error': 'Country name is required'
+            }, status=400)
+        
+        # Get currency code from country name
+        currency_code = get_currency_from_country(country_name)
+        
+        if not currency_code:
+            return JsonResponse({
+                'success': True,
+                'has_data': False,
+                'message': f'No economic data available for {country_name}',
+                'country': country_name,
+                'currency': None,
+                'ai_analysis': json.dumps({
+                    "country": country_name,
+                    "currency": "N/A",
+                    "analysis_period": "Last 30 days",
+                    "overall_sentiment": "neutral",
+                    "key_highlights": [f"No economic data tracking available for {country_name}"],
+                    "economic_outlook": "Economic data not tracked for this region",
+                    "major_events": [],
+                    "risk_factors": ["Limited economic data availability"],
+                    "opportunities": ["Economic data tracking could be expanded"],
+                    "summary": f"Currently, we do not track economic indicators for {country_name}. Economic analysis is not available for this region."
+                })
+            })
+        
+        # Query economic events for the last 30 days
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        economic_events = EconomicEvent.objects.filter(
+            currency=currency_code,
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
+        
+        if not economic_events.exists():
+            return JsonResponse({
+                'success': True,
+                'has_data': False,
+                'message': f'No recent economic data found for {country_name} ({currency_code})',
+                'country': country_name,
+                'currency': currency_code,
+                'ai_analysis': json.dumps({
+                    "country": country_name,
+                    "currency": currency_code,
+                    "analysis_period": "Last 30 days",
+                    "overall_sentiment": "neutral",
+                    "key_highlights": [f"No economic events recorded for {currency_code} in the last 30 days"],
+                    "economic_outlook": "No recent data available for analysis",
+                    "major_events": [],
+                    "risk_factors": ["Limited recent economic data"],
+                    "opportunities": ["Economic monitoring could be enhanced"],
+                    "summary": f"No economic events have been recorded for {country_name} ({currency_code}) in the past 30 days."
+                })
+            })
+        
+        # Generate AI analysis
+        ai_analysis = chat_gpt_economic_analysis(economic_events, country_name, currency_code)
+        
+        return JsonResponse({
+            'success': True,
+            'has_data': True,
+            'message': f'Economic data found for {country_name} ({currency_code})',
+            'country': country_name,
+            'currency': currency_code,
+            'events_count': economic_events.count(),
+            'ai_analysis': ai_analysis
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON data'
+        }, status=400)
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'An error occurred: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def trigger_manual_gpt_discussion(request):
+    """Manually trigger a GPT discussion"""
+    try:
+        result = initiate_gpt_discussion(trigger_type='manual')
+        return JsonResponse({
+            'status': 'success', 
+            'message': 'GPT discussion initiated successfully',
+            'discussion_id': result.get('discussion_id'),
+            'total_messages': result.get('total_messages', 0)
+        })
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_current_gpt_discussion(request):
+    """Get the current GPT discussion and all messages"""
+    try:
+        # Get the current discussion
+        discussion = GPTDiscussion.objects.filter(discussion_id='current_discussion').first()
+        
+        if not discussion:
+            return JsonResponse({
+                'status': 'success',
+                'discussion': None,
+                'messages': []
+            })
+        
+        # Get all messages for this discussion
+        messages = GPTDiscussionMessage.objects.filter(discussion=discussion).order_by('timestamp')
+        
+        messages_data = []
+        for msg in messages:
+            messages_data.append({
+                'gpt_system': msg.gpt_system,
+                'message': msg.message,
+                'timestamp': msg.timestamp.isoformat(),
+                'turn_number': msg.turn_number
+            })
+        
+        discussion_data = {
+            'discussion_id': discussion.discussion_id,
+            'started_at': discussion.started_at.isoformat(),
+            'completed_at': discussion.completed_at.isoformat() if discussion.completed_at else None,
+            'is_active': discussion.is_active,
+            'total_messages': discussion.total_messages,
+            'central_gpt_summary': discussion.central_gpt_summary,
+            'discussion_metrics': discussion.discussion_metrics,
+            'trigger_type': discussion.trigger_type
+        }
+        
+        return JsonResponse({
+            'status': 'success',
+            'discussion': discussion_data,
+            'messages': messages_data
+        })
+        
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+        
+
+def initiate_gpt_discussion(trigger_type='scheduled'):
+    """Main function to orchestrate GPT discussion with model data access"""
+    try:
+        # Delete any existing discussion
+        GPTDiscussion.objects.filter(discussion_id='current_discussion').delete()
+        
+        # Create new discussion
+        discussion = GPTDiscussion.objects.create(
+            discussion_id='current_discussion',
+            trigger_type=trigger_type,
+            is_active=True
+        )
+        
+        # Define GPT systems and their characteristics
+        gpt_systems = {
+            'TraderHistoryGPT': {'specialty': 'trading performance analysis', 'tone': 'analytical'},
+            'MacroGPT': {'specialty': 'macro economic trends', 'tone': 'strategic'},
+            'IdeaGPT': {'specialty': 'creative innovation', 'tone': 'enthusiastic'},
+            'BacktestingGPT': {'specialty': 'quantitative strategy validation', 'tone': 'methodical'},
+            'PaperGPT': {'specialty': 'research synthesis', 'tone': 'academic'},
+            'ResearchGPT': {'specialty': 'comprehensive analysis', 'tone': 'insightful'}
+        }
+        
+        # Generate discussion topic using IdeaGPT with its data context
+        idea_data = get_idea_gpt_data()
+        topic_prompt = f"""
+        You are IdeaGPT, the creative innovation specialist for SnowAI. You're initiating a discussion 
+        between all the specialized AI systems about SnowAI improvements and insights.
+        
+        Your current ideas data context:
+        {idea_data}
+        
+        Generate a focused, creative discussion topic about SnowAI that each specialist can contribute 
+        to meaningfully. The topic should be:
+        - Concise (1-2 sentences)
+        - Innovative and thought-provoking
+        - Related to: system performance, user value, future improvements, or strategic insights
+        - Something that would spark creative solutions based on current system data
+        
+        Just return the topic, nothing else.
+        """
+        
+        discussion_topic = chat_gpt(topic_prompt).strip()
+        
+        # Store the topic as first message from IdeaGPT
+        GPTDiscussionMessage.objects.create(
+            discussion=discussion,
+            gpt_system='IdeaGPT',
+            message=f"Discussion Topic: {discussion_topic}",
+            turn_number=0
+        )
+        
+        # Conduct discussion rounds (3 rounds, each GPT speaks once per round)
+        total_messages = 1  # Starting with topic message
+        gpt_list = list(gpt_systems.keys())
+        
+        for round_num in range(1, 4):  # 3 rounds
+            random.shuffle(gpt_list)  # Randomize speaking order each round
+            
+            for gpt_system in gpt_list:
+                # Get previous messages for context
+                previous_messages = list(GPTDiscussionMessage.objects.filter(
+                    discussion=discussion
+                ).order_by('timestamp'))
+                
+                context = f"Discussion Topic: {discussion_topic}\n\nPrevious messages:\n"
+                # Get last 10 messages for context
+                recent_messages = previous_messages[-10:] if len(previous_messages) > 10 else previous_messages
+                for msg in recent_messages:
+                    if msg.gpt_system != 'CentralGPT' or msg.turn_number == 0:
+                        context += f"{msg.gpt_system}: {msg.message}\n"
+                
+                # Get system-specific data context
+                system_data_context = get_system_data_context(gpt_system)
+                
+                # Generate response for this GPT with its data context
+                gpt_prompt = f"""
+                You are {gpt_system}, specializing in {gpt_systems[gpt_system]['specialty']}.
+                You have a {gpt_systems[gpt_system]['tone']} personality.
+                
+                Your current system data context:
+                {system_data_context}
+                
+                Discussion context:
+                {context}
+                
+                Current round: {round_num}/3
+                
+                Instructions:
+                - Contribute your unique perspective on SnowAI based on your specialty and current data
+                - Use insights from your actual system data to inform your response
+                - Keep your response concise (2-3 sentences max)
+                - Reference or build upon previous comments when relevant
+                - Stay focused on the discussion topic
+                - Be conversational and collaborative
+                - Don't repeat what others have already said
+                - Ground your insights in the actual data you have access to
+                
+                Your response:
+                """
+                
+                gpt_response = chat_gpt(gpt_prompt).strip()
+                
+                # Store the message
+                GPTDiscussionMessage.objects.create(
+                    discussion=discussion,
+                    gpt_system=gpt_system,
+                    message=gpt_response,
+                    turn_number=round_num
+                )
+                
+                total_messages += 1
+        
+        # Generate final summary using CentralGPT with all system data
+        all_messages = GPTDiscussionMessage.objects.filter(
+            discussion=discussion
+        ).exclude(gpt_system='CentralGPT').order_by('timestamp')
+        
+        conversation_text = ""
+        for msg in all_messages:
+            conversation_text += f"{msg.gpt_system}: {msg.message}\n"
+        
+        # Get comprehensive system overview for CentralGPT
+        comprehensive_data = get_comprehensive_system_data()
+        
+        summary_prompt = f"""
+        You are CentralGPT analyzing a discussion between SnowAI's specialized systems.
+        
+        Discussion Topic: {discussion_topic}
+        
+        Full Conversation:
+        {conversation_text}
+        
+        Complete System Data Overview:
+        {comprehensive_data}
+        
+        Generate a comprehensive summary that includes:
+        1. Key insights and themes that emerged from the data-informed discussion
+        2. Areas of consensus among the systems based on their actual data
+        3. Unique perspectives each system brought from their specialized data
+        4. Actionable recommendations for SnowAI based on real system metrics
+        5. Data-driven observations about system performance and opportunities
+        
+        Keep it structured and insightful, grounding recommendations in actual system data.
+        """
+        
+        final_summary = chat_gpt(summary_prompt).strip()
+        
+        # Calculate metrics
+        word_counts = {}
+        sentiment_diversity = len(set([gpt_systems[gpt]['tone'] for gpt in gpt_systems.keys()]))
+        
+        for gpt in gpt_systems.keys():
+            gpt_messages = all_messages.filter(gpt_system=gpt)
+            total_words = sum(len(msg.message.split()) for msg in gpt_messages)
+            word_counts[gpt] = total_words
+        
+        discussion_metrics = {
+            'topic': discussion_topic,
+            'rounds_completed': 3,
+            'word_counts': word_counts,
+            'total_words': sum(word_counts.values()),
+            'participating_systems': len(gpt_systems),
+            'sentiment_diversity_score': sentiment_diversity,
+            'discussion_duration_minutes': round((timezone.now() - discussion.started_at).total_seconds() / 60, 2)
+        }
+        
+        # Update discussion with final data
+        discussion.completed_at = timezone.now()
+        discussion.is_active = False
+        discussion.total_messages = total_messages
+        discussion.central_gpt_summary = final_summary
+        discussion.discussion_metrics = discussion_metrics
+        discussion.save()
+        
+        return {
+            'status': 'success',
+            'discussion_id': discussion.discussion_id,
+            'total_messages': total_messages,
+            'summary': final_summary[:200] + '...' if len(final_summary) > 200 else final_summary
+        }
+        
+    except Exception as e:
+        print(f'Error in GPT discussion: {e}')
+        import traceback
+        traceback.print_exc()
+        return {'status': 'error', 'message': str(e)}
+
+
+def get_system_data_context(gpt_system):
+    """Get specific data context for each GPT system"""
+    try:
+        if gpt_system == 'TraderHistoryGPT':
+            return get_trader_history_gpt_data()
+        elif gpt_system == 'MacroGPT':
+            return get_macro_gpt_data()
+        elif gpt_system == 'IdeaGPT':
+            return get_idea_gpt_data()
+        elif gpt_system == 'BacktestingGPT':
+            return get_backtesting_gpt_data()
+        elif gpt_system == 'PaperGPT':
+            return get_paper_gpt_data()
+        elif gpt_system == 'ResearchGPT':
+            return get_research_gpt_data()
+        else:
+            return "No specific data context available."
+    except Exception as e:
+        print(f"Error getting data context for {gpt_system}: {e}")
+        return f"Error accessing {gpt_system} data context."
+
+
+def get_trader_history_gpt_data():
+    """Get trading data for TraderHistoryGPT"""
+    try:
+        recent_trades = AccountTrades.objects.all()[:30]
+        total_trades = AccountTrades.objects.count()
+        
+        trades_data = []
+        for trade in recent_trades:
+            trade_dict = {}
+            for field in trade._meta.fields:
+                field_value = getattr(trade, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    trade_dict[field.name] = field_value.isoformat()
+                else:
+                    trade_dict[field.name] = str(field_value) if field_value is not None else None
+            trades_data.append(trade_dict)
+        
+        return f"""Trading Performance Data:
+Total trades in system: {total_trades}
+
+Recent trades data:
+{json.dumps(trades_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing trading data: {e}"
+
+
+def get_macro_gpt_data():
+    """Get economic data for MacroGPT"""
+    try:
+        past_events = EconomicEvent.objects.filter(
+            date_time__gte=datetime.now() - timedelta(days=30),
+            date_time__lt=datetime.now()
+        ).order_by('-date_time')[:20]
+        
+        events_data = []
+        for event in past_events:
+            event_dict = {}
+            for field in event._meta.fields:
+                field_value = getattr(event, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    event_dict[field.name] = field_value.isoformat()
+                else:
+                    event_dict[field.name] = str(field_value) if field_value is not None else None
+            events_data.append(event_dict)
+        
+        return f"""Economic Events Data:
+Total events tracked: {EconomicEvent.objects.count()}
+
+Past economic events (Last 30 days):
+{json.dumps(events_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing economic data: {e}"
+
+
+def get_idea_gpt_data():
+    """Get ideas data for IdeaGPT"""
+    try:
+        recent_ideas = IdeaModel.objects.order_by('-created_at')[:15]
+        total_ideas = IdeaModel.objects.count()
+        
+        ideas_data = []
+        for idea in recent_ideas:
+            idea_dict = {}
+            for field in idea._meta.fields:
+                field_value = getattr(idea, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    idea_dict[field.name] = field_value.isoformat()
+                else:
+                    idea_dict[field.name] = str(field_value) if field_value is not None else None
+            ideas_data.append(idea_dict)
+        
+        return f"""Ideas Management Data:
+Total ideas in system: {total_ideas}
+
+Recent ideas data:
+{json.dumps(ideas_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing ideas data: {e}"
+
+
+def get_backtesting_gpt_data():
+    """Get backtesting data for BacktestingGPT"""
+    try:
+        recent_results = BacktestResult.objects.order_by('-created_at')[:10]
+        backtest_models = BacktestModels.objects.all()[:10]
+        
+        results_data = []
+        for result in recent_results:
+            result_info = {
+                'start': result.start.isoformat(),
+                'end': result.end.isoformat(),
+                'duration': result.duration,
+                'return_percent': result.return_percent,
+                'annual_return': result.annual_return,
+                'sharpe_ratio': result.sharpe_ratio,
+                'max_drawdown': result.max_drawdown,
+                'num_trades': result.num_trades,
+                'win_rate': result.win_rate,
+                'equity_final': result.equity_final,
+                'created_at': result.created_at.isoformat()
+            }
+            results_data.append(result_info)
+        
+        models_data = []
+        for model in backtest_models:
+            model_info = {
+                'chosen_dataset': model.chosen_dataset,
+                'dataset_start': model.dataset_start,
+                'dataset_end': model.dataset_end,
+                'initial_capital': model.initial_capital,
+                'model_backtested': model.model_backtested,
+                'generated_code': model.generated_code[:1000] + "..." if model.generated_code and len(model.generated_code) > 1000 else model.generated_code
+            }
+            models_data.append(model_info)
+        
+        return f"""Backtesting Performance Data:
+Total backtest results: {BacktestResult.objects.count()}
+Total backtest models: {BacktestModels.objects.count()}
+
+Recent backtest results:
+{json.dumps(results_data, indent=2)}
+
+Backtest models data:
+{json.dumps(models_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing backtesting data: {e}"
+
+
+def get_paper_gpt_data():
+    """Get research papers data for PaperGPT"""
+    try:
+        recent_papers = PaperGPT.objects.order_by('-upload_date')[:10]
+        total_papers = PaperGPT.objects.count()
+        
+        papers_data = []
+        for paper in recent_papers:
+            paper_info = {
+                'title': paper.title,
+                'category': paper.category,
+                'upload_date': paper.upload_date.isoformat(),
+                'file_name': paper.file_name,
+                'ai_summary': paper.ai_summary[:300] + "..." if paper.ai_summary and len(paper.ai_summary) > 300 else paper.ai_summary,
+                'has_notes': bool(paper.personal_notes),
+                'text_length': len(paper.extracted_text) if paper.extracted_text else 0
+            }
+            papers_data.append(paper_info)
+        
+        return f"""Research Papers Data:
+Total papers in collection: {total_papers}
+
+Recent papers data:
+{json.dumps(papers_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing papers data: {e}"
+
+
+def get_research_gpt_data():
+    """Get ML research data for ResearchGPT"""
+    try:
+        ml_models = SnowAIMLModelLogEntry.objects.all()[:10]
+        total_models = SnowAIMLModelLogEntry.objects.count()
+        
+        ml_models_data = []
+        for model in ml_models:
+            model_dict = {}
+            for field in model._meta.fields:
+                field_value = getattr(model, field.name)
+                if hasattr(field_value, 'isoformat'):
+                    model_dict[field.name] = field_value.isoformat()
+                else:
+                    model_dict[field.name] = str(field_value) if field_value is not None else None
+            ml_models_data.append(model_dict)
+        
+        return f"""Research & ML Data:
+Total ML models tracked: {total_models}
+
+ML Models data:
+{json.dumps(ml_models_data, indent=2)}
+"""
+    except Exception as e:
+        return f"Error accessing research data: {e}"
+
+
+def get_comprehensive_system_data():
+    """Get overview of all system data for CentralGPT"""
+    try:
+        # Get actual data summaries from each system
+        trading_data = get_trader_history_gpt_data()
+        macro_data = get_macro_gpt_data()
+        ideas_data = get_idea_gpt_data()
+        backtesting_data = get_backtesting_gpt_data()
+        papers_data = get_paper_gpt_data()
+        research_data = get_research_gpt_data()
+        
+        overview = {
+            'system_metrics': {
+                'total_trades': AccountTrades.objects.count(),
+                'total_economic_events': EconomicEvent.objects.count(),
+                'total_ideas': IdeaModel.objects.count(),
+                'total_backtest_results': BacktestResult.objects.count(),
+                'total_backtest_models': BacktestModels.objects.count(),
+                'total_papers': PaperGPT.objects.count(),
+                'total_ml_models': SnowAIMLModelLogEntry.objects.count(),
+                'recent_activity': {
+                    'recent_trades': AccountTrades.objects.filter(
+                        created_at__gte=datetime.now() - timedelta(days=7)
+                    ).count() if hasattr(AccountTrades._meta.get_field('created_at'), 'name') else 'N/A',
+                    'recent_events': EconomicEvent.objects.filter(
+                        date_time__gte=datetime.now() - timedelta(days=7)
+                    ).count(),
+                    'recent_ideas': IdeaModel.objects.filter(
+                        created_at__gte=datetime.now() - timedelta(days=7)
+                    ).count(),
+                    'recent_backtests': BacktestResult.objects.filter(
+                        created_at__gte=datetime.now() - timedelta(days=7)
+                    ).count()
+                }
+            }
+        }
+        
+        return f"""Comprehensive System Data Overview:
+
+System Metrics Summary:
+{json.dumps(overview, indent=2)}
+
+TraderHistoryGPT Data Context:
+{trading_data}
+
+MacroGPT Data Context:
+{macro_data}
+
+IdeaGPT Data Context:
+{ideas_data}
+
+BacktestingGPT Data Context:
+{backtesting_data}
+
+PaperGPT Data Context:
+{papers_data}
+
+ResearchGPT Data Context:
+{research_data}
+"""
+    except Exception as e:
+        return f"Error accessing comprehensive system data: {e}"
+
+
+
+import pytz
+import statistics
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_snowai_accounts_for_deep_analysis(request):
+    """Fetch all account names for selection"""
+    try:
+        accounts = Account.objects.all().values('id', 'account_name', 'main_assets', 'initial_capital')
+        accounts_list = list(accounts)
+        
+        return JsonResponse({
+            'success': True,
+            'accounts': accounts_list
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def calculate_deep_account_performance_metrics(request, account_id):
+    """Calculate comprehensive diagnostics for a specific account - FIXED VERSION"""
+    try:
+        # Get South African timezone
+        sa_tz = pytz.timezone('Africa/Johannesburg')
+        current_time = timezone.now().astimezone(sa_tz)
+        
+        # Get account and all trades for this specific account
+        account = Account.objects.get(id=account_id)
+        all_trades = AccountTrades.objects.filter(account=account)
+        
+        # Basic Performance Metrics
+        total_trades = all_trades.count()
+        profitable_trades = all_trades.filter(outcome='Win').count()
+        losing_trades = all_trades.filter(outcome='Loss').count()
+        breakeven_trades = all_trades.filter(outcome='Break Even').count()
+        
+        win_rate = (profitable_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        # Calculate total P&L
+        total_profit = sum(abs(trade.amount) for trade in all_trades.filter(outcome='Win'))
+        total_loss = sum(abs(trade.amount) for trade in all_trades.filter(outcome='Loss'))
+        net_pnl = total_profit - total_loss
+        
+        # Average trade metrics
+        avg_win = total_profit / profitable_trades if profitable_trades > 0 else 0
+        avg_loss = total_loss / losing_trades if losing_trades > 0 else 0
+        
+        # Risk-Reward Ratio
+        risk_reward_ratio = avg_win / avg_loss if avg_loss > 0 else 0
+        
+        # Profit Factor
+        profit_factor = total_profit / total_loss if total_loss > 0 else float('inf')
+        
+        # FIXED: Time-based Analysis
+        current_day = current_time.strftime('%A')
+        current_hour = current_time.hour
+        current_session = get_trading_session_advanced(current_hour)
+        
+        # FIXED: Get performance for current day - make sure we're filtering by exact account
+        day_performance = get_current_day_performance(account, current_day)
+        
+        # FIXED: Get performance for current session - make sure we're filtering by exact account
+        session_performance = get_current_session_performance(account, current_session)
+        
+        # FIXED: Get combined time performance (current day AND current session)
+        combined_time_performance = get_combined_time_performance(account, current_day, current_session)
+        
+        # Calculate the most accurate time-based probability
+        time_based_win_probability = calculate_refined_time_probability(
+            day_performance, 
+            session_performance, 
+            combined_time_performance, 
+            win_rate
+        )
+        
+        # Asset Performance Analysis
+        asset_performance = analyze_asset_performance(all_trades)
+        
+        # Strategy Performance Analysis
+        strategy_performance = analyze_strategy_performance(all_trades)
+        
+        # Emotional Bias Analysis
+        emotional_analysis = analyze_emotional_patterns(all_trades)
+        
+        # Streaks Analysis
+        streaks_data = analyze_winning_losing_streaks(all_trades)
+        
+        # Monthly Performance Trend
+        monthly_performance = calculate_monthly_performance_trend(all_trades)
+        
+        # Drawdown Analysis
+        drawdown_analysis = calculate_drawdown_metrics(all_trades, account.initial_capital)
+        
+        # Risk Metrics
+        risk_metrics = calculate_advanced_risk_metrics(all_trades, account.initial_capital)
+        
+        return JsonResponse({
+            'success': True,
+            'account_info': {
+                'name': account.account_name,
+                'main_assets': account.main_assets,
+                'initial_capital': account.initial_capital
+            },
+            'basic_metrics': {
+                'total_trades': total_trades,
+                'profitable_trades': profitable_trades,
+                'losing_trades': losing_trades,
+                'breakeven_trades': breakeven_trades,
+                'win_rate': round(win_rate, 2),
+                'net_pnl': round(net_pnl, 2),
+                'avg_win': round(avg_win, 2),
+                'avg_loss': round(avg_loss, 2),
+                'risk_reward_ratio': round(risk_reward_ratio, 2),
+                'profit_factor': round(profit_factor, 2)
+            },
+            'time_analysis': {
+                'current_day': current_day,
+                'current_session': current_session,
+                'current_time': current_time.strftime('%H:%M %Z'),
+                'time_based_win_probability': round(time_based_win_probability, 2),
+                'day_performance': day_performance,
+                'session_performance': session_performance,
+                'combined_time_performance': combined_time_performance,  # Added for debugging
+                'debug_info': {
+                    'account_id': account_id,
+                    'total_account_trades': total_trades,
+                    'current_day_trades': day_performance['trade_count'],
+                    'current_session_trades': session_performance['trade_count'],
+                    'combined_time_trades': combined_time_performance['trade_count']
+                }
+            },
+            'asset_performance': asset_performance,
+            'strategy_performance': strategy_performance,
+            'emotional_analysis': emotional_analysis,
+            'streaks_data': streaks_data,
+            'monthly_performance': monthly_performance,
+            'drawdown_analysis': drawdown_analysis,
+            'risk_metrics': risk_metrics
+        })
+        
+    except Account.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Account not found'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def generate_ai_enhanced_account_diagnostics(request, account_id):
+    """Generate AI-powered diagnostic insights using GPT-4o-mini"""
+    try:
+        data = json.loads(request.body)
+        performance_data = data.get('performance_data', {})
+        
+        # Set up OpenAI API key
+        openai.api_key = os.getenv('OPENAI_API_KEY')
+        
+        # Create comprehensive prompt for AI analysis
+        prompt = create_ai_diagnostic_prompt(account_id, performance_data)
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert trading performance analyst with deep expertise in risk management, behavioral finance, and trading psychology. Provide actionable insights and recommendations."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_tokens=1500,
+            temperature=0.7
+        )
+        
+        ai_insights = response.choices[0].message.content
+        
+        return JsonResponse({
+            'success': True,
+            'ai_insights': ai_insights,
+            'generated_at': timezone.now().isoformat()
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+
+# Helper Functions
+
+def get_trading_session_advanced(hour):
+    """Determine trading session based on hour (SA time) - FIXED"""
+    if 9 <= hour < 17:
+        return "London"
+    elif 15 <= hour < 23:
+        return "NY"
+    elif 2 <= hour < 10:
+        return "Asian"
+    else:
+        return "Off-Hours"
+
+
+def get_current_day_performance(account, current_day):
+    """Get performance for current day of week - FIXED to use specific account"""
+    # Filter trades for this specific account and current day
+    day_trades = AccountTrades.objects.filter(
+        account=account,
+        day_of_week_entered__iexact=current_day  # Case insensitive match
+    )
+    
+    if not day_trades.exists():
+        return {
+            'win_rate': 0, 
+            'trade_count': 0, 
+            'confidence': 'No Data',
+            'wins': 0,
+            'losses': 0
+        }
+    
+    total = day_trades.count()
+    wins = day_trades.filter(outcome='Win').count()
+    losses = day_trades.filter(outcome='Loss').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    # Confidence based on sample size
+    if total >= 20:
+        confidence = 'High'
+    elif total >= 10:
+        confidence = 'Medium'
+    elif total >= 5:
+        confidence = 'Low'
+    else:
+        confidence = 'Very Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'wins': wins,
+        'losses': losses,
+        'confidence': confidence
+    }
+
+def get_current_session_performance(account, current_session):
+    """Get performance for current trading session - FIXED to use specific account"""
+    # Filter trades for this specific account and current session
+    session_trades = AccountTrades.objects.filter(
+        account=account,
+        trading_session_entered__iexact=current_session  # Case insensitive match
+    )
+    
+    if not session_trades.exists():
+        return {
+            'win_rate': 0, 
+            'trade_count': 0, 
+            'confidence': 'No Data',
+            'wins': 0,
+            'losses': 0
+        }
+    
+    total = session_trades.count()
+    wins = session_trades.filter(outcome='Win').count()
+    losses = session_trades.filter(outcome='Loss').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    # Confidence based on sample size
+    if total >= 25:
+        confidence = 'High'
+    elif total >= 15:
+        confidence = 'Medium'
+    elif total >= 8:
+        confidence = 'Low'
+    else:
+        confidence = 'Very Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'wins': wins,
+        'losses': losses,
+        'confidence': confidence
+    }
+
+
+def get_combined_time_performance(account, current_day, current_session):
+    """Get performance for current day AND current session combined - NEW FUNCTION"""
+    # Filter trades for this specific account, current day AND current session
+    combined_trades = AccountTrades.objects.filter(
+        account=account,
+        day_of_week_entered__iexact=current_day,
+        trading_session_entered__iexact=current_session
+    )
+    
+    if not combined_trades.exists():
+        return {
+            'win_rate': 0, 
+            'trade_count': 0, 
+            'confidence': 'No Data',
+            'wins': 0,
+            'losses': 0
+        }
+    
+    total = combined_trades.count()
+    wins = combined_trades.filter(outcome='Win').count()
+    losses = combined_trades.filter(outcome='Loss').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    # Confidence based on sample size for combined data
+    if total >= 15:
+        confidence = 'High'
+    elif total >= 8:
+        confidence = 'Medium'
+    elif total >= 4:
+        confidence = 'Low'
+    else:
+        confidence = 'Very Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'wins': wins,
+        'losses': losses,
+        'confidence': confidence
+    }
+
+
+def calculate_refined_time_probability(day_perf, session_perf, combined_perf, overall_win_rate):
+    """Calculate the most accurate time-based probability - IMPROVED ALGORITHM"""
+    
+    # Priority system: Combined time data is most specific and valuable
+    if combined_perf['trade_count'] >= 5:
+        # We have enough combined data (same day + same session)
+        primary_rate = combined_perf['win_rate']
+        confidence_weight = 0.8  # High weight for combined data
+        
+        # Supplement with overall win rate
+        final_probability = (primary_rate * confidence_weight) + (overall_win_rate * (1 - confidence_weight))
+        
+    elif day_perf['trade_count'] >= 5 and session_perf['trade_count'] >= 5:
+        # We have good data for both day and session separately
+        day_weight = min(day_perf['trade_count'] / 20, 0.4)  # Max 40% weight
+        session_weight = min(session_perf['trade_count'] / 25, 0.4)  # Max 40% weight
+        overall_weight = 1 - day_weight - session_weight
+        
+        final_probability = (
+            day_perf['win_rate'] * day_weight +
+            session_perf['win_rate'] * session_weight +
+            overall_win_rate * overall_weight
+        )
+        
+    elif day_perf['trade_count'] >= 5:
+        # Only day data is reliable
+        day_weight = min(day_perf['trade_count'] / 20, 0.6)  # Max 60% weight
+        final_probability = (day_perf['win_rate'] * day_weight) + (overall_win_rate * (1 - day_weight))
+        
+    elif session_perf['trade_count'] >= 5:
+        # Only session data is reliable
+        session_weight = min(session_perf['trade_count'] / 25, 0.6)  # Max 60% weight
+        final_probability = (session_perf['win_rate'] * session_weight) + (overall_win_rate * (1 - session_weight))
+        
+    else:
+        # Not enough specific time data, use overall with slight adjustments
+        day_adjustment = (day_perf['win_rate'] - overall_win_rate) * 0.1 if day_perf['trade_count'] > 0 else 0
+        session_adjustment = (session_perf['win_rate'] - overall_win_rate) * 0.1 if session_perf['trade_count'] > 0 else 0
+        
+        final_probability = overall_win_rate + day_adjustment + session_adjustment
+    
+    # Ensure probability stays within reasonable bounds
+    return max(0, min(100, final_probability))
+
+
+
+def calculate_day_performance_probability(day_trades):
+    """Calculate win probability for specific day"""
+    if not day_trades.exists():
+        return {'win_rate': 0, 'trade_count': 0, 'confidence': 'Low'}
+    
+    total = day_trades.count()
+    # Fixed: Use 'Win' instead of 'Profit'
+    wins = day_trades.filter(outcome='Win').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    confidence = 'High' if total >= 10 else 'Medium' if total >= 5 else 'Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'confidence': confidence
+    }
+
+def calculate_session_performance_probability(session_trades):
+    """Calculate win probability for specific session"""
+    if not session_trades.exists():
+        return {'win_rate': 0, 'trade_count': 0, 'confidence': 'Low'}
+    
+    total = session_trades.count()
+    # Fixed: Use 'Win' instead of 'Profit'
+    wins = session_trades.filter(outcome='Win').count()
+    win_rate = (wins / total * 100) if total > 0 else 0
+    
+    confidence = 'High' if total >= 15 else 'Medium' if total >= 8 else 'Low'
+    
+    return {
+        'win_rate': round(win_rate, 2),
+        'trade_count': total,
+        'confidence': confidence
+    }
+
+def calculate_time_based_win_probability(day_perf, session_perf, overall_win_rate):
+    """Combine day and session performance with overall win rate"""
+    weights = {
+        'day': 0.3,
+        'session': 0.3,
+        'overall': 0.4
+    }
+    
+    day_rate = day_perf['win_rate'] if day_perf['trade_count'] > 0 else overall_win_rate
+    session_rate = session_perf['win_rate'] if session_perf['trade_count'] > 0 else overall_win_rate
+    
+    weighted_probability = (
+        day_rate * weights['day'] +
+        session_rate * weights['session'] +
+        overall_win_rate * weights['overall']
+    )
+    
+    return weighted_probability
+
+def analyze_asset_performance(trades):
+    """Analyze performance by asset"""
+    asset_stats = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total_pnl': 0})
+    
+    for trade in trades:
+        # Fixed: Properly calculate P&L based on outcome
+        if trade.outcome == 'Win':
+            asset_stats[trade.asset]['total_pnl'] += abs(trade.amount)
+            asset_stats[trade.asset]['wins'] += 1
+        elif trade.outcome == 'Loss':
+            asset_stats[trade.asset]['total_pnl'] -= abs(trade.amount)
+            asset_stats[trade.asset]['losses'] += 1
+        # Break Even trades don't affect P&L but count as trades
+    
+    result = []
+    for asset, stats in asset_stats.items():
+        total_trades = stats['wins'] + stats['losses']
+        win_rate = (stats['wins'] / total_trades * 100) if total_trades > 0 else 0
+        
+        result.append({
+            'asset': asset,
+            'total_trades': total_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(stats['total_pnl'], 2),
+            'wins': stats['wins'],
+            'losses': stats['losses']
+        })
+    
+    return sorted(result, key=lambda x: x['total_pnl'], reverse=True)
+
+def analyze_strategy_performance(trades):
+    """Analyze performance by strategy"""
+    strategy_stats = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total_pnl': 0})
+    
+    for trade in trades:
+        # Fixed: Properly calculate P&L based on outcome
+        if trade.outcome == 'Win':
+            strategy_stats[trade.strategy]['total_pnl'] += abs(trade.amount)
+            strategy_stats[trade.strategy]['wins'] += 1
+        elif trade.outcome == 'Loss':
+            strategy_stats[trade.strategy]['total_pnl'] -= abs(trade.amount)
+            strategy_stats[trade.strategy]['losses'] += 1
+    
+    result = []
+    for strategy, stats in strategy_stats.items():
+        total_trades = stats['wins'] + stats['losses']
+        win_rate = (stats['wins'] / total_trades * 100) if total_trades > 0 else 0
+        
+        result.append({
+            'strategy': strategy,
+            'total_trades': total_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': round(stats['total_pnl'], 2),
+            'wins': stats['wins'],
+            'losses': stats['losses']
+        })
+    
+    return sorted(result, key=lambda x: x['win_rate'], reverse=True)
+
+def analyze_emotional_patterns(trades):
+    """Analyze emotional bias patterns"""
+    trades_with_emotion = trades.exclude(emotional_bias__isnull=True).exclude(emotional_bias='')
+    
+    if not trades_with_emotion.exists():
+        return {'has_data': False, 'message': 'No emotional bias data available'}
+    
+    emotion_performance = defaultdict(lambda: {'count': 0, 'wins': 0, 'total_pnl': 0})
+    
+    for trade in trades_with_emotion:
+        emotion = trade.emotional_bias.lower()
+        emotion_performance[emotion]['count'] += 1
+        
+        # Fixed: Properly calculate P&L and wins
+        if trade.outcome == 'Win':
+            emotion_performance[emotion]['total_pnl'] += abs(trade.amount)
+            emotion_performance[emotion]['wins'] += 1
+        elif trade.outcome == 'Loss':
+            emotion_performance[emotion]['total_pnl'] -= abs(trade.amount)
+    
+    result = []
+    for emotion, stats in emotion_performance.items():
+        win_rate = (stats['wins'] / stats['count'] * 100) if stats['count'] > 0 else 0
+        result.append({
+            'emotion': emotion.title(),
+            'trade_count': stats['count'],
+            'win_rate': round(win_rate, 2),
+            'avg_pnl': round(stats['total_pnl'] / stats['count'], 2)
+        })
+    
+    return {
+        'has_data': True,
+        'patterns': sorted(result, key=lambda x: x['trade_count'], reverse=True)
+    }
+
+def analyze_winning_losing_streaks(trades):
+    """Analyze winning and losing streaks"""
+    if not trades.exists():
+        return {'max_winning_streak': 0, 'max_losing_streak': 0, 'current_streak': 0}
+    
+    # Order trades by date
+    ordered_trades = trades.order_by('date_entered')
+    
+    max_winning_streak = 0
+    max_losing_streak = 0
+    current_streak = 0
+    current_streak_type = None
+    
+    temp_winning = 0
+    temp_losing = 0
+    
+    for trade in ordered_trades:
+        # Fixed: Use 'Win' instead of 'Profit'
+        if trade.outcome == 'Win':
+            temp_winning += 1
+            temp_losing = 0
+            max_winning_streak = max(max_winning_streak, temp_winning)
+            
+            if current_streak_type == 'win':
+                current_streak += 1
+            else:
+                current_streak = 1
+                current_streak_type = 'win'
+        elif trade.outcome == 'Loss':
+            temp_losing += 1
+            temp_winning = 0
+            max_losing_streak = max(max_losing_streak, temp_losing)
+            
+            if current_streak_type == 'loss':
+                current_streak += 1
+            else:
+                current_streak = 1
+                current_streak_type = 'loss'
+        else:  # Break Even - breaks both streaks
+            temp_winning = 0
+            temp_losing = 0
+            current_streak = 0
+            current_streak_type = 'none'
+    
+    return {
+        'max_winning_streak': max_winning_streak,
+        'max_losing_streak': max_losing_streak,
+        'current_streak': current_streak,
+        'current_streak_type': current_streak_type or 'none'
+    }
+
+def calculate_monthly_performance_trend(trades):
+    """Calculate monthly performance trend"""
+    monthly_data = defaultdict(lambda: {'pnl': 0, 'trades': 0, 'wins': 0})
+    
+    for trade in trades:
+        if trade.date_entered:
+            month_key = trade.date_entered.strftime('%Y-%m')
+            monthly_data[month_key]['trades'] += 1
+            
+            # Fixed: Properly calculate monthly P&L
+            if trade.outcome == 'Win':
+                monthly_data[month_key]['pnl'] += abs(trade.amount)
+                monthly_data[month_key]['wins'] += 1
+            elif trade.outcome == 'Loss':
+                monthly_data[month_key]['pnl'] -= abs(trade.amount)
+    
+    result = []
+    for month, data in sorted(monthly_data.items()):
+        win_rate = (data['wins'] / data['trades'] * 100) if data['trades'] > 0 else 0
+        result.append({
+            'month': month,
+            'pnl': round(data['pnl'], 2),
+            'trades': data['trades'],
+            'win_rate': round(win_rate, 2)
+        })
+    
+    return result
+
+def calculate_drawdown_metrics(trades, initial_capital):
+    """Calculate drawdown metrics"""
+    if not trades.exists():
+        return {'max_drawdown': 0, 'current_drawdown': 0, 'drawdown_periods': []}
+    
+    # Order trades by date and calculate running balance
+    ordered_trades = trades.order_by('date_entered')
+    running_balance = initial_capital
+    peak_balance = initial_capital
+    max_drawdown = 0
+    drawdowns = []
+    
+    for trade in ordered_trades:
+        # Fixed: Properly calculate running balance
+        if trade.outcome == 'Win':
+            running_balance += abs(trade.amount)
+        elif trade.outcome == 'Loss':
+            running_balance -= abs(trade.amount)
+        # Break Even trades don't change balance
+        
+        if running_balance > peak_balance:
+            peak_balance = running_balance
+        
+        drawdown_pct = ((peak_balance - running_balance) / peak_balance * 100) if peak_balance > 0 else 0
+        max_drawdown = max(max_drawdown, drawdown_pct)
+        
+        if drawdown_pct > 5:  # Track significant drawdowns
+            drawdowns.append({
+                'date': trade.date_entered.strftime('%Y-%m-%d') if trade.date_entered else 'Unknown',
+                'drawdown_pct': round(drawdown_pct, 2),
+                'balance': round(running_balance, 2)
+            })
+    
+    current_drawdown = ((peak_balance - running_balance) / peak_balance * 100) if peak_balance > 0 else 0
+    
+    return {
+        'max_drawdown': round(max_drawdown, 2),
+        'current_drawdown': round(current_drawdown, 2),
+        'current_balance': round(running_balance, 2),
+        'peak_balance': round(peak_balance, 2),
+        'significant_drawdowns': drawdowns[-5:]  # Last 5 significant drawdowns
+    }
+
+def calculate_advanced_risk_metrics(trades, initial_capital):
+    """Calculate advanced risk metrics"""
+    if not trades.exists():
+        return {}
+    
+    # Fixed: Calculate returns properly based on outcome
+    returns = []
+    for trade in trades:
+        if trade.outcome == 'Win':
+            returns.append(abs(trade.amount) / initial_capital * 100)
+        elif trade.outcome == 'Loss':
+            returns.append(-abs(trade.amount) / initial_capital * 100)
+        # Break Even trades have 0 return - skip or add 0
+    
+    # Calculate Sharpe-like ratio (simplified)
+    avg_return = statistics.mean(returns) if returns else 0
+    return_std = statistics.stdev(returns) if len(returns) > 1 else 0
+    sharpe_ratio = avg_return / return_std if return_std > 0 else 0
+    
+    # Calculate Value at Risk (VaR) - 95% confidence
+    sorted_returns = sorted(returns)
+    var_95 = sorted_returns[int(0.05 * len(sorted_returns))] if len(sorted_returns) > 20 else min(returns) if returns else 0
+    
+    # Calculate Maximum Consecutive Losses
+    max_consecutive_losses = 0
+    consecutive_losses = 0
+    
+    for trade in trades.order_by('date_entered'):
+        if trade.outcome == 'Loss':
+            consecutive_losses += 1
+            max_consecutive_losses = max(max_consecutive_losses, consecutive_losses)
+        else:
+            consecutive_losses = 0
+    
+    return {
+        'sharpe_ratio': round(sharpe_ratio, 3),
+        'var_95': round(var_95, 2),
+        'volatility': round(return_std, 2),
+        'max_consecutive_losses': max_consecutive_losses,
+        'avg_return_pct': round(avg_return, 2)
+    }
+
+def create_ai_diagnostic_prompt(account_id, performance_data):
+    """Create comprehensive prompt for AI analysis"""
+    prompt = f"""
+    Please analyze the following trading account performance data and provide expert insights:
+
+    ACCOUNT OVERVIEW:
+    - Account: {performance_data.get('account_info', {}).get('name', 'Unknown')}
+    - Initial Capital: ${performance_data.get('account_info', {}).get('initial_capital', 0):,.2f}
+    - Main Assets: {performance_data.get('account_info', {}).get('main_assets', 'Unknown')}
+
+    PERFORMANCE METRICS:
+    - Total Trades: {performance_data.get('basic_metrics', {}).get('total_trades', 0)}
+    - Win Rate: {performance_data.get('basic_metrics', {}).get('win_rate', 0)}%
+    - Net P&L: ${performance_data.get('basic_metrics', {}).get('net_pnl', 0):,.2f}
+    - Risk/Reward Ratio: {performance_data.get('basic_metrics', {}).get('risk_reward_ratio', 0)}
+    - Profit Factor: {performance_data.get('basic_metrics', {}).get('profit_factor', 0)}
+
+    CURRENT TIME ANALYSIS:
+    - Current Day: {performance_data.get('time_analysis', {}).get('current_day', 'Unknown')}
+    - Current Session: {performance_data.get('time_analysis', {}).get('current_session', 'Unknown')}
+    - Time-based Win Probability: {performance_data.get('time_analysis', {}).get('time_based_win_probability', 0)}%
+
+    RISK METRICS:
+    - Max Drawdown: {performance_data.get('drawdown_analysis', {}).get('max_drawdown', 0)}%
+    - Sharpe Ratio: {performance_data.get('risk_metrics', {}).get('sharpe_ratio', 0)}
+    - Volatility: {performance_data.get('risk_metrics', {}).get('volatility', 0)}%
+
+    Based on this data, please provide:
+    1. Overall performance assessment
+    2. Key strengths and weaknesses
+    3. Risk management evaluation
+    4. Specific actionable recommendations
+    5. Psychological/behavioral insights
+    6. Market timing analysis
+    7. Strategic improvements for better performance
+
+    Keep the analysis concise but comprehensive, focusing on actionable insights.
+    """
+    
+    return prompt
+
+import json
+import uuid
+import re
+import subprocess
+import tempfile
+import os
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.core.paginator import Paginator
+from django.db.models import Q
+
+# Try to import yt-dlp
+try:
+    import yt_dlp
+    YT_DLP_AVAILABLE = True
+except ImportError:
+    YT_DLP_AVAILABLE = False
+    yt_dlp = None
+
+def extract_youtube_video_id_from_url(youtube_url):
+    """Extract video ID from various YouTube URL formats"""
+    patterns = [
+        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)',
+        r'youtube\.com\/watch\?.*v=([^&\n?#]+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, youtube_url)
+        if match:
+            return match.group(1)
+    return None
+
+
+def create_cookie_jar_from_dict(cookies_dict):
+    """Create a temporary cookie jar file from a dictionary of cookies"""
+    import tempfile
+    import http.cookiejar
+    import urllib.parse
+    
+    # Create a temporary file for cookies
+    cookie_jar = http.cookiejar.MozillaCookieJar()
+    
+    # Add cookies to jar
+    for name, value in cookies_dict.items():
+        cookie = http.cookiejar.Cookie(
+            version=0,
+            name=name,
+            value=value,
+            port=None,
+            port_specified=False,
+            domain='.youtube.com',
+            domain_specified=True,
+            domain_initial_dot=True,
+            path='/',
+            path_specified=True,
+            secure=True,
+            expires=None,
+            discard=True,
+            comment=None,
+            comment_url=None,
+            rest={}
+        )
+        cookie_jar.set_cookie(cookie)
+    
+    # Save to temporary file
+    temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+    cookie_jar.save(temp_file.name, ignore_discard=True, ignore_expires=True)
+    temp_file.close()
+    
+    return temp_file.name
+
+
+def get_default_youtube_cookies():
+    """Return updated default YouTube cookies for bot detection bypass"""
+    return {
+        "GPS": "1",
+        "YSC": "FHn3n08s0P8",
+        "VISITOR_INFO1_LIVE": "31Mb8-Hdb-0",
+        "VISITOR_PRIVACY_METADATA": "CgJaQRIEGgAgMg%3D%3D",
+        "__Secure-1PSIDTS": "sidts-CjUBwQ9iIzpwYQrC7xJOzg-aYyKKiUztj7mPKgbTOOt6bV9soOYJeZKtreTueu2Te6EmBTQ6dhAA",
+        "__Secure-3PSIDTS": "sidts-CjUBwQ9iIzpwYQrC7xJOzg-aYyKKiUztj7mPKgbTOOt6bV9soOYJeZKtreTueu2Te6EmBTQ6dhAA",
+        "__Secure-3PAPISID": "7aph5Sq9un6IOJTG/AvNR8-Tar5Osbfu0Y",
+        "__Secure-3PSID": "g.a0002whVj5rgUCOba7GdCCIe0M1_QjggulPFhyemJoDIUgOZF-JBtfk4VjnnDYoFB3wngyYH0QACgYKAX4SARESFQHGX2Mi-zPpLfUbqvKuTrJGo-QGGhoVAUF8yKqBkSkURZaFJYwrVSrdRDlZ0076",
+        "LOGIN_INFO": "AFmmF2swRQIgEeG6is4-vdZGXq3D9EUne1RvXw-xSW9UrfWWwFFB7ZYCIQC8UaG5ApZDUNf7wfmHS40hUHvUvYHDrohMkoHUtC56Dg:QUQ3MjNmeUVOU1pUbkVXbXhHUS1ENThyLTFtUkRmamNwN0ltT2FvcHNKR2s5R1NvekZnV3dXMHNIRWQ1bDVtNXU4RGRZM05RUmx6b2o1MFAySVo4Q0NrQS03Zkl4OWpZOExqY1ZIQ0VUd2JwN212NF9xRTJPdmlFTFdkR280blZVWEVJT0VwX3dIQXh0RG9rUll5QlZIYTZkQ2hWX2w5UFZ3",
+        "__Secure-ROLLOUT_TOKEN": "CK3m5Kimx6iLVxDw4O_7oMuQAxj83Mn9oMuQAw%3D%3D",
+        "PREF": "tz=Africa.Johannesburg&f5=30000",
+        "__Secure-3PSIDCC": "AKEyXzVFmK21pfqNLYvrwUp-jlKjxCxXNHuQtvJK71iZlDnezNLxpmZHXS9Mz5lXb6RZOBvHzA"
+    }
+
+
+def process_cookies_data(cookies_data):
+    """Process and validate cookies data with fallback to default cookies"""
+    processed_cookies = None
+    
+    if cookies_data:
+        try:
+            if isinstance(cookies_data, str):
+                # Try parsing as JSON first
+                try:
+                    processed_cookies = json.loads(cookies_data)
+                    print("Parsed user-provided cookies as JSON")
+                except json.JSONDecodeError:
+                    # Try parsing as cookie string format
+                    cookies_dict = {}
+                    cookie_pairs = cookies_data.split(';')
+                    
+                    for pair in cookie_pairs:
+                        parts = pair.split('=', 1)  # Split only on first =
+                        if len(parts) == 2:
+                            name, value = parts[0].strip(), parts[1].strip()
+                            if name and value:
+                                cookies_dict[name] = value
+                    
+                    if cookies_dict:
+                        processed_cookies = cookies_dict
+                        print(f"Parsed user-provided cookies from string format: {len(cookies_dict)} cookies")
+                    
+            elif isinstance(cookies_data, dict):
+                processed_cookies = cookies_data
+                print(f"Using user-provided cookies dict: {len(processed_cookies)} cookies")
+                
+        except Exception as cookie_error:
+            print(f"Error processing user cookies: {cookie_error}")
+    
+    # If no valid user cookies, use defaults
+    if not processed_cookies:
+        processed_cookies = get_default_youtube_cookies()
+        print(f"Using default fallback cookies: {len(processed_cookies)} cookies")
+    
+    return processed_cookies
+
+
+
+def parse_subtitle_content(subtitle_content):
+    """Parse VTT or SRT subtitle content to extract clean text with deduplication"""
+    lines = subtitle_content.split('\n')
+    text_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        
+        # Skip empty lines
+        if not line:
+            continue
+            
+        # Skip VTT header
+        if line.startswith('WEBVTT') or line.startswith('NOTE'):
+            continue
+            
+        # Skip SRT sequence numbers (pure digits)
+        if line.isdigit():
+            continue
+            
+        # Skip timestamp lines (contain --> or time patterns)
+        if '-->' in line or re.match(r'^\d{2}:\d{2}:\d{2}', line):
+            continue
+            
+        # Skip VTT style/position tags
+        if line.startswith('<') or line.startswith('&'):
+            continue
+            
+        # Clean HTML tags and entities
+        line = re.sub(r'<[^>]+>', '', line)  # Remove HTML tags
+        line = re.sub(r'&[a-zA-Z]+;', '', line)  # Remove HTML entities
+        
+        # Remove VTT positioning tags
+        line = re.sub(r'\{[^}]*\}', '', line)
+        
+        # If line still has content, add it
+        if line and not line.startswith('[') and not line.startswith('('):
+            text_lines.append(line)
+    
+    # Join all text and clean up
+    full_text = ' '.join(text_lines)
+    
+    # Remove extra whitespace
+    full_text = re.sub(r'\s+', ' ', full_text)
+    
+    # Apply deduplication
+    deduplicated_text = deduplicate_transcript_text(full_text)
+    
+    return deduplicated_text
+
+
+def deduplicate_transcript_text(text):
+    """Remove duplicate sentences and phrases from transcript text"""
+    import difflib
+    
+    # Split into sentences using multiple delimiters
+    sentences = re.split(r'[.!?]+\s+', text)
+    
+    # Clean up sentences
+    clean_sentences = []
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if len(sentence) > 3:  # Only keep sentences with more than 3 characters
+            clean_sentences.append(sentence)
+    
+    if not clean_sentences:
+        return text
+    
+    # Remove exact duplicates first
+    deduplicated = []
+    seen_sentences = set()
+    
+    for sentence in clean_sentences:
+        sentence_lower = sentence.lower().strip()
+        if sentence_lower not in seen_sentences:
+            seen_sentences.add(sentence_lower)
+            deduplicated.append(sentence)
+    
+    # Remove near-duplicate sentences (with similarity threshold)
+    final_sentences = []
+    similarity_threshold = 0.2
+    
+    for i, sentence in enumerate(deduplicated):
+        is_duplicate = False
+        
+        # Check against already added sentences
+        for existing_sentence in final_sentences:
+            similarity = difflib.SequenceMatcher(None, sentence.lower(), existing_sentence.lower()).ratio()
+            
+            if similarity > similarity_threshold:
+                is_duplicate = True
+                break
+        
+        if not is_duplicate:
+            final_sentences.append(sentence)
+    
+    # Remove repeated phrases within the remaining text
+    final_text = '. '.join(final_sentences)
+    
+    # Remove repeated phrases (3+ words that appear consecutively)
+    final_text = remove_repeated_phrases(final_text)
+    
+    # Clean up final spacing and punctuation
+    final_text = re.sub(r'\s+', ' ', final_text)
+    final_text = re.sub(r'\s*\.\s*\.', '.', final_text)  # Remove double periods
+    final_text = final_text.strip()
+    
+    # Add final period if missing
+    if final_text and not final_text.endswith(('.', '!', '?')):
+        final_text += '.'
+    
+    return final_text
+
+
+def remove_repeated_phrases(text):
+    """Remove repeated phrases of 3 or more words"""
+    words = text.split()
+    
+    if len(words) < 6:  # Need at least 6 words to have a repeated 3-word phrase
+        return text
+    
+    # Check for repeated phrases of different lengths
+    for phrase_length in range(3, min(15, len(words) // 2)):  # Check phrases up to 15 words
+        cleaned_words = remove_phrases_of_length(words, phrase_length)
+        if len(cleaned_words) < len(words):
+            words = cleaned_words
+    
+    return ' '.join(words)
+
+
+def remove_phrases_of_length(words, phrase_length):
+    """Remove repeated phrases of a specific length"""
+    if len(words) < phrase_length * 2:
+        return words
+    
+    cleaned_words = []
+    i = 0
+    
+    while i < len(words):
+        if i + phrase_length * 2 <= len(words):
+            # Get current phrase and next phrase
+            current_phrase = words[i:i + phrase_length]
+            next_phrase = words[i + phrase_length:i + phrase_length * 2]
+            
+            # Check if they're the same (case-insensitive)
+            if [word.lower() for word in current_phrase] == [word.lower() for word in next_phrase]:
+                # Skip the duplicate phrase
+                cleaned_words.extend(current_phrase)
+                i += phrase_length * 2  # Skip both phrases, we kept one
+                continue
+        
+        # No duplicate found, add current word
+        cleaned_words.append(words[i])
+        i += 1
+    
+    return cleaned_words
+
+
+def analyze_transcript_quality(text):
+    """Analyze transcript quality and provide statistics"""
+    words = text.split()
+    sentences = re.split(r'[.!?]+', text)
+    
+    # Calculate statistics
+    total_words = len(words)
+    total_sentences = len([s for s in sentences if s.strip()])
+    
+    # Find potential repeated phrases
+    repeated_phrases = find_repeated_phrases(text)
+    
+    # Calculate readability score (simple version)
+    avg_sentence_length = total_words / max(total_sentences, 1)
+    
+    quality_score = 100
+    if repeated_phrases > 10:
+        quality_score -= 20
+    if avg_sentence_length > 40:  # Very long sentences might indicate parsing issues
+        quality_score -= 10
+    if avg_sentence_length < 5:   # Very short sentences might indicate fragmentation
+        quality_score -= 10
+    
+    return {
+        'total_words': total_words,
+        'total_sentences': total_sentences,
+        'average_sentence_length': round(avg_sentence_length, 1),
+        'repeated_phrases_detected': repeated_phrases,
+        'quality_score': max(quality_score, 0)
+    }
+
+
+def find_repeated_phrases(text, min_phrase_length=3):
+    """Count repeated phrases in text"""
+    words = text.lower().split()
+    phrase_counts = {}
+    repeated_count = 0
+    
+    # Check for repeated phrases
+    for phrase_length in range(min_phrase_length, min(10, len(words) // 3)):
+        for i in range(len(words) - phrase_length + 1):
+            phrase = ' '.join(words[i:i + phrase_length])
+            phrase_counts[phrase] = phrase_counts.get(phrase, 0) + 1
+    
+    # Count phrases that appear more than once
+    for phrase, count in phrase_counts.items():
+        if count > 1:
+            repeated_count += count - 1  # Subtract 1 because original occurrence is not a repeat
+    
+    return repeated_count
+
+
+from django.utils import timezone
+from datetime import datetime
+
+def safe_truncate_field(value, max_length):
+    """Safely truncate a field to fit database constraints"""
+    if not value:
+        return value
+    if len(str(value)) > max_length:
+        return str(value)[:max_length-3] + "..."
+    return str(value)
+
+def create_transcription_method_name(source_type, language, strategy, use_cookies=True):
+    """Create a concise transcription method name that fits database constraints"""
+    # Create shorter method names to fit in 50 characters
+    strategy_map = {
+        'modern_with_auth': 'modern',
+        'android_authenticated': 'android', 
+        'ios_authenticated': 'ios',
+        'tv_authenticated': 'tv',
+        'fallback_no_cookies': 'fallback'
+    }
+    
+    short_strategy = strategy_map.get(strategy, strategy[:10])
+    cookie_suffix = '_auth' if use_cookies else '_noauth'
+    
+    # Format: ytdlp_auto_en_tv_auth (max ~20 chars)
+    method_name = f"ytdlp_{source_type[:4]}_{language[:2]}_{short_strategy}{cookie_suffix}"
+    
+    # Ensure it fits in 50 characters
+    return safe_truncate_field(method_name, 50)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_extract_youtube_transcript_from_url(request):
+    """Extract transcript from YouTube URL using yt-dlp with default cookies and enhanced fallback strategies"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        cookies_data = data.get('cookies')  # This can be None and will use defaults
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        # Check if transcript already exists
+        existing_transcript = SnowAIVideoTranscriptRecord.objects.filter(
+            youtube_video_id=video_id
+        ).first()
+        
+        if existing_transcript:
+            return JsonResponse({
+                'message': 'Transcript already exists',
+                'transcript_id': existing_transcript.transcript_uuid,
+                'existing': True,
+                'word_count': existing_transcript.word_count
+            })
+        
+        print(f"Starting transcript extraction for video ID: {video_id}")
+        if cookies_data:
+            print("Using user-provided cookies for extraction")
+        else:
+            print("Using default cookies for extraction")
+        
+        # Extract transcript using yt-dlp with default cookies
+        try:
+            transcript_result = extract_transcript_with_ytdlp(youtube_url, video_id, cookies_data)
+            
+            if not transcript_result['text']:
+                return JsonResponse({
+                    'error': 'No transcript text could be extracted from this video. The video may not have captions or subtitles available.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'extraction_method': transcript_result.get('method', 'unknown'),
+                        'yt_dlp_available': YT_DLP_AVAILABLE,
+                        'used_default_cookies': not bool(cookies_data)
+                    }
+                }, status=400)
+            
+            full_text = transcript_result['text']
+            video_metadata = transcript_result['metadata']
+            
+            print(f"Transcript extracted: {len(full_text)} characters, method: {transcript_result['method']}")
+            
+            # Handle video upload date with proper timezone handling
+            video_upload_date = None
+            if video_metadata.get('upload_date'):
+                try:
+                    # Parse the upload date string (format: YYYYMMDD)
+                    upload_date_str = video_metadata['upload_date']
+                    if len(upload_date_str) == 8:  # YYYYMMDD format
+                        parsed_date = datetime.strptime(upload_date_str, '%Y%m%d')
+                        # Make it timezone-aware
+                        video_upload_date = timezone.make_aware(parsed_date, timezone.get_current_timezone())
+                except Exception as date_error:
+                    print(f"Error parsing upload date: {date_error}")
+                    video_upload_date = None
+            
+            # Safely truncate fields to match your database schema exactly
+            video_title = safe_truncate_field(video_metadata.get('title', data.get('video_title', '')), 300)
+            speaker_name = safe_truncate_field(data.get('speaker_name', ''), 200)
+            country_code = safe_truncate_field(data.get('country_code', ''), 10)
+            country_name = safe_truncate_field(data.get('country_name', ''), 100)
+            category = safe_truncate_field(data.get('category', 'central_bank'), 100)
+            transcription_method = safe_truncate_field(transcript_result.get('method', 'ytdlp_auto'), 50)
+            transcript_language = safe_truncate_field(transcript_result.get('language', 'en'), 10)
+            processing_status = safe_truncate_field('completed', 30)
+            
+            print(f"Creating transcript record...")
+            print(f"- Title: {video_title[:50]}... (length: {len(video_title)})")
+            print(f"- Method: {transcription_method} (length: {len(transcription_method)})")
+            print(f"- Language: {transcript_language} (length: {len(transcript_language)})")
+            print(f"- Category: {category} (length: {len(category)})")
+            
+            # Create transcript record with proper field length handling
+            transcript_record = SnowAIVideoTranscriptRecord.objects.create(
+                transcript_uuid=str(uuid.uuid4()),
+                youtube_video_id=video_id,
+                youtube_url=youtube_url,
+                video_title=video_title,
+                full_transcript_text=full_text,
+                video_duration_seconds=video_metadata.get('duration'),
+                video_upload_date=video_upload_date,
+                primary_speaker_name=speaker_name,
+                speaker_country_code=country_code,
+                speaker_country_name=country_name,
+                content_category=category,
+                transcription_method=transcription_method,
+                transcript_language=transcript_language,
+                processing_status=processing_status
+            )
+            
+            print(f"Transcript record created successfully with ID: {transcript_record.transcript_uuid}")
+            
+            return JsonResponse({
+                'message': 'Transcript extracted and saved successfully',
+                'transcript_id': transcript_record.transcript_uuid,
+                'word_count': transcript_record.word_count,
+                'duration': video_metadata.get('duration'),
+                'title': video_title,
+                'language': transcript_result['language'],
+                'extraction_method': transcript_result['method'],
+                'used_default_cookies': not bool(cookies_data),
+                'text_preview': full_text[:200] + '...' if len(full_text) > 200 else full_text
+            })
+            
+        except Exception as transcript_error:
+            error_str = str(transcript_error).lower()
+            print(f"Transcript extraction error: {error_str}")
+            print(f"Full error details: {transcript_error}")
+            
+            # Print full traceback for debugging
+            import traceback
+            print(f"Full traceback: {traceback.format_exc()}")
+            
+            # Check if it's a database error
+            if 'value too long' in error_str:
+                return JsonResponse({
+                    'error': 'Database field length error - some metadata fields are too long for the database schema.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'error_type': 'database_constraint_error',
+                        'full_error': str(transcript_error)[:200],
+                        'suggestion': 'Check database field lengths for title, speaker name, etc.'
+                    }
+                }, status=400)
+            
+            # Provide more specific error messages
+            if 'sign in to confirm' in error_str or 'not a bot' in error_str:
+                return JsonResponse({
+                    'error': 'YouTube bot detection bypassed with default cookies, but extraction still failed. The video might require updated authentication.',
+                    'debug_video_id': video_id,
+                    'suggestion': 'Try providing fresh browser cookies from a logged-in YouTube session'
+                }, status=400)
+            elif 'private' in error_str or 'unavailable' in error_str:
+                return JsonResponse({
+                    'error': 'The video is private, unavailable, or restricted.',
+                    'debug_video_id': video_id
+                }, status=400)
+            elif 'no subtitles' in error_str or 'no transcript' in error_str or 'no valid transcript' in error_str:
+                return JsonResponse({
+                    'error': 'No subtitles or captions are available for this video, or the extracted content was too short.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'url': youtube_url,
+                        'method': 'yt-dlp_with_default_cookies'
+                    }
+                }, status=400)
+            else:
+                return JsonResponse({
+                    'error': 'Failed to extract transcript from video despite using default cookies.',
+                    'debug_info': {
+                        'video_id': video_id,
+                        'error_details': str(transcript_error)[:300],
+                        'used_default_cookies': True,
+                        'suggestion': 'The video may have special restrictions or yt-dlp may need updating'
+                    }
+                }, status=400)
+                
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        return JsonResponse({
+            'error': f'An unexpected error occurred: {str(e)}'[:200],
+            'debug_info': 'Check server logs for more details'
+        }, status=500)
+
+def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
+    """Extract transcript using yt-dlp with enhanced fallback strategies and default cookies"""
+    
+    if not YT_DLP_AVAILABLE:
+        raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
+    
+    transcript_data = {
+        'text': None,
+        'method': None,
+        'language': 'en',
+        'metadata': {}
+    }
+    
+    # Process cookies with fallback to defaults
+    cookies_dict = process_cookies_data(cookies_data)
+    cookie_file_path = None
+    
+    try:
+        cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+        print(f"Created cookie jar with {len(cookies_dict)} cookies")
+    except Exception as cookie_error:
+        print(f"Cookie processing error: {cookie_error}")
+        pass
+
+    # Enhanced extraction strategies - focus on subtitle extraction only
+    extraction_strategies = [
+        {
+            'name': 'tv_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en', 'en-US', 'en-GB'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,  # This is critical
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['tv_embedded'],
+                    }
+                },
+                # Explicitly tell yt-dlp not to download video
+                'format': 'best',
+                'noplaylist': True,
+            }
+        },
+        {
+            'name': 'android_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en', 'en-US', 'en-GB'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android'],
+                    }
+                },
+                'format': 'best',
+                'noplaylist': True,
+            }
+        },
+        {
+            'name': 'web_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en', 'en-US', 'en-GB'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'format': 'best',
+                'noplaylist': True,
+            }
+        }
+    ]
+
+    extraction_error = None
+    info = None
+    successful_strategy = None
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            print(f"Using temp directory: {temp_dir}")
+            
+            # First pass: Get video info without downloading
+            for strategy in extraction_strategies:
+                try:
+                    print(f"Trying strategy: {strategy['name']} for video: {video_id}")
+                    
+                    opts = strategy['opts'].copy()
+                    opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+                    
+                    if cookie_file_path:
+                        opts['cookiefile'] = cookie_file_path
+                        print(f"Using cookies with strategy: {strategy['name']}")
+                    
+                    # CRITICAL FIX: Use download=False for info extraction
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(video_url, download=False)
+                    
+                    print(f"Strategy {strategy['name']} successful!")
+                    successful_strategy = strategy['name']
+                    break
+                    
+                except Exception as strategy_error:
+                    extraction_error = strategy_error
+                    print(f"Strategy {strategy['name']} failed: {strategy_error}")
+                    continue
+            
+            if not info:
+                raise Exception(f"All extraction strategies failed. Last error: {extraction_error}")
+        
+            # Process metadata
+            print("Processing video metadata...")
+            transcript_data['metadata'] = {
+                'title': info.get('title', ''),
+                'duration': info.get('duration'),
+                'upload_date': info.get('upload_date'),
+                'uploader': info.get('uploader', ''),
+                'view_count': info.get('view_count'),
+                'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+            }
+            
+            print("Checking available subtitles...")
+            subtitles = info.get('subtitles', {})
+            automatic_captions = info.get('automatic_captions', {})
+            
+            print(f"Manual subtitles: {list(subtitles.keys())[:10]}")
+            print(f"Automatic captions: {list(automatic_captions.keys())[:10]}")
+            
+            # Extract subtitle text
+            subtitle_text = None
+            selected_language = None
+            extraction_method = None
+            
+            # Try manual subtitles first, then automatic
+            subtitle_sources = [
+                ('manual', subtitles),
+                ('automatic', automatic_captions)
+            ]
+            
+            for source_type, subtitle_dict in subtitle_sources:
+                if subtitle_text:
+                    break
+                    
+                for lang in ['en', 'en-US', 'en-GB', 'en-orig']:
+                    if lang in subtitle_dict:
+                        print(f"Found {source_type} subtitles for language: {lang}")
+                        
+                        try:
+                            # Download subtitles separately
+                            download_opts = {
+                                'quiet': True,
+                                'no_warnings': True,
+                                'writesubtitles': source_type == 'manual',
+                                'writeautomaticsub': source_type == 'automatic',
+                                'subtitleslangs': [lang],
+                                'subtitlesformat': 'vtt',
+                                'skip_download': True,
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s'),
+                                'noplaylist': True,
+                            }
+                            
+                            if cookie_file_path:
+                                download_opts['cookiefile'] = cookie_file_path
+                            
+                            print(f"Downloading {source_type} subtitle for {lang}...")
+                            with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                # Download with download=True only for subtitles
+                                sub_ydl.download([video_url])
+                            
+                            # Find subtitle file
+                            all_files = os.listdir(temp_dir)
+                            print(f"Files in temp dir: {all_files}")
+                            
+                            subtitle_files = [f for f in all_files if f.endswith(('.vtt', '.srt'))]
+                            print(f"Subtitle files found: {subtitle_files}")
+                            
+                            if subtitle_files:
+                                subtitle_file = os.path.join(temp_dir, subtitle_files[0])
+                                file_size = os.path.getsize(subtitle_file)
+                                print(f"Processing subtitle file: {subtitle_files[0]} ({file_size} bytes)")
+                                
+                                if file_size > 0:
+                                    with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                        raw_content = f.read()
+                                    
+                                    print(f"Raw content length: {len(raw_content)} chars")
+                                    
+                                    if len(raw_content.strip()) > 0:
+                                        print(f"Content preview: {raw_content[:200]}...")
+                                        
+                                        # Parse the subtitle content
+                                        parsed_text = parse_subtitle_content(raw_content)
+                                        print(f"Parsed text length: {len(parsed_text) if parsed_text else 0} chars")
+                                        
+                                        if parsed_text and len(parsed_text.strip()) > 50:
+                                            subtitle_text = parsed_text
+                                            selected_language = lang
+                                            # Create shorter method name that fits in 50 chars
+                                            extraction_method = create_transcription_method_name(
+                                                source_type[:4], lang, successful_strategy, bool(cookie_file_path)
+                                            )
+                                            print(f"SUCCESS: Subtitle extraction completed! Method: {extraction_method}")
+                                            break
+                                        else:
+                                            print(f"Parsed text too short: {len(parsed_text) if parsed_text else 0}")
+                                    else:
+                                        print("Raw content is empty")
+                                else:
+                                    print("Subtitle file is empty (0 bytes)")
+                            else:
+                                print("No subtitle files found after download")
+                                
+                        except Exception as lang_error:
+                            print(f"Error processing {lang}: {lang_error}")
+                            import traceback
+                            print(f"Lang error traceback: {traceback.format_exc()}")
+                            continue
+                    
+                    if subtitle_text:
+                        break
+                        
+            if subtitle_text and len(subtitle_text.strip()) > 50:
+                transcript_data['text'] = subtitle_text.strip()
+                transcript_data['language'] = selected_language
+                transcript_data['method'] = extraction_method
+                print(f"Final transcript: {len(subtitle_text)} characters")
+            else:
+                raise Exception(f"No valid transcript text extracted. Content length: {len(subtitle_text) if subtitle_text else 0}")
+                
+    finally:
+        # Clean up cookie file
+        if cookie_file_path and os.path.exists(cookie_file_path):
+            try:
+                os.unlink(cookie_file_path)
+            except Exception:
+                pass
+    
+    return transcript_data
+
+    
+def extract_transcript_with_ytdlp_fixed(video_url, video_id, cookies_data=None):
+    """Extract transcript with better exception handling"""
+    
+    if not YT_DLP_AVAILABLE:
+        raise Exception("yt-dlp is not installed. Please install: pip install yt-dlp")
+    
+    transcript_data = {
+        'text': None,
+        'method': None,
+        'language': 'en',
+        'metadata': {}
+    }
+    
+    # Process cookies with fallback to defaults
+    cookies_dict = process_cookies_data(cookies_data)
+    cookie_file_path = None
+    
+    try:
+        cookie_file_path = create_cookie_jar_from_dict(cookies_dict)
+        print(f"Created cookie jar with {len(cookies_dict)} cookies")
+    except Exception as cookie_error:
+        print(f"Cookie processing error: {cookie_error}")
+        pass
+
+    # Use same strategies as before...
+    extraction_strategies = [
+        {
+            'name': 'tv_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['tv_embedded'],
+                    }
+                }
+            }
+        }
+    ]
+
+    extraction_error = None
+    info = None
+    successful_strategy = None
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            print(f"Using temp directory: {temp_dir}")
+            
+            for strategy in extraction_strategies:
+                try:
+                    print(f"Trying strategy: {strategy['name']} for video: {video_id}")
+                    
+                    opts = strategy['opts'].copy()
+                    opts['outtmpl'] = os.path.join(temp_dir, '%(id)s.%(ext)s')
+                    
+                    if cookie_file_path:
+                        opts['cookiefile'] = cookie_file_path
+                        print(f"Using cookies with strategy: {strategy['name']}")
+                    
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(video_url, download=True)
+                    
+                    print(f"Strategy {strategy['name']} successful!")
+                    successful_strategy = strategy['name']
+                    break
+                    
+                except Exception as strategy_error:
+                    extraction_error = strategy_error
+                    print(f"Strategy {strategy['name']} failed: {strategy_error}")
+                    continue
+            
+            if not info:
+                raise Exception("All extraction strategies failed")
+        
+            # Process metadata
+            print("Processing video metadata...")
+            transcript_data['metadata'] = {
+                'title': info.get('title', ''),
+                'duration': info.get('duration'),
+                'upload_date': info.get('upload_date'),
+                'uploader': info.get('uploader', ''),
+                'view_count': info.get('view_count'),
+                'description': info.get('description', '')[:500] + '...' if info.get('description') and len(info.get('description')) > 500 else info.get('description', '')
+            }
+            
+            print("Checking available subtitles...")
+            subtitles = info.get('subtitles', {})
+            automatic_captions = info.get('automatic_captions', {})
+            
+            print(f"Available automatic captions: {list(automatic_captions.keys())[:10]}...")
+            
+            # Extract subtitle text with better error handling
+            subtitle_text = None
+            selected_language = None
+            extraction_method = None
+            
+            try:
+                # Try English captions
+                for lang in ['en', 'en-US', 'en-GB', 'en-orig']:
+                    if lang in automatic_captions:
+                        print(f"Found automatic subtitles for language: {lang}")
+                        
+                        try:
+                            # Setup subtitle download
+                            download_opts = {
+                                'quiet': True,
+                                'no_warnings': True,
+                                'writesubtitles': False,
+                                'writeautomaticsub': True,
+                                'subtitleslangs': [lang],
+                                'subtitlesformat': 'vtt',
+                                'skip_download': True,
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                            }
+                            
+                            if cookie_file_path:
+                                download_opts['cookiefile'] = cookie_file_path
+                            
+                            print(f"Starting subtitle download for {lang}...")
+                            with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                sub_ydl.download([video_url])
+                            print(f"Subtitle download completed for {lang}")
+                            
+                            # List all files and find subtitle
+                            all_files = os.listdir(temp_dir)
+                            print(f"Files after download: {all_files}")
+                            
+                            subtitle_files = [f for f in all_files if f.endswith(('.vtt', '.srt'))]
+                            print(f"Subtitle files found: {subtitle_files}")
+                            
+                            if subtitle_files:
+                                subtitle_file = os.path.join(temp_dir, subtitle_files[0])
+                                file_size = os.path.getsize(subtitle_file)
+                                print(f"Processing subtitle file: {subtitle_files[0]} ({file_size} bytes)")
+                                
+                                if file_size > 0:
+                                    with open(subtitle_file, 'r', encoding='utf-8', errors='ignore') as f:
+                                        raw_content = f.read()
+                                    
+                                    print(f"Raw content length: {len(raw_content)} chars")
+                                    
+                                    if len(raw_content.strip()) > 0:
+                                        # Show first bit of content
+                                        print(f"Content preview: {raw_content[:200]}...")
+                                        
+                                        # Parse the subtitle content
+                                        parsed_text = parse_subtitle_content(raw_content)
+                                        print(f"Parsed text length: {len(parsed_text) if parsed_text else 0} chars")
+                                        
+                                        if parsed_text and len(parsed_text.strip()) > 50:
+                                            subtitle_text = parsed_text
+                                            selected_language = lang
+                                            extraction_method = f'ytdlp_automatic_{lang}_{successful_strategy}_cookies'
+                                            print("SUCCESS: Subtitle extraction completed!")
+                                            break
+                                        else:
+                                            print(f"Parsed text too short: {len(parsed_text) if parsed_text else 0}")
+                                    else:
+                                        print("Raw content is empty")
+                                else:
+                                    print("Subtitle file is empty (0 bytes)")
+                            else:
+                                print("No subtitle files found after download")
+                                
+                        except Exception as lang_error:
+                            print(f"Error processing {lang}: {lang_error}")
+                            import traceback
+                            print(f"Lang error traceback: {traceback.format_exc()}")
+                            continue
+                            
+            except Exception as subtitle_error:
+                print(f"Subtitle extraction error: {subtitle_error}")
+                import traceback
+                print(f"Subtitle error traceback: {traceback.format_exc()}")
+                
+            if subtitle_text and len(subtitle_text.strip()) > 50:
+                transcript_data['text'] = subtitle_text.strip()
+                transcript_data['language'] = selected_language
+                transcript_data['method'] = extraction_method
+                print(f"Final transcript: {len(subtitle_text)} characters")
+            else:
+                raise Exception(f"No valid transcript text extracted. Content length: {len(subtitle_text) if subtitle_text else 0}")
+                
+    finally:
+        # Clean up cookie file
+        if cookie_file_path and os.path.exists(cookie_file_path):
+            try:
+                os.unlink(cookie_file_path)
+            except Exception:
+                pass
+    
+    return transcript_data
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_check_ytdlp_version_and_update(request):
+    """Check yt-dlp version and provide update commands"""
+    try:
+        debug_info = {
+            'yt_dlp_available': YT_DLP_AVAILABLE,
+        }
+        
+        if YT_DLP_AVAILABLE:
+            debug_info['yt_dlp_version'] = yt_dlp.version.__version__
+            
+            # Check if update is available (simplified check)
+            try:
+                result = subprocess.run(['pip', 'show', 'yt-dlp'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    debug_info['pip_info'] = result.stdout
+                    
+                # Try to get latest version info
+                result = subprocess.run(['yt-dlp', '--version'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    debug_info['command_version'] = result.stdout.strip()
+                    
+            except Exception as version_check_error:
+                debug_info['version_check_error'] = str(version_check_error)
+        
+        debug_info['update_commands'] = [
+            'pip install --upgrade yt-dlp',
+            'yt-dlp -U'
+        ]
+        
+        return JsonResponse(debug_info)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'yt_dlp_available': YT_DLP_AVAILABLE
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_test_video_extraction(request):
+    """Test video extraction without saving to database"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        cookies_data = data.get('cookies')
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        print(f"Testing extraction for video ID: {video_id}")
+        
+        # Test basic info extraction only
+        try:
+            transcript_result = extract_transcript_with_ytdlp(youtube_url, video_id, cookies_data)
+            
+            return JsonResponse({
+                'success': True,
+                'video_id': video_id,
+                'title': transcript_result['metadata'].get('title', ''),
+                'duration': transcript_result['metadata'].get('duration'),
+                'transcript_length': len(transcript_result['text']) if transcript_result['text'] else 0,
+                'extraction_method': transcript_result['method'],
+                'language': transcript_result['language'],
+                'text_preview': transcript_result['text'][:300] + '...' if transcript_result['text'] and len(transcript_result['text']) > 300 else transcript_result['text']
+            })
+            
+        except Exception as test_error:
+            return JsonResponse({
+                'success': False,
+                'error': str(test_error),
+                'video_id': video_id,
+                'yt_dlp_version': yt_dlp.version.__version__ if YT_DLP_AVAILABLE else 'not available'
+            })
+            
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+# Keep all your existing endpoints unchanged...
+# Keep all other existing endpoints unchanged...
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_check_transcript_availability(request):
+    """Check if transcript/subtitles are available for a YouTube video using yt-dlp"""
+    try:
+        data = json.loads(request.body)
+        youtube_url = data.get('youtube_url', '').strip()
+        
+        if not youtube_url:
+            return JsonResponse({'error': 'YouTube URL is required'}, status=400)
+        
+        video_id = extract_youtube_video_id_from_url(youtube_url)
+        if not video_id:
+            return JsonResponse({'error': 'Invalid YouTube URL format'}, status=400)
+        
+        if not YT_DLP_AVAILABLE:
+            return JsonResponse({'error': 'yt-dlp not available'}, status=500)
+        
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=False)
+                
+                subtitles = info.get('subtitles', {})
+                automatic_captions = info.get('automatic_captions', {})
+                
+                available_subtitles = []
+                
+                # Process manual subtitles
+                for lang, formats in subtitles.items():
+                    available_subtitles.append({
+                        'language': lang,
+                        'type': 'manual',
+                        'formats_count': len(formats) if isinstance(formats, list) else 1
+                    })
+                
+                # Process automatic captions
+                for lang, formats in automatic_captions.items():
+                    available_subtitles.append({
+                        'language': lang,
+                        'type': 'automatic',
+                        'formats_count': len(formats) if isinstance(formats, list) else 1
+                    })
+                
+                return JsonResponse({
+                    'video_id': video_id,
+                    'video_title': info.get('title', ''),
+                    'has_transcripts': len(available_subtitles) > 0,
+                    'available_subtitles': available_subtitles,
+                    'total_count': len(available_subtitles),
+                    'duration': info.get('duration'),
+                    'uploader': info.get('uploader', '')
+                })
+                
+        except Exception as e:
+            return JsonResponse({
+                'video_id': video_id,
+                'has_transcripts': False,
+                'error': str(e)
+            }, status=400)
+            
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Keep all your existing endpoints (they don't need to change)
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_all_saved_transcripts(request):
+    """Retrieve all saved transcripts with pagination and filtering"""
+    try:
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 10))
+        search_query = request.GET.get('search', '').strip()
+        category_filter = request.GET.get('category', '').strip()
+        country_filter = request.GET.get('country', '').strip()
+        
+        # Build query
+        queryset = SnowAIVideoTranscriptRecord.objects.all()
+        
+        if search_query:
+            queryset = queryset.filter(
+                Q(full_transcript_text__icontains=search_query) |
+                Q(video_title__icontains=search_query) |
+                Q(primary_speaker_name__icontains=search_query)
+            )
+        
+        if category_filter:
+            queryset = queryset.filter(content_category=category_filter)
+            
+        if country_filter:
+            queryset = queryset.filter(
+                Q(speaker_country_code=country_filter) |
+                Q(speaker_country_name__icontains=country_filter)
+            )
+        
+        # Save search history
+        if search_query or category_filter or country_filter:
+            SnowAITranscriptSearchHistory.objects.create(
+                search_query=search_query,
+                search_filters={
+                    'category': category_filter,
+                    'country': country_filter
+                },
+                results_count=queryset.count()
+            )
+        
+        # Paginate results
+        paginator = Paginator(queryset, per_page)
+        page_obj = paginator.get_page(page)
+        
+        transcripts_data = []
+        for transcript in page_obj:
+            transcripts_data.append({
+                'id': transcript.transcript_uuid,
+                'youtube_url': transcript.youtube_url,
+                'video_title': transcript.video_title,
+                'speaker_name': transcript.primary_speaker_name,
+                'country': transcript.speaker_country_name,
+                'category': transcript.content_category,
+                'word_count': transcript.word_count,
+                'duration_seconds': transcript.video_duration_seconds,
+                'created_at': transcript.created_at.isoformat(),
+                'video_upload_date': transcript.video_upload_date.isoformat() if transcript.video_upload_date else None,
+                'transcript_preview': transcript.full_transcript_text[:200] + '...' if len(transcript.full_transcript_text) > 200 else transcript.full_transcript_text
+            })
+        
+        return JsonResponse({
+            'transcripts': transcripts_data,
+            'pagination': {
+                'current_page': page_obj.number,
+                'total_pages': paginator.num_pages,
+                'total_items': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_single_transcript_details(request, transcript_id):
+    """Get detailed view of a single transcript"""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        
+        return JsonResponse({
+            'id': transcript.transcript_uuid,
+            'youtube_url': transcript.youtube_url,
+            'youtube_video_id': transcript.youtube_video_id,
+            'video_title': transcript.video_title,
+            'speaker_name': transcript.primary_speaker_name,
+            'speaker_organization': transcript.speaker_organization,
+            'country_code': transcript.speaker_country_code,
+            'country_name': transcript.speaker_country_name,
+            'full_transcript': transcript.full_transcript_text,
+            'category': transcript.content_category,
+            'word_count': transcript.word_count,
+            'duration_seconds': transcript.video_duration_seconds,
+            'language': transcript.transcript_language,
+            'transcription_method': transcript.transcription_method,
+            'created_at': transcript.created_at.isoformat(),
+            'video_upload_date': transcript.video_upload_date.isoformat() if transcript.video_upload_date else None,
+            'custom_tags': transcript.custom_tags,
+            'economic_topics': transcript.economic_topics
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_transcript_record(request, transcript_id):
+    """Delete a specific transcript record"""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        video_title = transcript.video_title
+        transcript.delete()
+        
+        return JsonResponse({
+            'message': f'Transcript "{video_title}" deleted successfully'
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Debug endpoint for yt-dlp
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_debug_ytdlp_availability(request):
+    """Debug endpoint to test yt-dlp availability and version"""
+    try:
+        debug_info = {
+            'yt_dlp_available': YT_DLP_AVAILABLE,
+        }
+        
+        if YT_DLP_AVAILABLE:
+            debug_info['yt_dlp_version'] = yt_dlp.version.__version__
+            
+            # Test with a known good video (Rick Roll - has captions)
+            test_video_url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+            
+            try:
+                ydl_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'skip_download': True,
+                }
+                
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(test_video_url, download=False)
+                    
+                    debug_info['test_video_info'] = {
+                        'title': info.get('title', ''),
+                        'duration': info.get('duration'),
+                        'has_subtitles': bool(info.get('subtitles')),
+                        'has_automatic_captions': bool(info.get('automatic_captions')),
+                        'subtitle_languages': list(info.get('subtitles', {}).keys()),
+                        'automatic_caption_languages': list(info.get('automatic_captions', {}).keys())
+                    }
+                    debug_info['test_success'] = True
+                    
+            except Exception as e:
+                debug_info['test_success'] = False
+                debug_info['test_error'] = str(e)
+        
+        return JsonResponse(debug_info)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'yt_dlp_available': YT_DLP_AVAILABLE
+        }, status=500)
+        
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_transcript_metadata(request, transcript_id):
+    """Update transcript metadata like speaker info, tags, etc."""
+    try:
+        transcript = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
+        data = json.loads(request.body)
+        
+        # Update allowed fields
+        updateable_fields = [
+            'primary_speaker_name', 'speaker_organization', 'speaker_country_code',
+            'speaker_country_name', 'content_category', 'custom_tags', 'economic_topics'
+        ]
+        
+        for field in updateable_fields:
+            if field in data:
+                setattr(transcript, field, data[field])
+        
+        transcript.save()
+        
+        return JsonResponse({
+            'message': 'Transcript metadata updated successfully'
+        })
+        
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# Additional utility functions you might find useful
+
+@csrf_exempt  
+@require_http_methods(["GET"])
+def snowai_get_transcript_statistics(request):
+    """Get overall statistics about the transcript database"""
+    try:
+        total_transcripts = SnowAIVideoTranscriptRecord.objects.count()
+        total_words = sum(SnowAIVideoTranscriptRecord.objects.values_list('word_count', flat=True))
+        
+        # Category breakdown
+        categories = SnowAIVideoTranscriptRecord.objects.values('content_category').distinct()
+        category_stats = {}
+        for cat in categories:
+            if cat['content_category']:
+                count = SnowAIVideoTranscriptRecord.objects.filter(content_category=cat['content_category']).count()
+                category_stats[cat['content_category']] = count
+        
+        # Country breakdown
+        countries = SnowAIVideoTranscriptRecord.objects.values('speaker_country_name').distinct()
+        country_stats = {}
+        for country in countries:
+            if country['speaker_country_name']:
+                count = SnowAIVideoTranscriptRecord.objects.filter(speaker_country_name=country['speaker_country_name']).count()
+                country_stats[country['speaker_country_name']] = count
+        
+        return JsonResponse({
+            'total_transcripts': total_transcripts,
+            'total_words': total_words,
+            'average_words_per_transcript': total_words / total_transcripts if total_transcripts > 0 else 0,
+            'category_breakdown': category_stats,
+            'country_breakdown': country_stats
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"]) 
+def snowai_export_transcripts_csv(request):
+    """Export transcripts to CSV format"""
+    import csv
+    from django.http import HttpResponse
+    
+    try:
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="snowai_transcripts_export.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            'ID', 'Video Title', 'Speaker Name', 'Country', 'Category', 
+            'Word Count', 'Duration (seconds)', 'YouTube URL', 'Created At', 'Transcript Text'
+        ])
+        
+        transcripts = SnowAIVideoTranscriptRecord.objects.all()
+        for transcript in transcripts:
+            writer.writerow([
+                transcript.transcript_uuid,
+                transcript.video_title or '',
+                transcript.primary_speaker_name or '',
+                transcript.speaker_country_name or '',
+                transcript.content_category or '',
+                transcript.word_count,
+                transcript.video_duration_seconds or 0,
+                transcript.youtube_url or '',
+                transcript.created_at.isoformat(),
+                transcript.full_transcript_text[:1000] + '...' if len(transcript.full_transcript_text) > 1000 else transcript.full_transcript_text
+            ])
+        
+        return response
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+
+# views.py (add these to your existing views)
+
+import json
+import time
+import uuid
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.shortcuts import get_object_or_404
+from django.core.paginator import Paginator
+from django.db.models import Q
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_transcript_analysis_dashboard_data_endpoint(request):
+    """Get dashboard data for transcript analysis overview"""
+    try:
+        # Get basic stats
+        total_transcripts = SnowAIVideoTranscriptRecord.objects.count()
+        analyzed_transcripts = SnowAIVideoTranscriptRecord.objects.filter(ai_analysis__isnull=False).count()
+        pending_analysis = total_transcripts - analyzed_transcripts
+        
+        # Get recent transcripts with analysis status
+        transcripts = SnowAIVideoTranscriptRecord.objects.select_related('ai_analysis').order_by('-created_at')[:50]
+        
+        transcript_data = []
+        for transcript in transcripts:
+            has_analysis = hasattr(transcript, 'ai_analysis') and transcript.ai_analysis is not None
+            transcript_data.append({
+                'transcript_uuid': transcript.transcript_uuid,
+                'video_title': transcript.video_title or 'Untitled',
+                'primary_speaker_name': transcript.primary_speaker_name or 'Unknown',
+                'speaker_organization': transcript.speaker_organization or 'N/A',
+                'created_at': transcript.created_at.isoformat() if transcript.created_at else None,
+                'word_count': transcript.word_count,
+                'has_analysis': has_analysis,
+                'analysis_sentiment': transcript.ai_analysis.overall_sentiment if has_analysis else None,
+                'analysis_created_at': transcript.ai_analysis.analysis_created_at.isoformat() if has_analysis else None,
+                'key_insights_count': transcript.ai_analysis.key_insights_count if has_analysis else 0
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'stats': {
+                    'total_transcripts': total_transcripts,
+                    'analyzed_transcripts': analyzed_transcripts,
+                    'pending_analysis': pending_analysis,
+                    'analysis_completion_rate': (analyzed_transcripts / total_transcripts * 100) if total_transcripts > 0 else 0
+                },
+                'transcripts': transcript_data
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trigger_transcript_analysis_endpoint(request):
+    """Trigger AI analysis for a specific transcript"""
+    try:
+        data = json.loads(request.body)
+        transcript_uuid = data.get('transcript_uuid')
+        
+        if not transcript_uuid:
+            return JsonResponse({'success': False, 'error': 'transcript_uuid is required'}, status=400)
+        
+        transcript = get_object_or_404(SnowAIVideoTranscriptRecord, transcript_uuid=transcript_uuid)
+        
+        # Check if analysis already exists
+        if hasattr(transcript, 'ai_analysis') and transcript.ai_analysis is not None:
+            return JsonResponse({
+                'success': False, 
+                'error': 'Analysis already exists for this transcript. Delete existing analysis first to re-analyze.',
+                'existing_analysis_uuid': transcript.ai_analysis.analysis_uuid
+            }, status=400)
+        
+        # Start timing the analysis
+        start_time = time.time()
+        
+        # Create the AI analysis prompt
+        analysis_prompt = f"""
+        Analyze the following speech transcript from {transcript.primary_speaker_name or 'Unknown Speaker'} 
+        from {transcript.speaker_organization or 'Unknown Organization'}. 
+        
+        Video Title: {transcript.video_title or 'Untitled'}
+        Speaker: {transcript.primary_speaker_name or 'Unknown'}
+        Organization: {transcript.speaker_organization or 'N/A'}
+        
+        Transcript Text:
+        {transcript.full_transcript_text}
+        
+        Please provide a comprehensive economic and financial analysis in JSON format with the following structure:
+        {{
+            "executive_summary": "A comprehensive 3-4 paragraph summary of the key points",
+            "key_themes": ["theme1", "theme2", "theme3"],
+            "economic_opportunities": [
+                {{"opportunity": "Description of opportunity", "confidence": 0.8, "timeframe": "short_term/medium_term/long_term"}}
+            ],
+            "economic_risks": [
+                {{"risk": "Description of risk", "impact_level": "low/medium/high", "probability": 0.7}}
+            ],
+            "policy_implications": [
+                {{"implication": "Policy implication description", "timeframe": "short_term/medium_term/long_term", "sector": "monetary/fiscal/regulatory"}}
+            ],
+            "overall_sentiment": "positive/negative/neutral/mixed",
+            "sentiment_confidence": 0.85,
+            "market_outlook": "bullish/bearish/neutral/uncertain",
+            "inflation_mentions": {{"current": "value if mentioned", "target": "value if mentioned", "forecast": "value if mentioned"}},
+            "interest_rate_mentions": {{"current": "value if mentioned", "next_meeting": "decision if mentioned", "forecast": "value if mentioned"}},
+            "gdp_mentions": {{"current": "value if mentioned", "forecast": "value if mentioned"}},
+            "unemployment_mentions": {{"current": "value if mentioned", "forecast": "value if mentioned"}},
+            "policy_actions_suggested": ["action1", "action2"],
+            "market_predictions": [
+                {{"prediction": "Prediction description", "timeframe": "1_month/3_months/6_months/1_year", "confidence": 0.6}}
+            ],
+            "analysis_completeness_score": 0.9
+        }}
+        
+        Ensure all confidence scores are between 0 and 1. If specific economic metrics aren't mentioned, leave those objects empty. Focus on extracting actionable insights and concrete predictions where possible.
+        """
+        
+        # Get AI analysis
+        ai_response = chat_gpt(analysis_prompt)
+        
+        # Try to parse the JSON response
+        try:
+            analysis_data = json.loads(ai_response)
+        except json.JSONDecodeError:
+            # If direct parsing fails, try to extract JSON from the response
+            import re
+            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+            if json_match:
+                analysis_data = json.loads(json_match.group())
+            else:
+                return JsonResponse({'success': False, 'error': 'Failed to parse AI response as JSON'}, status=500)
+        
+        # Calculate analysis duration
+        analysis_duration = time.time() - start_time
+        
+        # Create the analysis record
+        analysis = SnowAITranscriptAnalysis.objects.create(
+            transcript=transcript,
+            analysis_uuid=str(uuid.uuid4()),
+            executive_summary=analysis_data.get('executive_summary', ''),
+            key_themes=analysis_data.get('key_themes', []),
+            economic_opportunities=analysis_data.get('economic_opportunities', []),
+            economic_risks=analysis_data.get('economic_risks', []),
+            policy_implications=analysis_data.get('policy_implications', []),
+            overall_sentiment=analysis_data.get('overall_sentiment', 'neutral'),
+            sentiment_confidence=analysis_data.get('sentiment_confidence', 0.0),
+            market_outlook=analysis_data.get('market_outlook', 'neutral'),
+            inflation_mentions=analysis_data.get('inflation_mentions', {}),
+            interest_rate_mentions=analysis_data.get('interest_rate_mentions', {}),
+            gdp_mentions=analysis_data.get('gdp_mentions', {}),
+            unemployment_mentions=analysis_data.get('unemployment_mentions', {}),
+            policy_actions_suggested=analysis_data.get('policy_actions_suggested', []),
+            market_predictions=analysis_data.get('market_predictions', []),
+            analysis_duration_seconds=analysis_duration,
+            analysis_completeness_score=analysis_data.get('analysis_completeness_score', 0.0)
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'analysis_uuid': analysis.analysis_uuid,
+                'executive_summary': analysis.executive_summary,
+                'overall_sentiment': analysis.overall_sentiment,
+                'key_insights_count': analysis.key_insights_count,
+                'analysis_duration': analysis_duration
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_transcript_analysis_details_endpoint(request, transcript_uuid):
+    """Get detailed analysis for a specific transcript"""
+    try:
+        transcript = get_object_or_404(SnowAIVideoTranscriptRecord, transcript_uuid=transcript_uuid)
+        
+        if not hasattr(transcript, 'ai_analysis') or transcript.ai_analysis is None:
+            return JsonResponse({'success': False, 'error': 'No analysis found for this transcript'}, status=404)
+        
+        analysis = transcript.ai_analysis
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'transcript_info': {
+                    'transcript_uuid': transcript.transcript_uuid,
+                    'video_title': transcript.video_title,
+                    'primary_speaker_name': transcript.primary_speaker_name,
+                    'speaker_organization': transcript.speaker_organization,
+                    'word_count': transcript.word_count,
+                    'created_at': transcript.created_at.isoformat() if transcript.created_at else None
+                },
+                'analysis': {
+                    'analysis_uuid': analysis.analysis_uuid,
+                    'executive_summary': analysis.executive_summary,
+                    'key_themes': analysis.key_themes,
+                    'economic_opportunities': analysis.economic_opportunities,
+                    'economic_risks': analysis.economic_risks,
+                    'policy_implications': analysis.policy_implications,
+                    'overall_sentiment': analysis.overall_sentiment,
+                    'sentiment_confidence': analysis.sentiment_confidence,
+                    'market_outlook': analysis.market_outlook,
+                    'inflation_mentions': analysis.inflation_mentions,
+                    'interest_rate_mentions': analysis.interest_rate_mentions,
+                    'gdp_mentions': analysis.gdp_mentions,
+                    'unemployment_mentions': analysis.unemployment_mentions,
+                    'policy_actions_suggested': analysis.policy_actions_suggested,
+                    'market_predictions': analysis.market_predictions,
+                    'key_insights_count': analysis.key_insights_count,
+                    'analysis_completeness_score': analysis.analysis_completeness_score,
+                    'analysis_created_at': analysis.analysis_created_at.isoformat()
+                }
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_transcript_analysis_endpoint(request, analysis_uuid):
+    """Delete an analysis"""
+    try:
+        analysis = get_object_or_404(SnowAITranscriptAnalysis, analysis_uuid=analysis_uuid)
+        transcript_uuid = analysis.transcript.transcript_uuid
+        analysis.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Analysis deleted successfully',
+            'transcript_uuid': transcript_uuid
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def snowai_fetch_market_ohlc_data(request):
+    """
+    Fetch OHLC market data using yfinance
+    Endpoint: /api/snowai-market-ohlc/
+    
+    Parameters:
+    - symbol: Asset symbol (e.g., AAPL, EURUSD=X, GC=F)
+    - interval: Timeframe (1m, 5m, 15m, 1h, 4h, 1d, 1wk)
+    - period: Data period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, max)
+    """
+    try:
+        # Get parameters
+        if request.method == 'POST':
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            interval = data.get('interval', '1h')
+            period = data.get('period', '1mo')
+        else:
+            symbol = request.GET.get('symbol')
+            interval = request.GET.get('interval', '1h')
+            period = request.GET.get('period', '1mo')
+        
+        if not symbol:
+            return JsonResponse({
+                'error': 'Symbol parameter is required'
+            }, status=400)
+        
+        # Map frontend intervals to yfinance intervals
+        interval_mapping = {
+            '1m': '1m',
+            '5m': '5m',
+            '15m': '15m',
+            '1h': '1h',
+            '4h': '4h',
+            '1d': '1d',
+            '1w': '1wk'
+        }
+        
+        yf_interval = interval_mapping.get(interval, '1h')
+        
+        # Fetch data from yfinance
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period=period, interval=yf_interval)
+        
+        if df.empty:
+            return JsonResponse({
+                'error': f'No data available for {symbol}',
+                'symbol': symbol
+            }, status=404)
+        
+        # Convert DataFrame to list of OHLC dictionaries
+        data = []
+        for index, row in df.iterrows():
+            # Convert timezone-aware datetime to Unix timestamp
+            timestamp = int(index.timestamp())
+            
+            data.append({
+                'time': timestamp,
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close']),
+                'volume': float(row['Volume']) if 'Volume' in row else 0
+            })
+        
+        # Sort by time
+        data.sort(key=lambda x: x['time'])
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'interval': interval,
+            'period': period,
+            'data_points': len(data),
+            'data': data,
+            'source': 'yfinance',
+            'first_date': datetime.fromtimestamp(data[0]['time']).isoformat() if data else None,
+            'last_date': datetime.fromtimestamp(data[-1]['time']).isoformat() if data else None
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'symbol': symbol if 'symbol' in locals() else 'unknown'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_latest_ai_council_discussion_for_livingston(request):
+    """Fetch the most recent AI Trading Council Discussion for Livingston AI assistant"""
+    try:
+        latest_discussion = AITradingCouncilConversation.objects.filter(
+            status='completed'
+        ).order_by('-created_at').first()
+        
+        # Fetch ALL transcript analyses - only the fields we need
+        all_analyses = SnowAITranscriptAnalysis.objects.select_related(
+            'transcript'
+        ).order_by('-analysis_created_at')
+        
+        transcript_insights = []
+        for analysis in all_analyses:
+            transcript_insights.append({
+                'executive_summary': analysis.executive_summary,
+                'key_themes': analysis.key_themes,
+                'speaker_name': analysis.transcript.primary_speaker_name,
+                'country_code': analysis.transcript.speaker_country_code,
+            })
+        
+        if not latest_discussion:
+            return JsonResponse({
+                'success': True,
+                'has_discussion': False,
+                'message': 'No completed discussions found',
+                'has_transcript_insights': len(transcript_insights) > 0,
+                'transcript_insights': transcript_insights,
+                'transcript_insights_count': len(transcript_insights)
+            })
+        
+        discussion_context = {
+            'conversation_id': latest_discussion.conversation_id,
+            'title': latest_discussion.title,
+            'created_at': latest_discussion.created_at.isoformat(),
+            'participating_assets': latest_discussion.participating_assets,
+            'total_participants': latest_discussion.total_participants,
+            'conversation_summary': latest_discussion.conversation_summary,
+            'overall_economic_outlook': latest_discussion.overall_economic_outlook,
+            'global_market_sentiment': latest_discussion.global_market_sentiment,
+            'market_volatility_level': latest_discussion.market_volatility_level,
+            'major_economic_themes': latest_discussion.major_economic_themes,
+            'currency_strength_rankings': latest_discussion.currency_strength_rankings,
+            'risk_factors_identified': latest_discussion.risk_factors_identified,
+            'opportunity_areas': latest_discussion.opportunity_areas,
+            'bullish_sentiment_count': latest_discussion.bullish_sentiment_count,
+            'bearish_sentiment_count': latest_discussion.bearish_sentiment_count,
+            'neutral_sentiment_count': latest_discussion.neutral_sentiment_count,
+            'average_confidence_score': latest_discussion.average_confidence_score,
+            'dominant_sentiment': latest_discussion.get_dominant_sentiment(),
+            'conversation_turns_count': latest_discussion.get_conversation_turns_count(),
+            'full_conversation': latest_discussion.conversation_data
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'has_discussion': True,
+            'discussion': discussion_context,
+            'has_transcript_insights': len(transcript_insights) > 0,
+            'transcript_insights': transcript_insights,
+            'transcript_insights_count': len(transcript_insights)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_fetch_time_separators(request):
+    """
+    Fetch week and month separator timestamps for chart visualization
+    Endpoint: /api/snowai-time-separators/
+    
+    Parameters:
+    - symbol: Asset symbol (e.g., AAPL, EURUSD=X, GC=F)
+    - period: Data period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, max)
+    """
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        period = data.get('period', '1y')
+        
+        if not symbol:
+            return JsonResponse({
+                'error': 'Symbol parameter is required'
+            }, status=400)
+        
+        # Fetch weekly data
+        ticker = yf.Ticker(symbol)
+        weekly_df = ticker.history(period=period, interval='1wk')
+        monthly_df = ticker.history(period=period, interval='1mo')
+        
+        if weekly_df.empty and monthly_df.empty:
+            return JsonResponse({
+                'error': f'No data available for {symbol}',
+                'symbol': symbol
+            }, status=404)
+        
+        # Extract week start timestamps
+        week_starts = []
+        if not weekly_df.empty:
+            for index in weekly_df.index:
+                timestamp = int(index.timestamp())
+                week_starts.append(timestamp)
+        
+        # Extract month start timestamps
+        month_starts = []
+        if not monthly_df.empty:
+            for index in monthly_df.index:
+                timestamp = int(index.timestamp())
+                month_starts.append(timestamp)
+        
+        # Sort timestamps
+        week_starts.sort()
+        month_starts.sort()
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'period': period,
+            'week_starts': week_starts,
+            'month_starts': month_starts,
+            'week_count': len(week_starts),
+            'month_count': len(month_starts)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'symbol': symbol if 'symbol' in locals() else 'unknown'
+        }, status=500)
+
+
+import numpy as np
+from scipy.stats import pearsonr
+
+# ============================================================================
+# ASSET TICKER MAPPINGS - ADDED STOCKS SECTION (20 major stocks)
+# ============================================================================
+ASSET_TICKERS = {
+    'forex': {
+        'EURUSD': 'EURUSD=X',
+        'GBPUSD': 'GBPUSD=X',
+        'USDJPY': 'USDJPY=X',
+        'USDCHF': 'USDCHF=X',
+        'AUDUSD': 'AUDUSD=X',
+        'NZDUSD': 'NZDUSD=X',
+        'USDCAD': 'USDCAD=X',
+        'DXY': 'DX-Y.NYB'
+    },
+    'bonds': {
+        'US30Y': 'ZB=F',
+        'US10Y': '^TNX',
+        'US5Y': '^FVX',
+        'US2Y': '^IRX',
+        'German 10Y': '^TNX',
+        'UK 10Y': '^TNX'
+    },
+    'commodities': {
+        'Gold': 'GC=F',
+        'Silver': 'SI=F',
+        'Crude Oil': 'CL=F',
+        'Copper': 'HG=F',
+        'Natural Gas': 'NG=F',
+        'Platinum': 'PL=F'
+    },
+    'indices': {
+        'S&P 500': '^GSPC',
+        'Nasdaq': '^IXIC',
+        'Dow Jones': '^DJI',
+        'Russell 2000': '^RUT',
+        'VIX': '^VIX',
+        'FTSE 100': '^FTSE',
+        'DAX': '^GDAXI',
+        'Nikkei': '^N225'
+    },
+    # ========== NEW: STOCKS SECTION ==========
+    'stocks': {
+        'Apple': 'AAPL',
+        'Microsoft': 'MSFT',
+        'Amazon': 'AMZN',
+        'Google': 'GOOGL',
+        'Tesla': 'TSLA',
+        'NVIDIA': 'NVDA',
+        'Meta': 'META',
+        'Berkshire': 'BRK-B',
+        'JPMorgan': 'JPM',
+        'Visa': 'V',
+        'Johnson & Johnson': 'JNJ',
+        'Walmart': 'WMT',
+        'Exxon Mobil': 'XOM',
+        'Procter & Gamble': 'PG',
+        'Mastercard': 'MA',
+        'Home Depot': 'HD',
+        'Chevron': 'CVX',
+        'Pfizer': 'PFE',
+        'Coca-Cola': 'KO',
+        'Boeing': 'BA'
+    }
+}
+
+def calculate_correlation(ticker1, ticker2, period='3mo'):
+    """Calculate correlation between two assets"""
+    try:
+        stock1 = yf.Ticker(ticker1)
+        stock2 = yf.Ticker(ticker2)
+        
+        hist1 = stock1.history(period=period)
+        hist2 = stock2.history(period=period)
+        
+        if hist1.empty or hist2.empty:
+            return None
+        
+        # Align the data by date
+        df1 = hist1['Close'].pct_change().dropna()
+        df2 = hist2['Close'].pct_change().dropna()
+        
+        # Find common dates
+        common_dates = df1.index.intersection(df2.index)
+        
+        if len(common_dates) < 20:  # Need at least 20 data points
+            return None
+        
+        returns1 = df1.loc[common_dates]
+        returns2 = df2.loc[common_dates]
+        
+        correlation, p_value = pearsonr(returns1, returns2)
+        
+        return {
+            'correlation': round(correlation, 3),
+            'p_value': round(p_value, 4),
+            'significant': p_value < 0.05
+        }
+    except Exception as e:
+        print(f"Error calculating correlation: {str(e)}")
+        return None
+
+# ============================================================================
+# GENERATE INTERMARKET INSIGHTS - ADDED STOCKS SECTION
+# ============================================================================
+def generate_intermarket_insights(asset_class, asset_data):
+    """Generate trading insights based on intermarket analysis"""
+    insights = []
+    
+    try:
+        # Get DXY (Dollar Index) data
+        dxy_changes = calculate_price_changes(ASSET_TICKERS['forex']['DXY'])
+        
+        # Get Gold data
+        gold_changes = calculate_price_changes(ASSET_TICKERS['commodities']['Gold'])
+        
+        # Get US10Y data
+        us10y_changes = calculate_price_changes(ASSET_TICKERS['bonds']['US10Y'])
+        
+        # Get VIX data
+        vix_changes = calculate_price_changes(ASSET_TICKERS['indices']['VIX'])
+        
+        # Forex-specific insights
+        if asset_class == 'forex':
+            if dxy_changes and dxy_changes.get('1d', {}).get('percent'):
+                dxy_daily = dxy_changes['1d']['percent']
+                
+                if dxy_daily < -0.5:
+                    insights.append({
+                        'type': 'bullish',
+                        'message': f'USD Index down {abs(dxy_daily):.2f}% today. Consider long positions on EURUSD, GBPUSD, AUDUSD.',
+                        'strength': 'moderate' if abs(dxy_daily) < 1 else 'strong'
+                    })
+                elif dxy_daily > 0.5:
+                    insights.append({
+                        'type': 'bearish',
+                        'message': f'USD Index up {dxy_daily:.2f}% today. Consider short positions on EUR/GBP pairs or long USDJPY.',
+                        'strength': 'moderate' if dxy_daily < 1 else 'strong'
+                    })
+            
+            if gold_changes and gold_changes.get('1wk', {}).get('percent'):
+                gold_weekly = gold_changes['1wk']['percent']
+                if gold_weekly > 2:
+                    insights.append({
+                        'type': 'bullish',
+                        'message': f'Gold up {gold_weekly:.2f}% this week. Risk-off sentiment may support safe-haven currencies like JPY, CHF.',
+                        'strength': 'moderate'
+                    })
+        
+        # Commodities insights
+        elif asset_class == 'commodities':
+            if dxy_changes:
+                dxy_monthly = dxy_changes.get('1mo', {}).get('percent', 0)
+                if abs(dxy_monthly) > 2:
+                    direction = 'inverse' if dxy_monthly > 0 else 'positive'
+                    insights.append({
+                        'type': 'correlation',
+                        'message': f'USD Index {dxy_monthly:+.2f}% this month. Typically {direction} correlation with commodities.',
+                        'strength': 'strong' if abs(dxy_monthly) > 4 else 'moderate'
+                    })
+            
+            if us10y_changes:
+                yield_monthly = us10y_changes.get('1mo', {}).get('percent', 0)
+                if abs(yield_monthly) > 5:
+                    insights.append({
+                        'type': 'info',
+                        'message': f'10Y Yields {yield_monthly:+.2f}% this month. Rising yields typically pressure Gold/Silver.',
+                        'strength': 'moderate'
+                    })
+        
+        # Bonds insights
+        elif asset_class == 'bonds':
+            if vix_changes:
+                vix_weekly = vix_changes.get('1wk', {}).get('percent', 0)
+                if vix_weekly > 10:
+                    insights.append({
+                        'type': 'bullish',
+                        'message': f'VIX up {vix_weekly:.2f}% this week. Flight to safety may boost bond prices (lower yields).',
+                        'strength': 'strong'
+                    })
+            
+            # Check yield curve
+            us10y_curr = us10y_changes.get('current_price', 0)
+            us2y_changes = calculate_price_changes(ASSET_TICKERS['bonds']['US2Y'])
+            us2y_curr = us2y_changes.get('current_price', 0) if us2y_changes else 0
+            
+            if us10y_curr and us2y_curr:
+                spread = us10y_curr - us2y_curr
+                if spread < 0:
+                    insights.append({
+                        'type': 'warning',
+                        'message': f'Inverted yield curve detected (spread: {spread:.2f}%). Historically indicates recession risk.',
+                        'strength': 'strong'
+                    })
+                elif spread > 2:
+                    insights.append({
+                        'type': 'info',
+                        'message': f'Steep yield curve (spread: {spread:.2f}%). Typically indicates strong growth expectations.',
+                        'strength': 'moderate'
+                    })
+        
+        # Indices insights
+        elif asset_class == 'indices':
+            if us10y_changes:
+                yield_weekly = us10y_changes.get('1wk', {}).get('percent', 0)
+                if yield_weekly > 3:
+                    insights.append({
+                        'type': 'bearish',
+                        'message': f'10Y yields surging (+{yield_weekly:.2f}% weekly). May pressure equity valuations.',
+                        'strength': 'moderate'
+                    })
+            
+            if vix_changes:
+                vix_curr = vix_changes.get('current_price', 0)
+                if vix_curr > 25:
+                    insights.append({
+                        'type': 'warning',
+                        'message': f'VIX elevated at {vix_curr:.2f}. High volatility environment - exercise caution.',
+                        'strength': 'strong'
+                    })
+                elif vix_curr < 15:
+                    insights.append({
+                        'type': 'info',
+                        'message': f'VIX low at {vix_curr:.2f}. Low volatility may indicate complacency or stable conditions.',
+                        'strength': 'moderate'
+                    })
+        
+        # ========== NEW: STOCKS INSIGHTS ==========
+        elif asset_class == 'stocks':
+            if vix_changes:
+                vix_curr = vix_changes.get('current_price', 0)
+                vix_weekly = vix_changes.get('1wk', {}).get('percent', 0)
+                
+                if vix_curr > 25:
+                    insights.append({
+                        'type': 'warning',
+                        'message': f'VIX at {vix_curr:.2f}. Expect increased stock volatility. Consider defensive positions or hedges.',
+                        'strength': 'strong'
+                    })
+                elif vix_weekly > 20:
+                    insights.append({
+                        'type': 'caution',
+                        'message': f'VIX spiking +{vix_weekly:.2f}% this week. Market uncertainty rising - volatility ahead.',
+                        'strength': 'moderate'
+                    })
+            
+            if us10y_changes:
+                yield_curr = us10y_changes.get('current_price', 0)
+                yield_monthly = us10y_changes.get('1mo', {}).get('percent', 0)
+                
+                if yield_curr > 4.5:
+                    insights.append({
+                        'type': 'bearish',
+                        'message': f'10Y yields at {yield_curr:.2f}%. High rates pressure growth stocks and valuations.',
+                        'strength': 'moderate'
+                    })
+                elif yield_monthly > 10:
+                    insights.append({
+                        'type': 'warning',
+                        'message': f'Yields surging +{yield_monthly:.2f}% monthly. Tech/growth sectors most vulnerable.',
+                        'strength': 'strong'
+                    })
+            
+            if dxy_changes:
+                dxy_monthly = dxy_changes.get('1mo', {}).get('percent', 0)
+                if dxy_monthly > 3:
+                    insights.append({
+                        'type': 'info',
+                        'message': f'Strong USD (+{dxy_monthly:.2f}% monthly) may pressure multinational earnings and export-heavy stocks.',
+                        'strength': 'moderate'
+                    })
+            
+            # Check tech correlation with Nasdaq
+            nasdaq_changes = calculate_price_changes(ASSET_TICKERS['indices']['Nasdaq'])
+            if nasdaq_changes:
+                nasdaq_daily = nasdaq_changes.get('1d', {}).get('percent', 0)
+                if abs(nasdaq_daily) > 2:
+                    direction = 'rallying' if nasdaq_daily > 0 else 'selling off'
+                    insights.append({
+                        'type': 'info',
+                        'message': f'Nasdaq {direction} {abs(nasdaq_daily):.2f}% today. Tech stocks showing strong directional movement.',
+                        'strength': 'moderate' if abs(nasdaq_daily) < 3 else 'strong'
+                    })
+        
+    except Exception as e:
+        print(f"Error generating insights: {str(e)}")
+    
+    return insights
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_asset_correlation_calculate_correlations(request):
+    """Calculate correlations between selected assets"""
+    try:
+        data = json.loads(request.body)
+        asset_class = data.get('asset_class', 'forex')
+        period = data.get('period', '3mo')
+        
+        if asset_class not in ASSET_TICKERS:
+            return JsonResponse({'error': 'Invalid asset class'}, status=400)
+        
+        assets = ASSET_TICKERS[asset_class]
+        correlations = []
+        
+        # Calculate correlations between all pairs
+        asset_list = list(assets.items())
+        for i in range(len(asset_list)):
+            for j in range(i + 1, len(asset_list)):
+                name1, ticker1 = asset_list[i]
+                name2, ticker2 = asset_list[j]
+                
+                corr_data = calculate_correlation(ticker1, ticker2, period)
+                
+                if corr_data:
+                    correlations.append({
+                        'asset1': name1,
+                        'asset2': name2,
+                        'correlation': corr_data['correlation'],
+                        'significant': corr_data['significant']
+                    })
+        
+        # Sort by absolute correlation value
+        correlations.sort(key=lambda x: abs(x['correlation']), reverse=True)
+        
+        return JsonResponse({
+            'success': True,
+            'correlations': correlations,
+            'period': period,
+            'asset_class': asset_class
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_asset_correlation_get_all_classes(request):
+    """Get available asset classes"""
+    return JsonResponse({
+        'success': True,
+        'asset_classes': list(ASSET_TICKERS.keys())
+    })
+
+
+def calculate_price_changes(ticker, periods=['1d', '1wk', '1mo', '3mo']):
+    """Calculate price changes for different periods"""
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period='6mo')
+        
+        if hist.empty:
+            return None
+        
+        current_price = hist['Close'].iloc[-1]
+        changes = {'current_price': round(current_price, 4)}
+        
+        period_days = {
+            '1d': 1,
+            '1wk': 5,
+            '1mo': 21,
+            '3mo': 63
+        }
+        
+        for period, days in period_days.items():
+            if len(hist) > days:
+                past_price = hist['Close'].iloc[-(days + 1)]
+                change_pct = ((current_price - past_price) / past_price) * 100
+                change_abs = current_price - past_price
+                changes[period] = {
+                    'percent': round(change_pct, 2),
+                    'absolute': round(change_abs, 4),
+                    'past_price': round(past_price, 4)
+                }
+            else:
+                changes[period] = None
+        
+        return changes
+    except Exception as e:
+        print(f"Error calculating changes for {ticker}: {str(e)}")
+        return None
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_asset_correlation_get_data(request):
+    """Get asset price changes and correlation data"""
+    try:
+        asset_class = request.GET.get('asset_class', 'forex')
+        
+        if asset_class not in ASSET_TICKERS:
+            return JsonResponse({'error': 'Invalid asset class'}, status=400)
+        
+        assets = ASSET_TICKERS[asset_class]
+        result = {}
+        
+        for name, ticker in assets.items():
+            changes = calculate_price_changes(ticker)
+            if changes:
+                result[name] = changes
+        
+        return JsonResponse({
+            'success': True,
+            'asset_class': asset_class,
+            'data': result,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_intermarket_council_driven_asset_sentiment_analysis_v2(request):
+    """
+    Get AI-powered sentiment analysis for a specific asset based on latest AI Trading Council discussion
+    Very unique name to avoid conflicts in large codebase
+    """
+    try:
+        data = json.loads(request.body)
+        asset_name = data.get('asset_name')
+        asset_class = data.get('asset_class')
+        all_asset_movements = data.get('all_asset_movements', {})
+        openai_api_key = data.get('openai_api_key')
+        
+        if not asset_name or not asset_class:
+            return JsonResponse({'error': 'Asset name and class required'}, status=400)
+        
+        # Get the most recent AI Trading Council conversation
+        latest_council = AITradingCouncilConversation.objects.filter(
+            status='completed'
+        ).order_by('-created_at').first()
+        
+        if not latest_council:
+            return JsonResponse({
+                'error': 'No completed AI Trading Council discussions found'
+            }, status=404)
+        
+        # Prepare council summary
+        council_summary = {
+            'economic_outlook': latest_council.overall_economic_outlook,
+            'market_sentiment': latest_council.global_market_sentiment,
+            'volatility': latest_council.market_volatility_level,
+            'major_themes': latest_council.major_economic_themes,
+            'risk_factors': latest_council.risk_factors_identified,
+            'opportunities': latest_council.opportunity_areas,
+            'summary': latest_council.conversation_summary,
+            'timestamp': latest_council.created_at.isoformat()
+        }
+        
+        # Format all asset movements for context
+        movements_text = "\n".join([
+            f"{name}: Current ${info.get('current_price', 'N/A')}, "
+            f"Daily: {info.get('1d', {}).get('percent', 'N/A')}%, "
+            f"Weekly: {info.get('1wk', {}).get('percent', 'N/A')}%, "
+            f"Monthly: {info.get('1mo', {}).get('percent', 'N/A')}%"
+            for name, info in all_asset_movements.items()
+        ])
+        
+        # Create AI prompt
+        prompt = f"""You are a financial analyst. Based on the latest AI Trading Council discussion and current market movements, provide a sentiment analysis for {asset_name}.
+
+AI Trading Council Summary (MOST RECENT):
+- Economic Outlook: {council_summary['economic_outlook']}
+- Market Sentiment: {council_summary['market_sentiment']}
+- Volatility Level: {council_summary['volatility']}
+- Major Themes: {', '.join(council_summary['major_themes'][:5]) if council_summary['major_themes'] else 'None'}
+- Key Risks: {', '.join(council_summary['risk_factors'][:3]) if council_summary['risk_factors'] else 'None'}
+
+Current Market Movements:
+{movements_text}
+
+Provide analysis in this EXACT format:
+SENTIMENT: [bullish/bearish/neutral]
+CONFIDENCE: [number between 0-100]
+REASONING: [2-3 sentences explaining why, referencing the council discussion and current movements]
+
+Be specific and actionable. Reference the council's insights."""
+
+        # Call OpenAI API
+        import requests
+        response = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {openai_api_key}'
+            },
+            json={
+                'model': 'gpt-4o-mini',
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 250,
+                'temperature': 0.7
+            }
+        )
+        
+        ai_response = response.json()
+        analysis_text = ai_response['choices'][0]['message']['content'].strip()
+        
+        # Parse the response
+        lines = analysis_text.split('\n')
+        sentiment = 'neutral'
+        confidence = 50
+        reasoning = ''
+        
+        for line in lines:
+            if line.startswith('SENTIMENT:'):
+                sentiment = line.split(':', 1)[1].strip().lower()
+            elif line.startswith('CONFIDENCE:'):
+                try:
+                    confidence = int(''.join(filter(str.isdigit, line.split(':', 1)[1])))
+                except:
+                    confidence = 50
+            elif line.startswith('REASONING:'):
+                reasoning = line.split(':', 1)[1].strip()
+        
+        # Ensure valid sentiment
+        if sentiment not in ['bullish', 'bearish', 'neutral']:
+            sentiment = 'neutral'
+        
+        return JsonResponse({
+            'success': True,
+            'asset_name': asset_name,
+            'sentiment': sentiment,
+            'confidence': confidence,
+            'reasoning': reasoning,
+            'council_reference': {
+                'discussion_id': latest_council.conversation_id,
+                'timestamp': council_summary['timestamp'],
+                'economic_outlook': council_summary['economic_outlook']
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2(request):
+    """
+    Analyze current volume in proportion to historical volume for a specific asset
+    Very unique name to avoid conflicts in large codebase
+    """
+    try:
+        data = json.loads(request.body)
+        asset_name = data.get('asset_name')
+        asset_class = data.get('asset_class')
+        analysis_period = data.get('period', '1y')  # Default to 1 year
+
+        if not asset_name or not asset_class:
+            return JsonResponse({'error': 'Asset name and class required'}, status=400)
+
+        # Get the ticker for this asset
+        if asset_class not in ASSET_TICKERS:
+            return JsonResponse({'error': 'Invalid asset class'}, status=400)
+
+        ticker = ASSET_TICKERS[asset_class].get(asset_name)
+        if not ticker:
+            return JsonResponse({'error': 'Asset not found'}, status=404)
+
+        # Fetch volume data
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period=analysis_period)
+
+        if hist.empty or 'Volume' not in hist.columns:
+            return JsonResponse({
+                'error': 'Volume data not available for this asset',
+                'success': False
+            }, status=404)
+
+        # Get current volume (most recent day)
+        current_volume = hist['Volume'].iloc[-1]
+
+        # Calculate volume statistics
+        volumes = hist['Volume'].values
+        avg_volume = np.mean(volumes)
+        std_volume = np.std(volumes)
+        median_volume = np.median(volumes)
+
+        # Calculate percentile
+        percentile = (np.sum(volumes < current_volume) / len(volumes)) * 100
+
+        # Determine volume level
+        if current_volume > avg_volume + std_volume:
+            volume_level = 'high'
+            description = f'Significantly above average (Top {100 - percentile:.0f}%)'
+        elif current_volume > avg_volume:
+            volume_level = 'medium'
+            description = f'Above average ({percentile:.0f}th percentile)'
+        elif current_volume > avg_volume - std_volume:
+            volume_level = 'medium'
+            description = f'Around average ({percentile:.0f}th percentile)'
+        else:
+            volume_level = 'low'
+            description = f'Below average (Bottom {percentile:.0f}%)'
+
+        # Safe division for comparison metrics
+        vs_avg_percent = ((current_volume - avg_volume) / avg_volume) * 100 if avg_volume else 0
+        vs_median_percent = ((current_volume - median_volume) / median_volume) * 100 if median_volume else 0
+
+        # Get recent trend (last 5 days vs previous 20 days)
+        if len(volumes) >= 25:
+            recent_avg = np.mean(volumes[-5:])
+            prior_avg = np.mean(volumes[-25:-5])
+            trend_change = ((recent_avg - prior_avg) / prior_avg) * 100 if prior_avg else 0
+
+            if trend_change > 15:
+                trend = 'increasing'
+            elif trend_change < -15:
+                trend = 'decreasing'
+            else:
+                trend = 'stable'
+        else:
+            trend = 'insufficient_data'
+            trend_change = 0
+
+        return JsonResponse({
+            'success': True,
+            'asset_name': asset_name,
+            'volume_level': volume_level,
+            'description': description,
+            'current_volume': int(current_volume),
+            'average_volume': int(avg_volume),
+            'median_volume': int(median_volume),
+            'vs_average_percent': round(vs_avg_percent, 2),
+            'vs_median_percent': round(vs_median_percent, 2),
+            'percentile': round(percentile, 1),
+            'trend': trend,
+            'trend_change_percent': round(trend_change, 2),
+            'analysis_period': analysis_period,
+            'data_points': len(volumes)
+        })
+
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_fetch_latest_council_discussion_summary_for_frontend_v2(request):
+    """
+    Fetch the latest AI Trading Council discussion summary for frontend use
+    Very unique name to avoid conflicts in large codebase
+    """
+    try:
+        latest_council = AITradingCouncilConversation.objects.filter(
+            status='completed'
+        ).order_by('-created_at').first()
+        
+        if not latest_council:
+            return JsonResponse({
+                'success': False,
+                'error': 'No completed AI Trading Council discussions found'
+            }, status=404)
+        
+        return JsonResponse({
+            'success': True,
+            'council_data': {
+                'conversation_id': latest_council.conversation_id,
+                'title': latest_council.title,
+                'created_at': latest_council.created_at.isoformat(),
+                'completed_at': latest_council.completed_at.isoformat() if latest_council.completed_at else None,
+                'economic_outlook': latest_council.overall_economic_outlook,
+                'market_sentiment': latest_council.global_market_sentiment,
+                'volatility_level': latest_council.market_volatility_level,
+                'major_themes': latest_council.major_economic_themes,
+                'currency_strength': latest_council.currency_strength_rankings,
+                'risk_factors': latest_council.risk_factors_identified,
+                'opportunities': latest_council.opportunity_areas,
+                'summary': latest_council.conversation_summary,
+                'participating_assets': latest_council.participating_assets,
+                'sentiment_breakdown': {
+                    'bullish': latest_council.bullish_sentiment_count,
+                    'bearish': latest_council.bearish_sentiment_count,
+                    'neutral': latest_council.neutral_sentiment_count
+                },
+                'confidence_score': latest_council.average_confidence_score
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+        
+
+from sklearn.linear_model import LinearRegression
+
+@csrf_exempt
+def calculate_market_stability_score(request):
+    """
+    Calculate Market Stability Score for given assets using improved formula
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            period_days = data.get('period', 60)
+            
+            results = []
+            all_volatilities = []
+            temp_results = []
+            
+            # First pass: collect all data and volatilities for normalization
+            for symbol in symbols:
+                try:
+                    # Download data
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period=f"{period_days}d")
+                    
+                    if len(hist) < 20:
+                        continue
+                    
+                    # Calculate returns
+                    hist['returns'] = hist['Close'].pct_change()
+                    
+                    # Calculate volatility (σ)
+                    volatility = hist['returns'].std()
+                    
+                    # Calculate R² (trend clarity)
+                    prices = hist['Close'].values
+                    X = np.arange(len(prices)).reshape(-1, 1)
+                    y = prices.reshape(-1, 1)
+                    
+                    model = LinearRegression()
+                    model.fit(X, y)
+                    r_squared = model.score(X, y)
+                    
+                    # Calculate liquidity factor (0.8 to 1.2 based on volume)
+                    avg_volume = hist['Volume'].mean()
+                    
+                    # Normalize volume to liquidity factor
+                    if avg_volume > 10000000:  # High volume
+                        liquidity_factor = 1.2
+                    elif avg_volume > 1000000:  # Medium volume
+                        liquidity_factor = 1.0
+                    elif avg_volume > 100000:  # Low volume
+                        liquidity_factor = 0.9
+                    else:  # Very low volume
+                        liquidity_factor = 0.8
+                    
+                    # Get current price and change
+                    current_price = hist['Close'].iloc[-1]
+                    price_change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
+                    
+                    temp_results.append({
+                        'symbol': symbol,
+                        'volatility': volatility,
+                        'r_squared': r_squared,
+                        'liquidity_factor': liquidity_factor,
+                        'current_price': current_price,
+                        'price_change': price_change,
+                        'data_points': len(hist),
+                        'avg_volume': avg_volume
+                    })
+                    
+                    all_volatilities.append(volatility)
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    continue
+            
+            # Calculate max volatility for normalization
+            max_volatility = max(all_volatilities) if all_volatilities else 1.0
+            
+            # Second pass: calculate MSS with normalized volatility
+            for temp in temp_results:
+                # Normalize volatility (0 to 1, where 1 is highest volatility)
+                normalized_volatility = temp['volatility'] / max_volatility if max_volatility > 0 else 0
+                
+                # Improved MSS Formula:
+                # MSS = (R² × 100) × (1 - normalized_volatility) × liquidity_factor
+                # This naturally produces scores between 0-100
+                trend_score = temp['r_squared'] * 100  # 0-100
+                stability_factor = 1 - normalized_volatility  # Higher is better (less volatile)
+                
+                mss = trend_score * stability_factor * temp['liquidity_factor']
+                mss = min(max(mss, 0), 100)  # Ensure 0-100 range
+                
+                # Determine category
+                if mss >= 60:
+                    category = "stable"
+                    status = "Trending - Good Conditions"
+                    color = "#10b981"
+                elif mss >= 40:
+                    category = "choppy"
+                    status = "Choppy - Moderate Risk"
+                    color = "#f59e0b"
+                else:
+                    category = "volatile"
+                    status = "Volatile - Avoid Trading"
+                    color = "#ef4444"
+                
+                results.append({
+                    'symbol': temp['symbol'],
+                    'mss': round(mss, 2),
+                    'volatility': round(temp['volatility'], 4),
+                    'normalized_volatility': round(normalized_volatility, 4),
+                    'r_squared': round(temp['r_squared'], 4),
+                    'liquidity_factor': round(temp['liquidity_factor'], 2),
+                    'category': category,
+                    'status': status,
+                    'color': color,
+                    'current_price': round(temp['current_price'], 2),
+                    'price_change': round(temp['price_change'], 2),
+                    'data_points': temp['data_points'],
+                    'avg_volume': int(temp['avg_volume'])
+                })
+            
+            # Sort by MSS descending
+            results.sort(key=lambda x: x['mss'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def get_mss_historical_data(request):
+    """
+    Get historical MSS data for a specific symbol using improved formula
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            period_days = data.get('period', 180)
+            
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period=f"{period_days}d")
+            
+            if len(hist) < 30:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Insufficient data'
+                }, status=400)
+            
+            # Calculate rolling MSS
+            window = 20
+            mss_history = []
+            all_window_volatilities = []
+            
+            # First pass: collect all window volatilities for normalization
+            for i in range(window, len(hist)):
+                window_data = hist.iloc[i-window:i]
+                returns = window_data['Close'].pct_change()
+                volatility = returns.std()
+                all_window_volatilities.append(volatility)
+            
+            max_volatility = max(all_window_volatilities) if all_window_volatilities else 1.0
+            
+            # Second pass: calculate MSS with normalization
+            vol_index = 0
+            for i in range(window, len(hist)):
+                window_data = hist.iloc[i-window:i]
+                returns = window_data['Close'].pct_change()
+                volatility = returns.std()
+                
+                # Normalize volatility
+                normalized_volatility = volatility / max_volatility if max_volatility > 0 else 0
+                
+                # Calculate R²
+                prices = window_data['Close'].values
+                X = np.arange(len(prices)).reshape(-1, 1)
+                y = prices.reshape(-1, 1)
+                
+                model = LinearRegression()
+                model.fit(X, y)
+                r_squared = model.score(X, y)
+                
+                # Calculate liquidity factor
+                avg_volume = window_data['Volume'].mean()
+                if avg_volume > 10000000:
+                    liquidity_factor = 1.2
+                elif avg_volume > 1000000:
+                    liquidity_factor = 1.0
+                elif avg_volume > 100000:
+                    liquidity_factor = 0.9
+                else:
+                    liquidity_factor = 0.8
+                
+                # Improved MSS calculation
+                trend_score = r_squared * 100
+                stability_factor = 1 - normalized_volatility
+                mss = trend_score * stability_factor * liquidity_factor
+                mss = min(max(mss, 0), 100)
+                
+                mss_history.append({
+                    'date': window_data.index[-1].strftime('%Y-%m-%d'),
+                    'mss': round(mss, 2),
+                    'price': round(window_data['Close'].iloc[-1], 2)
+                })
+                
+                vol_index += 1
+            
+            return JsonResponse({
+                'success': True,
+                'symbol': symbol,
+                'data': mss_history
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def get_predefined_asset_lists(request):
+    """
+    Get predefined lists of assets by category
+    """
+    asset_lists = {
+        'forex': [
+            'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 
+            'USDCAD=X', 'USDCHF=X', 'NZDUSD=X'
+        ],
+        'stocks': [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 
+            'TSLA', 'META', 'JPM', 'V', 'WMT'
+        ],
+        'indices': [
+            '^GSPC', '^DJI', '^IXIC', '^FTSE', '^GDAXI',
+            '^N225', '^HSI'
+        ],
+        'commodities': [
+            'GC=F', 'SI=F', 'CL=F', 'NG=F', 'HG=F'
+        ],
+        'bonds': [
+            '^TNX', '^TYX', '^FVX'
+        ]
+    }
+    
+    return JsonResponse({
+        'success': True,
+        'asset_lists': asset_lists
+    })
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_all_hedge_funds(request):
+    """Get all hedge funds with their related data"""
+    try:
+        hedge_funds = SnowAIHedgeFundEntity.objects.all()
+        
+        data = []
+        for fund in hedge_funds:
+            key_people = fund.key_people.all()
+            resources = fund.resources.all()
+            performance = fund.performance_data.all()
+            
+            fund_data = {
+                'id': fund.id,
+                'name': fund.name,
+                'logo_url': fund.logo_url,
+                'description': fund.description,
+                'founded_year': fund.founded_year,
+                'aum': fund.aum,
+                'strategy': fund.strategy,
+                'headquarters': fund.headquarters,
+                'website': fund.website,
+                'key_people': [
+                    {
+                        'id': person.id,
+                        'name': person.name,
+                        'role': person.role,
+                        'wikipedia_url': person.wikipedia_url,
+                        'linkedin_url': person.linkedin_url,
+                        'bio': person.bio,
+                        'photo_url': person.photo_url
+                    } for person in key_people
+                ],
+                'resources': [
+                    {
+                        'id': resource.id,
+                        'title': resource.title,
+                        'url': resource.url,
+                        'description': resource.description,
+                        'resource_type': resource.resource_type
+                    } for resource in resources
+                ],
+                'performance': [
+                    {
+                        'id': perf.id,
+                        'year': perf.year,
+                        'return_percentage': float(perf.return_percentage),
+                        'notes': perf.notes
+                    } for perf in performance
+                ]
+            }
+            data.append(fund_data)
+        
+        return JsonResponse({'success': True, 'data': data})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_create_hedge_fund(request):
+    """Create a new hedge fund"""
+    try:
+        data = json.loads(request.body)
+        
+        fund = SnowAIHedgeFundEntity.objects.create(
+            name=data.get('name'),
+            logo_url=data.get('logo_url'),
+            description=data.get('description'),
+            founded_year=data.get('founded_year'),
+            aum=data.get('aum'),
+            strategy=data.get('strategy'),
+            headquarters=data.get('headquarters'),
+            website=data.get('website')
+        )
+        
+        return JsonResponse({
+            'success': True, 
+            'data': {
+                'id': fund.id,
+                'name': fund.name
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_hedge_fund(request, fund_id):
+    """Update an existing hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        for key, value in data.items():
+            if hasattr(fund, key):
+                setattr(fund, key, value)
+        
+        fund.save()
+        
+        return JsonResponse({'success': True, 'message': 'Fund updated successfully'})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_hedge_fund(request, fund_id):
+    """Delete a hedge fund"""
+    try:
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        fund.delete()
+        return JsonResponse({'success': True, 'message': 'Fund deleted successfully'})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_add_key_person(request, fund_id):
+    """Add a key person to a hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        person = SnowAIHedgeFundKeyPerson.objects.create(
+            hedge_fund=fund,
+            name=data.get('name'),
+            role=data.get('role'),
+            wikipedia_url=data.get('wikipedia_url'),
+            linkedin_url=data.get('linkedin_url'),
+            bio=data.get('bio'),
+            photo_url=data.get('photo_url')
+        )
+        
+        return JsonResponse({'success': True, 'data': {'id': person.id}})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_key_person(request, person_id):
+    """Delete a key person"""
+    try:
+        person = SnowAIHedgeFundKeyPerson.objects.get(id=person_id)
+        person.delete()
+        return JsonResponse({'success': True, 'message': 'Person deleted successfully'})
+    except SnowAIHedgeFundKeyPerson.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Person not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_add_resource(request, fund_id):
+    """Add a resource to a hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        resource = SnowAIHedgeFundResource.objects.create(
+            hedge_fund=fund,
+            title=data.get('title'),
+            url=data.get('url'),
+            description=data.get('description'),
+            resource_type=data.get('resource_type', 'article')
+        )
+        
+        return JsonResponse({'success': True, 'data': {'id': resource.id}})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_resource(request, resource_id):
+    """Delete a resource"""
+    try:
+        resource = SnowAIHedgeFundResource.objects.get(id=resource_id)
+        resource.delete()
+        return JsonResponse({'success': True, 'message': 'Resource deleted successfully'})
+    except SnowAIHedgeFundResource.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Resource not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_add_performance(request, fund_id):
+    """Add performance data to a hedge fund"""
+    try:
+        data = json.loads(request.body)
+        fund = SnowAIHedgeFundEntity.objects.get(id=fund_id)
+        
+        performance, created = SnowAIHedgeFundPerformance.objects.update_or_create(
+            hedge_fund=fund,
+            year=data.get('year'),
+            defaults={
+                'return_percentage': data.get('return_percentage'),
+                'notes': data.get('notes', '')
+            }
+        )
+        
+        return JsonResponse({'success': True, 'data': {'id': performance.id}})
+    except SnowAIHedgeFundEntity.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Fund not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_performance(request, performance_id):
+    """Delete performance data"""
+    try:
+        performance = SnowAIHedgeFundPerformance.objects.get(id=performance_id)
+        performance.delete()
+        return JsonResponse({'success': True, 'message': 'Performance data deleted successfully'})
+    except SnowAIHedgeFundPerformance.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Performance data not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# Add these to your views.py file
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_key_person(request, person_id):
+    """Update a key person"""
+    try:
+        data = json.loads(request.body)
+        person = SnowAIHedgeFundKeyPerson.objects.get(id=person_id)
+        
+        for key, value in data.items():
+            if hasattr(person, key) and key != 'id':
+                setattr(person, key, value)
+        
+        person.save()
+        
+        return JsonResponse({'success': True, 'message': 'Person updated successfully'})
+    except SnowAIHedgeFundKeyPerson.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Person not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_resource(request, resource_id):
+    """Update a resource"""
+    try:
+        data = json.loads(request.body)
+        resource = SnowAIHedgeFundResource.objects.get(id=resource_id)
+        
+        for key, value in data.items():
+            if hasattr(resource, key) and key != 'id':
+                setattr(resource, key, value)
+        
+        resource.save()
+        
+        return JsonResponse({'success': True, 'message': 'Resource updated successfully'})
+    except SnowAIHedgeFundResource.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Resource not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_update_performance(request, performance_id):
+    """Update performance data"""
+    try:
+        data = json.loads(request.body)
+        performance = SnowAIHedgeFundPerformance.objects.get(id=performance_id)
+        
+        for key, value in data.items():
+            if hasattr(performance, key) and key != 'id':
+                setattr(performance, key, value)
+        
+        performance.save()
+        
+        return JsonResponse({'success': True, 'message': 'Performance data updated successfully'})
+    except SnowAIHedgeFundPerformance.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Performance data not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+        
+
+
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
