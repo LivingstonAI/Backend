@@ -19628,7 +19628,6 @@ def snowai_extract_youtube_transcript_from_url(request):
             'debug_info': 'Check server logs for more details'
         }, status=500)
 
-# Also update the extraction function to use the new method naming
 def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
     """Extract transcript using yt-dlp with enhanced fallback strategies and default cookies"""
     
@@ -19653,7 +19652,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
         print(f"Cookie processing error: {cookie_error}")
         pass
 
-    # Use the working TV strategy primarily
+    # Enhanced extraction strategies - focus on subtitle extraction only
     extraction_strategies = [
         {
             'name': 'tv_authenticated',
@@ -19662,14 +19661,50 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                 'no_warnings': True,
                 'writesubtitles': True,
                 'writeautomaticsub': True,
-                'subtitleslangs': ['en'],
+                'subtitleslangs': ['en', 'en-US', 'en-GB'],
                 'subtitlesformat': 'vtt',
-                'skip_download': True,
+                'skip_download': True,  # This is critical
                 'extractor_args': {
                     'youtube': {
                         'player_client': ['tv_embedded'],
                     }
-                }
+                },
+                # Explicitly tell yt-dlp not to download video
+                'format': 'best',
+                'noplaylist': True,
+            }
+        },
+        {
+            'name': 'android_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en', 'en-US', 'en-GB'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android'],
+                    }
+                },
+                'format': 'best',
+                'noplaylist': True,
+            }
+        },
+        {
+            'name': 'web_authenticated',
+            'opts': {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en', 'en-US', 'en-GB'],
+                'subtitlesformat': 'vtt',
+                'skip_download': True,
+                'format': 'best',
+                'noplaylist': True,
             }
         }
     ]
@@ -19682,6 +19717,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
         with tempfile.TemporaryDirectory() as temp_dir:
             print(f"Using temp directory: {temp_dir}")
             
+            # First pass: Get video info without downloading
             for strategy in extraction_strategies:
                 try:
                     print(f"Trying strategy: {strategy['name']} for video: {video_id}")
@@ -19693,8 +19729,9 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                         opts['cookiefile'] = cookie_file_path
                         print(f"Using cookies with strategy: {strategy['name']}")
                     
+                    # CRITICAL FIX: Use download=False for info extraction
                     with yt_dlp.YoutubeDL(opts) as ydl:
-                        info = ydl.extract_info(video_url, download=True)
+                        info = ydl.extract_info(video_url, download=False)
                     
                     print(f"Strategy {strategy['name']} successful!")
                     successful_strategy = strategy['name']
@@ -19706,7 +19743,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                     continue
             
             if not info:
-                raise Exception("All extraction strategies failed")
+                raise Exception(f"All extraction strategies failed. Last error: {extraction_error}")
         
             # Process metadata
             print("Processing video metadata...")
@@ -19723,43 +19760,53 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
             subtitles = info.get('subtitles', {})
             automatic_captions = info.get('automatic_captions', {})
             
-            print(f"Available automatic captions: {list(automatic_captions.keys())[:10]}...")
+            print(f"Manual subtitles: {list(subtitles.keys())[:10]}")
+            print(f"Automatic captions: {list(automatic_captions.keys())[:10]}")
             
             # Extract subtitle text
             subtitle_text = None
             selected_language = None
             extraction_method = None
             
-            try:
-                # Try English captions
+            # Try manual subtitles first, then automatic
+            subtitle_sources = [
+                ('manual', subtitles),
+                ('automatic', automatic_captions)
+            ]
+            
+            for source_type, subtitle_dict in subtitle_sources:
+                if subtitle_text:
+                    break
+                    
                 for lang in ['en', 'en-US', 'en-GB', 'en-orig']:
-                    if lang in automatic_captions:
-                        print(f"Found automatic subtitles for language: {lang}")
+                    if lang in subtitle_dict:
+                        print(f"Found {source_type} subtitles for language: {lang}")
                         
                         try:
-                            # Setup subtitle download
+                            # Download subtitles separately
                             download_opts = {
                                 'quiet': True,
                                 'no_warnings': True,
-                                'writesubtitles': False,
-                                'writeautomaticsub': True,
+                                'writesubtitles': source_type == 'manual',
+                                'writeautomaticsub': source_type == 'automatic',
                                 'subtitleslangs': [lang],
                                 'subtitlesformat': 'vtt',
                                 'skip_download': True,
-                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s')
+                                'outtmpl': os.path.join(temp_dir, f'{video_id}.%(ext)s'),
+                                'noplaylist': True,
                             }
                             
                             if cookie_file_path:
                                 download_opts['cookiefile'] = cookie_file_path
                             
-                            print(f"Starting subtitle download for {lang}...")
+                            print(f"Downloading {source_type} subtitle for {lang}...")
                             with yt_dlp.YoutubeDL(download_opts) as sub_ydl:
+                                # Download with download=True only for subtitles
                                 sub_ydl.download([video_url])
-                            print(f"Subtitle download completed for {lang}")
                             
-                            # List all files and find subtitle
+                            # Find subtitle file
                             all_files = os.listdir(temp_dir)
-                            print(f"Files after download: {all_files}")
+                            print(f"Files in temp dir: {all_files}")
                             
                             subtitle_files = [f for f in all_files if f.endswith(('.vtt', '.srt'))]
                             print(f"Subtitle files found: {subtitle_files}")
@@ -19787,7 +19834,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                                             selected_language = lang
                                             # Create shorter method name that fits in 50 chars
                                             extraction_method = create_transcription_method_name(
-                                                'auto', lang, successful_strategy, bool(cookie_file_path)
+                                                source_type[:4], lang, successful_strategy, bool(cookie_file_path)
                                             )
                                             print(f"SUCCESS: Subtitle extraction completed! Method: {extraction_method}")
                                             break
@@ -19805,12 +19852,10 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
                             import traceback
                             print(f"Lang error traceback: {traceback.format_exc()}")
                             continue
-                            
-            except Exception as subtitle_error:
-                print(f"Subtitle extraction error: {subtitle_error}")
-                import traceback
-                print(f"Subtitle error traceback: {traceback.format_exc()}")
-                
+                    
+                    if subtitle_text:
+                        break
+                        
             if subtitle_text and len(subtitle_text.strip()) > 50:
                 transcript_data['text'] = subtitle_text.strip()
                 transcript_data['language'] = selected_language
@@ -19829,6 +19874,7 @@ def extract_transcript_with_ytdlp(video_url, video_id, cookies_data=None):
     
     return transcript_data
 
+    
 def extract_transcript_with_ytdlp_fixed(video_url, video_id, cookies_data=None):
     """Extract transcript with better exception handling"""
     
