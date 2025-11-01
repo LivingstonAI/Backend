@@ -341,6 +341,22 @@ urlpatterns = [
      path('api/snowai_intermarket_council_driven_asset_sentiment_analysis_v2/', views.snowai_intermarket_council_driven_asset_sentiment_analysis_v2),
      path('api/snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2/', views.snowai_advanced_volume_proportion_analyzer_for_trading_assets_v2),
      path('api/snowai_fetch_latest_council_discussion_summary_for_frontend_v2/', views.snowai_fetch_latest_council_discussion_summary_for_frontend_v2),
+
+     path('api/snowai_save_asset_bias_recommendation_v2/', 
+         snowai_save_asset_bias_recommendation_v2, 
+         name='save_asset_bias'),
+    
+     path('api/snowai_get_all_saved_asset_biases_v2/', 
+         snowai_get_all_saved_asset_biases_v2, 
+         name='get_all_biases'),
+    
+     path('api/snowai_get_asset_bias_by_name_v2/', 
+         snowai_get_asset_bias_by_name_v2, 
+         name='get_asset_bias'),
+    
+     path('api/snowai_delete_asset_bias_v2/', 
+         snowai_delete_asset_bias_v2, 
+         name='delete_asset_bias'),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

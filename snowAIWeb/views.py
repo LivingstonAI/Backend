@@ -22251,7 +22251,338 @@ def snowai_update_performance(request, performance_id):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+
+def is_bullish_bias(asset):
+    """
+    Check if asset has bullish bias
+    
+    Args:
+        asset_name: Name of the asset (e.g., 'EURUSD', 'Apple')
+    
+    Returns:
+        bool: True if bullish, False otherwise
+    """
+    try:
+        recommendation = AssetBiasRecommendation.objects.get(asset_name=asset)
+        return recommendation.bias == 'bullish'
+    except AssetBiasRecommendation.DoesNotExist:
+        return False
+
+
+def is_bearish_bias(asset):
+    """
+    Check if asset has bearish bias
+    
+    Args:
+        asset_name: Name of the asset (e.g., 'EURUSD', 'Apple')
+    
+    Returns:
+        bool: True if bearish, False otherwise
+    """
+    try:
+        recommendation = AssetBiasRecommendation.objects.get(asset_name=asset)
+        return recommendation.bias == 'bearish'
+    except AssetBiasRecommendation.DoesNotExist:
+        return False
+
+
+def is_neutral_bias(asset):
+    """
+    Check if asset has neutral bias
+    
+    Args:
+        asset_name: Name of the asset (e.g., 'EURUSD', 'Apple')
+    
+    Returns:
+        bool: True if neutral, False otherwise
+    """
+    try:
+        recommendation = AssetBiasRecommendation.objects.get(asset_name=asset)
+        return recommendation.bias == 'neutral'
+    except AssetBiasRecommendation.DoesNotExist:
+        return False
+
+
+def is_high_volume(asset):
+    """
+    Check if asset has high volume
+    
+    Args:
+        asset_name: Name of the asset (e.g., 'EURUSD', 'Apple')
+    
+    Returns:
+        bool: True if high volume, False otherwise
+    """
+    try:
+        recommendation = AssetBiasRecommendation.objects.get(asset_name=asset)
+        return recommendation.volume == 'high'
+    except AssetBiasRecommendation.DoesNotExist:
+        return False
+
+
+def is_medium_volume(asset):
+    """
+    Check if asset has medium volume
+    
+    Args:
+        asset_name: Name of the asset (e.g., 'EURUSD', 'Apple')
+    
+    Returns:
+        bool: True if medium volume, False otherwise
+    """
+    try:
+        recommendation = AssetBiasRecommendation.objects.get(asset_name=asset)
+        return recommendation.volume == 'medium'
+    except AssetBiasRecommendation.DoesNotExist:
+        return False
+
+
+def is_low_volume(asset):
+    """
+    Check if asset has low volume
+    
+    Args:
+        asset_name: Name of the asset (e.g., 'EURUSD', 'Apple')
+    
+    Returns:
+        bool: True if low volume, False otherwise
+    """
+    try:
+        recommendation = AssetBiasRecommendation.objects.get(asset_name=asset)
+        return recommendation.volume == 'low'
+    except AssetBiasRecommendation.DoesNotExist:
+        return False
+
+
+def get_asset_bias(asset_name):
+    """
+    Get the full bias recommendation for an asset
+    
+    Args:
+        asset_name: Name of the asset (e.g., 'EURUSD', 'Apple')
+    
+    Returns:
+        dict: {'bias': str, 'volume': str} or None if not found
+    """
+    try:
+        recommendation = AssetBiasRecommendation.objects.get(asset_name=asset_name)
+        return {
+            'bias': recommendation.bias,
+            'volume': recommendation.volume,
+            'created_at': recommendation.created_at,
+            'updated_at': recommendation.updated_at
+        }
+    except AssetBiasRecommendation.DoesNotExist:
+        return None
+
+
+def save_asset_bias(asset_name, bias=None, volume=None):
+    """
+    Save or update bias/volume for an asset
+    Only updates provided fields, leaves others unchanged
+    
+    Args:
+        asset_name: Name of the asset (e.g., 'EURUSD', 'Apple')
+        bias: 'bullish', 'bearish', or 'neutral' (optional)
+        volume: 'high', 'medium', or 'low' (optional)
+    
+    Returns:
+        AssetBiasRecommendation instance
+    """
+    defaults = {}
+    if bias is not None:
+        defaults['bias'] = bias
+    if volume is not None:
+        defaults['volume'] = volume
+    
+    recommendation, created = AssetBiasRecommendation.objects.update_or_create(
+        asset_name=asset_name,
+        defaults=defaults
+    )
+    return recommendation
+
+
+def delete_asset_bias(asset_name):
+    """
+    Delete bias recommendation for an asset
+    
+    Args:
+        asset_name: Name of the asset (e.g., 'EURUSD', 'Apple')
+    
+    Returns:
+        bool: True if deleted, False if not found
+    """
+    try:
+        recommendation = AssetBiasRecommendation.objects.get(asset_name=asset_name)
+        recommendation.delete()
+        return True
+    except AssetBiasRecommendation.DoesNotExist:
+        return False
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_save_asset_bias_recommendation_v2(request):
+    """
+    Save or update bias/volume recommendation for an asset
+    Endpoint: /api/snowai_save_asset_bias_recommendation_v2/
+    
+    Request body:
+    {
+        "asset_name": "EURUSD",
+        "bias": "bullish",  // optional: 'bullish', 'bearish', 'neutral'
+        "volume": "high"    // optional: 'high', 'medium', 'low'
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        asset_name = data.get('asset_name')
+        bias = data.get('bias')
+        volume = data.get('volume')
         
+        if not asset_name:
+            return JsonResponse({'error': 'asset_name is required'}, status=400)
+        
+        if not bias and not volume:
+            return JsonResponse({'error': 'Either bias or volume must be provided'}, status=400)
+        
+        # Validate bias if provided
+        if bias and bias not in ['bullish', 'bearish', 'neutral']:
+            return JsonResponse({'error': 'Invalid bias value'}, status=400)
+        
+        # Validate volume if provided
+        if volume and volume not in ['high', 'medium', 'low']:
+            return JsonResponse({'error': 'Invalid volume value'}, status=400)
+        
+        # Save or update
+        recommendation = save_asset_bias(asset_name, bias=bias, volume=volume)
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Asset bias/volume saved successfully',
+            'asset_name': recommendation.asset_name,
+            'bias': recommendation.bias,
+            'volume': recommendation.volume,
+            'updated_at': recommendation.updated_at.isoformat()
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_all_saved_asset_biases_v2(request):
+    """
+    Get all saved asset bias recommendations
+    Endpoint: /api/snowai_get_all_saved_asset_biases_v2/
+    """
+    try:
+        biases = AssetBiasRecommendation.objects.all()
+        
+        result = []
+        for bias in biases:
+            result.append({
+                'asset_name': bias.asset_name,
+                'bias': bias.bias,
+                'volume': bias.volume,
+                'created_at': bias.created_at.isoformat(),
+                'updated_at': bias.updated_at.isoformat()
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'biases': result,
+            'count': len(result)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_asset_bias_by_name_v2(request):
+    """
+    Get saved bias/volume for a specific asset
+    Endpoint: /api/snowai_get_asset_bias_by_name_v2/?asset_name=EURUSD
+    """
+    try:
+        asset_name = request.GET.get('asset_name')
+        
+        if not asset_name:
+            return JsonResponse({'error': 'asset_name parameter is required'}, status=400)
+        
+        try:
+            bias = AssetBiasRecommendation.objects.get(asset_name=asset_name)
+            
+            return JsonResponse({
+                'success': True,
+                'asset_name': bias.asset_name,
+                'bias': bias.bias,
+                'volume': bias.volume,
+                'created_at': bias.created_at.isoformat(),
+                'updated_at': bias.updated_at.isoformat()
+            })
+        except AssetBiasRecommendation.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'No bias recommendation found for this asset'
+            }, status=404)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_asset_bias_v2(request):
+    """
+    Delete saved bias/volume for a specific asset
+    Endpoint: /api/snowai_delete_asset_bias_v2/
+    
+    Request body:
+    {
+        "asset_name": "EURUSD"
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        asset_name = data.get('asset_name')
+        
+        if not asset_name:
+            return JsonResponse({'error': 'asset_name is required'}, status=400)
+        
+        try:
+            bias = AssetBiasRecommendation.objects.get(asset_name=asset_name)
+            bias.delete()
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Bias recommendation for {asset_name} deleted successfully'
+            })
+        except AssetBiasRecommendation.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'No bias recommendation found for this asset'
+            }, status=404)
+        
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)
+
+
 
 
 # LEGODI BACKEND CODE

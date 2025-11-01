@@ -1508,6 +1508,40 @@ class SnowAIHedgeFundPerformance(models.Model):
         return f"{self.hedge_fund.name} - {self.year}: {self.return_percentage}%"
 
 
+class AssetBiasRecommendation(models.Model):
+    """
+    Store AI-generated bias recommendations for trading assets
+    One entry per asset - automatically updates on save
+    """
+    BIAS_CHOICES = [
+        ('bullish', 'Bullish'),
+        ('bearish', 'Bearish'),
+        ('neutral', 'Neutral'),
+    ]
+    
+    VOLUME_CHOICES = [
+        ('high', 'High'),
+        ('medium', 'Medium'),
+        ('low', 'Low'),
+    ]
+    
+    # Core fields only
+    asset_name = models.CharField(max_length=100, unique=True, db_index=True)
+    bias = models.CharField(max_length=20, choices=BIAS_CHOICES, null=True, blank=True)
+    volume = models.CharField(max_length=20, choices=VOLUME_CHOICES, null=True, blank=True)
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-updated_at']
+        verbose_name = 'Asset Bias Recommendation'
+        verbose_name_plural = 'Asset Bias Recommendations'
+    
+    def __str__(self):
+        return f"{self.asset_name} - Bias: {self.bias or 'None'}, Volume: {self.volume or 'None'}"
+
 
 
 class FeedbackForm(models.Model): 
