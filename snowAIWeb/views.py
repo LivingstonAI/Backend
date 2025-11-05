@@ -22663,6 +22663,219 @@ def snowai_delete_asset_bias_v2(request):
         }, status=500)
 
 
+from django.db.models import Count, Q
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def calculate_trade_probability(request):
+    """
+    Calculate the probability of winning a trade based on historical data
+    """
+    try:
+        data = json.loads(request.body)
+        account_name = data.get('account_name')
+        day_of_week = data.get('day_of_week')
+        trading_session = data.get('trading_session')
+        asset = data.get('asset')
+        order_type = data.get('order_type')
+
+        # Validate inputs
+        if not all([account_name, day_of_week, trading_session, asset, order_type]):
+            return JsonResponse({
+                'error': 'Missing required fields'
+            }, status=400)
+
+        # Get the account
+        try:
+            account = Account.objects.get(account_name=account_name)
+        except Account.DoesNotExist:
+            return JsonResponse({
+                'error': 'Account not found'
+            }, status=404)
+
+        # Get asset bias if available
+        asset_bias = None
+        try:
+            bias_rec = AssetBiasRecommendation.objects.get(asset_name=asset)
+            asset_bias = bias_rec.bias
+        except AssetBiasRecommendation.DoesNotExist:
+            pass
+
+        # Calculate probability using multiple factors
+        probability_score = calculate_weighted_probability(
+            account=account,
+            day_of_week=day_of_week,
+            trading_session=trading_session,
+            asset=asset,
+            order_type=order_type,
+            asset_bias=asset_bias
+        )
+
+        # Get detailed stats
+        stats = get_trade_statistics(
+            account=account,
+            day_of_week=day_of_week,
+            trading_session=trading_session,
+            asset=asset,
+            order_type=order_type
+        )
+
+        return JsonResponse({
+            'win_probability': probability_score,
+            'bias': asset_bias,
+            'stats': stats,
+            'factors': generate_factors_description(stats, asset_bias)
+        })
+
+    except Exception as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=500)
+
+
+def calculate_weighted_probability(account, day_of_week, trading_session, asset, order_type, asset_bias):
+    """
+    Calculate probability using a weighted approach based on multiple factors
+    """
+    weights = {
+        'exact_match': 0.40,      # Exact match (day + session + asset + order_type)
+        'asset_performance': 0.25, # Overall performance on this asset
+        'day_performance': 0.15,   # Performance on this day
+        'session_performance': 0.15, # Performance in this session
+        'bias_alignment': 0.05     # Alignment with asset bias
+    }
+    
+    scores = {}
+    
+    # 1. Exact match scenarios (highest weight)
+    exact_matches = AccountTrades.objects.filter(
+        account=account,
+        day_of_week_entered=day_of_week,
+        trading_session_entered=trading_session,
+        asset=asset,
+        order_type=order_type
+    )
+    
+    exact_total = exact_matches.count()
+    exact_wins = exact_matches.filter(outcome='Profit').count()
+    scores['exact_match'] = (exact_wins / exact_total * 100) if exact_total > 0 else 50
+    
+    # 2. Asset-specific performance
+    asset_trades = AccountTrades.objects.filter(account=account, asset=asset)
+    asset_total = asset_trades.count()
+    asset_wins = asset_trades.filter(outcome='Profit').count()
+    scores['asset_performance'] = (asset_wins / asset_total * 100) if asset_total > 0 else 50
+    
+    # 3. Day of week performance
+    day_trades = AccountTrades.objects.filter(account=account, day_of_week_entered=day_of_week)
+    day_total = day_trades.count()
+    day_wins = day_trades.filter(outcome='Profit').count()
+    scores['day_performance'] = (day_wins / day_total * 100) if day_total > 0 else 50
+    
+    # 4. Trading session performance
+    session_trades = AccountTrades.objects.filter(account=account, trading_session_entered=trading_session)
+    session_total = session_trades.count()
+    session_wins = session_trades.filter(outcome='Profit').count()
+    scores['session_performance'] = (session_wins / session_total * 100) if session_total > 0 else 50
+    
+    # 5. Bias alignment bonus
+    bias_score = 50  # Neutral default
+    if asset_bias:
+        if (asset_bias == 'bullish' and order_type == 'Buy') or \
+           (asset_bias == 'bearish' and order_type == 'Sell'):
+            bias_score = 70  # Aligned with bias
+        elif (asset_bias == 'bullish' and order_type == 'Sell') or \
+             (asset_bias == 'bearish' and order_type == 'Buy'):
+            bias_score = 30  # Against bias
+    scores['bias_alignment'] = bias_score
+    
+    # Calculate weighted probability
+    weighted_probability = sum(scores[key] * weights[key] for key in weights.keys())
+    
+    # Apply confidence adjustment based on data availability
+    confidence_factor = calculate_confidence_factor(exact_total, asset_total, day_total, session_total)
+    adjusted_probability = (weighted_probability * confidence_factor) + (50 * (1 - confidence_factor))
+    
+    return round(adjusted_probability, 2)
+
+
+def calculate_confidence_factor(exact_total, asset_total, day_total, session_total):
+    """
+    Calculate confidence based on the amount of historical data available
+    Returns a value between 0.5 and 1.0
+    """
+    # Minimum trades needed for high confidence
+    thresholds = {
+        'exact': 10,
+        'asset': 20,
+        'day': 30,
+        'session': 30
+    }
+    
+    # Calculate individual confidence scores
+    exact_confidence = min(exact_total / thresholds['exact'], 1.0)
+    asset_confidence = min(asset_total / thresholds['asset'], 1.0)
+    day_confidence = min(day_total / thresholds['day'], 1.0)
+    session_confidence = min(session_total / thresholds['session'], 1.0)
+    
+    # Weighted average of confidence scores
+    overall_confidence = (
+        exact_confidence * 0.4 +
+        asset_confidence * 0.3 +
+        day_confidence * 0.15 +
+        session_confidence * 0.15
+    )
+    
+    # Scale to 0.5-1.0 range (never go below 50% confidence)
+    return 0.5 + (overall_confidence * 0.5)
+
+
+def get_trade_statistics(account, day_of_week, trading_session, asset, order_type):
+    """
+    Get detailed statistics for the UI display
+    """
+    # Similar trades (exact match)
+    similar_trades = AccountTrades.objects.filter(
+        account=account,
+        day_of_week_entered=day_of_week,
+        trading_session_entered=trading_session,
+        asset=asset,
+        order_type=order_type
+    )
+    
+    total_similar = similar_trades.count()
+    wins_similar = similar_trades.filter(outcome='Profit').count()
+    losses_similar = similar_trades.filter(outcome='Loss').count()
+    
+    # Overall account stats
+    all_trades = AccountTrades.objects.filter(account=account)
+    total_all = all_trades.count()
+    wins_all = all_trades.filter(outcome='Profit').count()
+    losses_all = all_trades.filter(outcome='Loss').count()
+    
+    return {
+        'similar_trades': total_similar,
+        'total_trades': total_all,
+        'wins': wins_similar if total_similar > 0 else wins_all,
+        'losses': losses_similar if total_similar > 0 else losses_all,
+    }
+
+
+def generate_factors_description(stats, asset_bias):
+    """
+    Generate a human-readable description of the factors
+    """
+    factors = []
+    
+    if stats['similar_trades'] > 0:
+        factors.append(f"Based on {stats['similar_trades']} similar historical trades")
+    else:
+        factors.append("Limited historical data for this exact scenario")
+    
+    if asset_bias:
+        factors.append(f"Asset bias is {asset_bias}")
+    
+    return " • ".join(factors)
 
 
 # LEGODI BACKEND CODE

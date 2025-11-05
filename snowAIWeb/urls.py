@@ -357,6 +357,9 @@ urlpatterns = [
      path('api/snowai_delete_asset_bias_v2/', 
          snowai_delete_asset_bias_v2, 
          name='delete_asset_bias'),
+
+     path('calculate_trade_probability', calculate_trade_probability, name='calculate_trade_probability'),
+
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
