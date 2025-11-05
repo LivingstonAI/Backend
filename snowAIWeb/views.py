@@ -22665,6 +22665,7 @@ def snowai_delete_asset_bias_v2(request):
 
 from django.db.models import Count, Q
 
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def calculate_trade_probability(request):
@@ -22757,25 +22758,26 @@ def calculate_weighted_probability(account, day_of_week, trading_session, asset,
     )
     
     exact_total = exact_matches.count()
-    exact_wins = exact_matches.filter(outcome='Profit').count()
+    # Changed: Look for "Win" instead of "Profit"
+    exact_wins = exact_matches.filter(outcome='Win').count()
     scores['exact_match'] = (exact_wins / exact_total * 100) if exact_total > 0 else 50
     
     # 2. Asset-specific performance
     asset_trades = AccountTrades.objects.filter(account=account, asset=asset)
     asset_total = asset_trades.count()
-    asset_wins = asset_trades.filter(outcome='Profit').count()
+    asset_wins = asset_trades.filter(outcome='Win').count()
     scores['asset_performance'] = (asset_wins / asset_total * 100) if asset_total > 0 else 50
     
     # 3. Day of week performance
     day_trades = AccountTrades.objects.filter(account=account, day_of_week_entered=day_of_week)
     day_total = day_trades.count()
-    day_wins = day_trades.filter(outcome='Profit').count()
+    day_wins = day_trades.filter(outcome='Win').count()
     scores['day_performance'] = (day_wins / day_total * 100) if day_total > 0 else 50
     
     # 4. Trading session performance
     session_trades = AccountTrades.objects.filter(account=account, trading_session_entered=trading_session)
     session_total = session_trades.count()
-    session_wins = session_trades.filter(outcome='Profit').count()
+    session_wins = session_trades.filter(outcome='Win').count()
     scores['session_performance'] = (session_wins / session_total * 100) if session_total > 0 else 50
     
     # 5. Bias alignment bonus
@@ -22844,13 +22846,14 @@ def get_trade_statistics(account, day_of_week, trading_session, asset, order_typ
     )
     
     total_similar = similar_trades.count()
-    wins_similar = similar_trades.filter(outcome='Profit').count()
+    # Changed: Look for "Win" and "Loss" instead of "Profit" and "Loss"
+    wins_similar = similar_trades.filter(outcome='Win').count()
     losses_similar = similar_trades.filter(outcome='Loss').count()
     
     # Overall account stats
     all_trades = AccountTrades.objects.filter(account=account)
     total_all = all_trades.count()
-    wins_all = all_trades.filter(outcome='Profit').count()
+    wins_all = all_trades.filter(outcome='Win').count()
     losses_all = all_trades.filter(outcome='Loss').count()
     
     return {
@@ -22868,12 +22871,16 @@ def generate_factors_description(stats, asset_bias):
     factors = []
     
     if stats['similar_trades'] > 0:
-        factors.append(f"Based on {stats['similar_trades']} similar historical trades")
+        win_rate = (stats['wins'] / stats['similar_trades'] * 100) if stats['similar_trades'] > 0 else 0
+        factors.append(f"Found {stats['similar_trades']} similar trade(s) with {win_rate:.1f}% win rate")
     else:
-        factors.append("Limited historical data for this exact scenario")
+        factors.append("No exact historical matches found - using broader patterns")
     
     if asset_bias:
-        factors.append(f"Asset bias is {asset_bias}")
+        factors.append(f"Current market bias for {asset_bias}")
+    
+    if stats['total_trades'] < 20:
+        factors.append("Limited historical data - probability may be less accurate")
     
     return " • ".join(factors)
 
