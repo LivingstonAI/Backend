@@ -360,6 +360,8 @@ urlpatterns = [
 
      path('calculate_trade_probability', calculate_trade_probability, name='calculate_trade_probability'),
 
+     path('simulate-trading-performance', simulate_trading_performance, name='simulate_trading_performance'),
+
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

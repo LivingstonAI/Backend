@@ -7631,6 +7631,238 @@ def time_trading_analytics(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+@csrf_exempt
+def simulate_trading_performance(request):
+    """
+    Simulates future trading performance based on historical data.
+    Uses Monte Carlo simulation with historical win rate, profit/loss distributions.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            account_name = data.get('account_name')
+            simulation_period = data.get('simulation_period', 'month')  # week, 2weeks, 3weeks, month, 3months, 6months, 9months, year
+            num_simulations = data.get('num_simulations', 1000)  # Number of Monte Carlo runs
+            
+            # Fetch account and trades
+            account = Account.objects.get(account_name=account_name)
+            trades = AccountTrades.objects.filter(account=account)
+            
+            if trades.count() < 10:
+                return JsonResponse({
+                    'error': 'Insufficient trade history. At least 10 trades required for simulation.'
+                }, status=400)
+            
+            # Calculate historical statistics
+            total_trades = trades.count()
+            winning_trades = trades.filter(outcome='Win')
+            losing_trades = trades.filter(outcome='Loss')
+            breakeven_trades = trades.filter(outcome='Break-even')
+            
+            win_count = winning_trades.count()
+            loss_count = losing_trades.count()
+            breakeven_count = breakeven_trades.count()
+            
+            # Win rate and outcome probabilities
+            win_rate = win_count / total_trades if total_trades > 0 else 0
+            loss_rate = loss_count / total_trades if total_trades > 0 else 0
+            breakeven_rate = breakeven_count / total_trades if total_trades > 0 else 0
+            
+            # Win/Loss amounts
+            win_amounts = list(winning_trades.values_list('amount', flat=True))
+            loss_amounts = list(losing_trades.values_list('amount', flat=True))
+            
+            avg_win = sum(win_amounts) / len(win_amounts) if win_amounts else 0
+            avg_loss = sum(loss_amounts) / len(loss_amounts) if loss_amounts else 0
+            
+            # Standard deviations for realistic variation
+            import statistics
+            std_win = statistics.stdev(win_amounts) if len(win_amounts) > 1 else avg_win * 0.3
+            std_loss = statistics.stdev(loss_amounts) if len(loss_amounts) > 1 else avg_loss * 0.3
+            
+            # Calculate average trades per week from historical data
+            if trades.filter(date_entered__isnull=False).exists():
+                earliest_trade = trades.filter(date_entered__isnull=False).earliest('date_entered').date_entered
+                latest_trade = trades.filter(date_entered__isnull=False).latest('date_entered').date_entered
+                weeks_of_trading = max(1, (latest_trade - earliest_trade).days / 7)
+                avg_trades_per_week = total_trades / weeks_of_trading
+            else:
+                # Default assumption if no dates available
+                avg_trades_per_week = 10
+            
+            # Determine number of weeks to simulate
+            period_weeks = {
+                'week': 1,
+                '2weeks': 2,
+                '3weeks': 3,
+                'month': 4,
+                '3months': 13,
+                '6months': 26,
+                '9months': 39,
+                'year': 52
+            }
+            weeks = period_weeks.get(simulation_period, 4)
+            
+            # Expected number of trades in simulation period
+            expected_trades = int(avg_trades_per_week * weeks)
+            
+            # Run Monte Carlo simulations
+            import random
+            simulation_results = []
+            final_balances = []
+            max_drawdowns = []
+            recovery_times = []
+            
+            for sim in range(num_simulations):
+                balance = account.initial_capital
+                peak_balance = balance
+                current_drawdown = 0
+                max_drawdown = 0
+                in_drawdown = False
+                drawdown_start_trade = 0
+                trades_in_drawdown = 0
+                
+                equity_curve = [balance]
+                
+                for trade_num in range(expected_trades):
+                    # Randomly determine outcome based on historical probabilities
+                    outcome_roll = random.random()
+                    
+                    if outcome_roll < win_rate:
+                        # Win
+                        trade_amount = random.gauss(avg_win, std_win)
+                        trade_amount = max(0, trade_amount)  # Ensure non-negative
+                        balance += trade_amount
+                    elif outcome_roll < win_rate + loss_rate:
+                        # Loss
+                        trade_amount = random.gauss(avg_loss, std_loss)
+                        trade_amount = max(0, trade_amount)  # Ensure non-negative
+                        balance -= trade_amount
+                    # else: breakeven (no change)
+                    
+                    equity_curve.append(balance)
+                    
+                    # Track drawdown
+                    if balance > peak_balance:
+                        peak_balance = balance
+                        if in_drawdown:
+                            # Recovery complete
+                            recovery_times.append(trades_in_drawdown)
+                            in_drawdown = False
+                    
+                    if balance < peak_balance:
+                        current_drawdown = ((peak_balance - balance) / peak_balance) * 100
+                        max_drawdown = max(max_drawdown, current_drawdown)
+                        if not in_drawdown:
+                            in_drawdown = True
+                            drawdown_start_trade = trade_num
+                            trades_in_drawdown = 0
+                        trades_in_drawdown += 1
+                
+                final_balances.append(balance)
+                max_drawdowns.append(max_drawdown)
+                simulation_results.append({
+                    'final_balance': balance,
+                    'equity_curve': equity_curve,
+                    'max_drawdown': max_drawdown,
+                    'return_pct': ((balance - account.initial_capital) / account.initial_capital) * 100
+                })
+            
+            # Statistical analysis of simulations
+            final_balances.sort()
+            max_drawdowns.sort()
+            
+            # Percentile calculations
+            def percentile(data, p):
+                index = int(len(data) * p)
+                return data[min(index, len(data) - 1)]
+            
+            best_case = percentile(final_balances, 0.95)  # 95th percentile
+            expected_case = percentile(final_balances, 0.50)  # Median
+            worst_case = percentile(final_balances, 0.05)  # 5th percentile
+            
+            worst_drawdown = percentile(max_drawdowns, 0.95)
+            expected_drawdown = percentile(max_drawdowns, 0.50)
+            
+            # Average recovery time
+            avg_recovery_trades = sum(recovery_times) / len(recovery_times) if recovery_times else 0
+            avg_recovery_weeks = avg_recovery_trades / avg_trades_per_week if avg_trades_per_week > 0 else 0
+            
+            # Probability of profit
+            profitable_simulations = sum(1 for b in final_balances if b > account.initial_capital)
+            probability_of_profit = (profitable_simulations / num_simulations) * 100
+            
+            # Expected value
+            expected_balance = sum(final_balances) / len(final_balances)
+            expected_return_pct = ((expected_balance - account.initial_capital) / account.initial_capital) * 100
+            
+            # Risk of ruin (losing 50% of capital)
+            ruin_threshold = account.initial_capital * 0.5
+            simulations_ruined = sum(1 for b in final_balances if b < ruin_threshold)
+            risk_of_ruin = (simulations_ruined / num_simulations) * 100
+            
+            response_data = {
+                'simulation_period': simulation_period,
+                'weeks': weeks,
+                'expected_trades': expected_trades,
+                'initial_capital': account.initial_capital,
+                'historical_stats': {
+                    'total_trades': total_trades,
+                    'win_rate': round(win_rate * 100, 2),
+                    'loss_rate': round(loss_rate * 100, 2),
+                    'breakeven_rate': round(breakeven_rate * 100, 2),
+                    'avg_win': round(avg_win, 2),
+                    'avg_loss': round(avg_loss, 2),
+                    'avg_trades_per_week': round(avg_trades_per_week, 2)
+                },
+                'projections': {
+                    'best_case': {
+                        'balance': round(best_case, 2),
+                        'return_pct': round(((best_case - account.initial_capital) / account.initial_capital) * 100, 2),
+                        'profit': round(best_case - account.initial_capital, 2)
+                    },
+                    'expected_case': {
+                        'balance': round(expected_case, 2),
+                        'return_pct': round(((expected_case - account.initial_capital) / account.initial_capital) * 100, 2),
+                        'profit': round(expected_case - account.initial_capital, 2)
+                    },
+                    'worst_case': {
+                        'balance': round(worst_case, 2),
+                        'return_pct': round(((worst_case - account.initial_capital) / account.initial_capital) * 100, 2),
+                        'profit': round(worst_case - account.initial_capital, 2)
+                    }
+                },
+                'risk_metrics': {
+                    'worst_drawdown_pct': round(worst_drawdown, 2),
+                    'expected_drawdown_pct': round(expected_drawdown, 2),
+                    'avg_recovery_weeks': round(avg_recovery_weeks, 2),
+                    'probability_of_profit': round(probability_of_profit, 2),
+                    'risk_of_ruin': round(risk_of_ruin, 2)
+                },
+                'expected_value': {
+                    'balance': round(expected_balance, 2),
+                    'return_pct': round(expected_return_pct, 2)
+                },
+                # Sample equity curves for visualization (10 random simulations)
+                'sample_equity_curves': [
+                    sim['equity_curve'] for sim in random.sample(simulation_results, min(10, len(simulation_results)))
+                ]
+            }
+            
+            return JsonResponse(response_data)
+            
+        except Account.DoesNotExist:
+            return JsonResponse({'error': 'Account not found'}, status=404)
+        except Exception as e:
+            import traceback
+            return JsonResponse({
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+
 def obtain_dataset(asset, interval, num_days):
     # Calculate the end and start dates
     import datetime
