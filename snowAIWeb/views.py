@@ -22291,6 +22291,23 @@ def calculate_market_stability_score(request):
                     model.fit(X, y)
                     r_squared = model.score(X, y)
                     
+                    # Calculate trend consistency (directional strength)
+                    returns = hist['returns'].dropna()
+                    if len(returns) > 0:
+                        positive_days = (returns > 0).sum()
+                        trend_consistency = abs(positive_days / len(returns) - 0.5) * 2  # 0-1 scale
+                    else:
+                        trend_consistency = 0
+                    
+                    # Calculate trend strength (magnitude of slope relative to price)
+                    if len(prices) > 0 and prices[0] != 0:
+                        slope_per_day = model.coef_[0][0]
+                        avg_price = np.mean(prices)
+                        trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
+                        trend_strength = min(trend_strength, 1.0)  # Cap at 1.0
+                    else:
+                        trend_strength = 0
+                    
                     # Calculate liquidity factor (0.8 to 1.2 based on volume)
                     avg_volume = hist['Volume'].mean()
                     
@@ -22312,6 +22329,8 @@ def calculate_market_stability_score(request):
                         'symbol': symbol,
                         'volatility': volatility,
                         'r_squared': r_squared,
+                        'trend_consistency': trend_consistency,
+                        'trend_strength': trend_strength,
                         'liquidity_factor': liquidity_factor,
                         'current_price': current_price,
                         'price_change': price_change,
@@ -22334,20 +22353,31 @@ def calculate_market_stability_score(request):
                 normalized_volatility = temp['volatility'] / max_volatility if max_volatility > 0 else 0
                 
                 # Improved MSS Formula:
-                # MSS = (R² × 100) × (1 - normalized_volatility) × liquidity_factor
-                # This naturally produces scores between 0-100
-                trend_score = temp['r_squared'] * 100  # 0-100
-                stability_factor = 1 - normalized_volatility  # Higher is better (less volatile)
+                # Combines R², trend consistency, and trend strength with softened volatility penalty
                 
+                # 1. Enhanced trend score (0-100)
+                trend_score = (
+                    temp['r_squared'] * 0.5 +           # R² contribution (50%)
+                    temp['trend_consistency'] * 0.3 +   # Directional consistency (30%)
+                    temp['trend_strength'] * 0.2        # Magnitude of trend (20%)
+                ) * 100
+                
+                # 2. Soften volatility penalty using square root
+                # This makes moderate volatility less punishing
+                stability_factor = (1 - normalized_volatility) ** 0.6
+                
+                # 3. Calculate base MSS
                 mss = trend_score * stability_factor * temp['liquidity_factor']
-                mss = min(max(mss, 0), 100)  # Ensure 0-100 range
                 
-                # Determine category
-                if mss >= 60:
+                # 4. Ensure 0-100 range
+                mss = min(max(mss, 0), 100)
+                
+                # Determine category with improved thresholds
+                if mss >= 50:
                     category = "stable"
                     status = "Trending - Good Conditions"
                     color = "#10b981"
-                elif mss >= 40:
+                elif mss >= 30:
                     category = "choppy"
                     status = "Choppy - Moderate Risk"
                     color = "#f59e0b"
@@ -22362,6 +22392,8 @@ def calculate_market_stability_score(request):
                     'volatility': round(temp['volatility'], 4),
                     'normalized_volatility': round(normalized_volatility, 4),
                     'r_squared': round(temp['r_squared'], 4),
+                    'trend_consistency': round(temp['trend_consistency'], 4),
+                    'trend_strength': round(temp['trend_strength'], 4),
                     'liquidity_factor': round(temp['liquidity_factor'], 2),
                     'category': category,
                     'status': status,
@@ -22425,7 +22457,6 @@ def get_mss_historical_data(request):
             max_volatility = max(all_window_volatilities) if all_window_volatilities else 1.0
             
             # Second pass: calculate MSS with normalization
-            vol_index = 0
             for i in range(window, len(hist)):
                 window_data = hist.iloc[i-window:i]
                 returns = window_data['Close'].pct_change()
@@ -22443,6 +22474,23 @@ def get_mss_historical_data(request):
                 model.fit(X, y)
                 r_squared = model.score(X, y)
                 
+                # Calculate trend consistency
+                returns_clean = returns.dropna()
+                if len(returns_clean) > 0:
+                    positive_days = (returns_clean > 0).sum()
+                    trend_consistency = abs(positive_days / len(returns_clean) - 0.5) * 2
+                else:
+                    trend_consistency = 0
+                
+                # Calculate trend strength
+                if len(prices) > 0 and prices[0] != 0:
+                    slope_per_day = model.coef_[0][0]
+                    avg_price = np.mean(prices)
+                    trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
+                    trend_strength = min(trend_strength, 1.0)
+                else:
+                    trend_strength = 0
+                
                 # Calculate liquidity factor
                 avg_volume = window_data['Volume'].mean()
                 if avg_volume > 10000000:
@@ -22455,8 +22503,13 @@ def get_mss_historical_data(request):
                     liquidity_factor = 0.8
                 
                 # Improved MSS calculation
-                trend_score = r_squared * 100
-                stability_factor = 1 - normalized_volatility
+                trend_score = (
+                    r_squared * 0.5 +
+                    trend_consistency * 0.3 +
+                    trend_strength * 0.2
+                ) * 100
+                
+                stability_factor = (1 - normalized_volatility) ** 0.6
                 mss = trend_score * stability_factor * liquidity_factor
                 mss = min(max(mss, 0), 100)
                 
@@ -22465,8 +22518,6 @@ def get_mss_historical_data(request):
                     'mss': round(mss, 2),
                     'price': round(window_data['Close'].iloc[-1], 2)
                 })
-                
-                vol_index += 1
             
             return JsonResponse({
                 'success': True,
