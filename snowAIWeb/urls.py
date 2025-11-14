@@ -362,6 +362,12 @@ urlpatterns = [
 
      path('simulate-trading-performance', simulate_trading_performance, name='simulate_trading_performance'),
 
+     path(
+        "obliterate-latest/<int:count>/",
+        views.obliterate_latest_backtest_results,
+        name="obliterate_latest_backtest_results"
+    ),
+
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

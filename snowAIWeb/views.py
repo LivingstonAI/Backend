@@ -23421,6 +23421,33 @@ def generate_factors_description(stats, asset_bias):
     return " • ".join(factors)
 
 
+
+@csrf_exempt
+def obliterate_latest_backtest_results(request, count=1):
+    """
+    Deletes the latest `count` BacktestResult entries.
+    Accessible via GET in the URL: /obliterate-latest/<count>/
+    """
+    try:
+        count = int(count)
+        if count <= 0:
+            return JsonResponse({"error": "Count must be a positive integer."}, status=400)
+
+        latest_entries = BacktestResult.objects.order_by("-created_at")[:count]
+        deleted_count = latest_entries.count()
+        latest_entries.delete()
+
+        return JsonResponse({
+            "status": "success",
+            "deleted_count": deleted_count,
+            "message": f"Successfully obliterated {deleted_count} latest BacktestResult entries."
+        })
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
