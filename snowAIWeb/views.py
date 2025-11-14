@@ -23451,16 +23451,9 @@ def obliterate_latest_backtest_results(request, count=1):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
+
 from django.db.models import Sum, Count, Avg, Q
-from .models import Account, AccountTrades
-import numpy as np
 from datetime import datetime, timedelta
-import json
-
-
 @csrf_exempt
 @require_http_methods(["GET"])
 def supreme_multi_account_analytics_endpoint(request):
@@ -23484,7 +23477,7 @@ def supreme_multi_account_analytics_endpoint(request):
         total_wins = 0
         
         for account in accounts:
-            trades = AccountTrades.objects.filter(account=account)
+            trades = AccountTrades.objects.filter(account=account).order_by('date_entered')
             
             if not trades.exists():
                 continue
@@ -23512,10 +23505,14 @@ def supreme_multi_account_analytics_endpoint(request):
             else:
                 sharpe_ratio = 0
             
-            # Calculate Max Drawdown
-            cumulative = np.cumsum([account.initial_capital] + trade_amounts)
-            running_max = np.maximum.accumulate(cumulative)
-            drawdown = (cumulative - running_max) / running_max * 100
+            # Calculate Max Drawdown and equity curve
+            cumulative = [account.initial_capital]
+            for amount in trade_amounts:
+                cumulative.append(cumulative[-1] + amount)
+            
+            cumulative_array = np.array(cumulative)
+            running_max = np.maximum.accumulate(cumulative_array)
+            drawdown = (cumulative_array - running_max) / running_max * 100
             max_drawdown = np.min(drawdown) if len(drawdown) > 0 else 0
             
             # Calculate Sortino Ratio (downside deviation)
@@ -23530,6 +23527,22 @@ def supreme_multi_account_analytics_endpoint(request):
             gross_profit = sum([t for t in trade_amounts if t > 0])
             gross_loss = abs(sum([t for t in trade_amounts if t < 0]))
             profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else 0
+            
+            # Create equity curve data
+            equity_curve = []
+            for i, equity in enumerate(cumulative):
+                equity_curve.append({
+                    'period': i,
+                    'equity': equity
+                })
+            
+            # Create drawdown curve data
+            drawdown_curve = []
+            for i, dd in enumerate(drawdown):
+                drawdown_curve.append({
+                    'period': i,
+                    'drawdown': dd
+                })
             
             account_data = {
                 'account_id': account.id,
@@ -23547,7 +23560,9 @@ def supreme_multi_account_analytics_endpoint(request):
                 'gross_profit': gross_profit,
                 'gross_loss': gross_loss,
                 'trade_amounts': trade_amounts,
-                'cumulative_equity': cumulative.tolist() if len(cumulative) > 0 else []
+                'cumulative_equity': cumulative,
+                'equity_curve': equity_curve,
+                'drawdown_curve': drawdown_curve
             }
             
             account_analytics.append(account_data)
@@ -23556,12 +23571,12 @@ def supreme_multi_account_analytics_endpoint(request):
             total_trades += trade_count
             total_wins += wins
         
-        # Sort accounts by total return
+        # Sort accounts by total return (performance-based, not trade count)
         account_analytics.sort(key=lambda x: x['total_return'], reverse=True)
         
         # Best and worst performing accounts
         best_accounts = account_analytics[:5]
-        worst_accounts = account_analytics[-5:]
+        worst_accounts = list(reversed(account_analytics[-5:]))
         
         # Average performance
         avg_return = np.mean([a['total_return'] for a in account_analytics]) if account_analytics else 0
@@ -23583,13 +23598,19 @@ def supreme_multi_account_analytics_endpoint(request):
             portfolio_sharpe = 0
         
         # Portfolio Max Drawdown
-        portfolio_cumulative = np.array([initial_total])
-        for acc in account_analytics:
-            if len(acc['cumulative_equity']) > 0:
-                portfolio_cumulative = np.append(portfolio_cumulative, acc['cumulative_equity'][-1])
+        portfolio_cumulative = [initial_total]
+        max_trades = max([len(acc['trade_amounts']) for acc in account_analytics])
         
-        portfolio_running_max = np.maximum.accumulate(portfolio_cumulative)
-        portfolio_drawdown = (portfolio_cumulative - portfolio_running_max) / portfolio_running_max * 100
+        for i in range(max_trades):
+            period_total = initial_total
+            for acc in account_analytics:
+                if i < len(acc['cumulative_equity']):
+                    period_total += (acc['cumulative_equity'][i] - acc['initial_capital'])
+            portfolio_cumulative.append(period_total)
+        
+        portfolio_cumulative_array = np.array(portfolio_cumulative)
+        portfolio_running_max = np.maximum.accumulate(portfolio_cumulative_array)
+        portfolio_drawdown = (portfolio_cumulative_array - portfolio_running_max) / portfolio_running_max * 100
         portfolio_max_drawdown = np.min(portfolio_drawdown) if len(portfolio_drawdown) > 0 else 0
         
         # Profit Factor
@@ -23597,20 +23618,26 @@ def supreme_multi_account_analytics_endpoint(request):
         total_gross_loss = sum([a['gross_loss'] for a in account_analytics])
         portfolio_profit_factor = (total_gross_profit / total_gross_loss) if total_gross_loss > 0 else 0
         
-        # Generate equity curves
-        equity_curves = generate_portfolio_equity_curves(account_analytics, initial_total)
+        # Generate individual equity curves
+        individual_equity_curves = []
+        for acc in account_analytics:
+            individual_equity_curves.append({
+                'account_id': acc['account_id'],
+                'account_name': acc['account_name'],
+                'total_return': acc['total_return'],
+                'sharpe_ratio': acc['sharpe_ratio'],
+                'win_rate': acc['win_rate'],
+                'equity_curve': acc['equity_curve']
+            })
         
         # Risk metrics
         risk_metrics = calculate_advanced_risk_metrics(account_analytics, all_returns, portfolio_max_drawdown, total_pnl)
         
-        # Monte Carlo simulations
+        # Monte Carlo simulations - ALL accounts with percentage returns
         monte_carlo_sims = run_monte_carlo_simulations(account_analytics)
         
         # Capital allocation recommendations
         capital_allocation = calculate_optimal_capital_allocation(account_analytics, total_portfolio_value)
-        
-        # Correlation matrix (simplified)
-        correlation_matrix = calculate_correlation_matrix(account_analytics)
         
         # Compile response
         response_data = {
@@ -23632,11 +23659,10 @@ def supreme_multi_account_analytics_endpoint(request):
                 'avg_sharpe': avg_sharpe,
                 'avg_win_rate': avg_win_rate
             },
-            'equity_curves': equity_curves,
+            'individual_equity_curves': individual_equity_curves,
             'risk_metrics': risk_metrics,
             'capital_allocation': capital_allocation,
-            'monte_carlo_simulations': monte_carlo_sims,
-            'correlation_matrix': correlation_matrix
+            'monte_carlo_simulations': monte_carlo_sims
         }
         
         return JsonResponse(response_data)
@@ -23647,37 +23673,12 @@ def supreme_multi_account_analytics_endpoint(request):
         }, status=500)
 
 
-def generate_portfolio_equity_curves(account_analytics, initial_total):
-    """Generate time-series equity curves for portfolio and top accounts"""
-    max_length = max([len(acc['cumulative_equity']) for acc in account_analytics if acc['cumulative_equity']])
-    
-    equity_curves = []
-    for i in range(max_length):
-        point = {
-            'date': f'Period {i}',
-            'portfolio_value': sum([
-                acc['cumulative_equity'][min(i, len(acc['cumulative_equity'])-1)] 
-                if acc['cumulative_equity'] else acc['initial_capital']
-                for acc in account_analytics
-            ])
-        }
-        
-        # Add top 3 accounts to the curve
-        for acc in account_analytics[:3]:
-            if acc['cumulative_equity'] and i < len(acc['cumulative_equity']):
-                point[f"account_{acc['account_id']}"] = acc['cumulative_equity'][i]
-        
-        equity_curves.append(point)
-    
-    return equity_curves
-
-
 def calculate_advanced_risk_metrics(account_analytics, all_returns, max_drawdown, total_pnl):
     """Calculate hedge fund-level risk metrics"""
     
     # Value at Risk (VaR) - 95% confidence
     if len(all_returns) > 0:
-        var_95 = np.percentile(all_returns, 5)
+        var_95 = abs(np.percentile(all_returns, 5))
     else:
         var_95 = 0
     
@@ -23702,33 +23703,34 @@ def calculate_advanced_risk_metrics(account_analytics, all_returns, max_drawdown
     # Beta (simplified - using volatility as proxy)
     beta = volatility / 15 if volatility > 0 else 1  # Assuming market vol of 15%
     
-    # Generate drawdown series
-    drawdown_series = []
-    for i in range(min(100, len(all_returns))):
-        cumsum = np.sum(all_returns[:i+1])
-        running_max = np.max(np.cumsum(all_returns[:i+1]))
-        dd = ((cumsum - running_max) / running_max * 100) if running_max != 0 else 0
-        drawdown_series.append({
-            'date': f'T{i}',
-            'drawdown': dd
+    # Account risk details with individual drawdown curves
+    account_risk_details = []
+    for acc in account_analytics:
+        account_risk_details.append({
+            'account_id': acc['account_id'],
+            'account_name': acc['account_name'],
+            'max_drawdown': acc['max_drawdown'],
+            'sharpe_ratio': acc['sharpe_ratio'],
+            'sortino_ratio': acc['sortino_ratio'],
+            'drawdown_curve': acc['drawdown_curve']
         })
     
     return {
-        'value_at_risk': abs(var_95),
+        'value_at_risk': var_95,
         'sortino_ratio': sortino_ratio,
         'calmar_ratio': calmar_ratio,
         'portfolio_volatility': volatility,
         'beta': beta,
         'recovery_factor': recovery_factor,
-        'drawdown_series': drawdown_series
+        'account_risk_details': account_risk_details
     }
 
 
 def run_monte_carlo_simulations(account_analytics, num_simulations=1000, periods=252):
-    """Run Monte Carlo simulations for each account"""
+    """Run Monte Carlo simulations for ALL accounts with percentage-based projections"""
     simulations = []
     
-    for acc in account_analytics[:5]:  # Top 5 accounts
+    for acc in account_analytics:  # ALL accounts
         if not acc['trade_amounts'] or len(acc['trade_amounts']) < 2:
             continue
         
@@ -23737,67 +23739,81 @@ def run_monte_carlo_simulations(account_analytics, num_simulations=1000, periods
         std_return = np.std(returns)
         
         # Run simulations
-        simulation_paths = []
-        final_values = []
+        final_returns_pct = []
         
-        for sim in range(min(num_simulations, 100)):  # Limit to 100 paths for visualization
-            path = [acc['current_value']]
-            current_val = acc['current_value']
+        for sim in range(num_simulations):
+            cumulative_return = 0
             
             for period in range(periods):
                 daily_return = np.random.normal(mean_return, std_return)
-                current_val += daily_return
-                path.append(current_val)
+                cumulative_return += daily_return
             
-            final_values.append(current_val)
+            # Convert to percentage
+            return_pct = (cumulative_return / acc['initial_capital'] * 100)
+            final_returns_pct.append(return_pct)
         
-        # Convert paths to chart format (sample every 10 periods)
-        chart_data = []
-        for period in range(0, periods + 1, 10):
-            data_point = {'period': period}
-            for sim in range(min(50, len(simulation_paths))):  # Show 50 paths max
-                path = simulation_paths[sim] if sim < len(simulation_paths) else None
-                if path and period < len(path):
-                    data_point[f'path_{sim}'] = path[period]
-            chart_data.append(data_point)
+        # Calculate scenarios
+        best_case_pct = np.percentile(final_returns_pct, 95)
+        expected_pct = np.median(final_returns_pct)
+        worst_case_pct = np.percentile(final_returns_pct, 5)
         
-        # Calculate confidence intervals
-        expected_value = np.mean(final_values) if final_values else acc['current_value']
-        conf_lower = np.percentile(final_values, 2.5) if final_values else acc['current_value']
-        conf_upper = np.percentile(final_values, 97.5) if final_values else acc['current_value']
+        # Generate projection paths for visualization
+        projection_data = []
+        for period in range(0, periods + 1, 5):  # Every 5 days
+            # Simulate scenarios for this period
+            period_best = []
+            period_expected = []
+            period_worst = []
+            
+            for sim in range(100):  # Quick simulations for this period
+                cumulative = 0
+                for p in range(period):
+                    cumulative += np.random.normal(mean_return, std_return)
+                return_pct = (cumulative / acc['initial_capital'] * 100)
+                period_expected.append(return_pct)
+            
+            projection_data.append({
+                'period': period,
+                'best_case': np.percentile(period_expected, 95) if period_expected else 0,
+                'expected': np.median(period_expected) if period_expected else 0,
+                'worst_case': np.percentile(period_expected, 5) if period_expected else 0
+            })
         
         simulations.append({
             'account_id': acc['account_id'],
             'account_name': acc['account_name'],
-            'expected_value': expected_value,
-            'conf_lower': conf_lower,
-            'conf_upper': conf_upper,
-            'simulation_paths': chart_data
+            'best_case_pct': best_case_pct,
+            'expected_pct': expected_pct,
+            'worst_case_pct': worst_case_pct,
+            'projection_data': projection_data
         })
     
     return simulations
 
 
 def calculate_optimal_capital_allocation(account_analytics, total_portfolio_value):
-    """Calculate optimal capital allocation based on risk-adjusted returns"""
+    """Calculate optimal capital allocation based on performance metrics"""
     allocations = []
     
-    # Calculate allocation scores based on Sharpe ratio and max drawdown
+    # Calculate allocation scores based on performance, Sharpe ratio and risk control
     for acc in account_analytics:
-        # Scoring algorithm
-        sharpe_score = max(0, acc['sharpe_ratio']) * 0.4
-        drawdown_score = max(0, 100 + acc['max_drawdown']) / 100 * 0.3  # Less negative is better
-        return_score = max(0, acc['total_return']) / 100 * 0.3
+        # Scoring algorithm (performance-weighted)
+        performance_score = max(0, acc['total_return']) / 100 * 0.5  # 50% weight on returns
+        sharpe_score = max(0, acc['sharpe_ratio']) * 0.3  # 30% weight on Sharpe
+        drawdown_score = max(0, (100 + acc['max_drawdown']) / 100) * 0.1  # 10% weight on drawdown control
+        win_rate_score = acc['win_rate'] / 100 * 0.1  # 10% weight on win rate
         
-        composite_score = sharpe_score + drawdown_score + return_score
+        composite_score = performance_score + sharpe_score + drawdown_score + win_rate_score
         
         allocations.append({
+            'account_id': acc['account_id'],
             'account_name': acc['account_name'],
             'current_capital': acc['current_value'],
             'current_allocation': (acc['current_value'] / total_portfolio_value * 100) if total_portfolio_value > 0 else 0,
+            'total_return': acc['total_return'],
             'sharpe_ratio': acc['sharpe_ratio'],
             'max_drawdown': acc['max_drawdown'],
-            'total_return': acc['total_return'],
+            'win_rate': acc['win_rate'],
             'composite_score': composite_score
         })
     
@@ -23809,40 +23825,16 @@ def calculate_optimal_capital_allocation(account_analytics, total_portfolio_valu
         allocation['recommended_allocation'] = recommended_pct
         allocation['recommended_capital'] = total_portfolio_value * recommended_pct / 100
         
-        # Determine priority
-        if allocation['sharpe_ratio'] > 1.5 and allocation['max_drawdown'] > -20:
+        # Determine priority based on performance metrics
+        if allocation['total_return'] > 10 and allocation['sharpe_ratio'] > 1.5 and allocation['max_drawdown'] > -20:
             allocation['priority'] = 'HIGH'
-        elif allocation['sharpe_ratio'] > 0.8:
+        elif allocation['total_return'] > 5 and allocation['sharpe_ratio'] > 0.8:
             allocation['priority'] = 'MEDIUM'
         else:
             allocation['priority'] = 'LOW'
     
+    # Sort by recommended allocation (highest first)
     return sorted(allocations, key=lambda x: x['recommended_allocation'], reverse=True)
-
-
-def calculate_correlation_matrix(account_analytics):
-    """Calculate simplified correlation between accounts"""
-    correlations = []
-    
-    for i, acc1 in enumerate(account_analytics[:10]):
-        for j, acc2 in enumerate(account_analytics[:10]):
-            if i < j and len(acc1['trade_amounts']) > 1 and len(acc2['trade_amounts']) > 1:
-                # Align arrays
-                min_len = min(len(acc1['trade_amounts']), len(acc2['trade_amounts']))
-                corr = np.corrcoef(
-                    acc1['trade_amounts'][:min_len], 
-                    acc2['trade_amounts'][:min_len]
-                )[0, 1]
-                
-                if not np.isnan(corr):
-                    correlations.append({
-                        'x': corr,
-                        'y': i - j,
-                        'account1': acc1['account_name'],
-                        'account2': acc2['account_name']
-                    })
-    
-    return correlations
 
 
 # LEGODI BACKEND CODE
