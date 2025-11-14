@@ -368,6 +368,8 @@ urlpatterns = [
         name="obliterate_latest_backtest_results"
     ),
 
+    path('api/supreme_multi_account_analytics_endpoint/', supreme_multi_account_analytics_endpoint, name='supreme_multi_account_analytics'),
+
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
