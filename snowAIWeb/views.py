@@ -23422,6 +23422,10 @@ def generate_factors_description(stats, asset_bias):
 
 
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .models import BacktestResult
+
 @csrf_exempt
 def obliterate_latest_backtest_results(request, count=1):
     """
@@ -23433,9 +23437,14 @@ def obliterate_latest_backtest_results(request, count=1):
         if count <= 0:
             return JsonResponse({"error": "Count must be a positive integer."}, status=400)
 
+        # Get the latest N entries
         latest_entries = BacktestResult.objects.order_by("-created_at")[:count]
-        deleted_count = latest_entries.count()
-        latest_entries.delete()
+
+        # Collect their IDs
+        ids_to_delete = [entry.id for entry in latest_entries]
+
+        # Delete them in bulk
+        deleted_count, _ = BacktestResult.objects.filter(id__in=ids_to_delete).delete()
 
         return JsonResponse({
             "status": "success",
