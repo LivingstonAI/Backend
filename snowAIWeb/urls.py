@@ -368,7 +368,6 @@ urlpatterns = [
         name="obliterate_latest_backtest_results"
     ),
 
-    path('api/supreme_multi_account_analytics_endpoint/', supreme_multi_account_analytics_endpoint, name='supreme_multi_account_analytics'),
 
     # Multi-Account Analytics endpoints
     path('fetch_multi_account_performance_overview_data/', 
