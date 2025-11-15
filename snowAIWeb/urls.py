@@ -381,6 +381,10 @@ urlpatterns = [
     path('fetch_all_accounts_equity_curves_comparison_data/', 
          views.fetch_all_accounts_equity_curves_comparison_data, 
          name='fetch_all_accounts_equity_curves_comparison_data'),
+    
+    path('execute_portfolio_monte_carlo_risk_simulation/', 
+         views.execute_portfolio_monte_carlo_risk_simulation, 
+         name='execute_portfolio_monte_carlo_risk_simulation'),
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

@@ -23450,15 +23450,9 @@ def obliterate_latest_backtest_results(request, count=1):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
+
 from django.db.models import Sum, Avg, Count, Q
-from .models import Account, AccountTrades
-import json
 from datetime import datetime
-
-
 @csrf_exempt
 @require_http_methods(["GET"])
 def fetch_multi_account_performance_overview_data(request):
@@ -23555,7 +23549,11 @@ def fetch_account_equity_curve_progression_data(request, account_id):
         
         for idx, trade in enumerate(trades, 1):
             # If it's a loss, subtract the amount (since losses are stored as positive)
-            trade_pnl = trade.amount if trade.outcome == 'Win' else -trade.amount
+            if trade.outcome == 'Loss':
+                trade_pnl = -abs(trade.amount)  # Force negative
+            else:
+                trade_pnl = abs(trade.amount)  # Force positive
+            
             running_balance += trade_pnl
             equity_curve_points.append({
                 'date': trade.date_entered.isoformat() if trade.date_entered else None,
@@ -23584,57 +23582,7 @@ def fetch_account_equity_curve_progression_data(request, account_id):
             'success': False,
             'error': str(e)
         }, status=500)
-        
 
-@csrf_exempt
-@require_http_methods(["GET"])
-def fetch_account_equity_curve_progression_data(request, account_id):
-    """
-    Fetches equity curve data for a specific account
-    """
-    try:
-        account = Account.objects.get(id=account_id)
-        trades = AccountTrades.objects.filter(account=account).order_by('date_entered')
-        
-        equity_curve_points = []
-        running_balance = account.initial_capital
-        
-        equity_curve_points.append({
-            'date': None,
-            'balance': running_balance,
-            'trade_number': 0,
-            'label': 'Initial Capital'
-        })
-        
-        for idx, trade in enumerate(trades, 1):
-            running_balance += trade.amount
-            equity_curve_points.append({
-                'date': trade.date_entered.isoformat() if trade.date_entered else None,
-                'balance': round(running_balance, 2),
-                'trade_number': idx,
-                'trade_amount': trade.amount,
-                'asset': trade.asset,
-                'outcome': trade.outcome
-            })
-        
-        return JsonResponse({
-            'success': True,
-            'account_name': account.account_name,
-            'initial_capital': account.initial_capital,
-            'current_balance': running_balance,
-            'equity_curve': equity_curve_points
-        })
-        
-    except Account.DoesNotExist:
-        return JsonResponse({
-            'success': False,
-            'error': 'Account not found'
-        }, status=404)
-    except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=500)
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -23655,7 +23603,11 @@ def fetch_all_accounts_equity_curves_comparison_data(request):
             
             for idx, trade in enumerate(trades, 1):
                 # If it's a loss, subtract the amount (since losses are stored as positive)
-                trade_pnl = trade.amount if trade.outcome == 'Win' else -trade.amount
+                if trade.outcome == 'Loss':
+                    trade_pnl = -abs(trade.amount)  # Force negative
+                else:
+                    trade_pnl = abs(trade.amount)  # Force positive
+                    
                 running_balance += trade_pnl
                 equity_points.append({
                     'trade_number': idx,
@@ -23676,6 +23628,120 @@ def fetch_all_accounts_equity_curves_comparison_data(request):
             'accounts_equity_data': all_curves_data
         })
         
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def execute_portfolio_monte_carlo_risk_simulation(request):
+    """
+    Runs a Monte Carlo simulation for an account based on its historical trade performance
+    """
+    try:
+        data = json.loads(request.body)
+        account_id = data.get('account_id')
+        num_simulations = data.get('num_simulations', 1000)
+        num_trades = data.get('num_trades', 100)
+        
+        account = Account.objects.get(id=account_id)
+        trades = AccountTrades.objects.filter(account=account)
+        
+        if trades.count() == 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'No trades available for this account'
+            }, status=400)
+        
+        # Extract all trade returns as percentages
+        trade_returns = []
+        for trade in trades:
+            if trade.outcome == 'Loss':
+                trade_pnl = -abs(trade.amount)
+            else:
+                trade_pnl = abs(trade.amount)
+            
+            # Calculate return as percentage of initial capital
+            trade_return_pct = (trade_pnl / account.initial_capital) * 100
+            trade_returns.append(trade_return_pct)
+        
+        # Run Monte Carlo simulations
+        import random
+        import statistics
+        
+        simulation_results = []
+        final_balances = []
+        
+        for sim in range(num_simulations):
+            balance = account.initial_capital
+            equity_curve = [balance]
+            
+            for _ in range(num_trades):
+                # Randomly sample a trade return from historical data
+                random_return_pct = random.choice(trade_returns)
+                trade_amount = (random_return_pct / 100) * balance
+                balance += trade_amount
+                equity_curve.append(balance)
+            
+            final_balances.append(balance)
+            
+            # Store only every 50th simulation to reduce data size
+            if sim % 50 == 0:
+                simulation_results.append({
+                    'simulation_number': sim,
+                    'final_balance': round(balance, 2),
+                    'equity_curve': [round(b, 2) for b in equity_curve]
+                })
+        
+        # Calculate statistics
+        final_balances.sort()
+        
+        percentile_5 = final_balances[int(len(final_balances) * 0.05)]
+        percentile_25 = final_balances[int(len(final_balances) * 0.25)]
+        percentile_50 = statistics.median(final_balances)
+        percentile_75 = final_balances[int(len(final_balances) * 0.75)]
+        percentile_95 = final_balances[int(len(final_balances) * 0.95)]
+        
+        mean_balance = statistics.mean(final_balances)
+        std_dev = statistics.stdev(final_balances)
+        
+        # Calculate probability of profit
+        profitable_sims = sum(1 for b in final_balances if b > account.initial_capital)
+        prob_profit = (profitable_sims / num_simulations) * 100
+        
+        # Calculate worst drawdown risk
+        max_loss = account.initial_capital - min(final_balances)
+        max_loss_pct = (max_loss / account.initial_capital) * 100
+        
+        return JsonResponse({
+            'success': True,
+            'account_name': account.account_name,
+            'initial_capital': account.initial_capital,
+            'num_simulations': num_simulations,
+            'num_trades_simulated': num_trades,
+            'statistics': {
+                'mean_final_balance': round(mean_balance, 2),
+                'median_final_balance': round(percentile_50, 2),
+                'std_deviation': round(std_dev, 2),
+                'percentile_5': round(percentile_5, 2),
+                'percentile_25': round(percentile_25, 2),
+                'percentile_75': round(percentile_75, 2),
+                'percentile_95': round(percentile_95, 2),
+                'probability_of_profit': round(prob_profit, 2),
+                'max_potential_loss': round(max_loss, 2),
+                'max_loss_percentage': round(max_loss_pct, 2)
+            },
+            'sample_simulations': simulation_results
+        })
+        
+    except Account.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Account not found'
+        }, status=404)
     except Exception as e:
         return JsonResponse({
             'success': False,
