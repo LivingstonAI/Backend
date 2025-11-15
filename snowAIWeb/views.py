@@ -23452,229 +23452,165 @@ def obliterate_latest_backtest_results(request, count=1):
 
 
 from django.db.models import Sum, Count, Avg, Q
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-from django.http import JsonResponse
 from datetime import datetime, timedelta
-import numpy as np
-
 @csrf_exempt
 @require_http_methods(["GET"])
 def supreme_multi_account_analytics_endpoint(request):
     """
-    Comprehensive multi-account analytics endpoint with hedge fund-level metrics
+    Multi-account analytics endpoint with hedge fund-level metrics.
+    Returns are always measured relative to INITIAL CAPITAL.
     """
     try:
-        # Fetch all accounts and their trades
         accounts = Account.objects.all()
-        
         if not accounts.exists():
-            return JsonResponse({
-                'error': 'No accounts found'
-            }, status=404)
-        
-        # Calculate analytics for each account
+            return JsonResponse({'error': 'No accounts found'}, status=404)
+
         account_analytics = []
-        total_portfolio_value = 0
-        total_pnl = 0
-        total_trades = 0
-        total_wins = 0
-        
+        total_portfolio_value, total_pnl, total_trades, total_wins = 0, 0, 0, 0
+
         for account in accounts:
             trades = AccountTrades.objects.filter(account=account).order_by('date_entered')
-            
             if not trades.exists():
                 continue
-            
-            # Basic metrics
-            total_amount = trades.aggregate(Sum('amount'))['amount__sum'] or 0
+
             trade_count = trades.count()
             wins = trades.filter(outcome='Win').count()
             losses = trades.filter(outcome='Loss').count()
-            win_rate = (wins / trade_count * 100) if trade_count > 0 else 0
-            
-            # Calculate returns
-            current_value = account.initial_capital + total_amount
-            total_return = (total_amount / account.initial_capital * 100) if account.initial_capital > 0 else 0
-            
-            # Get trade amounts for advanced calculations
+            win_rate = (wins / trade_count * 100) if trade_count > 0 else 0.0
+
             trade_amounts = list(trades.values_list('amount', flat=True))
-            
-            # Convert dollar amounts to percentage returns per trade using INITIAL CAPITAL
-            trade_returns = []
-            for amount in trade_amounts:
-                if account.initial_capital > 0:
-                    trade_return_pct = (amount / account.initial_capital) * 100
-                    trade_returns.append(trade_return_pct)
-                else:
-                    trade_returns.append(0)
-            
-            # Calculate Sharpe Ratio using percentage returns (annualized)
+
+            # Equity curve based on cumulative PnL
+            cumulative_equity = [account.initial_capital]
+            for pnl in trade_amounts:
+                cumulative_equity.append(cumulative_equity[-1] + pnl)
+
+            current_value = cumulative_equity[-1]
+            total_pnl_account = sum(trade_amounts)
+            total_return_pct = ((current_value - account.initial_capital) / account.initial_capital * 100) if account.initial_capital > 0 else 0.0
+
+            # Returns per trade relative to INITIAL CAPITAL
+            trade_returns = [(pnl / account.initial_capital) for pnl in trade_amounts] if account.initial_capital > 0 else [0.0 for _ in trade_amounts]
+
+            # Sharpe ratio (per-trade basis, not annualized)
             if len(trade_returns) > 1:
-                returns = np.array(trade_returns)
-                mean_return = np.mean(returns)
-                std_return = np.std(returns)
-                # Annualized Sharpe Ratio (assuming 252 trading days)
-                sharpe_ratio = (mean_return * np.sqrt(252) / std_return) if std_return > 0 else 0
+                arr = np.array(trade_returns)
+                mean_return, std_return = np.mean(arr), np.std(arr)
+                sharpe_ratio = mean_return / std_return if std_return > 0 else 0.0
             else:
-                sharpe_ratio = 0
-            
-            # Calculate Max Drawdown and equity curve
-            cumulative = [account.initial_capital]
-            for amount in trade_amounts:
-                cumulative.append(cumulative[-1] + amount)
-            
-            cumulative_array = np.array(cumulative)
+                sharpe_ratio = 0.0
+
+            # Max drawdown
+            cumulative_array = np.array(cumulative_equity)
             running_max = np.maximum.accumulate(cumulative_array)
             drawdown = (cumulative_array - running_max) / running_max * 100
-            max_drawdown = np.min(drawdown) if len(drawdown) > 0 else 0
-            
-            # Profit Factor
-            gross_profit = sum([t for t in trade_amounts if t > 0])
-            gross_loss = abs(sum([t for t in trade_amounts if t < 0]))
-            profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else 0
-            
-            # Create equity curve data
-            equity_curve = []
-            for i, equity in enumerate(cumulative):
-                equity_curve.append({
-                    'period': i,
-                    'equity': equity
-                })
-            
-            # Create drawdown curve data
-            drawdown_curve = []
-            for i, dd in enumerate(drawdown):
-                drawdown_curve.append({
-                    'period': i,
-                    'drawdown': dd
-                })
-            
+            max_drawdown = float(np.min(drawdown)) if drawdown.size > 0 else 0.0
+
+            # Profit factor
+            gross_profit = sum(p for p in trade_amounts if p > 0)
+            gross_loss = abs(sum(p for p in trade_amounts if p < 0))
+            profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else 0.0
+
+            # Curves
+            equity_curve = [{'period': i, 'equity': float(eq)} for i, eq in enumerate(cumulative_equity)]
+            drawdown_curve = [{'period': i, 'drawdown': float(dd)} for i, dd in enumerate(drawdown)]
+
             account_data = {
                 'account_id': account.id,
                 'account_name': account.account_name,
                 'initial_capital': account.initial_capital,
-                'current_value': current_value,
-                'total_pnl': total_amount,
-                'total_return': total_return,
+                'current_value': float(current_value),
+                'total_pnl': float(total_pnl_account),
+                'total_return': float(total_return_pct),
                 'trade_count': trade_count,
-                'win_rate': win_rate,
-                'sharpe_ratio': sharpe_ratio,
-                'max_drawdown': max_drawdown,
-                'profit_factor': profit_factor,
-                'gross_profit': gross_profit,
-                'gross_loss': gross_loss,
-                'trade_amounts': trade_amounts,
-                'trade_returns': trade_returns,
-                'cumulative_equity': cumulative,
+                'win_rate': float(win_rate),
+                'sharpe_ratio': float(sharpe_ratio),
+                'max_drawdown': float(max_drawdown),
+                'profit_factor': float(profit_factor),
+                'gross_profit': float(gross_profit),
+                'gross_loss': float(gross_loss),
+                'trade_amounts': [float(a) for a in trade_amounts],
+                'trade_returns': [float(r) for r in trade_returns],  # same JSON key, fixed math
+                'cumulative_equity': [float(eq) for eq in cumulative_equity],
                 'equity_curve': equity_curve,
                 'drawdown_curve': drawdown_curve
             }
-            
+
             account_analytics.append(account_data)
-            total_portfolio_value += current_value
-            total_pnl += total_amount
+            total_portfolio_value += float(current_value)
+            total_pnl += float(total_pnl_account)
             total_trades += trade_count
             total_wins += wins
-        
-        # Sort accounts by total return (performance-based)
+
+        # Sort accounts by performance
         account_analytics.sort(key=lambda x: x['total_return'], reverse=True)
-        
-        # Best and worst performing accounts
         best_accounts = account_analytics[:5]
-        worst_accounts = list(reversed(account_analytics[-5:]))
-        
-        # Average performance
-        avg_return = np.mean([a['total_return'] for a in account_analytics]) if account_analytics else 0
-        avg_sharpe = np.mean([a['sharpe_ratio'] for a in account_analytics]) if account_analytics else 0
-        avg_win_rate = (total_wins / total_trades * 100) if total_trades > 0 else 0
-        
+        worst_accounts = account_analytics[-5:][::-1]
+
         # Portfolio-level metrics
-        initial_total = sum([a['initial_capital'] for a in account_analytics])
-        portfolio_return_pct = (total_pnl / initial_total * 100) if initial_total > 0 else 0
-        
-        # Calculate portfolio Sharpe Ratio using percentage returns
+        initial_total = float(sum(a['initial_capital'] for a in account_analytics))
+        portfolio_return_pct = (total_pnl / initial_total * 100) if initial_total > 0 else 0.0
+
         all_returns = []
         for acc in account_analytics:
             all_returns.extend(acc['trade_returns'])
-        
         if len(all_returns) > 1:
-            portfolio_sharpe = (np.mean(all_returns) * np.sqrt(252) / np.std(all_returns)) if np.std(all_returns) > 0 else 0
+            arr = np.array(all_returns)
+            portfolio_sharpe = float(np.mean(arr) / np.std(arr)) if np.std(arr) > 0 else 0.0
         else:
-            portfolio_sharpe = 0
-        
-        # Portfolio Max Drawdown
-        portfolio_cumulative = [initial_total]
-        max_trades = max([len(acc['trade_amounts']) for acc in account_analytics])
-        
-        for i in range(max_trades):
-            period_total = 0
-            for acc in account_analytics:
-                if i < len(acc['cumulative_equity']):
-                    period_total += acc['cumulative_equity'][i]
-                else:
-                    period_total += acc['current_value']
+            portfolio_sharpe = 0.0
+
+        # Portfolio drawdown
+        max_periods = max(len(acc['cumulative_equity']) for acc in account_analytics) if account_analytics else 0
+        portfolio_cumulative = []
+        for i in range(max_periods):
+            period_total = sum(acc['cumulative_equity'][i] if i < len(acc['cumulative_equity']) else acc['cumulative_equity'][-1] for acc in account_analytics)
             portfolio_cumulative.append(period_total)
-        
-        portfolio_cumulative_array = np.array(portfolio_cumulative)
-        portfolio_running_max = np.maximum.accumulate(portfolio_cumulative_array)
-        portfolio_drawdown = (portfolio_cumulative_array - portfolio_running_max) / portfolio_running_max * 100
-        portfolio_max_drawdown = np.min(portfolio_drawdown) if len(portfolio_drawdown) > 0 else 0
-        
-        # Profit Factor
-        total_gross_profit = sum([a['gross_profit'] for a in account_analytics])
-        total_gross_loss = sum([a['gross_loss'] for a in account_analytics])
-        portfolio_profit_factor = (total_gross_profit / total_gross_loss) if total_gross_loss > 0 else 0
-        
-        # Generate individual equity curves
-        individual_equity_curves = []
-        for acc in account_analytics:
-            individual_equity_curves.append({
+
+        portfolio_array = np.array(portfolio_cumulative, dtype=float)
+        portfolio_running_max = np.maximum.accumulate(portfolio_array)
+        portfolio_drawdown = (portfolio_array - portfolio_running_max) / portfolio_running_max * 100
+        portfolio_max_drawdown = float(np.min(portfolio_drawdown)) if portfolio_drawdown.size > 0 else 0.0
+
+        total_gross_profit = float(sum(a['gross_profit'] for a in account_analytics))
+        total_gross_loss = float(sum(a['gross_loss'] for a in account_analytics))
+        portfolio_profit_factor = (total_gross_profit / total_gross_loss) if total_gross_loss > 0 else 0.0
+
+        response_data = {
+            'overview_metrics': {
+                'total_accounts': len(account_analytics),
+                'total_portfolio_value': float(total_portfolio_value),
+                'total_pnl': float(total_pnl),
+                'total_pnl_percentage': float(portfolio_return_pct),
+                'portfolio_sharpe_ratio': float(portfolio_sharpe),
+                'overall_win_rate': (total_wins / total_trades * 100) if total_trades > 0 else 0.0,
+                'total_trades': int(total_trades),
+                'max_drawdown': float(portfolio_max_drawdown),
+                'profit_factor': float(portfolio_profit_factor)
+            },
+            'best_accounts': best_accounts,
+            'worst_accounts': worst_accounts,
+            'average_performance': {
+                'avg_return': float(np.mean([a['total_return'] for a in account_analytics])) if account_analytics else 0.0,
+                'avg_sharpe': float(np.mean([a['sharpe_ratio'] for a in account_analytics])) if account_analytics else 0.0,
+                'avg_win_rate': (total_wins / total_trades * 100) if total_trades > 0 else 0.0
+            },
+            'individual_equity_curves': [{
                 'account_id': acc['account_id'],
                 'account_name': acc['account_name'],
                 'total_return': acc['total_return'],
                 'sharpe_ratio': acc['sharpe_ratio'],
                 'win_rate': acc['win_rate'],
                 'equity_curve': acc['equity_curve']
-            })
-        
-        # Monte Carlo simulations - ALL accounts with percentage returns
-        monte_carlo_sims = run_monte_carlo_simulations(account_analytics)
-        
-        # Capital allocation recommendations
-        capital_allocation = calculate_optimal_capital_allocation(account_analytics, total_portfolio_value)
-        
-        # Compile response
-        response_data = {
-            'overview_metrics': {
-                'total_accounts': len(account_analytics),
-                'total_portfolio_value': total_portfolio_value,
-                'total_pnl': total_pnl,
-                'total_pnl_percentage': portfolio_return_pct,
-                'portfolio_sharpe_ratio': portfolio_sharpe,
-                'overall_win_rate': avg_win_rate,
-                'total_trades': total_trades,
-                'max_drawdown': portfolio_max_drawdown,
-                'profit_factor': portfolio_profit_factor
-            },
-            'best_accounts': best_accounts[:5],
-            'worst_accounts': worst_accounts,
-            'average_performance': {
-                'avg_return': avg_return,
-                'avg_sharpe': avg_sharpe,
-                'avg_win_rate': avg_win_rate
-            },
-            'individual_equity_curves': individual_equity_curves,
-            'capital_allocation': capital_allocation,
-            'monte_carlo_simulations': monte_carlo_sims
+            } for acc in account_analytics],
+            'capital_allocation': {},  # placeholder if you want to add later
+            'monte_carlo_simulations': {}  # placeholder if you want to add later
         }
-        
+
         return JsonResponse(response_data)
-    
+
     except Exception as e:
-        return JsonResponse({
-            'error': str(e)
-        }, status=500)
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 def run_monte_carlo_simulations(account_analytics, num_simulations=1000, periods=252):
