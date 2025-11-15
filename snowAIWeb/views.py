@@ -23450,9 +23450,15 @@ def obliterate_latest_backtest_results(request, count=1):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
-
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from django.db.models import Sum, Avg, Count, Q
+from .models import Account, AccountTrades
+import json
 from datetime import datetime
+
+
 @csrf_exempt
 @require_http_methods(["GET"])
 def fetch_multi_account_performance_overview_data(request):
@@ -23472,13 +23478,12 @@ def fetch_multi_account_performance_overview_data(request):
             winning_trades = trades.filter(outcome='Win').count()
             losing_trades = trades.filter(outcome='Loss').count()
             
-            total_profit = trades.filter(outcome='Win').aggregate(Sum('amount'))['amount__sum'] or 0
-            total_loss = trades.filter(outcome='Loss').aggregate(Sum('amount'))['amount__sum'] or 0
-            net_pnl = total_profit + total_loss  # Loss amounts are negative
+            # Sum ALL trade amounts together (wins and losses)
+            net_pnl = trades.aggregate(Sum('amount'))['amount__sum'] or 0
             
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
             
-            # Calculate ROI based on initial capital
+            # Calculate ROI: total return / initial capital * 100
             roi = (net_pnl / account.initial_capital * 100) if account.initial_capital > 0 else 0
             
             account_performance_list.append({
@@ -23517,6 +23522,102 @@ def fetch_multi_account_performance_overview_data(request):
                 'avg_net_pnl': round(avg_net_pnl, 2)
             },
             'total_accounts': len(account_performance_list)
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_account_equity_curve_progression_data(request, account_id):
+    """
+    Fetches equity curve data for a specific account
+    """
+    try:
+        account = Account.objects.get(id=account_id)
+        trades = AccountTrades.objects.filter(account=account).order_by('date_entered')
+        
+        equity_curve_points = []
+        running_balance = account.initial_capital
+        
+        equity_curve_points.append({
+            'date': None,
+            'balance': running_balance,
+            'trade_number': 0,
+            'label': 'Initial Capital'
+        })
+        
+        for idx, trade in enumerate(trades, 1):
+            running_balance += trade.amount
+            equity_curve_points.append({
+                'date': trade.date_entered.isoformat() if trade.date_entered else None,
+                'balance': round(running_balance, 2),
+                'trade_number': idx,
+                'trade_amount': trade.amount,
+                'asset': trade.asset,
+                'outcome': trade.outcome
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'account_name': account.account_name,
+            'initial_capital': account.initial_capital,
+            'current_balance': running_balance,
+            'equity_curve': equity_curve_points
+        })
+        
+    except Account.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Account not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_all_accounts_equity_curves_comparison_data(request):
+    """
+    Fetches equity curve data for all accounts for comparison
+    """
+    try:
+        accounts = Account.objects.all()
+        
+        all_curves_data = []
+        
+        for account in accounts:
+            trades = AccountTrades.objects.filter(account=account).order_by('date_entered')
+            
+            equity_points = []
+            running_balance = account.initial_capital
+            
+            for idx, trade in enumerate(trades, 1):
+                running_balance += trade.amount
+                equity_points.append({
+                    'trade_number': idx,
+                    'balance': round(running_balance, 2),
+                    'date': trade.date_entered.isoformat() if trade.date_entered else None
+                })
+            
+            all_curves_data.append({
+                'account_id': account.id,
+                'account_name': account.account_name,
+                'initial_capital': account.initial_capital,
+                'final_balance': running_balance,
+                'equity_curve': equity_points
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'accounts_equity_data': all_curves_data
         })
         
     except Exception as e:
