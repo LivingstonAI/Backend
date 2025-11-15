@@ -23478,8 +23478,10 @@ def fetch_multi_account_performance_overview_data(request):
             winning_trades = trades.filter(outcome='Win').count()
             losing_trades = trades.filter(outcome='Loss').count()
             
-            # Sum ALL trade amounts together (wins and losses)
-            net_pnl = trades.aggregate(Sum('amount'))['amount__sum'] or 0
+            # Calculate net P&L: wins are positive, losses need to be negative
+            total_wins = trades.filter(outcome='Win').aggregate(Sum('amount'))['amount__sum'] or 0
+            total_losses = trades.filter(outcome='Loss').aggregate(Sum('amount'))['amount__sum'] or 0
+            net_pnl = total_wins - total_losses  # Subtract losses since they're stored as positive
             
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
             
@@ -23552,12 +23554,14 @@ def fetch_account_equity_curve_progression_data(request, account_id):
         })
         
         for idx, trade in enumerate(trades, 1):
-            running_balance += trade.amount
+            # If it's a loss, subtract the amount (since losses are stored as positive)
+            trade_pnl = trade.amount if trade.outcome == 'Win' else -trade.amount
+            running_balance += trade_pnl
             equity_curve_points.append({
                 'date': trade.date_entered.isoformat() if trade.date_entered else None,
                 'balance': round(running_balance, 2),
                 'trade_number': idx,
-                'trade_amount': trade.amount,
+                'trade_amount': round(trade_pnl, 2),
                 'asset': trade.asset,
                 'outcome': trade.outcome
             })
@@ -23580,52 +23584,7 @@ def fetch_account_equity_curve_progression_data(request, account_id):
             'success': False,
             'error': str(e)
         }, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["GET"])
-def fetch_all_accounts_equity_curves_comparison_data(request):
-    """
-    Fetches equity curve data for all accounts for comparison
-    """
-    try:
-        accounts = Account.objects.all()
         
-        all_curves_data = []
-        
-        for account in accounts:
-            trades = AccountTrades.objects.filter(account=account).order_by('date_entered')
-            
-            equity_points = []
-            running_balance = account.initial_capital
-            
-            for idx, trade in enumerate(trades, 1):
-                running_balance += trade.amount
-                equity_points.append({
-                    'trade_number': idx,
-                    'balance': round(running_balance, 2),
-                    'date': trade.date_entered.isoformat() if trade.date_entered else None
-                })
-            
-            all_curves_data.append({
-                'account_id': account.id,
-                'account_name': account.account_name,
-                'initial_capital': account.initial_capital,
-                'final_balance': running_balance,
-                'equity_curve': equity_points
-            })
-        
-        return JsonResponse({
-            'success': True,
-            'accounts_equity_data': all_curves_data
-        })
-        
-    except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=500)
-
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -23677,7 +23636,6 @@ def fetch_account_equity_curve_progression_data(request, account_id):
             'error': str(e)
         }, status=500)
 
-
 @csrf_exempt
 @require_http_methods(["GET"])
 def fetch_all_accounts_equity_curves_comparison_data(request):
@@ -23696,7 +23654,9 @@ def fetch_all_accounts_equity_curves_comparison_data(request):
             running_balance = account.initial_capital
             
             for idx, trade in enumerate(trades, 1):
-                running_balance += trade.amount
+                # If it's a loss, subtract the amount (since losses are stored as positive)
+                trade_pnl = trade.amount if trade.outcome == 'Win' else -trade.amount
+                running_balance += trade_pnl
                 equity_points.append({
                     'trade_number': idx,
                     'balance': round(running_balance, 2),
