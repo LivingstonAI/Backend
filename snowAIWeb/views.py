@@ -23452,7 +23452,12 @@ def obliterate_latest_backtest_results(request, count=1):
 
 
 from django.db.models import Sum, Count, Avg, Q
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.http import JsonResponse
 from datetime import datetime, timedelta
+import numpy as np
+
 @csrf_exempt
 @require_http_methods(["GET"])
 def supreme_multi_account_analytics_endpoint(request):
@@ -23492,27 +23497,25 @@ def supreme_multi_account_analytics_endpoint(request):
             current_value = account.initial_capital + total_amount
             total_return = (total_amount / account.initial_capital * 100) if account.initial_capital > 0 else 0
             
-            # Get trade amounts for advanced calculations - CONVERT TO RETURNS
+            # Get trade amounts for advanced calculations
             trade_amounts = list(trades.values_list('amount', flat=True))
             
-            # Convert dollar amounts to percentage returns per trade
+            # Convert dollar amounts to percentage returns per trade using INITIAL CAPITAL
             trade_returns = []
-            running_capital = account.initial_capital
             for amount in trade_amounts:
-                if running_capital > 0:
-                    trade_return_pct = (amount / running_capital) * 100
+                if account.initial_capital > 0:
+                    trade_return_pct = (amount / account.initial_capital) * 100
                     trade_returns.append(trade_return_pct)
-                    running_capital += amount
                 else:
                     trade_returns.append(0)
             
-            # Calculate Sharpe Ratio using percentage returns
+            # Calculate Sharpe Ratio using percentage returns (annualized)
             if len(trade_returns) > 1:
                 returns = np.array(trade_returns)
                 mean_return = np.mean(returns)
                 std_return = np.std(returns)
-                # Assuming ~252 trading days, but adjust based on actual trading frequency
-                sharpe_ratio = (mean_return / std_return * np.sqrt(trade_count)) if std_return > 0 else 0
+                # Annualized Sharpe Ratio (assuming 252 trading days)
+                sharpe_ratio = (mean_return * np.sqrt(252) / std_return) if std_return > 0 else 0
             else:
                 sharpe_ratio = 0
             
@@ -23525,14 +23528,6 @@ def supreme_multi_account_analytics_endpoint(request):
             running_max = np.maximum.accumulate(cumulative_array)
             drawdown = (cumulative_array - running_max) / running_max * 100
             max_drawdown = np.min(drawdown) if len(drawdown) > 0 else 0
-            
-            # Calculate Sortino Ratio (downside deviation) using percentage returns
-            negative_returns = [r for r in trade_returns if r < 0]
-            if len(negative_returns) > 1:
-                downside_std = np.std(negative_returns)
-                sortino_ratio = (np.mean(trade_returns) / downside_std * np.sqrt(trade_count)) if downside_std > 0 else 0
-            else:
-                sortino_ratio = 0
             
             # Profit Factor
             gross_profit = sum([t for t in trade_amounts if t > 0])
@@ -23565,13 +23560,12 @@ def supreme_multi_account_analytics_endpoint(request):
                 'trade_count': trade_count,
                 'win_rate': win_rate,
                 'sharpe_ratio': sharpe_ratio,
-                'sortino_ratio': sortino_ratio,
                 'max_drawdown': max_drawdown,
                 'profit_factor': profit_factor,
                 'gross_profit': gross_profit,
                 'gross_loss': gross_loss,
                 'trade_amounts': trade_amounts,
-                'trade_returns': trade_returns,  # Percentage returns for calculations
+                'trade_returns': trade_returns,
                 'cumulative_equity': cumulative,
                 'equity_curve': equity_curve,
                 'drawdown_curve': drawdown_curve
@@ -23605,7 +23599,7 @@ def supreme_multi_account_analytics_endpoint(request):
             all_returns.extend(acc['trade_returns'])
         
         if len(all_returns) > 1:
-            portfolio_sharpe = (np.mean(all_returns) / np.std(all_returns) * np.sqrt(len(all_returns))) if np.std(all_returns) > 0 else 0
+            portfolio_sharpe = (np.mean(all_returns) * np.sqrt(252) / np.std(all_returns)) if np.std(all_returns) > 0 else 0
         else:
             portfolio_sharpe = 0
         
@@ -23644,9 +23638,6 @@ def supreme_multi_account_analytics_endpoint(request):
                 'equity_curve': acc['equity_curve']
             })
         
-        # Risk metrics
-        risk_metrics = calculate_advanced_risk_metrics(account_analytics, all_returns, portfolio_max_drawdown, total_pnl)
-        
         # Monte Carlo simulations - ALL accounts with percentage returns
         monte_carlo_sims = run_monte_carlo_simulations(account_analytics)
         
@@ -23674,7 +23665,6 @@ def supreme_multi_account_analytics_endpoint(request):
                 'avg_win_rate': avg_win_rate
             },
             'individual_equity_curves': individual_equity_curves,
-            'risk_metrics': risk_metrics,
             'capital_allocation': capital_allocation,
             'monte_carlo_simulations': monte_carlo_sims
         }
@@ -23687,62 +23677,6 @@ def supreme_multi_account_analytics_endpoint(request):
         }, status=500)
 
 
-def calculate_advanced_risk_metrics(account_analytics, all_returns, max_drawdown, total_pnl):
-    """Calculate hedge fund-level risk metrics"""
-    
-    # Value at Risk (VaR) - 95% confidence - use percentage returns
-    if len(all_returns) > 0:
-        var_95_pct = abs(np.percentile(all_returns, 5))
-        # Convert to dollar amount using average account size
-        avg_account_size = np.mean([a['current_value'] for a in account_analytics])
-        var_95 = avg_account_size * var_95_pct / 100
-    else:
-        var_95 = 0
-    
-    # Portfolio volatility
-    volatility = np.std(all_returns) if len(all_returns) > 1 else 0
-    
-    # Sortino Ratio (portfolio level)
-    negative_returns = [r for r in all_returns if r < 0]
-    if len(negative_returns) > 1:
-        downside_std = np.std(negative_returns)
-        sortino_ratio = (np.mean(all_returns) / downside_std) if downside_std > 0 else 0
-    else:
-        sortino_ratio = 0
-    
-    # Calmar Ratio
-    avg_return = np.mean(all_returns) if len(all_returns) > 0 else 0
-    calmar_ratio = (avg_return / abs(max_drawdown)) if max_drawdown != 0 else 0
-    
-    # Recovery Factor
-    recovery_factor = (total_pnl / abs(max_drawdown * np.mean([a['initial_capital'] for a in account_analytics]) / 100)) if max_drawdown != 0 else 0
-    
-    # Beta (simplified - using volatility as proxy)
-    beta = volatility / 2 if volatility > 0 else 1  # Normalized volatility
-    
-    # Account risk details with individual drawdown curves
-    account_risk_details = []
-    for acc in account_analytics:
-        account_risk_details.append({
-            'account_id': acc['account_id'],
-            'account_name': acc['account_name'],
-            'max_drawdown': acc['max_drawdown'],
-            'sharpe_ratio': acc['sharpe_ratio'],
-            'sortino_ratio': acc['sortino_ratio'],
-            'drawdown_curve': acc['drawdown_curve']
-        })
-    
-    return {
-        'value_at_risk': var_95,
-        'sortino_ratio': sortino_ratio,
-        'calmar_ratio': calmar_ratio,
-        'portfolio_volatility': volatility,
-        'beta': beta,
-        'recovery_factor': recovery_factor,
-        'account_risk_details': account_risk_details
-    }
-
-
 def run_monte_carlo_simulations(account_analytics, num_simulations=1000, periods=252):
     """Run Monte Carlo simulations for ALL accounts with percentage-based projections"""
     simulations = []
@@ -23751,7 +23685,7 @@ def run_monte_carlo_simulations(account_analytics, num_simulations=1000, periods
         if not acc['trade_returns'] or len(acc['trade_returns']) < 2:
             continue
         
-        returns = np.array(acc['trade_returns'])  # Use percentage returns
+        returns = np.array(acc['trade_returns'])
         mean_return = np.mean(returns)
         std_return = np.std(returns)
         
@@ -23774,11 +23708,10 @@ def run_monte_carlo_simulations(account_analytics, num_simulations=1000, periods
         
         # Generate projection paths for visualization
         projection_data = []
-        for period in range(0, periods + 1, 5):  # Every 5 days
-            # Simulate scenarios for this period
+        for period in range(0, periods + 1, 5):
             period_returns = []
             
-            for sim in range(100):  # Quick simulations for this period
+            for sim in range(100):
                 cumulative = 0
                 for p in range(period):
                     cumulative += np.random.normal(mean_return, std_return)
@@ -23807,13 +23740,12 @@ def calculate_optimal_capital_allocation(account_analytics, total_portfolio_valu
     """Calculate optimal capital allocation based on performance metrics"""
     allocations = []
     
-    # Calculate allocation scores based on performance, Sharpe ratio and risk control
     for acc in account_analytics:
         # Scoring algorithm (performance-weighted)
-        performance_score = max(0, acc['total_return']) / 100 * 0.5  # 50% weight on returns
-        sharpe_score = max(0, min(acc['sharpe_ratio'], 3)) / 3 * 0.3  # 30% weight on Sharpe (capped at 3)
-        drawdown_score = max(0, (100 + acc['max_drawdown']) / 100) * 0.1  # 10% weight on drawdown control
-        win_rate_score = acc['win_rate'] / 100 * 0.1  # 10% weight on win rate
+        performance_score = max(0, acc['total_return']) / 100 * 0.5
+        sharpe_score = max(0, min(acc['sharpe_ratio'], 3)) / 3 * 0.3
+        drawdown_score = max(0, (100 + acc['max_drawdown']) / 100) * 0.1
+        win_rate_score = acc['win_rate'] / 100 * 0.1
         
         composite_score = performance_score + sharpe_score + drawdown_score + win_rate_score
         
@@ -23845,9 +23777,7 @@ def calculate_optimal_capital_allocation(account_analytics, total_portfolio_valu
         else:
             allocation['priority'] = 'LOW'
     
-    # Sort by recommended allocation (highest first)
     return sorted(allocations, key=lambda x: x['recommended_allocation'], reverse=True)
-
 
 
 # LEGODI BACKEND CODE
