@@ -370,6 +370,19 @@ urlpatterns = [
 
     path('api/supreme_multi_account_analytics_endpoint/', supreme_multi_account_analytics_endpoint, name='supreme_multi_account_analytics'),
 
+    # Multi-Account Analytics endpoints
+    path('fetch_multi_account_performance_overview_data/', 
+         views.fetch_multi_account_performance_overview_data, 
+         name='fetch_multi_account_performance_overview_data'),
+    
+    path('fetch_account_equity_curve_progression_data/<int:account_id>/', 
+         views.fetch_account_equity_curve_progression_data, 
+         name='fetch_account_equity_curve_progression_data'),
+    
+    path('fetch_all_accounts_equity_curves_comparison_data/', 
+         views.fetch_all_accounts_equity_curves_comparison_data, 
+         name='fetch_all_accounts_equity_curves_comparison_data'),
+
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
