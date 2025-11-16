@@ -1543,6 +1543,52 @@ class AssetBiasRecommendation(models.Model):
         return f"{self.asset_name} - Bias: {self.bias or 'None'}, Volume: {self.volume or 'None'}"
 
 
+from django.utils import timezone
+class SnowAIVideoCategory(models.Model):
+    category_name = models.CharField(max_length=100, unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    
+    class Meta:
+        db_table = 'snowai_video_categories'
+        verbose_name = 'SnowAI Video Category'
+        verbose_name_plural = 'SnowAI Video Categories'
+        ordering = ['category_name']
+    
+    def __str__(self):
+        return self.category_name
+
+
+class SnowAIVideoEntry(models.Model):
+    video_title = models.CharField(max_length=255)
+    video_url = models.URLField(max_length=500)
+    category = models.ForeignKey(
+        SnowAIVideoCategory, 
+        on_delete=models.CASCADE, 
+        related_name='snowai_videos'
+    )
+    date_entered = models.DateTimeField(default=timezone.now)
+    notes = models.TextField(blank=True, null=True)
+    
+    class Meta:
+        db_table = 'snowai_video_entries'
+        verbose_name = 'SnowAI Video Entry'
+        verbose_name_plural = 'SnowAI Video Entries'
+        ordering = ['-date_entered']
+    
+    def __str__(self):
+        return self.video_title
+    
+    def get_youtube_embed_id(self):
+        """Extract YouTube video ID from various URL formats"""
+        import re
+        if 'youtube.com/watch?v=' in self.video_url:
+            return self.video_url.split('watch?v=')[1].split('&')[0]
+        elif 'youtu.be/' in self.video_url:
+            return self.video_url.split('youtu.be/')[1].split('?')[0]
+        elif 'youtube.com/embed/' in self.video_url:
+            return self.video_url.split('embed/')[1].split('?')[0]
+        return None
+
 
 class FeedbackForm(models.Model): 
     feedback = models.TextField()

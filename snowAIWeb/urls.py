@@ -386,6 +386,13 @@ urlpatterns = [
          views.execute_portfolio_monte_carlo_risk_simulation, 
          name='execute_portfolio_monte_carlo_risk_simulation'),
 
+     path('api/snowai-video-categories/', views.fetch_snowai_video_categories, name='fetch_snowai_video_categories'),
+     path('api/snowai-video-categories/create/', views.create_snowai_video_category, name='create_snowai_video_category'),
+     path('api/snowai-video-entries/', views.fetch_snowai_video_entries, name='fetch_snowai_video_entries'),
+     path('api/snowai-video-entries/create/', views.create_snowai_video_entry, name='create_snowai_video_entry'),
+     path('api/snowai-video-entries/<int:video_id>/update/', views.update_snowai_video_entry, name='update_snowai_video_entry'),
+     path('api/snowai-video-entries/<int:video_id>/delete/', views.delete_snowai_video_entry, name='delete_snowai_video_entry'),
+
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
