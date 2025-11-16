@@ -23451,8 +23451,15 @@ def obliterate_latest_backtest_results(request, count=1):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from django.db.models import Sum, Avg, Count, Q
+from .models import Account, AccountTrades
+import json
 from datetime import datetime
+
+
 @csrf_exempt
 @require_http_methods(["GET"])
 def fetch_multi_account_performance_overview_data(request):
@@ -23648,13 +23655,32 @@ def execute_portfolio_monte_carlo_risk_simulation(request):
         num_trades = data.get('num_trades', 100)
         
         account = Account.objects.get(id=account_id)
-        trades = AccountTrades.objects.filter(account=account)
+        trades = AccountTrades.objects.filter(account=account).order_by('date_entered')
         
         if trades.count() == 0:
             return JsonResponse({
                 'success': False,
                 'error': 'No trades available for this account'
             }, status=400)
+        
+        # Calculate average trading frequency (trades per day)
+        trades_with_dates = trades.exclude(date_entered__isnull=True)
+        if trades_with_dates.count() > 1:
+            first_trade = trades_with_dates.first().date_entered
+            last_trade = trades_with_dates.last().date_entered
+            days_trading = (last_trade - first_trade).days
+            
+            if days_trading > 0:
+                avg_trades_per_day = trades_with_dates.count() / days_trading
+            else:
+                avg_trades_per_day = 1  # Default if all trades on same day
+        else:
+            avg_trades_per_day = 1  # Default
+        
+        # Calculate estimated time horizons
+        estimated_days = num_trades / avg_trades_per_day if avg_trades_per_day > 0 else num_trades
+        estimated_weeks = estimated_days / 7
+        estimated_months = estimated_days / 30
         
         # Extract all trade returns as percentages
         trade_returns = []
@@ -23722,6 +23748,12 @@ def execute_portfolio_monte_carlo_risk_simulation(request):
             'initial_capital': account.initial_capital,
             'num_simulations': num_simulations,
             'num_trades_simulated': num_trades,
+            'time_horizon': {
+                'avg_trades_per_day': round(avg_trades_per_day, 2),
+                'estimated_days': round(estimated_days, 1),
+                'estimated_weeks': round(estimated_weeks, 1),
+                'estimated_months': round(estimated_months, 1)
+            },
             'statistics': {
                 'mean_final_balance': round(mean_balance, 2),
                 'median_final_balance': round(percentile_50, 2),
@@ -23747,8 +23779,7 @@ def execute_portfolio_monte_carlo_risk_simulation(request):
             'success': False,
             'error': str(e)
         }, status=500)
-
-
+        
 
 from django.core.exceptions import ObjectDoesNotExist
 @csrf_exempt
