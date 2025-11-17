@@ -23954,6 +23954,190 @@ def delete_snowai_video_entry(request, video_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+
+from datetime import datetime
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_stock_screener_fetch_data(request):
+    """
+    Unique endpoint for SnowAI Stock Screener to fetch comprehensive stock data
+    No authentication or CSRF required - personal use only
+    """
+    ticker_symbol = request.GET.get('ticker', '').upper()
+    
+    if not ticker_symbol:
+        return JsonResponse({'error': 'Ticker symbol is required'}, status=400)
+    
+    try:
+        ticker = yf.Ticker(ticker_symbol)
+        info = ticker.info
+        
+        # Get stock overview data
+        stock_info = {
+            'symbol': ticker_symbol,
+            'longName': info.get('longName'),
+            'sector': info.get('sector'),
+            'industry': info.get('industry'),
+            'currentPrice': info.get('currentPrice'),
+            'marketCap': info.get('marketCap'),
+            'trailingPE': info.get('trailingPE'),
+            'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
+            'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow'),
+            'dividendYield': info.get('dividendYield'),
+            'longBusinessSummary': info.get('longBusinessSummary'),
+        }
+        
+        # Get financial statements
+        financials_df = ticker.financials
+        financials_data = None
+        
+        if financials_df is not None and not financials_df.empty:
+            # Get top financial metrics
+            metrics = ['Total Revenue', 'Gross Profit', 'Operating Income', 'Net Income']
+            financial_rows = []
+            
+            for metric in metrics:
+                if metric in financials_df.index:
+                    row_data = {
+                        'metric': metric,
+                        'values': financials_df.loc[metric].tolist()
+                    }
+                    financial_rows.append(row_data)
+            
+            financials_data = {
+                'columns': [col.strftime('%Y') for col in financials_df.columns],
+                'data': financial_rows
+            }
+        
+        # Get quarterly earnings
+        earnings_df = ticker.quarterly_earnings
+        earnings_data = []
+        
+        if earnings_df is not None and not earnings_df.empty:
+            for idx, row in earnings_df.head(8).iterrows():
+                earnings_data.append({
+                    'quarter': idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx),
+                    'revenue': row.get('Revenue'),
+                    'earnings': row.get('Earnings')
+                })
+        
+        # Get news
+        news_data = []
+        try:
+            news = ticker.news
+            for article in news[:10]:
+                news_data.append({
+                    'title': article.get('title'),
+                    'publisher': article.get('publisher'),
+                    'link': article.get('link'),
+                    'providerPublishTime': datetime.fromtimestamp(
+                        article.get('providerPublishTime', 0)
+                    ).strftime('%Y-%m-%d %H:%M') if article.get('providerPublishTime') else 'N/A'
+                })
+        except:
+            pass
+        
+        return JsonResponse({
+            'stock_info': stock_info,
+            'financials': financials_data,
+            'earnings': earnings_data,
+            'news': news_data
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to fetch data: {str(e)}'}, status=500)
+
+
+@require_http_methods(["GET"])
+def snowai_stock_screener_fetch_data(request):
+    """
+    Unique endpoint for SnowAI Stock Screener to fetch comprehensive stock data
+    """
+    ticker_symbol = request.GET.get('ticker', '').upper()
+    
+    if not ticker_symbol:
+        return JsonResponse({'error': 'Ticker symbol is required'}, status=400)
+    
+    try:
+        ticker = yf.Ticker(ticker_symbol)
+        info = ticker.info
+        
+        # Get stock overview data
+        stock_info = {
+            'symbol': ticker_symbol,
+            'longName': info.get('longName'),
+            'sector': info.get('sector'),
+            'industry': info.get('industry'),
+            'currentPrice': info.get('currentPrice'),
+            'marketCap': info.get('marketCap'),
+            'trailingPE': info.get('trailingPE'),
+            'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
+            'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow'),
+            'dividendYield': info.get('dividendYield'),
+            'longBusinessSummary': info.get('longBusinessSummary'),
+        }
+        
+        # Get financial statements
+        financials_df = ticker.financials
+        financials_data = None
+        
+        if financials_df is not None and not financials_df.empty:
+            # Get top financial metrics
+            metrics = ['Total Revenue', 'Gross Profit', 'Operating Income', 'Net Income']
+            financial_rows = []
+            
+            for metric in metrics:
+                if metric in financials_df.index:
+                    row_data = {
+                        'metric': metric,
+                        'values': financials_df.loc[metric].tolist()
+                    }
+                    financial_rows.append(row_data)
+            
+            financials_data = {
+                'columns': [col.strftime('%Y') for col in financials_df.columns],
+                'data': financial_rows
+            }
+        
+        # Get quarterly earnings
+        earnings_df = ticker.quarterly_earnings
+        earnings_data = []
+        
+        if earnings_df is not None and not earnings_df.empty:
+            for idx, row in earnings_df.head(8).iterrows():
+                earnings_data.append({
+                    'quarter': idx.strftime('%Y-%m-%d') if hasattr(idx, 'strftime') else str(idx),
+                    'revenue': row.get('Revenue'),
+                    'earnings': row.get('Earnings')
+                })
+        
+        # Get news
+        news_data = []
+        try:
+            news = ticker.news
+            for article in news[:10]:
+                news_data.append({
+                    'title': article.get('title'),
+                    'publisher': article.get('publisher'),
+                    'link': article.get('link'),
+                    'providerPublishTime': datetime.fromtimestamp(
+                        article.get('providerPublishTime', 0)
+                    ).strftime('%Y-%m-%d %H:%M') if article.get('providerPublishTime') else 'N/A'
+                })
+        except:
+            pass
+        
+        return JsonResponse({
+            'stock_info': stock_info,
+            'financials': financials_data,
+            'earnings': earnings_data,
+            'news': news_data
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to fetch data: {str(e)}'}, status=500)
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key

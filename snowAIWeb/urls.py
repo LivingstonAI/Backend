@@ -393,6 +393,9 @@ urlpatterns = [
      path('api/snowai-video-entries/<int:video_id>/update/', views.update_snowai_video_entry, name='update_snowai_video_entry'),
      path('api/snowai-video-entries/<int:video_id>/delete/', views.delete_snowai_video_entry, name='delete_snowai_video_entry'),
 
+     path('api/snowai_stock_screener_fetch_data/', views.snowai_stock_screener_fetch_data, name='snowai_stock_screener_fetch_data'),
+
+
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
