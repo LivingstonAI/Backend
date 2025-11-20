@@ -24074,6 +24074,578 @@ def snowai_stock_screener_fetch_data(request):
         
     except Exception as e:
         return JsonResponse({'error': f'Failed to fetch data: {str(e)}'}, status=500)
+
+
+import json
+import logging
+import time
+from datetime import timedelta
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.utils import timezone
+from django.db.models import Q
+
+logger = logging.getLogger(__name__)
+
+
+# Helper function to determine asset type and relevant currencies
+def get_economic_currencies_for_asset(asset):
+    """
+    Determine which currencies' economic data should be used for an asset
+    """
+    # US Stocks - use USD economic data
+    us_stocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'JPMC',
+                 'BRK.B', 'JNJ', 'V', 'WMT', 'PG', 'DIS', 'NFLX', 'ADBE']
+    
+    # US Indices - use USD economic data
+    us_indices = ['SPY', 'QQQ', 'IWM', 'DIA', 'VTI']
+    
+    # Commodities mapping
+    commodity_currencies = {
+        'XAUUSD': ['USD'],  # Gold - USD data
+        'XAGUUSD': ['USD'],  # Silver - USD data
+        'XPTUSD': ['USD'],  # Platinum - USD data
+        'XPDUSD': ['USD'],  # Palladium - USD data
+        'CRUDEOIL': ['USD'],  # Oil - USD data
+        'NATGAS': ['USD'],  # Natural Gas - USD data
+        'COPPER': ['USD'],  # Copper - USD data
+        'WHEAT': ['USD'],  # Wheat - USD data
+        'CORN': ['USD'],  # Corn - USD data
+        'SOYBEANS': ['USD'],  # Soybeans - USD data
+    }
+    
+    # Emerging Markets & China - use multiple currencies
+    emerging_markets = {
+        'EEM': ['USD'],  # Emerging markets ETF - USD data
+        'FXI': ['CNY', 'USD'],  # China ETF - CNY and USD data
+    }
+    
+    # European Indices - EUR data
+    european_indices = {
+        'FTSE': ['GBP', 'EUR'],  # FTSE 100 - GBP and EUR
+        'DAX': ['EUR', 'USD'],  # DAX - EUR and USD
+        'CAC40': ['EUR', 'USD'],  # CAC 40 - EUR and USD
+    }
+    
+    # Asian Indices
+    asian_indices = {
+        'NIKKEI': ['JPY', 'USD'],  # Nikkei - JPY and USD
+        'HSI': ['HKD', 'CNY'],  # Hang Seng - HKD and CNY
+    }
+    
+    # Check if it's a Forex pair
+    if len(asset) == 6 and asset.isupper() and asset not in us_stocks and asset not in commodity_currencies:
+        base = asset[:3]
+        quote = asset[3:]
+        return [base, quote]
+    
+    # Check US stocks
+    if asset in us_stocks:
+        return ['USD']
+    
+    # Check US indices
+    if asset in us_indices:
+        return ['USD']
+    
+    # Check commodities
+    if asset in commodity_currencies:
+        return commodity_currencies[asset]
+    
+    # Check emerging markets
+    if asset in emerging_markets:
+        return emerging_markets[asset]
+    
+    # Check European indices
+    if asset in european_indices:
+        return european_indices[asset]
+    
+    # Check Asian indices
+    if asset in asian_indices:
+        return asian_indices[asset]
+    
+    # Default to USD for unknown assets
+    return ['USD']
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_watched_trading_assets_view(request):
+    """Fetch all watched trading assets"""
+    try:
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True).order_by('asset')
+        assets_data = [
+            {
+                'id': asset.id,
+                'asset': asset.asset,
+                'created_at': asset.created_at.isoformat()
+            }
+            for asset in watched_assets
+        ]
+        
+        return JsonResponse({
+            'success': True,
+            'watched_assets': assets_data
+        })
+    except Exception as e:
+        logger.error(f"Error fetching watched assets: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_trading_asset_to_watch_view(request):
+    """Add a trading asset to the watch list"""
+    try:
+        data = json.loads(request.body)
+        asset = data.get('asset')
+        
+        if not asset:
+            return JsonResponse({'success': False, 'error': 'Asset is required'}, status=400)
+        
+        # Check if asset is already being watched
+        if WatchedTradingAsset.objects.filter(asset=asset, is_active=True).exists():
+            return JsonResponse({'success': False, 'error': 'Asset is already being watched'}, status=400)
+        
+        # Create or reactivate the watched asset
+        watched_asset, created = WatchedTradingAsset.objects.get_or_create(
+            asset=asset,
+            defaults={'is_active': True}
+        )
+        
+        if not created:
+            watched_asset.is_active = True
+            watched_asset.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'{asset} added to watch list',
+            'asset_id': watched_asset.id
+        })
+    except Exception as e:
+        logger.error(f"Error adding asset to watch: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def remove_watched_trading_asset_view(request):
+    """Remove a trading asset from the watch list"""
+    try:
+        data = json.loads(request.body)
+        asset_id = data.get('asset_id')
+        
+        if not asset_id:
+            return JsonResponse({'success': False, 'error': 'Asset ID is required'}, status=400)
+        
+        watched_asset = WatchedTradingAsset.objects.get(id=asset_id)
+        watched_asset.is_active = False
+        watched_asset.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Asset removed from watch list'
+        })
+    except WatchedTradingAsset.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Asset not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error removing watched asset: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def fetch_trader_gpt_analyses_view(request):
+    """Fetch the latest TraderGPT analyses for all watched assets"""
+    try:
+        analyses = []
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True)
+        
+        for asset in watched_assets:
+            latest_analysis = TraderGPTAnalysisRecord.objects.filter(
+                asset=asset.asset
+            ).order_by('-analysis_timestamp').first()
+            
+            if latest_analysis:
+                analyses.append({
+                    'id': latest_analysis.id,
+                    'asset': latest_analysis.asset,
+                    'market_sentiment': latest_analysis.market_sentiment,
+                    'confidence_score': latest_analysis.confidence_score,
+                    'risk_level': latest_analysis.risk_level,
+                    'time_horizon': latest_analysis.time_horizon,
+                    'entry_strategy': latest_analysis.entry_strategy,
+                    'key_factors': latest_analysis.key_factors,
+                    'stop_loss_level': latest_analysis.stop_loss_level,
+                    'take_profit_level': latest_analysis.take_profit_level,
+                    'support_level': latest_analysis.support_level,
+                    'resistance_level': latest_analysis.resistance_level,
+                    'analysis_timestamp': latest_analysis.analysis_timestamp.isoformat(),
+                    'updated_at': latest_analysis.updated_at.isoformat(),
+                })
+        
+        return JsonResponse({
+            'success': True,
+            'analyses': analyses
+        })
+    except Exception as e:
+        logger.error(f"Error fetching analyses: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+def validate_choice_field(value, valid_choices, default):
+    """Validate that a value matches one of the valid choices"""
+    if value and str(value).lower() in [choice[0] for choice in valid_choices]:
+        return str(value).lower()
+    return default
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def run_fresh_trader_analysis_view(request):
+    """Run a fresh analysis for a specific asset"""
+    try:
+        data = json.loads(request.body)
+        asset = data.get('asset')
+        
+        if not asset:
+            return JsonResponse({'success': False, 'error': 'Asset is required'}, status=400)
+        
+        # Check if asset is being watched
+        if not WatchedTradingAsset.objects.filter(asset=asset, is_active=True).exists():
+            return JsonResponse({'success': False, 'error': 'Asset is not in watch list'}, status=400)
+        
+        # Create execution log
+        execution_log = AnalysisExecutionLog.objects.create(
+            asset=asset,
+            status='running'
+        )
+        
+        start_time = time.time()
+        
+        try:
+            # Run the analysis
+            analysis_result = execute_trader_gpt_analysis_for_asset(asset)
+            
+            if analysis_result['success']:
+                execution_log.status = 'completed'
+                execution_log.completed_at = timezone.now()
+                execution_log.execution_time_seconds = time.time() - start_time
+                execution_log.save()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Fresh analysis completed for {asset}',
+                    'analysis_id': analysis_result['analysis_id']
+                })
+            else:
+                execution_log.status = 'failed'
+                execution_log.error_message = analysis_result.get('error', 'Unknown error')
+                execution_log.execution_time_seconds = time.time() - start_time
+                execution_log.save()
+                
+                return JsonResponse({
+                    'success': False,
+                    'error': analysis_result.get('error', 'Analysis failed')
+                }, status=500)
+                
+        except Exception as analysis_error:
+            execution_log.status = 'failed'
+            execution_log.error_message = str(analysis_error)
+            execution_log.execution_time_seconds = time.time() - start_time
+            execution_log.save()
+            raise
+            
+    except Exception as e:
+        logger.error(f"Error running fresh analysis: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+def get_economic_events_for_currencies(currencies):
+    """Get recent economic events for specified currencies"""
+    try:
+        thirty_days_ago = timezone.now() - timezone.timedelta(days=30)
+        events = EconomicEvent.objects.filter(
+            currency__in=currencies,
+            date_time__gte=thirty_days_ago
+        ).order_by('-date_time')
+        
+        return events
+    
+    except Exception as e:
+        logger.error(f"Error retrieving economic events: {str(e)}")
+        return EconomicEvent.objects.none()
+
+
+def execute_trader_gpt_analysis_for_asset(asset):
+    """Execute TraderGPT analysis for a specific asset"""
+    try:
+        # Determine relevant currencies for this asset
+        relevant_currencies = get_economic_currencies_for_asset(asset)
+        
+        # Fetch news and economic data
+        user_email = "system@tradergpt.com"
+        news_and_events_data = fetch_news_data([asset], user_email)
+        
+        # Get recent economic events for the relevant currencies
+        recent_events_objects = get_economic_events_for_currencies(relevant_currencies)
+        recent_events_text = format_economic_events_for_prompt(recent_events_objects)
+        
+        # Build asset type context
+        asset_type = determine_asset_type(asset)
+        
+        # Prepare the prompt for GPT
+        prompt = f"""
+        Analyze the {asset} ({asset_type}) and provide a comprehensive trading analysis.
+        
+        Asset Type: {asset_type}
+        Relevant Economic Data Currencies: {', '.join(relevant_currencies)}
+        
+        Recent News Data:
+        {json.dumps(news_and_events_data.get('message', [])[:5], indent=2)}
+        
+        Recent Economic Events:
+        {recent_events_text}
+        
+        Please provide your analysis in the following JSON format with strict character limits:
+        {{
+            "market_sentiment": "bullish|bearish|neutral (must be exactly one of these three words)",
+            "confidence_score": 85,
+            "risk_level": "low|medium|high (must be exactly one of these three words)",
+            "time_horizon": "short|medium|long (must be exactly one of these three words)",
+            "entry_strategy": "Detailed entry strategy with specific levels (max 1000 chars)",
+            "key_factors": "Key factors influencing this analysis (max 1000 chars)",
+            "stop_loss_level": "Recommended stop loss level (max 200 chars)",
+            "take_profit_level": "Recommended take profit level (max 200 chars)",
+            "support_level": "Current support level (max 200 chars)",
+            "resistance_level": "Current resistance level (max 200 chars)",
+            "summary": "Brief overall summary of the analysis (max 500 chars)"
+        }}
+        
+        IMPORTANT: 
+        - Use ONLY the exact words for sentiment (bullish/bearish/neutral), risk_level (low/medium/high), and time_horizon (short/medium/long)
+        - Keep all responses within the specified character limits
+        - Use concise, specific language with actual price levels where possible
+        - Base your analysis on current market conditions, news sentiment, economic events, and technical factors
+        - For stocks: Consider earnings, company fundamentals, sector trends, and US economic indicators
+        - For indices: Consider broad market trends, monetary policy, and GDP data
+        - For commodities: Consider supply/demand dynamics, USD strength, and geopolitical factors
+        """
+        
+        # Call GPT
+        gpt_response = chat_gpt(prompt)
+        
+        # Try to parse JSON from the response
+        try:
+            start_idx = gpt_response.find('{')
+            end_idx = gpt_response.rfind('}') + 1
+            
+            if start_idx != -1 and end_idx != -1:
+                json_str = gpt_response[start_idx:end_idx]
+                analysis_data = json.loads(json_str)
+            else:
+                analysis_data = json.loads(gpt_response)
+                
+        except json.JSONDecodeError as json_error:
+            logger.error(f"JSON parsing error for {asset}: {str(json_error)}")
+            logger.error(f"GPT Response: {gpt_response}")
+            
+            analysis_data = {
+                "market_sentiment": "neutral",
+                "confidence_score": 50,
+                "risk_level": "medium",
+                "time_horizon": "medium",
+                "entry_strategy": "Wait for clearer market signals before entering position",
+                "key_factors": "Analysis could not be parsed properly from GPT response",
+                "stop_loss_level": "TBD - Analysis parsing failed",
+                "take_profit_level": "TBD - Analysis parsing failed",
+                "support_level": "TBD - Analysis parsing failed",
+                "resistance_level": "TBD - Analysis parsing failed",
+                "summary": "Analysis parsing failed, manual review required"
+            }
+        
+        # Validate choice fields
+        sentiment = validate_choice_field(
+            analysis_data.get('market_sentiment'),
+            TraderGPTAnalysisRecord.SENTIMENT_CHOICES,
+            'neutral'
+        )
+        
+        risk_level = validate_choice_field(
+            analysis_data.get('risk_level'),
+            TraderGPTAnalysisRecord.RISK_CHOICES,
+            'medium'
+        )
+        
+        time_horizon = validate_choice_field(
+            analysis_data.get('time_horizon'),
+            TraderGPTAnalysisRecord.TIME_HORIZON_CHOICES,
+            'medium'
+        )
+        
+        # Ensure confidence score is valid
+        confidence_score = analysis_data.get('confidence_score', 50)
+        if isinstance(confidence_score, str):
+            try:
+                confidence_score = int(confidence_score)
+            except ValueError:
+                confidence_score = 50
+        confidence_score = min(100, max(1, confidence_score))
+        
+        # Create analysis record
+        analysis_record = TraderGPTAnalysisRecord.objects.create(
+            asset=asset,
+            market_sentiment=sentiment,
+            confidence_score=confidence_score,
+            risk_level=risk_level,
+            time_horizon=time_horizon,
+            entry_strategy=str(analysis_data.get('entry_strategy', ''))[:1000],
+            key_factors=str(analysis_data.get('key_factors', ''))[:1000],
+            stop_loss_level=str(analysis_data.get('stop_loss_level', ''))[:200],
+            take_profit_level=str(analysis_data.get('take_profit_level', ''))[:200],
+            support_level=str(analysis_data.get('support_level', ''))[:200],
+            resistance_level=str(analysis_data.get('resistance_level', ''))[:200],
+            raw_analysis=gpt_response,
+            news_data_used=news_and_events_data.get('message', []),
+            economic_events_used=[{
+                'date': event.date_time.isoformat(),
+                'currency': event.currency,
+                'event': event.event_name,
+                'impact': event.impact,
+                'actual': event.actual,
+                'forecast': event.forecast,
+                'previous': event.previous
+            } for event in recent_events_objects[:10]],
+            analysis_timestamp=timezone.now()
+        )
+        
+        logger.info(f"Successfully created analysis record {analysis_record.id} for {asset}")
+        
+        return {
+            'success': True,
+            'analysis_id': analysis_record.id,
+            'message': f'Analysis completed for {asset}'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in execute_trader_gpt_analysis_for_asset for {asset}: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def determine_asset_type(asset):
+    """Determine the type of asset (Forex, Stock, Index, or Commodity)"""
+    us_stocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'JPMC',
+                 'BRK.B', 'JNJ', 'V', 'WMT', 'PG', 'DIS', 'NFLX', 'ADBE']
+    indices = ['SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'EEM', 'FXI', 'FTSE', 'DAX', 'CAC40', 'NIKKEI', 'HSI']
+    commodities = ['XAUUSD', 'XAGUUSD', 'XPTUSD', 'XPDUSD', 'CRUDEOIL', 'NATGAS',
+                   'COPPER', 'WHEAT', 'CORN', 'SOYBEANS']
+    
+    if asset in us_stocks:
+        return "US Stock"
+    elif asset in indices:
+        return "Index"
+    elif asset in commodities:
+        return "Commodity"
+    elif len(asset) == 6 and asset.isupper():
+        return "Forex Pair"
+    else:
+        return "Asset"
+
+
+def format_economic_events_for_prompt(events):
+    """Format economic events into a readable string for the GPT prompt"""
+    if not events:
+        return "No recent economic events found."
+    
+    formatted = []
+    for event in events[:10]:
+        formatted.append(
+            f"- {event.date_time.strftime('%Y-%m-%d %H:%M')} - {event.currency}: "
+            f"{event.event_name} (Impact: {event.impact}) "
+            f"Actual: {event.actual}, Forecast: {event.forecast}, Previous: {event.previous}"
+        )
+    
+    return "\n".join(formatted) if formatted else "No recent economic events found."
+
+
+def run_scheduled_trader_gpt_analyses():
+    """
+    Scheduled function to run TraderGPT analyses for all watched assets.
+    """
+    try:
+        watched_assets = WatchedTradingAsset.objects.filter(is_active=True)
+        
+        if not watched_assets.exists():
+            logger.info("No watched assets found for analysis")
+            return
+        
+        logger.info(f"Starting scheduled analysis for {watched_assets.count()} assets")
+        
+        results = {
+            'successful': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+        for asset in watched_assets:
+            try:
+                # Check if we already have a recent analysis (within last 4 hours)
+                recent_analysis = TraderGPTAnalysisRecord.objects.filter(
+                    asset=asset.asset,
+                    analysis_timestamp__gte=timezone.now() - timedelta(hours=4)
+                ).exists()
+                
+                if not recent_analysis:
+                    logger.info(f"Running analysis for {asset.asset}")
+                    result = execute_trader_gpt_analysis_for_asset(asset.asset)
+                    
+                    if result['success']:
+                        results['successful'] += 1
+                        logger.info(f"Analysis completed for {asset.asset}")
+                    else:
+                        results['failed'] += 1
+                        results['errors'].append(f"{asset.asset}: {result.get('error', 'Unknown error')}")
+                        logger.error(f"Analysis failed for {asset.asset}: {result.get('error')}")
+                else:
+                    logger.info(f"Skipping {asset.asset} - recent analysis exists")
+                    
+                time.sleep(2)
+                
+            except Exception as e:
+                results['failed'] += 1
+                results['errors'].append(f"{asset.asset}: {str(e)}")
+                logger.error(f"Error analyzing {asset.asset}: {str(e)}")
+        
+        logger.info(f"Scheduled analysis completed. Successful: {results['successful']}, Failed: {results['failed']}")
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error in run_scheduled_trader_gpt_analyses: {str(e)}")
+        return {
+            'successful': 0,
+            'failed': 0,
+            'errors': [str(e)]
+        }
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def trigger_bulk_analysis_view(request):
+    """Manual trigger for bulk analysis of all watched assets"""
+    try:
+        results = run_scheduled_trader_gpt_analyses()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Bulk analysis completed',
+            'results': results
+        })
+    except Exception as e:
+        logger.error(f"Error in trigger_bulk_analysis_view: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
         
 
 # LEGODI BACKEND CODE
