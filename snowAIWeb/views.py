@@ -22533,7 +22533,6 @@ def get_mss_historical_data(request):
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
-
 @csrf_exempt
 def get_predefined_asset_lists(request):
     """
@@ -22542,21 +22541,135 @@ def get_predefined_asset_lists(request):
     asset_lists = {
         'forex': [
             'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 
-            'USDCAD=X', 'USDCHF=X', 'NZDUSD=X'
+            'USDCAD=X', 'USDCHF=X', 'NZDUSD=X', 'EURGBP=X',
+            'EURJPY=X', 'GBPJPY=X', 'AUDJPY=X', 'EURCHF=X'
         ],
         'stocks': [
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 
-            'TSLA', 'META', 'JPM', 'V', 'WMT'
+            # Tech Giants
+            'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 
+            'TSLA', 'META', 'AMD', 'INTC', 'ORCL', 'CSCO',
+            'ADBE', 'CRM', 'AVGO', 'QCOM', 'TXN', 'AMAT',
+            'LRCX', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'NXPI',
+            
+            # Financial Services
+            'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'BLK',
+            'SCHW', 'AXP', 'SPGI', 'CME', 'ICE', 'MCO',
+            'BK', 'USB', 'PNC', 'TFC', 'COF',
+            
+            # Healthcare & Pharma
+            'JNJ', 'LLY', 'UNH', 'PFE', 'ABBV', 'MRK', 'TMO',
+            'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS',
+            'CI', 'ELV', 'HUM', 'VRTX', 'REGN', 'ISRG',
+            
+            # Consumer Discretionary
+            'AMZN', 'TSLA', 'HD', 'MCD', 'NKE', 'SBUX', 'TJX',
+            'LOW', 'BKNG', 'MAR', 'CMG', 'F', 'GM', 'ABNB',
+            
+            # Consumer Staples
+            'WMT', 'PG', 'KO', 'PEP', 'COST', 'PM', 'MO',
+            'MDLZ', 'CL', 'KMB', 'GIS', 'KHC', 'STZ',
+            
+            # Energy
+            'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX',
+            'VLO', 'OXY', 'HAL', 'DVN', 'HES', 'BKR',
+            
+            # Industrials
+            'BA', 'HON', 'UNP', 'CAT', 'GE', 'RTX', 'LMT',
+            'UPS', 'DE', 'MMM', 'GD', 'NOC', 'FDX', 'CSX',
+            
+            # Telecom & Media
+            'T', 'VZ', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR',
+            
+            # Real Estate & REITs
+            'AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'SPG', 'O',
+            
+            # Materials
+            'LIN', 'APD', 'SHW', 'ECL', 'DD', 'NEM', 'FCX',
+            
+            # Utilities
+            'NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE',
+            
+            # Payment Processors
+            'V', 'MA', 'PYPL', 'ADP', 'FISV', 'FIS',
+            
+            # E-commerce & Retail
+            'SHOP', 'MELI', 'EBAY', 'ETSY', 'TGT', 'ROST',
+            
+            # Semiconductors (Additional)
+            'MU', 'ADI', 'MPWR', 'SWKS', 'QRVO', 'ON',
+            
+            # Software & Cloud
+            'NOW', 'INTU', 'WDAY', 'PANW', 'CRWD', 'ZS',
+            'DDOG', 'NET', 'SNOW', 'PLTR', 'TEAM',
+            
+            # Biotech
+            'BIIB', 'MRNA', 'BNTX', 'SGEN', 'ALNY', 'BGNE',
+            
+            # Aerospace & Defense
+            'HWM', 'TDG', 'HEI', 'LHX', 'TXT',
+            
+            # Chinese ADRs
+            'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV', 'LI',
+            
+            # EVs & Battery
+            'RIVN', 'LCID', 'ALB', 'SQM',
+            
+            # Cybersecurity
+            'FTNT', 'OKTA', 'S', 'CYBR',
+            
+            # Entertainment & Gaming
+            'EA', 'TTWO', 'RBLX', 'U',
+            
+            # Travel & Hospitality
+            'AAL', 'DAL', 'UAL', 'LUV', 'CCL', 'RCL',
+            
+            # Insurance
+            'BRK-B', 'PGR', 'ALL', 'TRV', 'AIG', 'MET', 'PRU',
+            
+            # Food & Beverage
+            'MCD', 'YUM', 'SBUX', 'DPZ', 'QSR', 'CMG',
+            
+            # Pharma Services
+            'MCK', 'CAH', 'COR', 'IDXX', 'A', 'WAT',
+            
+            # Chemicals
+            'DOW', 'LYB', 'CE', 'ALB', 'EMN',
         ],
         'indices': [
-            '^GSPC', '^DJI', '^IXIC', '^FTSE', '^GDAXI',
-            '^N225', '^HSI'
+            # US Indices
+            '^GSPC', '^DJI', '^IXIC', '^RUT', '^VIX',
+            
+            # European Indices
+            '^FTSE', '^GDAXI', '^FCHI', '^IBEX', '^AEX',
+            '^SSMI', '^OMXS30', '^BFX',
+            
+            # Asian Indices
+            '^N225', '^HSI', '000001.SS', '^STI', '^BSESN',
+            '^NSEI', '^KS11', '^TWII', '^JKSE',
+            
+            # Other Global Indices
+            '^AXJO', '^GSPTSE', '^MXX', '^BVSP', '^MERV',
         ],
         'commodities': [
-            'GC=F', 'SI=F', 'CL=F', 'NG=F', 'HG=F'
+            # Precious Metals
+            'GC=F', 'SI=F', 'PL=F', 'PA=F',
+            
+            # Energy
+            'CL=F', 'BZ=F', 'NG=F', 'RB=F', 'HO=F',
+            
+            # Base Metals
+            'HG=F', 'ALI=F',
+            
+            # Agricultural
+            'ZC=F', 'ZW=F', 'ZS=F', 'KC=F', 'SB=F',
+            'CT=F', 'CC=F', 'LBS=F',
         ],
         'bonds': [
-            '^TNX', '^TYX', '^FVX'
+            # US Treasury Yields
+            '^TNX', '^TYX', '^FVX', '^IRX',
+            
+            # Treasury Futures
+            'ZN=F', 'ZB=F', 'ZT=F', 'ZF=F',
         ]
     }
     
