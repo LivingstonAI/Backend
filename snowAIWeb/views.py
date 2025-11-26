@@ -24759,6 +24759,152 @@ def trigger_bulk_analysis_view(request):
     except Exception as e:
         logger.error(f"Error in trigger_bulk_analysis_view: {str(e)}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+import yfinance as yf
+import numpy as np
+from sklearn.linear_model import LinearRegression
+
+
+def _calculate_mss(symbol, lookback_period):
+    """
+    Internal function to calculate Market Stability Score
+    Returns MSS value or None if calculation fails
+    """
+    try:
+        # Download data
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=f"{lookback_period}d")
+        
+        if len(hist) < 20:
+            return None
+        
+        # Calculate returns
+        hist['returns'] = hist['Close'].pct_change()
+        
+        # Calculate volatility (σ)
+        volatility = hist['returns'].std()
+        
+        # Calculate R² (trend clarity)
+        prices = hist['Close'].values
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
+        
+        model = LinearRegression()
+        model.fit(X, y)
+        r_squared = model.score(X, y)
+        
+        # Calculate trend consistency (directional strength)
+        returns = hist['returns'].dropna()
+        if len(returns) > 0:
+            positive_days = (returns > 0).sum()
+            trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
+        else:
+            trend_consistency = 0
+        
+        # Calculate trend strength (magnitude of slope relative to price)
+        if len(prices) > 0 and prices[0] != 0:
+            slope_per_day = model.coef_[0][0]
+            avg_price = np.mean(prices)
+            trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
+            trend_strength = min(trend_strength, 1.0)
+        else:
+            trend_strength = 0
+        
+        # Calculate liquidity factor
+        avg_volume = hist['Volume'].mean()
+        
+        if avg_volume > 10000000:
+            liquidity_factor = 1.2
+        elif avg_volume > 1000000:
+            liquidity_factor = 1.0
+        elif avg_volume > 100000:
+            liquidity_factor = 0.9
+        else:
+            liquidity_factor = 0.8
+        
+        # Normalize volatility (simple normalization)
+        # In single-asset case, we use a fixed reference
+        normalized_volatility = min(volatility / 0.05, 1.0)  # 0.05 as reference volatility
+        
+        # Calculate trend score
+        trend_score = (
+            r_squared * 0.5 +
+            trend_consistency * 0.3 +
+            trend_strength * 0.2
+        ) * 100
+        
+        # Apply stability factor
+        stability_factor = (1 - normalized_volatility) ** 0.6
+        
+        # Calculate MSS
+        mss = trend_score * stability_factor * liquidity_factor
+        mss = min(max(mss, 0), 100)
+        
+        return mss
+        
+    except Exception as e:
+        return None
+
+
+def is_stable_market(asset, lookback_period):
+    """
+    Check if market is stable (MSS >= 50)
+    
+    Args:
+        asset (str): Stock symbol (e.g., 'AAPL', 'MSFT')
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        bool: True if stable (MSS >= 50), False otherwise
+    """
+    try:
+        mss = _calculate_mss(asset, lookback_period)
+        if mss is None:
+            return False
+        return mss >= 50
+    except Exception:
+        return False
+
+
+def is_choppy_market(asset, lookback_period):
+    """
+    Check if market is choppy (30 <= MSS < 50)
+    
+    Args:
+        asset (str): Stock symbol (e.g., 'AAPL', 'MSFT')
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        bool: True if choppy (30 <= MSS < 50), False otherwise
+    """
+    try:
+        mss = _calculate_mss(asset, lookback_period)
+        if mss is None:
+            return False
+        return 30 <= mss < 50
+    except Exception:
+        return False
+
+
+def is_volatile_market(asset, lookback_period):
+    """
+    Check if market is volatile (MSS < 30)
+    
+    Args:
+        asset (str): Stock symbol (e.g., 'AAPL', 'MSFT')
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        bool: True if volatile (MSS < 30), False otherwise
+    """
+    try:
+        mss = _calculate_mss(asset, lookback_period)
+        if mss is None:
+            return False
+        return mss < 30
+    except Exception:
+        return False
         
 
 # LEGODI BACKEND CODE
