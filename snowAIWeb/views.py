@@ -21462,8 +21462,28 @@ ASSET_TICKERS = {
         'Chevron': 'CVX',
         'Pfizer': 'PFE',
         'Coca-Cola': 'KO',
-        'Boeing': 'BA'
+        'Boeing': 'BA',
+
+        'Eli Lilly': 'LLY',
+        'Cencora': 'COR',
+        'Cisco Systems': 'CSCO',
+        'Intel': 'INTC',
+        'Oracle': 'ORCL',
+        'IBM': 'IBM',
+        'Salesforce': 'CRM',
+        'PayPal': 'PYPL',
+        'Netflix': 'NFLX',
+        'Adobe': 'ADBE',
+        'Goldman Sachs': 'GS',
+        'Bank of America': 'BAC',
+        'Citigroup': 'C',
+        'UnitedHealth': 'UNH',
+        'PepsiCo': 'PEP',
+        'McDonald\'s': 'MCD',
+        'Nike': 'NKE',
+        'Caterpillar': 'CAT'
     }
+
 }
 
 def calculate_correlation(ticker1, ticker2, period='3mo'):
