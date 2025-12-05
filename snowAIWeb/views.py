@@ -24781,20 +24781,26 @@ def trigger_bulk_analysis_view(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
-import yfinance as yf
+
 import numpy as np
+import pandas as pd
 from sklearn.linear_model import LinearRegression
 
 
-def _calculate_mss(symbol, lookback_period):
+def _calculate_mss(data, lookback_period):
     """
     Internal function to calculate Market Stability Score
-    Returns MSS value or None if calculation fails
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        float: MSS value or None if calculation fails
     """
     try:
-        # Download data
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=f"{lookback_period}d")
+        # Filter data to lookback period
+        hist = data.tail(lookback_period).copy()
         
         if len(hist) < 20:
             return None
@@ -24867,19 +24873,19 @@ def _calculate_mss(symbol, lookback_period):
         return None
 
 
-def is_stable_market(asset, lookback_period):
+def is_stable_market(data, lookback_period):
     """
     Check if market is stable (MSS >= 50)
     
     Args:
-        asset (str): Stock symbol (e.g., 'AAPL', 'MSFT')
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
         lookback_period (int): Number of days to analyze
         
     Returns:
         bool: True if stable (MSS >= 50), False otherwise
     """
     try:
-        mss = _calculate_mss(asset, lookback_period)
+        mss = _calculate_mss(data, lookback_period)
         if mss is None:
             return False
         return mss >= 50
@@ -24887,19 +24893,19 @@ def is_stable_market(asset, lookback_period):
         return False
 
 
-def is_choppy_market(asset, lookback_period):
+def is_choppy_market(data, lookback_period):
     """
     Check if market is choppy (30 <= MSS < 50)
     
     Args:
-        asset (str): Stock symbol (e.g., 'AAPL', 'MSFT')
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
         lookback_period (int): Number of days to analyze
         
     Returns:
         bool: True if choppy (30 <= MSS < 50), False otherwise
     """
     try:
-        mss = _calculate_mss(asset, lookback_period)
+        mss = _calculate_mss(data, lookback_period)
         if mss is None:
             return False
         return 30 <= mss < 50
@@ -24907,24 +24913,28 @@ def is_choppy_market(asset, lookback_period):
         return False
 
 
-def is_volatile_market(asset, lookback_period):
+def is_volatile_market(data, lookback_period):
     """
     Check if market is volatile (MSS < 30)
     
     Args:
-        asset (str): Stock symbol (e.g., 'AAPL', 'MSFT')
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
         lookback_period (int): Number of days to analyze
         
     Returns:
         bool: True if volatile (MSS < 30), False otherwise
     """
     try:
-        mss = _calculate_mss(asset, lookback_period)
+        mss = _calculate_mss(data, lookback_period)
         if mss is None:
             return False
         return mss < 30
     except Exception:
         return False
+
+
+
+
         
 
 # LEGODI BACKEND CODE
