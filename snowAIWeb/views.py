@@ -4780,9 +4780,9 @@ def run_genesys_backtests_wrapper():
 # Schedule the wrapper function instead of the async function directly
 scheduler.add_job(
     run_genesys_backtests_wrapper,
-    trigger=IntervalTrigger(minutes=30),
+    trigger=IntervalTrigger(minutes=50),
     id='run_genesys_backtests',
-    name='Update genesys backtests every 30 minutes',
+    name='Update genesys backtests every 50 minutes',
     replace_existing=True
 )
 
