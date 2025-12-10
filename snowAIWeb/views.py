@@ -24933,11 +24933,9 @@ def is_volatile_market(data, lookback_period):
         return False
 
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-import json
-from .models import SnowAITradingWeights
+# ============================================================================
+# FIX: Enhanced save with logging and validation
+# ============================================================================
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -24957,11 +24955,24 @@ def snowai_save_trading_weights(request):
         weights = data.get('weights')
         metadata = data.get('metadata', {})
         
+        # ✅ VALIDATION
         if not agent_name or not weights:
             return JsonResponse({
                 'success': False,
                 'error': 'agent_name and weights are required'
             }, status=400)
+        
+        # ✅ VALIDATE WEIGHTS STRUCTURE
+        required_keys = ['w1', 'b1', 'w2', 'b2', 'w3', 'b3']
+        if not all(key in weights for key in required_keys):
+            return JsonResponse({
+                'success': False,
+                'error': f'Weights must contain: {required_keys}'
+            }, status=400)
+        
+        # ✅ LOG THE SAVE OPERATION
+        logger.info(f"💾 Saving weights for agent: {agent_name}")
+        logger.info(f"   Metadata: {metadata}")
         
         # Update or create
         obj, created = SnowAITradingWeights.objects.update_or_create(
@@ -24972,10 +24983,15 @@ def snowai_save_trading_weights(request):
             }
         )
         
+        # ✅ LOG SUCCESS
+        action = "created" if created else "updated"
+        logger.info(f"✅ Weights {action} for {agent_name}")
+        
         return JsonResponse({
             'success': True,
-            'message': f'Weights {"created" if created else "updated"} for {agent_name}',
-            'agent_name': agent_name
+            'message': f'Weights {action} for {agent_name}',
+            'agent_name': agent_name,
+            'created': created  # ✅ Return whether it was newly created
         })
         
     except json.JSONDecodeError:
@@ -24984,11 +25000,16 @@ def snowai_save_trading_weights(request):
             'error': 'Invalid JSON'
         }, status=400)
     except Exception as e:
+        logger.error(f"❌ Error saving weights: {str(e)}")
         return JsonResponse({
             'success': False,
             'error': str(e)
         }, status=500)
 
+
+# ============================================================================
+# FIX: Enhanced load with better error messages
+# ============================================================================
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -24998,7 +25019,21 @@ def snowai_load_trading_weights(request, agent_name):
     GET /api/snowai-trading-weights/load/<agent_name>/
     """
     try:
+        # ✅ LOG THE LOAD ATTEMPT
+        logger.info(f"📥 Loading weights for agent: {agent_name}")
+        
         obj = SnowAITradingWeights.objects.get(snow_agent_name=agent_name)
+        
+        # ✅ VALIDATE WEIGHTS EXIST
+        if not obj.snow_weights_data:
+            logger.warning(f"⚠️ Weights found but empty for {agent_name}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Weights exist but are empty for: {agent_name}'
+            }, status=404)
+        
+        # ✅ LOG SUCCESS
+        logger.info(f"✅ Weights loaded for {agent_name}")
         
         return JsonResponse({
             'success': True,
@@ -25009,11 +25044,13 @@ def snowai_load_trading_weights(request, agent_name):
         })
         
     except SnowAITradingWeights.DoesNotExist:
+        logger.warning(f"❌ No weights found for agent: {agent_name}")
         return JsonResponse({
             'success': False,
             'error': f'No weights found for agent: {agent_name}'
         }, status=404)
     except Exception as e:
+        logger.error(f"❌ Error loading weights for {agent_name}: {str(e)}")
         return JsonResponse({
             'success': False,
             'error': str(e)
@@ -25328,7 +25365,7 @@ def get_best_action(q_values: List[float], current_position: str = 'none') -> in
 
 
 # ============================================================================
-# ASYNC-SAFE PREDICTION FUNCTION
+# FIX: Better error handling in prediction function
 # ============================================================================
 
 async def _load_and_predict_async(
@@ -25346,15 +25383,29 @@ async def _load_and_predict_async(
         (success, action, error_message)
     """
     try:
+        # ✅ LOG WHICH AGENT IS BEING LOADED
+        logger.info(f"🔮 Predicting for agent: {agent_name}")
+        
         # Async-safe database fetch
         weights = await _get_weights_from_db(agent_name)
         
+        # ✅ FAIL LOUDLY IF WEIGHTS NOT FOUND
         if weights is None:
-            error_msg = f"Weights not found for {agent_name}"
-            logger.warning(error_msg)
-            return False, 1, error_msg  # Default to HOLD
+            error_msg = f"❌ NO WEIGHTS FOUND FOR {agent_name} - Cannot predict"
+            logger.error(error_msg)
+            return False, 1, error_msg  # Return HOLD as default
         
-        # Calculate input features (pure Python, no async needed)
+        # ✅ VALIDATE WEIGHTS STRUCTURE
+        required_keys = ['w1', 'b1', 'w2', 'b2', 'w3', 'b3']
+        if not all(key in weights for key in required_keys):
+            error_msg = f"❌ INVALID WEIGHTS FOR {agent_name} - Missing keys"
+            logger.error(error_msg)
+            return False, 1, error_msg
+        
+        # ✅ LOG SUCCESSFUL WEIGHT LOAD
+        logger.info(f"✅ Weights loaded for {agent_name}")
+        
+        # Calculate input features
         inputs = calculate_model_inputs(
             data, 
             state_features=state_features,
@@ -25362,19 +25413,65 @@ async def _load_and_predict_async(
             unrealized_pnl=unrealized_pnl
         )
         
-        # Forward pass (pure Python, no async needed)
+        # Forward pass
         q_values = forward_pass(inputs, weights)
         
         # Get best action
         action = get_best_action(q_values, current_position)
         
+        # ✅ LOG THE PREDICTION
+        action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+        logger.info(f"🎯 {agent_name} predicts: {action_names[action]}")
+        
         return True, action, ""
         
     except Exception as e:
-        error_msg = f"Error in {agent_name} prediction: {str(e)}"
+        error_msg = f"❌ Error in {agent_name} prediction: {str(e)}"
         logger.error(error_msg)
         return False, 1, error_msg
 
+
+# ============================================================================
+# DEBUG: Check if all agents have unique weights
+# ============================================================================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_debug_weights(request):
+    """
+    DEBUG ENDPOINT: Show first 5 weights from each agent for comparison
+    GET /api/snowai-trading-weights/debug/
+    """
+    try:
+        all_agents = SnowAITradingWeights.objects.all()
+        
+        debug_info = []
+        for agent in all_agents:
+            weights = agent.snow_weights_data
+            
+            # Get first 5 weights from w1 for comparison
+            w1_sample = []
+            if 'w1' in weights and len(weights['w1']) > 0:
+                w1_sample = [weights['w1'][0][:5]]  # First 5 from first row
+            
+            debug_info.append({
+                'agent_name': agent.snow_agent_name,
+                'w1_sample': w1_sample,
+                'metadata': agent.snow_metadata,
+                'updated_at': agent.snow_updated_at.isoformat()
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'agents': debug_info,
+            'note': 'If w1_sample is identical across agents, they have the same weights!'
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
 # ============================================================================
 # SNOW-ALPHA (Balanced DDQN)

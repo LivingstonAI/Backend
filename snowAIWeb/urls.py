@@ -399,6 +399,9 @@ urlpatterns = [
      path('api/snowai-trading-weights/load/<str:agent_name>/', views.snowai_load_trading_weights, name='snowai_load_weights'),
      path('api/snowai-trading-weights/list/', views.snowai_list_trading_weights, name='snowai_list_weights'),
      path('api/snowai-trading-weights/delete/<str:agent_name>/', views.snowai_delete_trading_weights, name='snowai_delete_weights'),
+     path('api/snowai-debug-weights/', views.snowai_debug_weights, name='snowai_debug_weights'),
+
+
 
 
     # create appproprate urls.py here
