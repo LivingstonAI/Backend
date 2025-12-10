@@ -1590,6 +1590,26 @@ class SnowAIVideoEntry(models.Model):
         return None
 
 
+class SnowAITradingWeights(models.Model):
+    """
+    Stores neural network weights for SnowAI Trading agents.
+    Ultra-specific naming to avoid conflicts.
+    """
+    snow_agent_name = models.CharField(max_length=200, unique=True, db_index=True)
+    snow_weights_data = models.JSONField()  # Stores {w1, b1, w2, b2, w3, b3}
+    snow_metadata = models.JSONField(default=dict, blank=True)  # Optional: stores agent config
+    snow_created_at = models.DateTimeField(auto_now_add=True)
+    snow_updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'snowai_trading_weights'
+        verbose_name = 'SnowAI Trading Weight'
+        verbose_name_plural = 'SnowAI Trading Weights'
+    
+    def __str__(self):
+        return f"SnowAI Weights: {self.snow_agent_name}"
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 

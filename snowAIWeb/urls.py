@@ -395,6 +395,11 @@ urlpatterns = [
 
      path('api/snowai_stock_screener_fetch_data/', views.snowai_stock_screener_fetch_data, name='snowai_stock_screener_fetch_data'),
 
+     path('api/snowai-trading-weights/save/', views.snowai_save_trading_weights, name='snowai_save_weights'),
+     path('api/snowai-trading-weights/load/<str:agent_name>/', views.snowai_load_trading_weights, name='snowai_load_weights'),
+     path('api/snowai-trading-weights/list/', views.snowai_list_trading_weights, name='snowai_list_weights'),
+     path('api/snowai-trading-weights/delete/<str:agent_name>/', views.snowai_delete_trading_weights, name='snowai_delete_weights'),
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

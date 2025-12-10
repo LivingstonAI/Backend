@@ -24933,7 +24933,149 @@ def is_volatile_market(data, lookback_period):
         return False
 
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+import json
+from .models import SnowAITradingWeights
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_save_trading_weights(request):
+    """
+    Save neural network weights for a SnowAI trading agent.
+    POST /api/snowai-trading-weights/save/
+    Body: {
+        "agent_name": "Snow-Alpha",
+        "weights": {w1, b1, w2, b2, w3, b3},
+        "metadata": {lr, hiddenSize, etc} (optional)
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        agent_name = data.get('agent_name')
+        weights = data.get('weights')
+        metadata = data.get('metadata', {})
+        
+        if not agent_name or not weights:
+            return JsonResponse({
+                'success': False,
+                'error': 'agent_name and weights are required'
+            }, status=400)
+        
+        # Update or create
+        obj, created = SnowAITradingWeights.objects.update_or_create(
+            snow_agent_name=agent_name,
+            defaults={
+                'snow_weights_data': weights,
+                'snow_metadata': metadata
+            }
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Weights {"created" if created else "updated"} for {agent_name}',
+            'agent_name': agent_name
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_load_trading_weights(request, agent_name):
+    """
+    Load neural network weights for a SnowAI trading agent.
+    GET /api/snowai-trading-weights/load/<agent_name>/
+    """
+    try:
+        obj = SnowAITradingWeights.objects.get(snow_agent_name=agent_name)
+        
+        return JsonResponse({
+            'success': True,
+            'agent_name': obj.snow_agent_name,
+            'weights': obj.snow_weights_data,
+            'metadata': obj.snow_metadata,
+            'updated_at': obj.snow_updated_at.isoformat()
+        })
+        
+    except SnowAITradingWeights.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': f'No weights found for agent: {agent_name}'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_list_trading_weights(request):
+    """
+    List all saved SnowAI trading agent weights.
+    GET /api/snowai-trading-weights/list/
+    """
+    try:
+        weights = SnowAITradingWeights.objects.all().order_by('-snow_updated_at')
+        
+        data = [{
+            'agent_name': w.snow_agent_name,
+            'metadata': w.snow_metadata,
+            'updated_at': w.snow_updated_at.isoformat(),
+            'created_at': w.snow_created_at.isoformat()
+        } for w in weights]
+        
+        return JsonResponse({
+            'success': True,
+            'count': len(data),
+            'weights': data
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_trading_weights(request, agent_name):
+    """
+    Delete neural network weights for a SnowAI trading agent.
+    DELETE /api/snowai-trading-weights/delete/<agent_name>/
+    """
+    try:
+        obj = SnowAITradingWeights.objects.get(snow_agent_name=agent_name)
+        obj.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Weights deleted for {agent_name}'
+        })
+        
+    except SnowAITradingWeights.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': f'No weights found for agent: {agent_name}'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
         
 
