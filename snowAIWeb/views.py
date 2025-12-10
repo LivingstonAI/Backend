@@ -25081,14 +25081,33 @@ def snowai_delete_trading_weights(request, agent_name):
 """
 SnowAI Trading Model Inference Functions
 Pure Python implementation - no TensorFlow or PyTorch required
+ASYNC-SAFE for Django
 """
 
+from asgiref.sync import sync_to_async
 import numpy as np
 import logging
 from typing import List, Dict, Optional, Tuple
 from .models import SnowAITradingWeights
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# ASYNC-SAFE DATABASE ACCESS
+# ============================================================================
+
+@sync_to_async
+def _get_weights_from_db(agent_name: str) -> Optional[Dict]:
+    """Async-safe database fetch"""
+    try:
+        weights_obj = SnowAITradingWeights.objects.get(snow_agent_name=agent_name)
+        return weights_obj.snow_weights_data
+    except SnowAITradingWeights.DoesNotExist:
+        return None
+    except Exception as e:
+        logger.error(f"Database error fetching weights for {agent_name}: {e}")
+        return None
 
 
 # ============================================================================
@@ -25289,27 +25308,30 @@ def get_best_action(q_values: List[float], current_position: str = 'none') -> in
     Returns:
         Action index (0=BUY, 1=HOLD, 2=SELL, 3=SHORT, 4=COVER)
     """
+    # Create a copy to avoid modifying original
+    q_copy = q_values.copy()
+    
     # Prevent impossible actions based on current position
     if current_position == 'long':
-        q_values[0] = -np.inf  # Can't buy
-        q_values[3] = -np.inf  # Can't short
-        q_values[4] = -np.inf  # Can't cover
+        q_copy[0] = -np.inf  # Can't buy
+        q_copy[3] = -np.inf  # Can't short
+        q_copy[4] = -np.inf  # Can't cover
     elif current_position == 'short':
-        q_values[0] = -np.inf  # Can't buy
-        q_values[2] = -np.inf  # Can't sell
-        q_values[3] = -np.inf  # Can't short again
+        q_copy[0] = -np.inf  # Can't buy
+        q_copy[2] = -np.inf  # Can't sell
+        q_copy[3] = -np.inf  # Can't short again
     else:  # No position
-        q_values[2] = -np.inf  # Can't sell
-        q_values[4] = -np.inf  # Can't cover
+        q_copy[2] = -np.inf  # Can't sell
+        q_copy[4] = -np.inf  # Can't cover
     
-    return int(np.argmax(q_values))
+    return int(np.argmax(q_copy))
 
 
 # ============================================================================
-# MODEL-SPECIFIC INFERENCE FUNCTIONS
+# ASYNC-SAFE PREDICTION FUNCTION
 # ============================================================================
 
-def _load_and_predict(
+async def _load_and_predict_async(
     agent_name: str,
     data: List[Dict],
     state_features: str,
@@ -25318,17 +25340,21 @@ def _load_and_predict(
     unrealized_pnl: float = 0.0
 ) -> Tuple[bool, int, str]:
     """
-    Internal function to load weights and make prediction.
+    Async-safe internal function to load weights and make prediction.
     
     Returns:
         (success, action, error_message)
     """
     try:
-        # Load weights from database
-        weights_obj = SnowAITradingWeights.objects.get(snow_agent_name=agent_name)
-        weights = weights_obj.snow_weights_data
+        # Async-safe database fetch
+        weights = await _get_weights_from_db(agent_name)
         
-        # Calculate input features
+        if weights is None:
+            error_msg = f"Weights not found for {agent_name}"
+            logger.warning(error_msg)
+            return False, 1, error_msg  # Default to HOLD
+        
+        # Calculate input features (pure Python, no async needed)
         inputs = calculate_model_inputs(
             data, 
             state_features=state_features,
@@ -25336,7 +25362,7 @@ def _load_and_predict(
             unrealized_pnl=unrealized_pnl
         )
         
-        # Forward pass
+        # Forward pass (pure Python, no async needed)
         q_values = forward_pass(inputs, weights)
         
         # Get best action
@@ -25344,10 +25370,6 @@ def _load_and_predict(
         
         return True, action, ""
         
-    except SnowAITradingWeights.DoesNotExist:
-        error_msg = f"Weights not found for {agent_name}"
-        logger.warning(error_msg)
-        return False, 1, error_msg  # Default to HOLD
     except Exception as e:
         error_msg = f"Error in {agent_name} prediction: {str(e)}"
         logger.error(error_msg)
@@ -25358,7 +25380,7 @@ def _load_and_predict(
 # SNOW-ALPHA (Balanced DDQN)
 # ============================================================================
 
-def snow_alpha_predict(
+async def snow_alpha_predict(
     data: List[Dict],
     current_position: str = 'none',
     position_size: float = 0.0,
@@ -25381,7 +25403,7 @@ def snow_alpha_predict(
             'error': str
         }
     """
-    success, action, error = _load_and_predict(
+    success, action, error = await _load_and_predict_async(
         'Snow-Alpha', data, 'standard', current_position, position_size, unrealized_pnl
     )
     
@@ -25394,36 +25416,42 @@ def snow_alpha_predict(
     }
 
 
-def snow_alpha_buy(data: List[Dict]) -> bool:
+async def snow_alpha_buy(data: List[Dict]) -> bool:
     """Returns True if Snow-Alpha recommends BUY"""
-    result = snow_alpha_predict(data, current_position='none')
+    result = await snow_alpha_predict(data, current_position='none')
     return result['success'] and result['action'] == 0
 
 
-def snow_alpha_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+async def snow_alpha_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
     """Returns True if Snow-Alpha recommends SELL"""
-    result = snow_alpha_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    result = await snow_alpha_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
     return result['success'] and result['action'] == 2
 
 
-def snow_alpha_short(data: List[Dict]) -> bool:
+async def snow_alpha_short(data: List[Dict]) -> bool:
     """Returns True if Snow-Alpha recommends SHORT"""
-    result = snow_alpha_predict(data, current_position='none')
+    result = await snow_alpha_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
+
+
+async def snow_alpha_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    """Returns True if Snow-Alpha recommends COVER"""
+    result = await snow_alpha_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
 
 
 # ============================================================================
 # ICE-BETA (Scalper)
 # ============================================================================
 
-def ice_beta_predict(
+async def ice_beta_predict(
     data: List[Dict],
     current_position: str = 'none',
     position_size: float = 0.0,
     unrealized_pnl: float = 0.0
 ) -> Dict:
     """Ice-Beta: High-frequency scalper"""
-    success, action, error = _load_and_predict(
+    success, action, error = await _load_and_predict_async(
         'Ice-Beta', data, 'short-term', current_position, position_size, unrealized_pnl
     )
     
@@ -25436,33 +25464,38 @@ def ice_beta_predict(
     }
 
 
-def ice_beta_buy(data: List[Dict]) -> bool:
-    result = ice_beta_predict(data, current_position='none')
+async def ice_beta_buy(data: List[Dict]) -> bool:
+    result = await ice_beta_predict(data, current_position='none')
     return result['success'] and result['action'] == 0
 
 
-def ice_beta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
-    result = ice_beta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+async def ice_beta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await ice_beta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
     return result['success'] and result['action'] == 2
 
 
-def ice_beta_short(data: List[Dict]) -> bool:
-    result = ice_beta_predict(data, current_position='none')
+async def ice_beta_short(data: List[Dict]) -> bool:
+    result = await ice_beta_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
+
+
+async def ice_beta_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await ice_beta_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
 
 
 # ============================================================================
 # FROST-GAMMA (Trend Follower)
 # ============================================================================
 
-def frost_gamma_predict(
+async def frost_gamma_predict(
     data: List[Dict],
     current_position: str = 'none',
     position_size: float = 0.0,
     unrealized_pnl: float = 0.0
 ) -> Dict:
     """Frost-Gamma: Conservative trend-following"""
-    success, action, error = _load_and_predict(
+    success, action, error = await _load_and_predict_async(
         'Frost-Gamma', data, 'long-term', current_position, position_size, unrealized_pnl
     )
     
@@ -25475,33 +25508,38 @@ def frost_gamma_predict(
     }
 
 
-def frost_gamma_buy(data: List[Dict]) -> bool:
-    result = frost_gamma_predict(data, current_position='none')
+async def frost_gamma_buy(data: List[Dict]) -> bool:
+    result = await frost_gamma_predict(data, current_position='none')
     return result['success'] and result['action'] == 0
 
 
-def frost_gamma_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
-    result = frost_gamma_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+async def frost_gamma_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await frost_gamma_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
     return result['success'] and result['action'] == 2
 
 
-def frost_gamma_short(data: List[Dict]) -> bool:
-    result = frost_gamma_predict(data, current_position='none')
+async def frost_gamma_short(data: List[Dict]) -> bool:
+    result = await frost_gamma_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
+
+
+async def frost_gamma_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await frost_gamma_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
 
 
 # ============================================================================
 # GLACIER-X (Deep-Hold / Momentum)
 # ============================================================================
 
-def glacier_x_predict(
+async def glacier_x_predict(
     data: List[Dict],
     current_position: str = 'none',
     position_size: float = 0.0,
     unrealized_pnl: float = 0.0
 ) -> Dict:
     """Glacier-X: Position trader with momentum focus"""
-    success, action, error = _load_and_predict(
+    success, action, error = await _load_and_predict_async(
         'Glacier-X', data, 'momentum', current_position, position_size, unrealized_pnl
     )
     
@@ -25514,33 +25552,38 @@ def glacier_x_predict(
     }
 
 
-def glacier_x_buy(data: List[Dict]) -> bool:
-    result = glacier_x_predict(data, current_position='none')
+async def glacier_x_buy(data: List[Dict]) -> bool:
+    result = await glacier_x_predict(data, current_position='none')
     return result['success'] and result['action'] == 0
 
 
-def glacier_x_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
-    result = glacier_x_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+async def glacier_x_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await glacier_x_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
     return result['success'] and result['action'] == 2
 
 
-def glacier_x_short(data: List[Dict]) -> bool:
-    result = glacier_x_predict(data, current_position='none')
+async def glacier_x_short(data: List[Dict]) -> bool:
+    result = await glacier_x_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
+
+
+async def glacier_x_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await glacier_x_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
 
 
 # ============================================================================
 # AVALANCHE-Z (Aggressive)
 # ============================================================================
 
-def avalanche_z_predict(
+async def avalanche_z_predict(
     data: List[Dict],
     current_position: str = 'none',
     position_size: float = 0.0,
     unrealized_pnl: float = 0.0
 ) -> Dict:
     """Avalanche-Z: Ultra-aggressive high-risk trader"""
-    success, action, error = _load_and_predict(
+    success, action, error = await _load_and_predict_async(
         'Avalanche-Z', data, 'volatility', current_position, position_size, unrealized_pnl
     )
     
@@ -25553,33 +25596,38 @@ def avalanche_z_predict(
     }
 
 
-def avalanche_z_buy(data: List[Dict]) -> bool:
-    result = avalanche_z_predict(data, current_position='none')
+async def avalanche_z_buy(data: List[Dict]) -> bool:
+    result = await avalanche_z_predict(data, current_position='none')
     return result['success'] and result['action'] == 0
 
 
-def avalanche_z_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
-    result = avalanche_z_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+async def avalanche_z_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await avalanche_z_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
     return result['success'] and result['action'] == 2
 
 
-def avalanche_z_short(data: List[Dict]) -> bool:
-    result = avalanche_z_predict(data, current_position='none')
+async def avalanche_z_short(data: List[Dict]) -> bool:
+    result = await avalanche_z_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
+
+
+async def avalanche_z_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await avalanche_z_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
 
 
 # ============================================================================
 # POLAR-PRIME (Conservative)
 # ============================================================================
 
-def polar_prime_predict(
+async def polar_prime_predict(
     data: List[Dict],
     current_position: str = 'none',
     position_size: float = 0.0,
     unrealized_pnl: float = 0.0
 ) -> Dict:
     """Polar-Prime: Ultra-conservative capital preservation"""
-    success, action, error = _load_and_predict(
+    success, action, error = await _load_and_predict_async(
         'Polar-Prime', data, 'risk-aware', current_position, position_size, unrealized_pnl
     )
     
@@ -25592,33 +25640,38 @@ def polar_prime_predict(
     }
 
 
-def polar_prime_buy(data: List[Dict]) -> bool:
-    result = polar_prime_predict(data, current_position='none')
+async def polar_prime_buy(data: List[Dict]) -> bool:
+    result = await polar_prime_predict(data, current_position='none')
     return result['success'] and result['action'] == 0
 
 
-def polar_prime_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
-    result = polar_prime_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+async def polar_prime_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await polar_prime_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
     return result['success'] and result['action'] == 2
 
 
-def polar_prime_short(data: List[Dict]) -> bool:
-    result = polar_prime_predict(data, current_position='none')
+async def polar_prime_short(data: List[Dict]) -> bool:
+    result = await polar_prime_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
+
+
+async def polar_prime_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await polar_prime_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
 
 
 # ============================================================================
 # BLIZZARD-OMEGA (Momentum Specialist)
 # ============================================================================
 
-def blizzard_omega_predict(
+async def blizzard_omega_predict(
     data: List[Dict],
     current_position: str = 'none',
     position_size: float = 0.0,
     unrealized_pnl: float = 0.0
 ) -> Dict:
     """Blizzard-Omega: Momentum specialist"""
-    success, action, error = _load_and_predict(
+    success, action, error = await _load_and_predict_async(
         'Blizzard-Omega', data, 'momentum', current_position, position_size, unrealized_pnl
     )
     
@@ -25631,33 +25684,38 @@ def blizzard_omega_predict(
     }
 
 
-def blizzard_omega_buy(data: List[Dict]) -> bool:
-    result = blizzard_omega_predict(data, current_position='none')
+async def blizzard_omega_buy(data: List[Dict]) -> bool:
+    result = await blizzard_omega_predict(data, current_position='none')
     return result['success'] and result['action'] == 0
 
 
-def blizzard_omega_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
-    result = blizzard_omega_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+async def blizzard_omega_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await blizzard_omega_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
     return result['success'] and result['action'] == 2
 
 
-def blizzard_omega_short(data: List[Dict]) -> bool:
-    result = blizzard_omega_predict(data, current_position='none')
+async def blizzard_omega_short(data: List[Dict]) -> bool:
+    result = await blizzard_omega_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
+
+
+async def blizzard_omega_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await blizzard_omega_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
 
 
 # ============================================================================
 # TUNDRA-SIGMA (Mean Reversion)
 # ============================================================================
 
-def tundra_sigma_predict(
+async def tundra_sigma_predict(
     data: List[Dict],
     current_position: str = 'none',
     position_size: float = 0.0,
     unrealized_pnl: float = 0.0
 ) -> Dict:
     """Tundra-Sigma: Mean reversion specialist"""
-    success, action, error = _load_and_predict(
+    success, action, error = await _load_and_predict_async(
         'Tundra-Sigma', data, 'mean-reversion', current_position, position_size, unrealized_pnl
     )
     
@@ -25670,33 +25728,38 @@ def tundra_sigma_predict(
     }
 
 
-def tundra_sigma_buy(data: List[Dict]) -> bool:
-    result = tundra_sigma_predict(data, current_position='none')
+async def tundra_sigma_buy(data: List[Dict]) -> bool:
+    result = await tundra_sigma_predict(data, current_position='none')
     return result['success'] and result['action'] == 0
 
 
-def tundra_sigma_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
-    result = tundra_sigma_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+async def tundra_sigma_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await tundra_sigma_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
     return result['success'] and result['action'] == 2
 
 
-def tundra_sigma_short(data: List[Dict]) -> bool:
-    result = tundra_sigma_predict(data, current_position='none')
+async def tundra_sigma_short(data: List[Dict]) -> bool:
+    result = await tundra_sigma_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
+
+
+async def tundra_sigma_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await tundra_sigma_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
 
 
 # ============================================================================
 # ARCTIC-DELTA (Volatility Hunter)
 # ============================================================================
 
-def arctic_delta_predict(
+async def arctic_delta_predict(
     data: List[Dict],
     current_position: str = 'none',
     position_size: float = 0.0,
     unrealized_pnl: float = 0.0
 ) -> Dict:
     """Arctic-Delta: Volatility hunter"""
-    success, action, error = _load_and_predict(
+    success, action, error = await _load_and_predict_async(
         'Arctic-Delta', data, 'volatility', current_position, position_size, unrealized_pnl
     )
     
@@ -25709,33 +25772,39 @@ def arctic_delta_predict(
     }
 
 
-def arctic_delta_buy(data: List[Dict]) -> bool:
-    result = arctic_delta_predict(data, current_position='none')
+async def arctic_delta_buy(data: List[Dict]) -> bool:
+    result = await arctic_delta_predict(data, current_position='none')
     return result['success'] and result['action'] == 0
 
 
-def arctic_delta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
-    result = arctic_delta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+async def arctic_delta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await arctic_delta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
     return result['success'] and result['action'] == 2
 
 
-def arctic_delta_short(data: List[Dict]) -> bool:
-    result = arctic_delta_predict(data, current_position='none')
+async def arctic_delta_short(data: List[Dict]) -> bool:
+    result = await arctic_delta_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
+
+
+async def arctic_delta_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await arctic_delta_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
 
 
 # ============================================================================
 # PERMAFROST-THETA (Contrarian)
 # ============================================================================
 
-def permafrost_theta_predict(
+async def permafrost_theta_predict(
     data: List[Dict],
     current_position: str = 'none',
     position_size: float = 0.0,
     unrealized_pnl: float = 0.0
-) -> Dict:
+
+    ) -> Dict:
     """Permafrost-Theta: Contrarian trader"""
-    success, action, error = _load_and_predict(
+    success, action, error = await _load_and_predict_async(
         'Permafrost-Theta', data, 'contrarian', current_position, position_size, unrealized_pnl
     )
     
@@ -25747,21 +25816,19 @@ def permafrost_theta_predict(
         'error': error
     }
 
-
-def permafrost_theta_buy(data: List[Dict]) -> bool:
-    result = permafrost_theta_predict(data, current_position='none')
+async def permafrost_theta_buy(data: List[Dict]) -> bool:
+    result = await permafrost_theta_predict(data, current_position='none')
     return result['success'] and result['action'] == 0
 
 
-def permafrost_theta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
-    result = permafrost_theta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+async def permafrost_theta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await permafrost_theta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
     return result['success'] and result['action'] == 2
 
 
-def permafrost_theta_short(data: List[Dict]) -> bool:
-    result = permafrost_theta_predict(data, current_position='none')
+async def permafrost_theta_short(data: List[Dict]) -> bool:
+    result = await permafrost_theta_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
-
         
 
 # LEGODI BACKEND CODE
