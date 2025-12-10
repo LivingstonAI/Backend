@@ -25077,6 +25077,691 @@ def snowai_delete_trading_weights(request, agent_name):
             'error': str(e)
         }, status=500)
 
+
+"""
+SnowAI Trading Model Inference Functions
+Pure Python implementation - no TensorFlow or PyTorch required
+"""
+
+import numpy as np
+import logging
+from typing import List, Dict, Optional, Tuple
+from .models import SnowAITradingWeights
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+def calculate_sma(data: List[Dict], period: int) -> Optional[float]:
+    """Calculate Simple Moving Average"""
+    if len(data) < period:
+        return None
+    sliced = data[-period:]
+    total = sum(d['close'] for d in sliced)
+    return total / period
+
+
+def calculate_volatility(data: List[Dict], period: int) -> float:
+    """Calculate price volatility (standard deviation)"""
+    if len(data) < period:
+        return 0.0
+    
+    sliced = data[-period:]
+    sma = calculate_sma(data, period)
+    if sma is None:
+        return 0.0
+    
+    variance = sum((d['close'] - sma) ** 2 for d in sliced) / period
+    return np.sqrt(variance)
+
+
+def normalize(value: float, min_val: float, max_val: float) -> float:
+    """Normalize value between 0 and 1"""
+    if min_val == max_val:
+        return 0.5
+    return (value - min_val) / (max_val - min_val)
+
+
+# ============================================================================
+# FEATURE ENGINEERING
+# ============================================================================
+
+def calculate_model_inputs(
+    data: List[Dict],
+    state_features: str = 'standard',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> List[float]:
+    """
+    Calculate the 7 input features for the neural network.
+    
+    Args:
+        data: List of OHLCV dicts with keys: open, high, low, close, timestamp
+        state_features: Type of features ('standard', 'short-term', 'long-term', etc.)
+        position_size: Current position size as ratio of portfolio
+        unrealized_pnl: Unrealized P&L as percentage
+    
+    Returns:
+        List of 7 normalized features
+    """
+    try:
+        if len(data) < 20:
+            return [0.0] * 7
+        
+        current_price = data[-1]['close']
+        sma5 = calculate_sma(data, 5)
+        sma20 = calculate_sma(data, 20)
+        sma50 = calculate_sma(data, 50)
+        volatility10 = calculate_volatility(data, 10)
+        
+        prev_close = data[-2]['close'] if len(data) >= 2 else current_price
+        price_change = (current_price - prev_close) / prev_close if prev_close != 0 else 0
+        
+        # Calculate SMA distance based on state type
+        if state_features in ['long-term', 'trend']:
+            sma_dist = (current_price - sma50) / sma50 if sma50 else 0
+        elif state_features == 'mean-reversion':
+            sma_dist = (current_price - sma20) / sma20 if sma20 else 0
+        else:
+            sma_dist = (current_price - sma20) / sma20 if sma20 else 0
+        
+        sma_dist = np.clip(sma_dist * 10, -1, 1)
+        
+        # Normalize volatility
+        max_vol = max(
+            calculate_volatility(data[:i+1], 10) 
+            for i in range(10, min(len(data), 50))
+        ) if len(data) > 10 else 0.001
+        
+        norm_volatility = volatility10 / max_vol if max_vol > 0 else 0
+        if state_features == 'volatility':
+            norm_volatility *= 1.5
+        norm_volatility = min(1.0, norm_volatility)
+        
+        # Normalize price change
+        max_change = max(
+            abs((data[i]['close'] - data[i-1]['close']) / data[i-1]['close'])
+            for i in range(1, min(len(data), 20))
+        ) if len(data) > 1 else 0.01
+        
+        norm_price_change = price_change / max_change if max_change > 0 else 0
+        if state_features in ['short-term', 'scalper']:
+            norm_price_change *= 1.5
+        norm_price_change = np.clip(norm_price_change, -1, 1)
+        
+        # Calculate trend
+        trend = 0.0
+        if sma5 and sma20 and sma50:
+            if state_features == 'contrarian':
+                trend = 0.5 if sma5 < sma20 else -0.5
+                trend += 0.5 if sma20 < sma50 else -0.5
+            else:
+                trend = 0.5 if sma5 > sma20 else -0.5
+                trend += 0.5 if sma20 > sma50 else -0.5
+        
+        # Calculate momentum
+        momentum = 0.0
+        if len(data) >= 10:
+            recent_changes = [
+                (data[i]['close'] - data[i-1]['close']) / data[i-1]['close']
+                for i in range(len(data) - 10, len(data))
+                if data[i-1]['close'] != 0
+            ]
+            avg_change = sum(recent_changes) / len(recent_changes) if recent_changes else 0
+            momentum = np.clip(avg_change * 100, -1, 1)
+            
+            if state_features == 'momentum':
+                momentum *= 1.5
+                momentum = np.clip(momentum, -1, 1)
+        
+        return [
+            float(sma_dist),
+            float(norm_volatility),
+            float(norm_price_change),
+            float(trend),
+            float(position_size),
+            float(unrealized_pnl),
+            float(momentum)
+        ]
+        
+    except Exception as e:
+        logger.error(f"Error calculating model inputs: {e}")
+        return [0.0] * 7
+
+
+# ============================================================================
+# NEURAL NETWORK FORWARD PASS
+# ============================================================================
+
+def relu(x: np.ndarray) -> np.ndarray:
+    """ReLU activation function"""
+    return np.maximum(0, x)
+
+
+def forward_pass(inputs: List[float], weights: Dict) -> List[float]:
+    """
+    Perform forward pass through the neural network.
+    
+    Args:
+        inputs: List of 7 input features
+        weights: Dict containing w1, b1, w2, b2, w3, b3
+    
+    Returns:
+        List of Q-values for each action
+    """
+    try:
+        # Convert to numpy arrays
+        x = np.array(inputs, dtype=np.float32)
+        
+        # Layer 1: Input -> Hidden1 (ReLU)
+        w1 = np.array(weights['w1'], dtype=np.float32).T  # Transpose for matrix multiplication
+        b1 = np.array(weights['b1'], dtype=np.float32)
+        hidden1 = relu(np.dot(x, w1) + b1)
+        
+        # Layer 2: Hidden1 -> Hidden2 (ReLU)
+        w2 = np.array(weights['w2'], dtype=np.float32).T
+        b2 = np.array(weights['b2'], dtype=np.float32)
+        hidden2 = relu(np.dot(hidden1, w2) + b2)
+        
+        # Layer 3: Hidden2 -> Output (Linear)
+        w3 = np.array(weights['w3'], dtype=np.float32).T
+        b3 = np.array(weights['b3'], dtype=np.float32)
+        output = np.dot(hidden2, w3) + b3
+        
+        return output.tolist()
+        
+    except Exception as e:
+        logger.error(f"Error in forward pass: {e}")
+        return [0.0, 0.0, 0.0, 0.0, 0.0]  # 5 actions
+
+
+def get_best_action(q_values: List[float], current_position: str = 'none') -> int:
+    """
+    Get the best action based on Q-values and current position.
+    
+    Args:
+        q_values: List of Q-values for [BUY, HOLD, SELL, SHORT, COVER]
+        current_position: 'long', 'short', or 'none'
+    
+    Returns:
+        Action index (0=BUY, 1=HOLD, 2=SELL, 3=SHORT, 4=COVER)
+    """
+    # Prevent impossible actions based on current position
+    if current_position == 'long':
+        q_values[0] = -np.inf  # Can't buy
+        q_values[3] = -np.inf  # Can't short
+        q_values[4] = -np.inf  # Can't cover
+    elif current_position == 'short':
+        q_values[0] = -np.inf  # Can't buy
+        q_values[2] = -np.inf  # Can't sell
+        q_values[3] = -np.inf  # Can't short again
+    else:  # No position
+        q_values[2] = -np.inf  # Can't sell
+        q_values[4] = -np.inf  # Can't cover
+    
+    return int(np.argmax(q_values))
+
+
+# ============================================================================
+# MODEL-SPECIFIC INFERENCE FUNCTIONS
+# ============================================================================
+
+def _load_and_predict(
+    agent_name: str,
+    data: List[Dict],
+    state_features: str,
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Tuple[bool, int, str]:
+    """
+    Internal function to load weights and make prediction.
+    
+    Returns:
+        (success, action, error_message)
+    """
+    try:
+        # Load weights from database
+        weights_obj = SnowAITradingWeights.objects.get(snow_agent_name=agent_name)
+        weights = weights_obj.snow_weights_data
+        
+        # Calculate input features
+        inputs = calculate_model_inputs(
+            data, 
+            state_features=state_features,
+            position_size=position_size,
+            unrealized_pnl=unrealized_pnl
+        )
+        
+        # Forward pass
+        q_values = forward_pass(inputs, weights)
+        
+        # Get best action
+        action = get_best_action(q_values, current_position)
+        
+        return True, action, ""
+        
+    except SnowAITradingWeights.DoesNotExist:
+        error_msg = f"Weights not found for {agent_name}"
+        logger.warning(error_msg)
+        return False, 1, error_msg  # Default to HOLD
+    except Exception as e:
+        error_msg = f"Error in {agent_name} prediction: {str(e)}"
+        logger.error(error_msg)
+        return False, 1, error_msg
+
+
+# ============================================================================
+# SNOW-ALPHA (Balanced DDQN)
+# ============================================================================
+
+def snow_alpha_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """
+    Snow-Alpha: Balanced Deep Double Q-Network
+    
+    Args:
+        data: List of OHLCV dicts
+        current_position: 'long', 'short', or 'none'
+        position_size: Current position size as ratio (0-1)
+        unrealized_pnl: Unrealized P&L as percentage (-1 to 1)
+    
+    Returns:
+        {
+            'success': bool,
+            'action': int (0=BUY, 1=HOLD, 2=SELL, 3=SHORT, 4=COVER),
+            'action_name': str,
+            'error': str
+        }
+    """
+    success, action, error = _load_and_predict(
+        'Snow-Alpha', data, 'standard', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+def snow_alpha_buy(data: List[Dict]) -> bool:
+    """Returns True if Snow-Alpha recommends BUY"""
+    result = snow_alpha_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+def snow_alpha_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    """Returns True if Snow-Alpha recommends SELL"""
+    result = snow_alpha_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+def snow_alpha_short(data: List[Dict]) -> bool:
+    """Returns True if Snow-Alpha recommends SHORT"""
+    result = snow_alpha_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+# ============================================================================
+# ICE-BETA (Scalper)
+# ============================================================================
+
+def ice_beta_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Ice-Beta: High-frequency scalper"""
+    success, action, error = _load_and_predict(
+        'Ice-Beta', data, 'short-term', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+def ice_beta_buy(data: List[Dict]) -> bool:
+    result = ice_beta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+def ice_beta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = ice_beta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+def ice_beta_short(data: List[Dict]) -> bool:
+    result = ice_beta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+# ============================================================================
+# FROST-GAMMA (Trend Follower)
+# ============================================================================
+
+def frost_gamma_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Frost-Gamma: Conservative trend-following"""
+    success, action, error = _load_and_predict(
+        'Frost-Gamma', data, 'long-term', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+def frost_gamma_buy(data: List[Dict]) -> bool:
+    result = frost_gamma_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+def frost_gamma_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = frost_gamma_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+def frost_gamma_short(data: List[Dict]) -> bool:
+    result = frost_gamma_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+# ============================================================================
+# GLACIER-X (Deep-Hold / Momentum)
+# ============================================================================
+
+def glacier_x_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Glacier-X: Position trader with momentum focus"""
+    success, action, error = _load_and_predict(
+        'Glacier-X', data, 'momentum', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+def glacier_x_buy(data: List[Dict]) -> bool:
+    result = glacier_x_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+def glacier_x_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = glacier_x_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+def glacier_x_short(data: List[Dict]) -> bool:
+    result = glacier_x_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+# ============================================================================
+# AVALANCHE-Z (Aggressive)
+# ============================================================================
+
+def avalanche_z_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Avalanche-Z: Ultra-aggressive high-risk trader"""
+    success, action, error = _load_and_predict(
+        'Avalanche-Z', data, 'volatility', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+def avalanche_z_buy(data: List[Dict]) -> bool:
+    result = avalanche_z_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+def avalanche_z_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = avalanche_z_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+def avalanche_z_short(data: List[Dict]) -> bool:
+    result = avalanche_z_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+# ============================================================================
+# POLAR-PRIME (Conservative)
+# ============================================================================
+
+def polar_prime_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Polar-Prime: Ultra-conservative capital preservation"""
+    success, action, error = _load_and_predict(
+        'Polar-Prime', data, 'risk-aware', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+def polar_prime_buy(data: List[Dict]) -> bool:
+    result = polar_prime_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+def polar_prime_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = polar_prime_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+def polar_prime_short(data: List[Dict]) -> bool:
+    result = polar_prime_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+# ============================================================================
+# BLIZZARD-OMEGA (Momentum Specialist)
+# ============================================================================
+
+def blizzard_omega_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Blizzard-Omega: Momentum specialist"""
+    success, action, error = _load_and_predict(
+        'Blizzard-Omega', data, 'momentum', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+def blizzard_omega_buy(data: List[Dict]) -> bool:
+    result = blizzard_omega_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+def blizzard_omega_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = blizzard_omega_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+def blizzard_omega_short(data: List[Dict]) -> bool:
+    result = blizzard_omega_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+# ============================================================================
+# TUNDRA-SIGMA (Mean Reversion)
+# ============================================================================
+
+def tundra_sigma_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Tundra-Sigma: Mean reversion specialist"""
+    success, action, error = _load_and_predict(
+        'Tundra-Sigma', data, 'mean-reversion', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+def tundra_sigma_buy(data: List[Dict]) -> bool:
+    result = tundra_sigma_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+def tundra_sigma_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = tundra_sigma_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+def tundra_sigma_short(data: List[Dict]) -> bool:
+    result = tundra_sigma_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+# ============================================================================
+# ARCTIC-DELTA (Volatility Hunter)
+# ============================================================================
+
+def arctic_delta_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Arctic-Delta: Volatility hunter"""
+    success, action, error = _load_and_predict(
+        'Arctic-Delta', data, 'volatility', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+def arctic_delta_buy(data: List[Dict]) -> bool:
+    result = arctic_delta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+def arctic_delta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = arctic_delta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+def arctic_delta_short(data: List[Dict]) -> bool:
+    result = arctic_delta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+# ============================================================================
+# PERMAFROST-THETA (Contrarian)
+# ============================================================================
+
+def permafrost_theta_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Permafrost-Theta: Contrarian trader"""
+    success, action, error = _load_and_predict(
+        'Permafrost-Theta', data, 'contrarian', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+def permafrost_theta_buy(data: List[Dict]) -> bool:
+    result = permafrost_theta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+def permafrost_theta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = permafrost_theta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+def permafrost_theta_short(data: List[Dict]) -> bool:
+    result = permafrost_theta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
         
 
 # LEGODI BACKEND CODE
