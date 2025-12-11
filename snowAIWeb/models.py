@@ -1610,6 +1610,49 @@ class SnowAITradingWeights(models.Model):
         return f"SnowAI Weights: {self.snow_agent_name}"
 
 
+from django.db import models
+from django.utils import timezone
+
+class SnowAIForwardTestingModel(models.Model):
+    """
+    Model to store cleaned trading model code for forward testing.
+    Stores the essential model code and metadata for deployment.
+    """
+    model_id = models.CharField(
+        max_length=20, 
+        unique=True, 
+        help_text="Unique identifier for the trading model"
+    )
+    
+    cleaned_model_code = models.TextField(
+        help_text="Cleaned Python code ready for forward testing"
+    )
+    
+    created_at = models.DateTimeField(
+        default=timezone.now,
+        help_text="Timestamp when model was saved"
+    )
+    
+    last_updated = models.DateTimeField(
+        auto_now=True,
+        help_text="Timestamp of last update"
+    )
+    
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Optional notes about the model"
+    )
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "SnowAI Forward Testing Model"
+        verbose_name_plural = "SnowAI Forward Testing Models"
+    
+    def __str__(self):
+        return f"Model {self.model_id} - {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 

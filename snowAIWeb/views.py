@@ -26082,6 +26082,175 @@ async def permafrost_theta_sell(data: List[Dict], position_size: float = 0.5, un
 async def permafrost_theta_short(data: List[Dict]) -> bool:
     result = await permafrost_theta_predict(data, current_position='none')
     return result['success'] and result['action'] == 3
+
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+import json
+from .models import SnowAIForwardTestingModel
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def save_snowai_forward_testing_model_endpoint(request):
+    """
+    Endpoint to save cleaned model code for forward testing.
+    Accepts: model_id, cleaned_code, notes (optional)
+    Returns: Success/error message with model details
+    """
+    try:
+        # Parse JSON data from request body
+        data = json.loads(request.body)
+        
+        # Extract required fields
+        model_id = data.get('model_id')
+        cleaned_code = data.get('cleaned_model_code')
+        notes = data.get('notes', '')
+        
+        # Validate required fields
+        if not model_id or not cleaned_code:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Missing required fields: model_id and cleaned_model_code are required'
+            }, status=400)
+        
+        # Check if model with this ID already exists
+        existing_model = SnowAIForwardTestingModel.objects.filter(model_id=model_id).first()
+        
+        if existing_model:
+            # Update existing model
+            existing_model.cleaned_model_code = cleaned_code
+            existing_model.notes = notes
+            existing_model.save()
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Model updated successfully',
+                'model_id': model_id,
+                'created_at': existing_model.created_at.isoformat(),
+                'last_updated': existing_model.last_updated.isoformat()
+            }, status=200)
+        else:
+            # Create new model
+            new_model = SnowAIForwardTestingModel.objects.create(
+                model_id=model_id,
+                cleaned_model_code=cleaned_code,
+                notes=notes
+            )
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Model saved successfully',
+                'model_id': new_model.model_id,
+                'created_at': new_model.created_at.isoformat(),
+                'last_updated': new_model.last_updated.isoformat()
+            }, status=201)
+            
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid JSON in request body'
+        }, status=400)
+    
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def retrieve_snowai_forward_testing_model_endpoint(request, model_id):
+    """
+    Endpoint to retrieve a saved model by its ID.
+    Returns: Model details including cleaned code
+    """
+    try:
+        model = SnowAIForwardTestingModel.objects.get(model_id=model_id)
+        
+        return JsonResponse({
+            'status': 'success',
+            'model': {
+                'model_id': model.model_id,
+                'cleaned_model_code': model.cleaned_model_code,
+                'created_at': model.created_at.isoformat(),
+                'last_updated': model.last_updated.isoformat(),
+                'notes': model.notes
+            }
+        }, status=200)
+        
+    except SnowAIForwardTestingModel.DoesNotExist:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Model with ID {model_id} not found'
+        }, status=404)
+    
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def list_all_snowai_forward_testing_models_endpoint(request):
+    """
+    Endpoint to list all saved models (without full code content).
+    Returns: List of all models with basic metadata
+    """
+    try:
+        models = SnowAIForwardTestingModel.objects.all()
+        
+        models_list = [{
+            'model_id': model.model_id,
+            'created_at': model.created_at.isoformat(),
+            'last_updated': model.last_updated.isoformat(),
+            'code_length': len(model.cleaned_model_code),
+            'has_notes': bool(model.notes)
+        } for model in models]
+        
+        return JsonResponse({
+            'status': 'success',
+            'count': len(models_list),
+            'models': models_list
+        }, status=200)
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def delete_snowai_forward_testing_model_endpoint(request, model_id):
+    """
+    Endpoint to delete a saved model by its ID.
+    Returns: Success/error message
+    """
+    try:
+        model = SnowAIForwardTestingModel.objects.get(model_id=model_id)
+        model.delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Model {model_id} deleted successfully'
+        }, status=200)
+        
+    except SnowAIForwardTestingModel.DoesNotExist:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Model with ID {model_id} not found'
+        }, status=404)
+    
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=500)
         
 
 # LEGODI BACKEND CODE

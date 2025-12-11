@@ -401,7 +401,35 @@ urlpatterns = [
      path('api/snowai-trading-weights/delete/<str:agent_name>/', views.snowai_delete_trading_weights, name='snowai_delete_weights'),
      path('api/snowai-debug-weights/', views.snowai_debug_weights, name='snowai_debug_weights'),
 
-
+     # ===== SnowAI Forward Testing Model Endpoints =====
+    
+     # Save or update a forward testing model
+     path(
+          'snowai-forward-testing/save-model/', 
+          views.save_snowai_forward_testing_model_endpoint, 
+          name='save_snowai_forward_testing_model'
+     ),
+     
+     # Retrieve a specific model by ID
+     path(
+          'snowai-forward-testing/get-model/<str:model_id>/', 
+          views.retrieve_snowai_forward_testing_model_endpoint, 
+          name='retrieve_snowai_forward_testing_model'
+     ),
+     
+     # List all saved models
+     path(
+          'snowai-forward-testing/list-models/', 
+          views.list_all_snowai_forward_testing_models_endpoint, 
+          name='list_all_snowai_forward_testing_models'
+     ),
+     
+     # Delete a specific model
+     path(
+          'snowai-forward-testing/delete-model/<str:model_id>/', 
+          views.delete_snowai_forward_testing_model_endpoint, 
+          name='delete_snowai_forward_testing_model'
+     ),
 
 
     # create appproprate urls.py here
