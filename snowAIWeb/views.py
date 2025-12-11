@@ -26844,6 +26844,196 @@ def prepare_namespace(model, dataset):
     }
     
     return namespace
+
+
+# ============================================================================
+# DEBUG ENDPOINT: Browser-Friendly GET Request
+# ============================================================================
+@csrf_exempt
+@require_http_methods(["GET"])
+async def snowai_debug_predictions_simple(request):
+    """
+    DEBUG: Test all agents on sample data (no request body needed)
+    GET /api/snowai-trading-weights/debug-predictions-simple/
+    
+    Just open this URL in your browser!
+    """
+    try:
+        # Sample uptrending data (like a stock going up)
+        sample_data = [
+            {"close": 150.0, "open": 149.5, "high": 151.0, "low": 149.0, "timestamp": 1},
+            {"close": 151.0, "open": 150.0, "high": 152.0, "low": 149.5, "timestamp": 2},
+            {"close": 150.5, "open": 151.0, "high": 151.5, "low": 150.0, "timestamp": 3},
+            {"close": 152.0, "open": 150.5, "high": 153.0, "low": 150.0, "timestamp": 4},
+            {"close": 151.5, "open": 152.0, "high": 152.5, "low": 151.0, "timestamp": 5},
+            {"close": 153.0, "open": 151.5, "high": 154.0, "low": 151.0, "timestamp": 6},
+            {"close": 152.5, "open": 153.0, "high": 153.5, "low": 152.0, "timestamp": 7},
+            {"close": 154.0, "open": 152.5, "high": 155.0, "low": 152.0, "timestamp": 8},
+            {"close": 153.5, "open": 154.0, "high": 154.5, "low": 153.0, "timestamp": 9},
+            {"close": 155.0, "open": 153.5, "high": 156.0, "low": 153.0, "timestamp": 10},
+            {"close": 154.5, "open": 155.0, "high": 155.5, "low": 154.0, "timestamp": 11},
+            {"close": 156.0, "open": 154.5, "high": 157.0, "low": 154.0, "timestamp": 12},
+            {"close": 155.5, "open": 156.0, "high": 156.5, "low": 155.0, "timestamp": 13},
+            {"close": 157.0, "open": 155.5, "high": 158.0, "low": 155.0, "timestamp": 14},
+            {"close": 156.5, "open": 157.0, "high": 157.5, "low": 156.0, "timestamp": 15},
+            {"close": 158.0, "open": 156.5, "high": 159.0, "low": 156.0, "timestamp": 16},
+            {"close": 157.5, "open": 158.0, "high": 158.5, "low": 157.0, "timestamp": 17},
+            {"close": 159.0, "open": 157.5, "high": 160.0, "low": 157.0, "timestamp": 18},
+            {"close": 158.5, "open": 159.0, "high": 159.5, "low": 158.0, "timestamp": 19},
+            {"close": 160.0, "open": 158.5, "high": 161.0, "low": 158.0, "timestamp": 20},
+            {"close": 161.5, "open": 160.0, "high": 162.0, "low": 159.5, "timestamp": 21},
+            {"close": 162.0, "open": 161.5, "high": 163.0, "low": 161.0, "timestamp": 22},
+            {"close": 163.5, "open": 162.0, "high": 164.0, "low": 161.5, "timestamp": 23},
+            {"close": 164.0, "open": 163.5, "high": 165.0, "low": 163.0, "timestamp": 24},
+            {"close": 165.5, "open": 164.0, "high": 166.0, "low": 163.5, "timestamp": 25},
+            {"close": 166.0, "open": 165.5, "high": 167.0, "low": 165.0, "timestamp": 26},
+            {"close": 167.5, "open": 166.0, "high": 168.0, "low": 165.5, "timestamp": 27},
+            {"close": 168.0, "open": 167.5, "high": 169.0, "low": 167.0, "timestamp": 28},
+            {"close": 169.5, "open": 168.0, "high": 170.0, "low": 167.5, "timestamp": 29},
+            {"close": 170.0, "open": 169.5, "high": 171.0, "low": 169.0, "timestamp": 30},
+            {"close": 171.5, "open": 170.0, "high": 172.0, "low": 169.5, "timestamp": 31},
+            {"close": 172.0, "open": 171.5, "high": 173.0, "low": 171.0, "timestamp": 32},
+            {"close": 173.5, "open": 172.0, "high": 174.0, "low": 171.5, "timestamp": 33},
+            {"close": 174.0, "open": 173.5, "high": 175.0, "low": 173.0, "timestamp": 34},
+            {"close": 175.5, "open": 174.0, "high": 176.0, "low": 173.5, "timestamp": 35},
+            {"close": 176.0, "open": 175.5, "high": 177.0, "low": 175.0, "timestamp": 36},
+            {"close": 177.5, "open": 176.0, "high": 178.0, "low": 175.5, "timestamp": 37},
+            {"close": 178.0, "open": 177.5, "high": 179.0, "low": 177.0, "timestamp": 38},
+            {"close": 179.5, "open": 178.0, "high": 180.0, "low": 177.5, "timestamp": 39},
+            {"close": 180.0, "open": 179.5, "high": 181.0, "low": 179.0, "timestamp": 40},
+            {"close": 181.5, "open": 180.0, "high": 182.0, "low": 179.5, "timestamp": 41},
+            {"close": 182.0, "open": 181.5, "high": 183.0, "low": 181.0, "timestamp": 42},
+            {"close": 183.5, "open": 182.0, "high": 184.0, "low": 181.5, "timestamp": 43},
+            {"close": 184.0, "open": 183.5, "high": 185.0, "low": 183.0, "timestamp": 44},
+            {"close": 185.5, "open": 184.0, "high": 186.0, "low": 183.5, "timestamp": 45},
+            {"close": 186.0, "open": 185.5, "high": 187.0, "low": 185.0, "timestamp": 46},
+            {"close": 187.5, "open": 186.0, "high": 188.0, "low": 185.5, "timestamp": 47},
+            {"close": 188.0, "open": 187.5, "high": 189.0, "low": 187.0, "timestamp": 48},
+            {"close": 189.5, "open": 188.0, "high": 190.0, "low": 187.5, "timestamp": 49},
+            {"close": 190.0, "open": 189.5, "high": 191.0, "low": 189.0, "timestamp": 50},
+        ]
+        
+        current_position = 'none'
+        position_size = 0.0
+        unrealized_pnl = 0.0
+        
+        # Test all agents
+        agents_to_test = [
+            ('Snow-Alpha', 'standard', 'balanced'),
+            ('Ice-Beta', 'short-term', 'scalper'),
+            ('Frost-Gamma', 'long-term', 'trend'),
+            ('Glacier-X', 'momentum', 'momentum'),
+            ('Avalanche-Z', 'volatility', 'aggressive'),
+            ('Polar-Prime', 'risk-aware', 'conservative'),
+            ('Blizzard-Omega', 'momentum', 'aggressive'),
+            ('Tundra-Sigma', 'mean-reversion', 'balanced'),
+            ('Arctic-Delta', 'volatility', 'aggressive'),
+            ('Permafrost-Theta', 'contrarian', 'contrarian')
+        ]
+        
+        results = []
+        
+        for agent_name, state_features, personality in agents_to_test:
+            # Load weights
+            from asgiref.sync import sync_to_async
+            
+            @sync_to_async
+            def get_weights(name):
+                try:
+                    from .models import SnowAITradingWeights
+                    obj = SnowAITradingWeights.objects.get(snow_agent_name=name)
+                    return obj.snow_weights_data
+                except Exception as e:
+                    logger.error(f"Error loading weights for {name}: {e}")
+                    return None
+            
+            weights = await get_weights(agent_name)
+            
+            if not weights:
+                results.append({
+                    'agent': agent_name,
+                    'error': 'No weights found in database'
+                })
+                continue
+            
+            # Calculate features
+            inputs = calculate_model_inputs(
+                sample_data,
+                state_features=state_features,
+                position_size=position_size,
+                unrealized_pnl=unrealized_pnl
+            )
+            
+            # Get Q-values
+            q_values = forward_pass(inputs, weights)
+            
+            # Get action (no personality bias)
+            action_no_bias = get_best_action(q_values, current_position, 'balanced')
+            
+            # Get action (with personality bias)
+            action_with_bias = get_best_action(q_values, current_position, personality)
+            
+            action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+            
+            # Find which Q-value is highest
+            max_q = max(q_values)
+            max_q_index = q_values.index(max_q)
+            
+            results.append({
+                'agent': agent_name,
+                'state_features': state_features,
+                'personality': personality,
+                'inputs': [round(x, 4) for x in inputs],
+                'q_values': [round(q, 4) for q in q_values],
+                'q_values_labeled': {
+                    action_names[i]: round(q, 4) 
+                    for i, q in enumerate(q_values)
+                },
+                'highest_q_action': action_names[max_q_index],
+                'highest_q_value': round(max_q, 4),
+                'action_no_bias': action_names[action_no_bias],
+                'action_with_bias': action_names[action_with_bias],
+                'weights_sample': {
+                    'w1_first_row_first_5': [round(x, 4) for x in weights['w1'][0][:5]],
+                    'b3_output_biases': [round(x, 4) for x in weights['b3']]
+                }
+            })
+        
+        # Summary statistics
+        unique_inputs = len(set(str(r['inputs']) for r in results if 'inputs' in r))
+        unique_q_values = len(set(str(r['q_values']) for r in results if 'q_values' in r))
+        unique_actions_no_bias = len(set(r['action_no_bias'] for r in results if 'action_no_bias' in r))
+        unique_actions_with_bias = len(set(r['action_with_bias'] for r in results if 'action_with_bias' in r))
+        
+        return JsonResponse({
+            'success': True,
+            'scenario': 'Strong uptrend (150 -> 190 over 50 candles)',
+            'current_price': sample_data[-1]['close'],
+            'price_change': f"+{((sample_data[-1]['close'] - sample_data[0]['close']) / sample_data[0]['close'] * 100):.2f}%",
+            'summary': {
+                'agents_tested': len(agents_to_test),
+                'agents_with_weights': len([r for r in results if 'error' not in r]),
+                'unique_input_combinations': unique_inputs,
+                'unique_q_value_combinations': unique_q_values,
+                'unique_actions_without_bias': unique_actions_no_bias,
+                'unique_actions_with_bias': unique_actions_with_bias,
+                'diagnosis': {
+                    'inputs_different': unique_inputs > 1,
+                    'q_values_different': unique_q_values > 1,
+                    'actions_different_without_bias': unique_actions_no_bias > 1,
+                    'actions_different_with_bias': unique_actions_with_bias > 1
+                }
+            },
+            'results': results
+        }, json_dumps_params={'indent': 2})
+        
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status=500, json_dumps_params={'indent': 2})
     
 
 # LEGODI BACKEND CODE

@@ -435,6 +435,9 @@ urlpatterns = [
      path('api/snowai-models/<int:model_id>/', views.snowai_model_detail, name='snowai_model_detail'),
      path('api/snowai-available-models/', views.snowai_available_models, name='snowai_available_models'),
      path('api/snowai-chart-data-with-positions/<int:model_id>/', views.snowai_fetch_chart_data_with_positions_endpoint, name='snowai_chart_data_with_positions'),
+     path('api/snowai-trading-weights/debug-predictions-simple/', 
+         views.snowai_debug_predictions_simple, 
+         name='snowai_debug_predictions_simple'),
 
 
 
