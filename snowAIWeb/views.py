@@ -26716,7 +26716,7 @@ def prepare_namespace(model, dataset):
         'is_bullish_bias': is_bullish_bias,
         'is_bearish_bias': is_bearish_bias,
         'is_high_volume': is_high_volume,
-        'is_low_volume', is_low_volume,
+        'is_low_volume': is_low_volume,
         'is_stable_market': is_stable_market,
         'is_choppy_market': is_choppy_market,
         'is_volatile_market': is_volatile_market,
