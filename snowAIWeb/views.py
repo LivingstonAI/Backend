@@ -26283,3 +26283,647 @@ def delete_snowai_forward_testing_model_endpoint(request, model_id):
             'message': f'An error occurred: {str(e)}'
         }, status=500)
         
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def snowai_models_list(request):
+    """List all active forward test models or create new one"""
+    
+    if request.method == 'GET':
+        models = ActiveForwardTestModel.objects.all()
+        data = []
+        
+        for model in models:
+            positions = Position.objects.filter(model=model)
+            
+            data.append({
+                'id': model.id,
+                'name': model.name,
+                'asset': model.asset,
+                'interval': model.interval,
+                'is_active': model.is_active,
+                'initial_equity': model.initial_equity,
+                'current_equity': model.current_equity,
+                'total_trades': model.total_trades,
+                'winning_trades': model.winning_trades,
+                'losing_trades': model.losing_trades,
+                'total_pnl': model.total_pnl,
+                'win_rate': model.win_rate,
+                'created_at': model.created_at.isoformat(),
+                'last_run': model.last_run.isoformat() if model.last_run else None,
+            })
+        
+        return JsonResponse(data, safe=False)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            model = ActiveForwardTestModel.objects.create(
+                name=data['name'],
+                asset=data['asset'],
+                interval=data['interval'],
+                model_code=data['model_code'],
+                initial_equity=data.get('initial_equity', 10000),
+                current_equity=data.get('initial_equity', 10000),
+                num_positions=data.get('num_positions', 1),
+                take_profit=data.get('take_profit', 5),
+                take_profit_type=data.get('take_profit_type', 'PERCENTAGE'),
+                stop_loss=data.get('stop_loss', 3),
+                stop_loss_type=data.get('stop_loss_type', 'PERCENTAGE'),
+            )
+            
+            # Initialize equity curve
+            model.equity_curve = json.dumps([model.initial_equity])
+            model.save()
+            
+            # Schedule the model execution - ALL models run every minute
+            from apscheduler.schedulers.background import BackgroundScheduler
+            scheduler = BackgroundScheduler()
+            
+            # Execute every minute regardless of interval
+            scheduler.add_job(
+                execute_forward_test,
+                'interval',
+                minutes=1,
+                args=[model.id],
+                id=f'model_{model.id}'
+            )
+            
+            if not scheduler.running:
+                scheduler.start()
+            
+            return JsonResponse({
+                'id': model.id,
+                'message': 'Model created and scheduled successfully'
+            })
+        
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "DELETE"])
+def snowai_model_detail(request, model_id):
+    """Get model details or delete model"""
+    
+    try:
+        model = ActiveForwardTestModel.objects.get(id=model_id)
+    except ActiveForwardTestModel.DoesNotExist:
+        return JsonResponse({'error': 'Model not found'}, status=404)
+    
+    if request.method == 'GET':
+        positions = Position.objects.filter(model=model)
+        
+        positions_data = [{
+            'type': pos.position_type,
+            'entry_price': pos.entry_price,
+            'exit_price': pos.exit_price,
+            'entry_time': pos.entry_time.isoformat(),
+            'exit_time': pos.exit_time.isoformat() if pos.exit_time else None,
+            'pnl': pos.pnl,
+            'is_open': pos.is_open,
+            'take_profit_price': pos.take_profit_price,
+            'stop_loss_price': pos.stop_loss_price,
+        } for pos in positions]
+        
+        return JsonResponse({
+            'id': model.id,
+            'name': model.name,
+            'asset': model.asset,
+            'interval': model.interval,
+            'is_active': model.is_active,
+            'initial_equity': model.initial_equity,
+            'current_equity': model.current_equity,
+            'total_trades': model.total_trades,
+            'winning_trades': model.winning_trades,
+            'losing_trades': model.losing_trades,
+            'total_pnl': model.total_pnl,
+            'win_rate': model.win_rate,
+            'equity_curve': json.loads(model.equity_curve),
+            'positions': positions_data,
+            'created_at': model.created_at.isoformat(),
+        })
+    
+    elif request.method == 'DELETE':
+        # Stop scheduler job if exists
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            scheduler = BackgroundScheduler()
+            scheduler.remove_job(f'model_{model_id}')
+        except:
+            pass
+        
+        model.delete()
+        return JsonResponse({'message': 'Model deleted successfully'})
+
+
+@csrf_exempt
+def snowai_available_models(request):
+    """Get all available model codes from SnowAIForwardTestingModel"""
+    models = SnowAIForwardTestingModel.objects.all()
+    
+    data = [{
+        'model_id': model.model_id,
+        'cleaned_model_code': model.cleaned_model_code,
+        'created_at': model.created_at.isoformat(),
+        'notes': model.notes,
+    } for model in models]
+    
+    return JsonResponse(data, safe=False)
+
+
+@csrf_exempt
+def snowai_fetch_chart_data_with_positions_endpoint(request, model_id):
+    """
+    Fetch yfinance price data and overlay positions for charting
+    This has a unique name to avoid conflicts with other yfinance fetching functions
+    """
+    try:
+        model = ActiveForwardTestModel.objects.get(id=model_id)
+        positions = Position.objects.filter(model=model).order_by('entry_time')
+        
+        # Fetch price data from yfinance
+        ticker = yf.Ticker(model.asset)
+        
+        # Determine period based on interval
+        if model.interval in ['5m', '15m']:
+            period = '7d'
+        elif model.interval in ['1h', '4h']:
+            period = '1mo'
+        elif model.interval in ['1d']:
+            period = '3mo'
+        elif model.interval in ['1wk']:
+            period = '1y'
+        else:
+            period = '3mo'
+        
+        df = ticker.history(period=period, interval=model.interval)
+        
+        if len(df) == 0:
+            return JsonResponse({'error': 'No price data available'}, status=404)
+        
+        # Prepare chart data with OHLC
+        chart_data = []
+        for idx, row in df.iterrows():
+            data_point = {
+                'time': idx.strftime('%Y-%m-%d %H:%M') if model.interval in ['5m', '15m', '1h', '4h'] else idx.strftime('%Y-%m-%d'),
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close']),
+                'volume': float(row['Volume']),
+            }
+            
+            # Check if any positions were entered at this time
+            for pos in positions:
+                entry_time_str = pos.entry_time.strftime('%Y-%m-%d %H:%M') if model.interval in ['5m', '15m', '1h', '4h'] else pos.entry_time.strftime('%Y-%m-%d')
+                
+                if entry_time_str == data_point['time']:
+                    if pos.position_type == 'BUY':
+                        data_point['buy_entry'] = pos.entry_price
+                    else:
+                        data_point['sell_entry'] = pos.entry_price
+                
+                # Check if position was exited at this time
+                if pos.exit_time:
+                    exit_time_str = pos.exit_time.strftime('%Y-%m-%d %H:%M') if model.interval in ['5m', '15m', '1h', '4h'] else pos.exit_time.strftime('%Y-%m-%d')
+                    
+                    if exit_time_str == data_point['time']:
+                        if pos.position_type == 'BUY':
+                            data_point['buy_exit'] = pos.exit_price
+                        else:
+                            data_point['sell_exit'] = pos.exit_price
+            
+            chart_data.append(data_point)
+        
+        return JsonResponse(chart_data, safe=False)
+    
+    except ActiveForwardTestModel.DoesNotExist:
+        return JsonResponse({'error': 'Model not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def execute_forward_test(model_id):
+    """
+    Execute forward test for a model
+    This function runs on schedule and evaluates the model code
+    """
+    try:
+        model = ActiveForwardTestModel.objects.get(id=model_id)
+        
+        if not model.is_active:
+            return
+        
+        # Get market data using yfinance
+        dataset = get_market_data(model.asset, model.interval)
+        
+        if dataset is None or len(dataset) == 0:
+            print(f"No data available for {model.asset}")
+            return
+        
+        # Check if we have open positions
+        open_positions = Position.objects.filter(model=model, is_open=True)
+        
+        # Always check TP/SL for existing positions first
+        if len(open_positions) > 0:
+            check_and_close_positions(model, open_positions)
+            # Refresh open positions after potential closes
+            open_positions = Position.objects.filter(model=model, is_open=True)
+        
+        # Prepare namespace for code execution
+        namespace = prepare_namespace(model, dataset)
+        
+        # Execute the model code
+        try:
+            exec(model.model_code, namespace)
+            
+            # Check if model code called position.close()
+            position_proxy = namespace.get('position')
+            if position_proxy and position_proxy.should_close_position():
+                # Close all open positions
+                current_price = dataset['Close'].iloc[-1]
+                for pos in open_positions:
+                    pos.close_position(current_price)
+                    print(f"Closed position via position.close() for {model.name} at {current_price}")
+                
+                # Refresh open positions after closes
+                open_positions = Position.objects.filter(model=model, is_open=True)
+            
+            # Now check if we should open a new position
+            return_statement = namespace.get('return_statement', None)
+            
+            if return_statement in ['buy', 'sell'] and len(open_positions) < model.num_positions:
+                # Open new position
+                current_price = dataset['Close'].iloc[-1]
+                position_size = model.current_equity / current_price / model.num_positions
+                
+                # Get TP/SL from namespace (in case set_take_profit/set_stop_loss were called)
+                tp_value = namespace.get('_take_profit', model.take_profit)
+                tp_type = namespace.get('_take_profit_type', model.take_profit_type)
+                sl_value = namespace.get('_stop_loss', model.stop_loss)
+                sl_type = namespace.get('_stop_loss_type', model.stop_loss_type)
+                
+                # Calculate TP/SL prices
+                tp_price, sl_price = calculate_tp_sl(
+                    current_price,
+                    return_statement,
+                    tp_value,
+                    tp_type,
+                    sl_value,
+                    sl_type
+                )
+                
+                position = Position.objects.create(
+                    model=model,
+                    position_type=return_statement.upper(),
+                    entry_price=current_price,
+                    size=position_size,
+                    take_profit_price=tp_price,
+                    stop_loss_price=sl_price,
+                )
+                
+                model.last_run = timezone.now()
+                model.save()
+                
+                print(f"Opened {return_statement} position for {model.name} at {current_price}")
+        
+        except Exception as e:
+            print(f"Error executing model code: {e}")
+    
+    except Exception as e:
+        print(f"Error in execute_forward_test: {e}")
+
+
+def check_and_close_positions(model, open_positions):
+    """Check if TP or SL has been hit and close positions"""
+    dataset = get_market_data(model.asset, model.interval)
+    
+    if dataset is None:
+        return
+    
+    current_price = dataset['Close'].iloc[-1]
+    
+    for position in open_positions:
+        should_close = False
+        
+        if position.position_type == 'BUY':
+            if current_price >= position.take_profit_price:
+                should_close = True
+                print(f"TP hit for {model.name} at {current_price}")
+            elif current_price <= position.stop_loss_price:
+                should_close = True
+                print(f"SL hit for {model.name} at {current_price}")
+        
+        else:  # SELL (short)
+            if current_price <= position.take_profit_price:
+                should_close = True
+                print(f"TP hit for {model.name} at {current_price}")
+            elif current_price >= position.stop_loss_price:
+                should_close = True
+                print(f"SL hit for {model.name} at {current_price}")
+        
+        if should_close:
+            position.close_position(current_price)
+
+
+def get_market_data(asset, interval):
+    """Fetch market data using yfinance"""
+    try:
+        ticker = yf.Ticker(asset)
+        
+        # Determine period based on interval
+        if interval in ['5m', '15m']:
+            period = '7d'
+        elif interval in ['1h', '4h']:
+            period = '1mo'
+        elif interval in ['1d']:
+            period = '1y'
+        elif interval in ['1wk']:
+            period = '5y'
+        else:
+            period = '1y'
+        
+        df = ticker.history(period=period, interval=interval)
+        
+        if len(df) == 0:
+            return None
+        
+        return df
+    
+    except Exception as e:
+        print(f"Error fetching data for {asset}: {e}")
+        return None
+
+
+def calculate_tp_sl(entry_price, position_type, tp_value, tp_type, sl_value, sl_type):
+    """Calculate take profit and stop loss prices"""
+    
+    if position_type == 'buy':
+        if tp_type == 'PERCENTAGE':
+            tp_price = entry_price * (1 + tp_value / 100)
+        else:
+            tp_price = entry_price + tp_value
+        
+        if sl_type == 'PERCENTAGE':
+            sl_price = entry_price * (1 - sl_value / 100)
+        else:
+            sl_price = entry_price - sl_value
+    
+    else:  # sell (short)
+        if tp_type == 'PERCENTAGE':
+            tp_price = entry_price * (1 - tp_value / 100)
+        else:
+            tp_price = entry_price - tp_value
+        
+        if sl_type == 'PERCENTAGE':
+            sl_price = entry_price * (1 + sl_value / 100)
+        else:
+            sl_price = entry_price + sl_value
+    
+    return tp_price, sl_price
+
+
+def prepare_namespace(model, dataset):
+    """Prepare namespace with all trading functions"""
+    
+    # Import your existing trading functions
+    # from your_app.trading_functions import (
+    #     is_support_level, is_resistance_level, is_uptrend, is_downtrend,
+    #     moving_average, rsi, bbands, momentum, etc.
+    # )
+    
+    # Create a position proxy object that can be called from model code
+    class PositionProxy:
+        def __init__(self, model):
+            self.model = model
+            self._should_close = False
+        
+        def close(self):
+            """Mark that position should be closed"""
+            self._should_close = True
+        
+        def should_close_position(self):
+            return self._should_close
+    
+    position_proxy = PositionProxy(model)
+    
+    # TP/SL functions that can be called from model code
+    def set_take_profit(number, type_of_setting='PERCENTAGE'):
+        """Set take profit - stores in namespace for position creation"""
+        namespace['_take_profit'] = number
+        namespace['_take_profit_type'] = type_of_setting.upper()
+    
+    def set_stop_loss(number, type_of_setting='PERCENTAGE'):
+        """Set stop loss - stores in namespace for position creation"""
+        namespace['_stop_loss'] = number
+        namespace['_stop_loss_type'] = type_of_setting.upper()
+    
+    namespace = {
+        'interval': model.interval,
+        'num_positions': model.num_positions,
+        'dataset': dataset,
+        'asset': model.asset,
+        'position': position_proxy,
+        'set_take_profit': set_take_profit,
+        'set_stop_loss': set_stop_loss,
+        # Default TP/SL from model settings
+        '_take_profit': model.take_profit,
+        '_take_profit_type': model.take_profit_type,
+        '_stop_loss': model.stop_loss,
+        '_stop_loss_type': model.stop_loss_type,
+        'interval': interval,
+        'num_positions': num_positions,
+        'is_support_level': is_support_level,
+        'is_resistance_level': is_resistance_level,
+        'dataset': dataset,
+        'is_uptrend': is_uptrend,
+        'is_downtrend': is_downtrend,
+        'is_ranging_market': is_ranging_market,
+        'is_bullish_candle': is_bullish_candle,
+        'is_bearish_candle': is_bearish_candle,
+        'is_bullish_engulfing': is_bullish_engulfing,
+        'is_bearish_engulfing': is_bearish_engulfing,
+        'is_morning_star': is_morning_star,
+        'is_evening_star': is_evening_star,
+        'is_three_white_soldiers': is_three_white_soldiers,
+        'is_three_black_crows': is_three_black_crows,
+        'is_morning_doji_star': is_morning_doji_star,
+        'is_evening_doji_star': is_evening_doji_star,
+        'is_rising_three_methods': is_rising_three_methods,
+        'is_falling_three_methods': is_falling_three_methods,
+        'is_hammer': is_hammer,
+        'is_hanging_man': is_hanging_man,
+        'is_inverted_hammer': is_inverted_hammer,
+        'is_shooting_star': is_shooting_star,
+        'is_bullish_kicker': is_bullish_kicker,
+        'is_bearish_kicker': is_bearish_kicker,
+        'is_bullish_harami': is_bullish_harami,
+        'is_bearish_harami': is_bearish_harami,
+        'is_bullish_three_line_strike': is_bullish_three_line_strike,
+        'is_bearish_three_line_strike': is_bearish_three_line_strike,
+        'moving_average': moving_average,
+        'bbands': bbands,
+        'momentum': momentum,
+        'rsi': rsi,
+        'is_asian_range_buy': is_asian_range_buy,
+        'is_asian_range_sell': is_asian_range_sell,
+        'asset': asset,
+        'is_fibonacci_level': is_fibonacci_level,
+        'is_ote_buy': is_ote_buy,
+        'is_ote_sell': is_ote_sell,
+        'is_bullish_orderblock': is_bullish_orderblock,
+        'is_bearish_orderblock': is_bearish_orderblock,
+        'is_bullish_weekly_profile': is_bullish_weekly_profile,
+        'is_bearish_weekly_profile': is_bearish_weekly_profile,
+        'buy_hold': buy_hold,
+        'buy_hold_regime': buy_hold_regime,
+        'is_bullish_bias': is_bullish_bias,
+        'is_bearish_bias': is_bearish_bias,
+        'is_high_volume': is_high_volume,
+        'is_low_volume': is_low_volume,
+        'is_stable_market': is_stable_market,
+        'is_choppy_market': is_choppy_market,
+        'is_volatile_market': is_volatile_market,
+        'new_york_session': new_york_session,
+        'london_session': london_session,
+        'asian_session': asian_session,
+        'snow_alpha_buy': snow_alpha_buy,
+        'snow_alpha_short': snow_alpha_short,
+        'ice_beta_buy': ice_beta_buy,
+        'ice_beta_short': ice_beta_short,
+        'frost_gamma_buy': frost_gamma_buy,
+        'frost_gamma_short': frost_gamma_short,
+        'glacier_x_buy': glacier_x_buy,
+        'glacier_x_short': glacier_x_short,
+        'avalanche_z_buy': avalanche_z_buy,
+        'avalanche_z_short': avalanche_z_short,
+        'polar_prime_buy': polar_prime_buy,
+        'polar_prime_short': polar_prime_short,
+        'blizzard_omega_buy': blizzard_omega_buy,
+        'blizzard_omega_short': blizzard_omega_short,
+        'tundra_sigma_buy': tundra_sigma_buy,
+        'tundra_sigma_short': tundra_sigma_short,
+        'arctic_delta_buy': arctic_delta_buy,
+        'arctic_delta_short': arctic_delta_short,
+        'permafrost_theta_buy': permafrost_theta_buy,
+        'permafrost_theta_short': permafrost_theta_short,
+    }
+    
+    return namespace
+    
+
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
