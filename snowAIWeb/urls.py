@@ -431,6 +431,10 @@ urlpatterns = [
           name='delete_snowai_forward_testing_model'
      ),
 
+     path('api/snowai-models/', views.snowai_models_list, name='snowai_models_list'),
+     path('api/snowai-models/<int:model_id>/', views.snowai_model_detail, name='snowai_model_detail'),
+     path('api/snowai-available-models/', views.snowai_available_models, name='snowai_available_models'),
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

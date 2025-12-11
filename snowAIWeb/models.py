@@ -1656,6 +1656,114 @@ class SnowAIForwardTestingModel(models.Model):
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 
+class ActiveForwardTestModel(models.Model):
+    """
+    Active forward testing models with live execution
+    """
+    name = models.CharField(max_length=255, help_text="Model name")
+    asset = models.CharField(max_length=50, help_text="Trading asset symbol")
+    interval = models.CharField(max_length=10, help_text="Trading interval (1d, 1h, etc)")
+    model_code = models.TextField(help_text="Executable model code")
+    
+    # Risk parameters
+    initial_equity = models.FloatField(default=10000.0)
+    current_equity = models.FloatField(default=10000.0)
+    num_positions = models.IntegerField(default=1)
+    take_profit = models.FloatField(help_text="Take profit value")
+    take_profit_type = models.CharField(max_length=20, help_text="PERCENTAGE or NUMBER")
+    stop_loss = models.FloatField(help_text="Stop loss value")
+    stop_loss_type = models.CharField(max_length=20, help_text="PERCENTAGE or NUMBER")
+    
+    # Status
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_run = models.DateTimeField(null=True, blank=True)
+    
+    # Performance metrics
+    total_trades = models.IntegerField(default=0)
+    winning_trades = models.IntegerField(default=0)
+    losing_trades = models.IntegerField(default=0)
+    total_pnl = models.FloatField(default=0.0)
+    win_rate = models.FloatField(default=0.0)
+    equity_curve = models.TextField(default='[]', help_text="JSON array of equity values")
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.name} - {self.asset}"
+    
+    def update_metrics(self):
+        """Update win rate and other metrics"""
+        if self.total_trades > 0:
+            self.win_rate = (self.winning_trades / self.total_trades) * 100
+        else:
+            self.win_rate = 0.0
+        self.save()
+    
+    def add_to_equity_curve(self):
+        """Add current equity to equity curve"""
+        curve = json.loads(self.equity_curve)
+        curve.append(self.current_equity)
+        self.equity_curve = json.dumps(curve)
+        self.save()
+
+
+class Position(models.Model):
+    """
+    Individual trading positions
+    """
+    model = models.ForeignKey(ActiveForwardTestModel, on_delete=models.CASCADE, related_name='positions')
+    
+    position_type = models.CharField(max_length=10, help_text="BUY or SELL")
+    entry_price = models.FloatField()
+    exit_price = models.FloatField(null=True, blank=True)
+    entry_time = models.DateTimeField(default=timezone.now)
+    exit_time = models.DateTimeField(null=True, blank=True)
+    
+    size = models.FloatField(help_text="Position size in units")
+    pnl = models.FloatField(default=0.0)
+    is_open = models.BooleanField(default=True)
+    
+    # TP/SL levels
+    take_profit_price = models.FloatField(null=True, blank=True)
+    stop_loss_price = models.FloatField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-entry_time']
+    
+    def __str__(self):
+        return f"{self.model.name} - {self.position_type} @ {self.entry_price}"
+    
+    def close_position(self, exit_price):
+        """Close the position and calculate P&L"""
+        self.exit_price = exit_price
+        self.exit_time = timezone.now()
+        self.is_open = False
+        
+        if self.position_type == 'BUY':
+            self.pnl = (exit_price - self.entry_price) * self.size
+        else:  # SELL (short)
+            self.pnl = (self.entry_price - exit_price) * self.size
+        
+        self.save()
+        
+        # Update model metrics
+        model = self.model
+        model.total_trades += 1
+        model.current_equity += self.pnl
+        model.total_pnl += self.pnl
+        
+        if self.pnl > 0:
+            model.winning_trades += 1
+        else:
+            model.losing_trades += 1
+        
+        model.add_to_equity_curve()
+        model.update_metrics()
+        
+        return self.pnl
+
 
 
 
