@@ -25186,7 +25186,8 @@ def normalize(value: float, min_val: float, max_val: float) -> float:
 # ============================================================================
 
 # ============================================================================
-# HYBRID: Less SMA-Dependent But Still Compatible
+# REAL FIX: Orthogonal Feature Engineering
+# Each agent sees the market through a completely different lens
 # ============================================================================
 
 def calculate_model_inputs(
@@ -25196,8 +25197,8 @@ def calculate_model_inputs(
     unrealized_pnl: float = 0.0
 ) -> List[float]:
     """
-    Hybrid approach: Keep feature meanings similar but vary the calculations.
-    This should work with existing weights while reducing SMA dependency.
+    TRUE FIX: Each agent gets COMPLETELY DIFFERENT features.
+    Not just different parameters - different mathematical transformations!
     """
     try:
         if len(data) < 20:
@@ -25205,185 +25206,239 @@ def calculate_model_inputs(
         
         current_price = data[-1]['close']
         
-        # ====================================================================
-        # FEATURE 1: PRICE POSITION (replaces SMA distance but similar meaning)
-        # ====================================================================
+        # ================================================================
+        # RAW FEATURE EXTRACTORS
+        # ================================================================
+        
+        def get_price_percentile(lookback):
+            """Where is current price in recent range? (0-1)"""
+            recent = data[-lookback:]
+            prices = [d['close'] for d in recent]
+            min_p, max_p = min(prices), max(prices)
+            if max_p == min_p:
+                return 0.5
+            return (current_price - min_p) / (max_p - min_p)
+        
+        def get_momentum(lookback):
+            """Rate of change over period"""
+            if len(data) < lookback + 1:
+                return 0.0
+            old_price = data[-lookback]['close']
+            if old_price == 0:
+                return 0.0
+            return (current_price - old_price) / old_price
+        
+        def get_volatility_normalized(period):
+            """Volatility as % of price"""
+            vol = calculate_volatility(data, period)
+            return vol / current_price if current_price != 0 else 0
+        
+        def get_trend_alignment():
+            """Are short/medium/long trends aligned?"""
+            if len(data) < 50:
+                return 0.0
+            
+            avg_5 = sum(d['close'] for d in data[-5:]) / 5
+            avg_20 = sum(d['close'] for d in data[-20:]) / 20
+            avg_50 = sum(d['close'] for d in data[-50:]) / 50
+            
+            # All aligned up = 1.0, all aligned down = -1.0, mixed = 0.0
+            if avg_5 > avg_20 > avg_50:
+                return 1.0
+            elif avg_5 < avg_20 < avg_50:
+                return -1.0
+            else:
+                return 0.0
+        
+        def get_acceleration():
+            """Is momentum accelerating or decelerating?"""
+            if len(data) < 10:
+                return 0.0
+            
+            mom_recent = get_momentum(3)
+            mom_older = get_momentum(6)
+            
+            # Positive = accelerating, negative = decelerating
+            return mom_recent - mom_older
+        
+        def get_range_position():
+            """Where in recent high-low range?"""
+            if len(data) < 20:
+                return 0.5
+            
+            recent = data[-20:]
+            high = max(d['high'] for d in recent)
+            low = min(d['low'] for d in recent)
+            
+            if high == low:
+                return 0.5
+            
+            return (current_price - low) / (high - low)
+        
+        def get_body_ratio():
+            """Candle body size vs full range (strength of move)"""
+            last = data[-1]
+            body = abs(last['close'] - last['open'])
+            full_range = last['high'] - last['low']
+            
+            if full_range == 0:
+                return 0.5
+            
+            return body / full_range
+        
+        def get_higher_high_lower_low():
+            """Market structure: HH/HL (uptrend) or LH/LL (downtrend)"""
+            if len(data) < 10:
+                return 0.0
+            
+            recent_highs = [d['high'] for d in data[-10:]]
+            recent_lows = [d['low'] for d in data[-10:]]
+            
+            # Compare recent highs/lows to older ones
+            newer_high = max(recent_highs[-5:])
+            older_high = max(recent_highs[:5])
+            newer_low = min(recent_lows[-5:])
+            older_low = min(recent_lows[:5])
+            
+            if newer_high > older_high and newer_low > older_low:
+                return 1.0  # Higher highs and higher lows (uptrend)
+            elif newer_high < older_high and newer_low < older_low:
+                return -1.0  # Lower highs and lower lows (downtrend)
+            else:
+                return 0.0  # Mixed/ranging
+        
+        def get_volume_surge():
+            """Would detect volume spikes if volume data available"""
+            # Most CSV data doesn't have volume
+            return 0.0
+        
+        def get_distance_from_extremes():
+            """How far from recent high/low?"""
+            if len(data) < 20:
+                return 0.0
+            
+            recent = data[-20:]
+            high = max(d['high'] for d in recent)
+            low = min(d['low'] for d in recent)
+            
+            dist_from_high = (high - current_price) / current_price if current_price != 0 else 0
+            dist_from_low = (current_price - low) / current_price if current_price != 0 else 0
+            
+            # Net signal: negative = near high, positive = near low
+            return dist_from_low - dist_from_high
+        
+        # ================================================================
+        # AGENT-SPECIFIC FEATURE COMBINATIONS
+        # Each agent gets 7 COMPLETELY DIFFERENT features!
+        # ================================================================
         
         if state_features == 'standard':
-            # Use 20-period range
-            lookback = 20
-        elif state_features in ['short-term', 'scalper']:
-            # Scalpers use 5-period range
-            lookback = 5
-        elif state_features in ['long-term', 'trend', 'risk-aware']:
-            # Trend followers use 50-period range
-            lookback = 50
-        elif state_features == 'momentum':
-            # Momentum uses 10-period
-            lookback = 10
-        elif state_features == 'mean-reversion':
-            # Mean reversion uses 20-period
-            lookback = 20
-        elif state_features == 'volatility':
-            # Volatility uses 10-period
-            lookback = 10
-        elif state_features == 'contrarian':
-            # Contrarian uses 20-period but inverted below
-            lookback = 20
-        else:
-            lookback = 20
-        
-        # Calculate where price is in recent range (similar to SMA distance)
-        recent = data[-min(lookback, len(data)):]
-        prices = [d['close'] for d in recent]
-        avg_price = sum(prices) / len(prices)
-        
-        price_position = (current_price - avg_price) / avg_price if avg_price != 0 else 0
-        
-        # Apply agent-specific transformations
-        if state_features in ['short-term', 'scalper']:
-            price_position *= 2.0  # Amplify
-        elif state_features in ['long-term', 'risk-aware']:
-            price_position *= 0.5  # Dampen
-        elif state_features == 'contrarian':
-            price_position *= -1.5  # Invert
-        elif state_features == 'momentum':
-            price_position *= 3.0  # Strong amplification
-        
-        price_position = np.clip(price_position * 10, -1, 1)
-        
-        # ====================================================================
-        # FEATURE 2: VOLATILITY (keep similar but vary period)
-        # ====================================================================
-        
-        if state_features in ['volatility', 'aggressive']:
-            vol_period = 5  # Short-term volatility
-            vol_multiplier = 2.0
-        elif state_features in ['short-term', 'scalper']:
-            vol_period = 10
-            vol_multiplier = 1.5
-        elif state_features in ['long-term', 'risk-aware']:
-            vol_period = 20
-            vol_multiplier = 0.5
-        else:
-            vol_period = 10
-            vol_multiplier = 1.0
-        
-        volatility = calculate_volatility(data, vol_period)
-        max_vol = max(
-            calculate_volatility(data[:i+1], vol_period) 
-            for i in range(vol_period, min(len(data), 50))
-        ) if len(data) > vol_period else 0.001
-        
-        norm_volatility = (volatility / max_vol) * vol_multiplier if max_vol > 0 else 0
-        norm_volatility = min(1.0, norm_volatility)
-        
-        # ====================================================================
-        # FEATURE 3: PRICE MOMENTUM (keep similar structure)
-        # ====================================================================
-        
-        if state_features in ['short-term', 'scalper']:
-            momentum_period = 3
-            momentum_multiplier = 2.0
-        elif state_features in ['long-term', 'trend', 'risk-aware']:
-            momentum_period = 20
-            momentum_multiplier = 0.5
-        elif state_features == 'momentum':
-            momentum_period = 10
-            momentum_multiplier = 3.0
-        elif state_features == 'contrarian':
-            momentum_period = 10
-            momentum_multiplier = -2.0  # INVERTED
-        else:
-            momentum_period = 10
-            momentum_multiplier = 1.0
-        
-        if len(data) >= momentum_period + 1:
-            old_price = data[-momentum_period]['close']
-            price_change = (current_price - old_price) / old_price if old_price != 0 else 0
-        else:
-            price_change = 0
-        
-        # Normalize
-        max_change = max(
-            abs((data[i]['close'] - data[i-1]['close']) / data[i-1]['close'])
-            for i in range(1, min(len(data), 20))
-        ) if len(data) > 1 else 0.01
-        
-        norm_price_change = (price_change / max_change) * momentum_multiplier if max_change > 0 else 0
-        norm_price_change = np.clip(norm_price_change, -1, 1)
-        
-        # ====================================================================
-        # FEATURE 4: TREND STRENGTH (directional signal)
-        # ====================================================================
-        
-        if len(data) >= 50:
-            short_avg = sum(d['close'] for d in data[-5:]) / 5
-            medium_avg = sum(d['close'] for d in data[-20:]) / 20
-            long_avg = sum(d['close'] for d in data[-50:]) / 50
-            
-            if state_features == 'contrarian':
-                # INVERTED trend
-                trend = -0.5 if short_avg > medium_avg else 0.5
-                trend += -0.5 if medium_avg > long_avg else 0.5
-            elif state_features in ['momentum', 'aggressive']:
-                # AMPLIFIED trend
-                trend = 1.0 if (short_avg > medium_avg and medium_avg > long_avg) else -1.0
-            elif state_features == 'mean-reversion':
-                # Oscillator (deviation from mean)
-                spread = (short_avg - medium_avg) / medium_avg if medium_avg != 0 else 0
-                trend = np.clip(spread * 5, -1, 1)
-            else:
-                # Standard trend
-                trend = 0.5 if short_avg > medium_avg else -0.5
-                trend += 0.5 if medium_avg > long_avg else -0.5
-        else:
-            trend = 0.0
-        
-        # ====================================================================
-        # FEATURES 5-7: Keep identical (position, P&L, momentum)
-        # ====================================================================
-        
-        position_size_feature = float(position_size)
-        unrealized_pnl_feature = float(np.clip(unrealized_pnl * 10, -1, 1))
-        
-        # Overall momentum (weighted average of recent changes)
-        if len(data) >= 10:
-            if state_features in ['momentum', 'aggressive']:
-                recent_period = 5
-                momentum_amplify = 2.0
-            elif state_features in ['long-term', 'trend']:
-                recent_period = 20
-                momentum_amplify = 0.5
-            elif state_features == 'contrarian':
-                recent_period = 10
-                momentum_amplify = -1.5  # INVERTED
-            else:
-                recent_period = 10
-                momentum_amplify = 1.0
-            
-            recent_changes = [
-                (data[i]['close'] - data[i-1]['close']) / data[i-1]['close']
-                for i in range(len(data) - recent_period, len(data))
-                if data[i-1]['close'] != 0
+            # SNOW-ALPHA: Balanced - mix of everything
+            return [
+                get_price_percentile(20),
+                get_momentum(10),
+                get_volatility_normalized(10),
+                get_trend_alignment(),
+                float(position_size),
+                float(np.clip(unrealized_pnl * 10, -1, 1)),
+                get_acceleration()
             ]
-            avg_change = sum(recent_changes) / len(recent_changes) if recent_changes else 0
-            momentum_feature = np.clip(avg_change * 100 * momentum_amplify, -1, 1)
-        else:
-            momentum_feature = 0.0
         
-        # ====================================================================
-        # RETURN 7 FEATURES
-        # ====================================================================
-        return [
-            float(price_position),      # 1: Where price is relative to average
-            float(norm_volatility),     # 2: Normalized volatility
-            float(norm_price_change),   # 3: Price momentum
-            float(trend),               # 4: Trend strength
-            float(position_size_feature),  # 5: Position size
-            float(unrealized_pnl_feature), # 6: Unrealized P&L
-            float(momentum_feature)        # 7: Overall momentum
-        ]
+        elif state_features == 'short-term':
+            # ICE-BETA: Scalper - ultra-short-term signals
+            return [
+                get_price_percentile(3),           # Micro range
+                get_momentum(2),                   # 2-candle momentum
+                get_body_ratio(),                  # Candle strength
+                get_acceleration(),                # Momentum acceleration
+                float(position_size),
+                float(np.clip(unrealized_pnl * 20, -1, 1)),  # Hypersensitive to P&L
+                get_volatility_normalized(5)       # Very short vol
+            ]
+        
+        elif state_features == 'long-term':
+            # FROST-GAMMA: Trend follower - slow signals
+            return [
+                get_price_percentile(50),          # Long-term range
+                get_momentum(20),                  # Slow momentum
+                get_trend_alignment(),             # Trend confirmation
+                get_higher_high_lower_low(),       # Market structure
+                float(position_size),
+                float(np.clip(unrealized_pnl * 5, -1, 1)),  # Patient with P&L
+                get_volatility_normalized(20)      # Long-term vol
+            ]
+        
+        elif state_features == 'momentum':
+            # GLACIER-X, BLIZZARD-OMEGA: Momentum traders
+            return [
+                get_momentum(5),                   # Fast momentum
+                get_momentum(10),                  # Medium momentum
+                get_acceleration(),                # Momentum change
+                get_trend_alignment(),             # Trend strength
+                float(position_size),
+                float(np.clip(unrealized_pnl * 10, -1, 1)),
+                get_higher_high_lower_low()        # Momentum structure
+            ]
+        
+        elif state_features == 'mean-reversion':
+            # TUNDRA-SIGMA: Mean reversion
+            return [
+                get_range_position(),              # Where in range?
+                get_distance_from_extremes(),      # Near high/low?
+                -get_momentum(10),                 # INVERTED momentum
+                -get_acceleration(),               # INVERTED acceleration
+                float(position_size),
+                float(np.clip(unrealized_pnl * 10, -1, 1)),
+                get_volatility_normalized(15)      # Look for volatility compression
+            ]
+        
+        elif state_features == 'volatility':
+            # AVALANCHE-Z, ARCTIC-DELTA: Volatility hunters
+            return [
+                get_volatility_normalized(5),      # Short-term vol
+                get_volatility_normalized(10),     # Medium-term vol
+                get_volatility_normalized(20),     # Long-term vol (for comparison)
+                get_body_ratio(),                  # Strong candles
+                float(position_size),
+                float(np.clip(unrealized_pnl * 15, -1, 1)),
+                get_acceleration()                 # Explosive moves
+            ]
+        
+        elif state_features == 'contrarian':
+            # PERMAFROST-THETA: Contrarian
+            return [
+                1.0 - get_range_position(),        # INVERTED range position
+                -get_momentum(10),                 # INVERTED momentum
+                -get_trend_alignment(),            # INVERTED trend
+                get_distance_from_extremes(),      # Look for extremes
+                float(position_size),
+                float(np.clip(unrealized_pnl * 10, -1, 1)),
+                -get_acceleration()                # INVERTED acceleration
+            ]
+        
+        elif state_features == 'risk-aware':
+            # POLAR-PRIME: Conservative
+            return [
+                get_price_percentile(50),          # Long-term position
+                get_momentum(30),                  # Very slow momentum
+                get_trend_alignment(),             # Only trade with clear trend
+                get_volatility_normalized(20) * 0.5,  # Dampened volatility
+                float(position_size),
+                float(np.clip(unrealized_pnl * 3, -1, 1)),  # Very patient
+                get_higher_high_lower_low()        # Structural confirmation
+            ]
+        
+        else:
+            # Fallback
+            return [
+                get_price_percentile(20),
+                get_momentum(10),
+                get_volatility_normalized(10),
+                get_trend_alignment(),
+                float(position_size),
+                float(np.clip(unrealized_pnl * 10, -1, 1)),
+                get_acceleration()
+            ]
         
     except Exception as e:
         logger.error(f"Error calculating model inputs: {e}")
