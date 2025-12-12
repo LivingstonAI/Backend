@@ -26256,12 +26256,15 @@ def save_snowai_forward_testing_model_endpoint(request):
             }, status=201)
             
     except json.JSONDecodeError:
+        print(f'Error in save snowai forward testing model endpoint: Invalid JSON in request body')
         return JsonResponse({
             'status': 'error',
             'message': 'Invalid JSON in request body'
         }, status=400)
     
     except Exception as e:
+        print(f'Error in save snowai forward testing model endpoint: {e}')
+
         return JsonResponse({
             'status': 'error',
             'message': f'An error occurred: {str(e)}'
@@ -26290,12 +26293,16 @@ def retrieve_snowai_forward_testing_model_endpoint(request, model_id):
         }, status=200)
         
     except SnowAIForwardTestingModel.DoesNotExist:
+        print(f'Error in retrieve_snowai_forward_testing_model_endpoint: Model with ID {model_id} not found')
+
         return JsonResponse({
             'status': 'error',
             'message': f'Model with ID {model_id} not found'
         }, status=404)
     
     except Exception as e:
+        print(f'Error in retrieve_snowai_forward_testing_model_endpoint: An error occurred: {str(e)}')
+
         return JsonResponse({
             'status': 'error',
             'message': f'An error occurred: {str(e)}'
@@ -26327,6 +26334,8 @@ def list_all_snowai_forward_testing_models_endpoint(request):
         }, status=200)
         
     except Exception as e:
+        print(f'Error in list_all_snowai_forward_testing_models_endpoint: An error occurred: {str(e)}')
+
         return JsonResponse({
             'status': 'error',
             'message': f'An error occurred: {str(e)}'
@@ -26350,12 +26359,18 @@ def delete_snowai_forward_testing_model_endpoint(request, model_id):
         }, status=200)
         
     except SnowAIForwardTestingModel.DoesNotExist:
+        
+        print(f'Error in delete_snowai_forward_testing_model_endpoint: Model with ID {model_id} not found')
+
+
         return JsonResponse({
             'status': 'error',
             'message': f'Model with ID {model_id} not found'
         }, status=404)
     
     except Exception as e:
+        print(f'Error in delete_snowai_forward_testing_model_endpoint: An error occurred: {str(e)}')
+
         return JsonResponse({
             'status': 'error',
             'message': f'An error occurred: {str(e)}'
@@ -26410,6 +26425,9 @@ def execute_forward_test(model_id):
             open_positions = Position.objects.filter(model=model, is_open=True)
         
         # Prepare namespace for code execution
+        print(model)
+        print('')
+        print(f'Model is: {model}')
         namespace = prepare_namespace(model, dataset)
         
         # Execute the model code
