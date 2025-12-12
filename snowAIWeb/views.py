@@ -27033,6 +27033,75 @@ def snowai_debug_predictions_simple(request):
             'error': str(e),
             'traceback': traceback.format_exc()
         }, status=500, json_dumps_params={'indent': 2})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_debug_weight_shapes(request):
+    """
+    DEBUG: Check the shapes of stored weights
+    GET /api/snowai-trading-weights/debug-weight-shapes/
+    """
+    try:
+        from .models import SnowAITradingWeights
+        import numpy as np
+        
+        # Get one agent's weights
+        obj = SnowAITradingWeights.objects.first()
+        
+        if not obj:
+            return JsonResponse({
+                'success': False,
+                'error': 'No weights found in database'
+            })
+        
+        weights = obj.snow_weights_data
+        
+        # Get actual shapes
+        w1_shape = np.array(weights['w1']).shape
+        b1_shape = np.array(weights['b1']).shape
+        w2_shape = np.array(weights['w2']).shape
+        b2_shape = np.array(weights['b2']).shape
+        w3_shape = np.array(weights['w3']).shape
+        b3_shape = np.array(weights['b3']).shape
+        
+        # Sample values
+        w1_sample = np.array(weights['w1'])
+        
+        return JsonResponse({
+            'success': True,
+            'agent': obj.snow_agent_name,
+            'actual_shapes': {
+                'w1': list(w1_shape),
+                'b1': list(b1_shape),
+                'w2': list(w2_shape),
+                'b2': list(b2_shape),
+                'w3': list(w3_shape),
+                'b3': list(b3_shape),
+            },
+            'w1_is_2d': len(w1_shape) == 2,
+            'w1_first_dimension': int(w1_shape[0]),
+            'w1_second_dimension': int(w1_shape[1]) if len(w1_shape) > 1 else None,
+            'w1_first_row_first_5': [float(x) for x in w1_sample[0][:5]] if len(w1_shape) == 2 else None,
+            'expected_shapes_if_input_first': {
+                'w1': '[7, 32] means [input_size, hidden1_size]',
+                'w2': '[32, 16] means [hidden1_size, hidden2_size]',
+                'w3': '[16, 5] means [hidden2_size, output_size]'
+            },
+            'expected_shapes_if_hidden_first': {
+                'w1': '[32, 7] means [hidden1_size, input_size] - needs transpose',
+                'w2': '[16, 32] means [hidden2_size, hidden1_size] - needs transpose',
+                'w3': '[5, 16] means [output_size, hidden2_size] - needs transpose'
+            }
+        }, json_dumps_params={'indent': 2})
+        
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status=500)
     
 
 # LEGODI BACKEND CODE

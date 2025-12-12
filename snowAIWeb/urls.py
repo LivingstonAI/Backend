@@ -439,6 +439,10 @@ urlpatterns = [
          views.snowai_debug_predictions_simple, 
          name='snowai_debug_predictions_simple'),
 
+     path('api/snowai-trading-weights/debug-weight-shapes/', 
+     views.snowai_debug_weight_shapes, 
+     name='snowai_debug_weight_shapes'),
+
 
 
     # create appproprate urls.py here
