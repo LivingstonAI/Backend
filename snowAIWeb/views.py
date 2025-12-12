@@ -25531,35 +25531,102 @@ def forward_pass(inputs: List[float], weights: Dict) -> List[float]:
         return [0.0, 0.0, 0.0, 0.0, 0.0]
 
 
-def get_best_action(q_values: List[float], current_position: str = 'none') -> int:
+def get_best_action(
+    q_values: List[float], 
+    current_position: str = 'none',
+    agent_personality: str = 'balanced'
+) -> int:
     """
-    Get the best action based on Q-values and current position.
+    Get the best action based on Q-values, position, and agent personality.
+    
+    THIS IS THE KEY FIX: Agent personalities create behavioral differences
+    even when Q-values are similar!
     
     Args:
         q_values: List of Q-values for [BUY, HOLD, SELL, SHORT, COVER]
         current_position: 'long', 'short', or 'none'
+        agent_personality: Trading style that biases action selection
     
     Returns:
         Action index (0=BUY, 1=HOLD, 2=SELL, 3=SHORT, 4=COVER)
     """
-    # Create a copy to avoid modifying original
-    q_copy = q_values.copy()
+    # Create mutable copy
+    q_copy = np.array(q_values, dtype=np.float32).copy()
     
-    # Prevent impossible actions based on current position
+    # ========================================================================
+    # APPLY PERSONALITY BIASES (BEFORE POSITION CONSTRAINTS)
+    # This is what makes agents behave differently!
+    # ========================================================================
+    
+    if agent_personality == 'aggressive':
+        # Boost action-taking, penalize holding
+        q_copy[0] += 0.15  # BUY boost
+        q_copy[3] += 0.15  # SHORT boost
+        q_copy[1] -= 0.2   # HOLD penalty
+        
+    elif agent_personality == 'scalper':
+        # Strong preference for quick entries/exits
+        q_copy[0] += 0.2   # Strong BUY boost
+        q_copy[3] += 0.2   # Strong SHORT boost
+        q_copy[1] -= 0.25  # Heavy HOLD penalty
+        q_copy[2] += 0.1   # Slight SELL boost (quick exits)
+        q_copy[4] += 0.1   # Slight COVER boost (quick exits)
+        
+    elif agent_personality == 'trend':
+        # Prefer holding positions longer
+        q_copy[1] += 0.1   # HOLD bonus
+        q_copy[2] -= 0.05  # Slight SELL penalty (resist early exits)
+        q_copy[4] -= 0.05  # Slight COVER penalty (resist early exits)
+        
+    elif agent_personality == 'momentum':
+        # Aggressive entries, hold for momentum
+        q_copy[0] += 0.12  # BUY boost
+        q_copy[3] += 0.12  # SHORT boost
+        q_copy[1] += 0.05  # Slight HOLD bonus
+        
+    elif agent_personality == 'conservative':
+        # Strong HOLD bias, reluctant to act
+        q_copy[1] += 0.15  # Strong HOLD bonus
+        q_copy[0] -= 0.1   # BUY penalty
+        q_copy[3] -= 0.1   # SHORT penalty
+        
+    elif agent_personality == 'contrarian':
+        # Invert BUY/SHORT preferences
+        # If model wants to BUY, contrarian wants to SHORT and vice versa
+        temp_buy = q_copy[0]
+        q_copy[0] = q_copy[3]  # BUY gets SHORT's Q-value
+        q_copy[3] = temp_buy   # SHORT gets BUY's Q-value
+        q_copy[1] -= 0.1       # Slight HOLD penalty
+    
+    elif agent_personality == 'balanced':
+        # No biases - pure Q-value selection
+        pass
+    
+    # ========================================================================
+    # APPLY POSITION CONSTRAINTS (PREVENT IMPOSSIBLE ACTIONS)
+    # ========================================================================
+    
     if current_position == 'long':
-        q_copy[0] = -np.inf  # Can't buy
-        q_copy[3] = -np.inf  # Can't short
-        q_copy[4] = -np.inf  # Can't cover
+        q_copy[0] = -np.inf  # Can't BUY again
+        q_copy[3] = -np.inf  # Can't SHORT while long
+        q_copy[4] = -np.inf  # Can't COVER while long
+        
     elif current_position == 'short':
-        q_copy[0] = -np.inf  # Can't buy
-        q_copy[2] = -np.inf  # Can't sell
-        q_copy[3] = -np.inf  # Can't short again
+        q_copy[0] = -np.inf  # Can't BUY while short
+        q_copy[2] = -np.inf  # Can't SELL while short
+        q_copy[3] = -np.inf  # Can't SHORT again
+        
     else:  # No position
-        q_copy[2] = -np.inf  # Can't sell
-        q_copy[4] = -np.inf  # Can't cover
+        q_copy[2] = -np.inf  # Can't SELL without long position
+        q_copy[4] = -np.inf  # Can't COVER without short position
     
-    return int(np.argmax(q_copy))
-
+    # ========================================================================
+    # SELECT BEST ACTION
+    # ========================================================================
+    
+    best_action = int(np.argmax(q_copy))
+    
+    return best_action
 
 # ============================================================================
 # FIX: Better error handling in prediction function
