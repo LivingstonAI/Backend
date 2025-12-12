@@ -25497,28 +25497,38 @@ def forward_pass(inputs: List[float], weights: Dict) -> List[float]:
     """
     try:
         # Convert to numpy arrays
-        x = np.array(inputs, dtype=np.float32)
+        x = np.array(inputs, dtype=np.float32)  # Shape: (7,)
         
+        # ================================================================
         # Layer 1: Input -> Hidden1 (ReLU)
-        w1 = np.array(weights['w1'], dtype=np.float32).T  # Transpose for matrix multiplication
-        b1 = np.array(weights['b1'], dtype=np.float32)
-        hidden1 = relu(np.dot(x, w1) + b1)
+        # ================================================================
+        w1 = np.array(weights['w1'], dtype=np.float32)  # Shape: (7, 32) - NO TRANSPOSE
+        b1 = np.array(weights['b1'], dtype=np.float32)  # Shape: (32,)
+        hidden1 = relu(np.dot(x, w1) + b1)  # (7,) @ (7, 32) = (32,)
         
+        # ================================================================
         # Layer 2: Hidden1 -> Hidden2 (ReLU)
-        w2 = np.array(weights['w2'], dtype=np.float32).T
-        b2 = np.array(weights['b2'], dtype=np.float32)
-        hidden2 = relu(np.dot(hidden1, w2) + b2)
+        # ================================================================
+        w2 = np.array(weights['w2'], dtype=np.float32)  # Shape: (32, 16) - NO TRANSPOSE
+        b2 = np.array(weights['b2'], dtype=np.float32)  # Shape: (16,)
+        hidden2 = relu(np.dot(hidden1, w2) + b2)  # (32,) @ (32, 16) = (16,)
         
+        # ================================================================
         # Layer 3: Hidden2 -> Output (Linear)
-        w3 = np.array(weights['w3'], dtype=np.float32).T
-        b3 = np.array(weights['b3'], dtype=np.float32)
-        output = np.dot(hidden2, w3) + b3
+        # ================================================================
+        w3 = np.array(weights['w3'], dtype=np.float32)  # Shape: (16, 5) - NO TRANSPOSE
+        b3 = np.array(weights['b3'], dtype=np.float32)  # Shape: (5,)
+        output = np.dot(hidden2, w3) + b3  # (16,) @ (16, 5) = (5,)
         
         return output.tolist()
         
     except Exception as e:
         logger.error(f"Error in forward pass: {e}")
-        return [0.0, 0.0, 0.0, 0.0, 0.0]  # 5 actions
+        logger.error(f"Input shape: {np.array(inputs).shape}")
+        logger.error(f"w1 shape: {np.array(weights['w1']).shape}")
+        logger.error(f"w2 shape: {np.array(weights['w2']).shape}")
+        logger.error(f"w3 shape: {np.array(weights['w3']).shape}")
+        return [0.0, 0.0, 0.0, 0.0, 0.0]
 
 
 def get_best_action(q_values: List[float], current_position: str = 'none') -> int:
