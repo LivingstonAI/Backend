@@ -25628,6 +25628,7 @@ def get_best_action(
     
     return best_action
 
+
 # ============================================================================
 # FIX: Better error handling in prediction function
 # ============================================================================
@@ -26360,6 +26361,127 @@ def delete_snowai_forward_testing_model_endpoint(request, model_id):
             'message': f'An error occurred: {str(e)}'
         }, status=500)
         
+
+
+scheduler.add_job(
+    execute_all_forward_tests,
+    trigger=IntervalTrigger(minutes=1),
+    id='snowai_forward_test_job',
+    name='Execute all SnowAI forward tests every minute',
+    replace_existing=True
+)
+
+
+def execute_all_forward_tests():
+    """
+    Execute forward tests for all active models
+    Runs every minute via scheduler
+    """
+    try:
+        from .models import ActiveForwardTestModel
+        
+        active_models = ActiveForwardTestModel.objects.filter(is_active=True)
+        
+        for model in active_models:
+            try:
+                execute_forward_test(model.id)
+            except Exception as e:
+                print(f"Error executing model {model.id}: {e}")
+    
+    except Exception as e:
+        print(f"Error in execute_all_forward_tests: {e}")
+
+
+def execute_forward_test(model_id):
+    """
+    Execute forward test for a single model
+    """
+    try:
+        model = ActiveForwardTestModel.objects.get(id=model_id)
+        
+        if not model.is_active:
+            return
+        
+        # Get market data using yfinance
+        dataset = get_market_data(model.asset, model.interval)
+        
+        if dataset is None or len(dataset) == 0:
+            print(f"No data available for {model.asset}")
+            return
+        
+        # Check if we have open positions
+        open_positions = Position.objects.filter(model=model, is_open=True)
+        
+        # Always check TP/SL for existing positions first
+        if len(open_positions) > 0:
+            check_and_close_positions(model, open_positions)
+            # Refresh open positions after potential closes
+            open_positions = Position.objects.filter(model=model, is_open=True)
+        
+        # Prepare namespace for code execution
+        namespace = prepare_namespace(model, dataset)
+        
+        # Execute the model code
+        try:
+            exec(model.model_code, namespace)
+            
+            # Check if model code called position.close()
+            position_proxy = namespace.get('position')
+            if position_proxy and position_proxy.should_close_position():
+                # Close all open positions
+                current_price = dataset['Close'].iloc[-1]
+                for pos in open_positions:
+                    pos.close_position(current_price)
+                    print(f"Closed position via position.close() for {model.name} at {current_price}")
+                
+                # Refresh open positions after closes
+                open_positions = Position.objects.filter(model=model, is_open=True)
+            
+            # Now check if we should open a new position
+            return_statement = namespace.get('return_statement', None)
+            
+            if return_statement in ['buy', 'sell'] and len(open_positions) < model.num_positions:
+                # Open new position
+                current_price = dataset['Close'].iloc[-1]
+                position_size = model.current_equity / current_price / model.num_positions
+                
+                # Get TP/SL from namespace (in case set_take_profit/set_stop_loss were called)
+                tp_value = namespace.get('_take_profit', model.take_profit)
+                tp_type = namespace.get('_take_profit_type', model.take_profit_type)
+                sl_value = namespace.get('_stop_loss', model.stop_loss)
+                sl_type = namespace.get('_stop_loss_type', model.stop_loss_type)
+                
+                # Calculate TP/SL prices
+                tp_price, sl_price = calculate_tp_sl(
+                    current_price,
+                    return_statement,
+                    tp_value,
+                    tp_type,
+                    sl_value,
+                    sl_type
+                )
+                
+                position = Position.objects.create(
+                    model=model,
+                    position_type=return_statement.upper(),
+                    entry_price=current_price,
+                    size=position_size,
+                    take_profit_price=tp_price,
+                    stop_loss_price=sl_price,
+                )
+                
+                model.last_run = timezone.now()
+                model.save()
+                
+                print(f"Opened {return_statement} position for {model.name} at {current_price}")
+        
+        except Exception as e:
+            print(f"Error executing model code: {e}")
+    
+    except Exception as e:
+        print(f"Error in execute_forward_test: {e}")
+
+
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def snowai_models_list(request):
@@ -26413,25 +26535,12 @@ def snowai_models_list(request):
             model.equity_curve = json.dumps([model.initial_equity])
             model.save()
             
-            # Schedule the model execution - ALL models run every minute
-            from apscheduler.schedulers.background import BackgroundScheduler
-            scheduler = BackgroundScheduler()
-            
-            # Execute every minute regardless of interval
-            scheduler.add_job(
-                execute_forward_test,
-                'interval',
-                minutes=1,
-                args=[model.id],
-                id=f'model_{model.id}'
-            )
-            
-            if not scheduler.running:
-                scheduler.start()
+            # No need to add scheduler job - execute_all_forward_tests handles all models
+            print(f"Created model {model.id}, will be picked up by scheduler automatically")
             
             return JsonResponse({
                 'id': model.id,
-                'message': 'Model created and scheduled successfully'
+                'message': 'Model created successfully'
             })
         
         except Exception as e:
@@ -26612,97 +26721,6 @@ def snowai_fetch_chart_data_with_positions_endpoint(request, model_id):
         return JsonResponse({'error': 'Model not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
-
-def execute_forward_test(model_id):
-    """
-    Execute forward test for a model
-    This function runs on schedule and evaluates the model code
-    """
-    try:
-        model = ActiveForwardTestModel.objects.get(id=model_id)
-        
-        if not model.is_active:
-            return
-        
-        # Get market data using yfinance
-        dataset = get_market_data(model.asset, model.interval)
-        
-        if dataset is None or len(dataset) == 0:
-            print(f"No data available for {model.asset}")
-            return
-        
-        # Check if we have open positions
-        open_positions = Position.objects.filter(model=model, is_open=True)
-        
-        # Always check TP/SL for existing positions first
-        if len(open_positions) > 0:
-            check_and_close_positions(model, open_positions)
-            # Refresh open positions after potential closes
-            open_positions = Position.objects.filter(model=model, is_open=True)
-        
-        # Prepare namespace for code execution
-        namespace = prepare_namespace(model, dataset)
-        
-        # Execute the model code
-        try:
-            exec(model.model_code, namespace)
-            
-            # Check if model code called position.close()
-            position_proxy = namespace.get('position')
-            if position_proxy and position_proxy.should_close_position():
-                # Close all open positions
-                current_price = dataset['Close'].iloc[-1]
-                for pos in open_positions:
-                    pos.close_position(current_price)
-                    print(f"Closed position via position.close() for {model.name} at {current_price}")
-                
-                # Refresh open positions after closes
-                open_positions = Position.objects.filter(model=model, is_open=True)
-            
-            # Now check if we should open a new position
-            return_statement = namespace.get('return_statement', None)
-            
-            if return_statement in ['buy', 'sell'] and len(open_positions) < model.num_positions:
-                # Open new position
-                current_price = dataset['Close'].iloc[-1]
-                position_size = model.current_equity / current_price / model.num_positions
-                
-                # Get TP/SL from namespace (in case set_take_profit/set_stop_loss were called)
-                tp_value = namespace.get('_take_profit', model.take_profit)
-                tp_type = namespace.get('_take_profit_type', model.take_profit_type)
-                sl_value = namespace.get('_stop_loss', model.stop_loss)
-                sl_type = namespace.get('_stop_loss_type', model.stop_loss_type)
-                
-                # Calculate TP/SL prices
-                tp_price, sl_price = calculate_tp_sl(
-                    current_price,
-                    return_statement,
-                    tp_value,
-                    tp_type,
-                    sl_value,
-                    sl_type
-                )
-                
-                position = Position.objects.create(
-                    model=model,
-                    position_type=return_statement.upper(),
-                    entry_price=current_price,
-                    size=position_size,
-                    take_profit_price=tp_price,
-                    stop_loss_price=sl_price,
-                )
-                
-                model.last_run = timezone.now()
-                model.save()
-                
-                print(f"Opened {return_statement} position for {model.name} at {current_price}")
-        
-        except Exception as e:
-            print(f"Error executing model code: {e}")
-    
-    except Exception as e:
-        print(f"Error in execute_forward_test: {e}")
 
 
 def check_and_close_positions(model, open_positions):
