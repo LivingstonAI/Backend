@@ -26826,12 +26826,6 @@ def calculate_tp_sl(entry_price, position_type, tp_value, tp_type, sl_value, sl_
 def prepare_namespace(model, dataset):
     """Prepare namespace with all trading functions"""
     
-    # Import your existing trading functions
-    # from your_app.trading_functions import (
-    #     is_support_level, is_resistance_level, is_uptrend, is_downtrend,
-    #     moving_average, rsi, bbands, momentum, etc.
-    # )
-    
     # Create a position proxy object that can be called from model code
     class PositionProxy:
         def __init__(self, model):
@@ -26866,16 +26860,13 @@ def prepare_namespace(model, dataset):
         'position': position_proxy,
         'set_take_profit': set_take_profit,
         'set_stop_loss': set_stop_loss,
-        # Default TP/SL from model settings
         '_take_profit': model.take_profit,
         '_take_profit_type': model.take_profit_type,
         '_stop_loss': model.stop_loss,
         '_stop_loss_type': model.stop_loss_type,
-        'interval': interval,
-        'num_positions': num_positions,
+        # All your trading functions
         'is_support_level': is_support_level,
         'is_resistance_level': is_resistance_level,
-        'dataset': dataset,
         'is_uptrend': is_uptrend,
         'is_downtrend': is_downtrend,
         'is_ranging_market': is_ranging_market,
@@ -26907,7 +26898,6 @@ def prepare_namespace(model, dataset):
         'rsi': rsi,
         'is_asian_range_buy': is_asian_range_buy,
         'is_asian_range_sell': is_asian_range_sell,
-        'asset': asset,
         'is_fibonacci_level': is_fibonacci_level,
         'is_ote_buy': is_ote_buy,
         'is_ote_sell': is_ote_sell,
@@ -26950,7 +26940,7 @@ def prepare_namespace(model, dataset):
     }
     
     return namespace
-
+    
 
 scheduler.add_job(
     execute_all_forward_tests,
