@@ -26425,12 +26425,7 @@ def execute_forward_test(model_id):
             open_positions = Position.objects.filter(model=model, is_open=True)
         
         # Prepare namespace for code execution
-        print(model)
-        print('')
-        print(f'Model is: {model}')
         namespace = prepare_namespace(model, dataset)
-        print(f"Namespace keys: {namespace.keys()}")
-        print(f"Interval in namespace: {namespace.get('interval')}")
         
         # Execute the model code
         try:
