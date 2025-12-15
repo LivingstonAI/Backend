@@ -24818,90 +24818,90 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 
 
-def _calculate_mss(data, lookback_period):
-    """
-    Internal function to calculate Market Stability Score
+# def _calculate_mss(data, lookback_period):
+#     """
+#     Internal function to calculate Market Stability Score
     
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
-        lookback_period (int): Number of days to analyze
+#     Args:
+#         data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+#         lookback_period (int): Number of days to analyze
         
-    Returns:
-        float: MSS value or None if calculation fails
-    """
-    try:
-        # Filter data to lookback period
-        hist = data.tail(lookback_period).copy()
+#     Returns:
+#         float: MSS value or None if calculation fails
+#     """
+#     try:
+#         # Filter data to lookback period
+#         hist = data.tail(lookback_period).copy()
         
-        if len(hist) < 20:
-            return None
+#         if len(hist) < 20:
+#             return None
         
-        # Calculate returns
-        hist['returns'] = hist['Close'].pct_change()
+#         # Calculate returns
+#         hist['returns'] = hist['Close'].pct_change()
         
-        # Calculate volatility (σ)
-        volatility = hist['returns'].std()
+#         # Calculate volatility (σ)
+#         volatility = hist['returns'].std()
         
-        # Calculate R² (trend clarity)
-        prices = hist['Close'].values
-        X = np.arange(len(prices)).reshape(-1, 1)
-        y = prices.reshape(-1, 1)
+#         # Calculate R² (trend clarity)
+#         prices = hist['Close'].values
+#         X = np.arange(len(prices)).reshape(-1, 1)
+#         y = prices.reshape(-1, 1)
         
-        model = LinearRegression()
-        model.fit(X, y)
-        r_squared = model.score(X, y)
+#         model = LinearRegression()
+#         model.fit(X, y)
+#         r_squared = model.score(X, y)
         
-        # Calculate trend consistency (directional strength)
-        returns = hist['returns'].dropna()
-        if len(returns) > 0:
-            positive_days = (returns > 0).sum()
-            trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
-        else:
-            trend_consistency = 0
+#         # Calculate trend consistency (directional strength)
+#         returns = hist['returns'].dropna()
+#         if len(returns) > 0:
+#             positive_days = (returns > 0).sum()
+#             trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
+#         else:
+#             trend_consistency = 0
         
-        # Calculate trend strength (magnitude of slope relative to price)
-        if len(prices) > 0 and prices[0] != 0:
-            slope_per_day = model.coef_[0][0]
-            avg_price = np.mean(prices)
-            trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
-            trend_strength = min(trend_strength, 1.0)
-        else:
-            trend_strength = 0
+#         # Calculate trend strength (magnitude of slope relative to price)
+#         if len(prices) > 0 and prices[0] != 0:
+#             slope_per_day = model.coef_[0][0]
+#             avg_price = np.mean(prices)
+#             trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
+#             trend_strength = min(trend_strength, 1.0)
+#         else:
+#             trend_strength = 0
         
-        # Calculate liquidity factor
-        avg_volume = hist['Volume'].mean()
+#         # Calculate liquidity factor
+#         avg_volume = hist['Volume'].mean()
         
-        if avg_volume > 10000000:
-            liquidity_factor = 1.2
-        elif avg_volume > 1000000:
-            liquidity_factor = 1.0
-        elif avg_volume > 100000:
-            liquidity_factor = 0.9
-        else:
-            liquidity_factor = 0.8
+#         if avg_volume > 10000000:
+#             liquidity_factor = 1.2
+#         elif avg_volume > 1000000:
+#             liquidity_factor = 1.0
+#         elif avg_volume > 100000:
+#             liquidity_factor = 0.9
+#         else:
+#             liquidity_factor = 0.8
         
-        # Normalize volatility (simple normalization)
-        # In single-asset case, we use a fixed reference
-        normalized_volatility = min(volatility / 0.05, 1.0)  # 0.05 as reference volatility
+#         # Normalize volatility (simple normalization)
+#         # In single-asset case, we use a fixed reference
+#         normalized_volatility = min(volatility / 0.05, 1.0)  # 0.05 as reference volatility
         
-        # Calculate trend score
-        trend_score = (
-            r_squared * 0.5 +
-            trend_consistency * 0.3 +
-            trend_strength * 0.2
-        ) * 100
+#         # Calculate trend score
+#         trend_score = (
+#             r_squared * 0.5 +
+#             trend_consistency * 0.3 +
+#             trend_strength * 0.2
+#         ) * 100
         
-        # Apply stability factor
-        stability_factor = (1 - normalized_volatility) ** 0.6
+#         # Apply stability factor
+#         stability_factor = (1 - normalized_volatility) ** 0.6
         
-        # Calculate MSS
-        mss = trend_score * stability_factor * liquidity_factor
-        mss = min(max(mss, 0), 100)
+#         # Calculate MSS
+#         mss = trend_score * stability_factor * liquidity_factor
+#         mss = min(max(mss, 0), 100)
         
-        return mss
+#         return mss
         
-    except Exception as e:
-        return None
+#     except Exception as e:
+#         return None
 
 
 def is_stable_market(data, lookback_period):
@@ -24962,6 +24962,259 @@ def is_volatile_market(data, lookback_period):
         return mss < 30
     except Exception:
         return False
+
+
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+
+
+def _calculate_mss(data, lookback_period):
+    """
+    Internal function to calculate Market Stability Score
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        tuple: (mss_value, is_bullish) or (None, None) if calculation fails
+    """
+    try:
+        # Filter data to lookback period
+        hist = data.tail(lookback_period).copy()
+        
+        if len(hist) < 20:
+            return None, None
+        
+        # Calculate returns
+        hist['returns'] = hist['Close'].pct_change()
+        
+        # Calculate volatility (σ)
+        volatility = hist['returns'].std()
+        
+        # Calculate R² (trend clarity)
+        prices = hist['Close'].values
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
+        
+        model = LinearRegression()
+        model.fit(X, y)
+        r_squared = model.score(X, y)
+        
+        # Determine trend direction from slope
+        slope = model.coef_[0][0]
+        is_bullish = slope > 0
+        
+        # Calculate trend consistency (directional strength)
+        returns = hist['returns'].dropna()
+        if len(returns) > 0:
+            positive_days = (returns > 0).sum()
+            trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
+        else:
+            trend_consistency = 0
+        
+        # Calculate trend strength (magnitude of slope relative to price)
+        if len(prices) > 0 and prices[0] != 0:
+            slope_per_day = model.coef_[0][0]
+            avg_price = np.mean(prices)
+            trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
+            trend_strength = min(trend_strength, 1.0)
+        else:
+            trend_strength = 0
+        
+        # Calculate liquidity factor
+        avg_volume = hist['Volume'].mean()
+        
+        if avg_volume > 10000000:
+            liquidity_factor = 1.2
+        elif avg_volume > 1000000:
+            liquidity_factor = 1.0
+        elif avg_volume > 100000:
+            liquidity_factor = 0.9
+        else:
+            liquidity_factor = 0.8
+        
+        # Normalize volatility
+        normalized_volatility = min(volatility / 0.05, 1.0)
+        
+        # Calculate trend score
+        trend_score = (
+            r_squared * 0.5 +
+            trend_consistency * 0.3 +
+            trend_strength * 0.2
+        ) * 100
+        
+        # Apply stability factor
+        stability_factor = (1 - normalized_volatility) ** 0.6
+        
+        # Calculate MSS
+        mss = trend_score * stability_factor * liquidity_factor
+        mss = min(max(mss, 0), 100)
+        
+        return mss, is_bullish
+        
+    except Exception as e:
+        return None, None
+
+
+# BULLISH REGIME FUNCTIONS
+
+def bullish_stable_market(data, lookback_period):
+    """
+    Check if market is bullish and stable (MSS >= 50 and positive slope)
+    → BUY signal in stable conditions
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        bool: True if bullish stable market
+    """
+    try:
+        mss, is_bullish = _calculate_mss(data, lookback_period)
+        if mss is None:
+            return False
+        return mss >= 50 and is_bullish
+    except Exception:
+        return False
+
+
+def bullish_choppy_market(data, lookback_period):
+    """
+    Check if market is bullish and choppy (30 <= MSS < 50 and positive slope)
+    → Cautious BUY signal
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        bool: True if bullish choppy market
+    """
+    try:
+        mss, is_bullish = _calculate_mss(data, lookback_period)
+        if mss is None:
+            return False
+        return 30 <= mss < 50 and is_bullish
+    except Exception:
+        return False
+
+
+def bullish_volatile_market(data, lookback_period):
+    """
+    Check if market is bullish and volatile (MSS < 30 and positive slope)
+    → Risky BUY signal, proceed with caution
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        bool: True if bullish volatile market
+    """
+    try:
+        mss, is_bullish = _calculate_mss(data, lookback_period)
+        if mss is None:
+            return False
+        return mss < 30 and is_bullish
+    except Exception:
+        return False
+
+
+# BEARISH REGIME FUNCTIONS
+
+def bearish_stable_market(data, lookback_period):
+    """
+    Check if market is bearish and stable (MSS >= 50 and negative slope)
+    → SELL signal in stable conditions
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        bool: True if bearish stable market
+    """
+    try:
+        mss, is_bullish = _calculate_mss(data, lookback_period)
+        if mss is None:
+            return False
+        return mss >= 50 and not is_bullish
+    except Exception:
+        return False
+
+
+def bearish_choppy_market(data, lookback_period):
+    """
+    Check if market is bearish and choppy (30 <= MSS < 50 and negative slope)
+    → Cautious SELL signal
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        bool: True if bearish choppy market
+    """
+    try:
+        mss, is_bullish = _calculate_mss(data, lookback_period)
+        if mss is None:
+            return False
+        return 30 <= mss < 50 and not is_bullish
+    except Exception:
+        return False
+
+
+def bearish_volatile_market(data, lookback_period):
+    """
+    Check if market is bearish and volatile (MSS < 30 and negative slope)
+    → Risky SELL signal, proceed with caution
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        bool: True if bearish volatile market
+    """
+    try:
+        mss, is_bullish = _calculate_mss(data, lookback_period)
+        if mss is None:
+            return False
+        return mss < 30 and not is_bullish
+    except Exception:
+        return False
+
+
+# HELPER FUNCTION FOR EASY REGIME DETECTION
+
+def get_market_regime(data, lookback_period):
+    """
+    Get the current market regime as a string
+    
+    Returns:
+        str: One of 'bullish_stable', 'bullish_choppy', 'bullish_volatile',
+             'bearish_stable', 'bearish_choppy', 'bearish_volatile', or 'unknown'
+    """
+    try:
+        mss, is_bullish = _calculate_mss(data, lookback_period)
+        if mss is None:
+            return 'unknown'
+        
+        direction = 'bullish' if is_bullish else 'bearish'
+        
+        if mss >= 50:
+            stability = 'stable'
+        elif mss >= 30:
+            stability = 'choppy'
+        else:
+            stability = 'volatile'
+        
+        return f'{direction}_{stability}'
+    except Exception:
+        return 'unknown'
 
 
 # ============================================================================
