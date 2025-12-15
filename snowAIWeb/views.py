@@ -5008,71 +5008,71 @@ def test_cnn(request, asset, interval, num_days):
     return JsonResponse({'classification': f'  Uptrend: {up}\nDowntrend: {down}\nRanging Market: {ranger}'})
 
 
-def image_classification(data):
-    generate_trading_image(df=data)
-    # print('Loading Model')
-    url = "https://us-central1-glowing-road-419608.cloudfunctions.net/function-1"
-    # path_to_image = '/candlestick_chart.png'
-    path_to_image = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'trading_chart.png')
+# def image_classification(data):
+#     generate_trading_image(df=data)
+#     # print('Loading Model')
+#     url = "https://us-central1-glowing-road-419608.cloudfunctions.net/function-1"
+#     # path_to_image = '/candlestick_chart.png'
+#     path_to_image = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'trading_chart.png')
 
 
-    with open(path_to_image, 'rb') as image_file:
-        # Read the image file and encode it as base64
-        image_data = base64.b64encode(image_file.read()).decode('utf-8')
+#     with open(path_to_image, 'rb') as image_file:
+#         # Read the image file and encode it as base64
+#         image_data = base64.b64encode(image_file.read()).decode('utf-8')
 
-        headers = {'Content-Type': 'application/json'}
-        payload = {'data': image_data}
+#         headers = {'Content-Type': 'application/json'}
+#         payload = {'data': image_data}
 
-        try:
-            response = requests.post(url, json=payload, headers=headers)
-            response.raise_for_status()  # Check for HTTP errors
+#         try:
+#             response = requests.post(url, json=payload, headers=headers)
+#             response.raise_for_status()  # Check for HTTP errors
 
-            # Extract the predictions from the response
-            response_data = response.json()
-            # predictions = response_data['predictions'][0]
+#             # Extract the predictions from the response
+#             response_data = response.json()
+#             # predictions = response_data['predictions'][0]
 
-            # Find the index of the highest prediction
-            # highest_pred_index = predictions.index(max(predictions))
+#             # Find the index of the highest prediction
+#             # highest_pred_index = predictions.index(max(predictions))
 
-            # Map the index to the corresponding class name
-            # predicted_class = class_names[highest_pred_index]
+#             # Map the index to the corresponding class name
+#             # predicted_class = class_names[highest_pred_index]
 
-            # print(f"Predictions: {predictions}")
+#             # print(f"Predictions: {predictions}")
             
-            # print(f"Highest prediction index: {highest_pred_index}")
-            # print(f"Predicted class: {predicted_class}")
-            # print(response_data)
-            return response_data['response']
+#             # print(f"Highest prediction index: {highest_pred_index}")
+#             # print(f"Predicted class: {predicted_class}")
+#             # print(response_data)
+#             return response_data['response']
 
-        except requests.exceptions.RequestException as e:
-            return JsonResponse({'Error in image classification function: ': f"{e}"})
-
-
-def is_uptrend(data):
-  image_class = image_classification(data=data)
-#   print(f'Uptrend Function: {image_class}')
-  if image_class == 'uptrend':
-    return True
-  else:
-    return False
+#         except requests.exceptions.RequestException as e:
+#             return JsonResponse({'Error in image classification function: ': f"{e}"})
 
 
-def is_downtrend(data):
-  image_class = image_classification(data=data)
-#   print(f'Downtrend Function: {image_class}')
-  if image_class == 'downtrend':
-    return True
-  else:
-    return False
+# def is_uptrend(data):
+#   image_class = image_classification(data=data)
+# #   print(f'Uptrend Function: {image_class}')
+#   if image_class == 'uptrend':
+#     return True
+#   else:
+#     return False
 
 
-def is_ranging_market(data):
-  image_class = image_classification(data=data)
-#   print(f'Ranging Market Function: {image_class}')
-  if image_class == 'ranging market':
-    return True
-  else:
-    return False
+# def is_downtrend(data):
+#   image_class = image_classification(data=data)
+# #   print(f'Downtrend Function: {image_class}')
+#   if image_class == 'downtrend':
+#     return True
+#   else:
+#     return False
+
+
+# def is_ranging_market(data):
+#   image_class = image_classification(data=data)
+# #   print(f'Ranging Market Function: {image_class}')
+#   if image_class == 'ranging market':
+#     return True
+#   else:
+#     return False
 
 
 def support_and_resistance(df):
@@ -24818,90 +24818,90 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 
 
-# def _calculate_mss(data, lookback_period):
-#     """
-#     Internal function to calculate Market Stability Score
+def _calculate_mss(data, lookback_period):
+    """
+    Internal function to calculate Market Stability Score
     
-#     Args:
-#         data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
-#         lookback_period (int): Number of days to analyze
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+        lookback_period (int): Number of days to analyze
         
-#     Returns:
-#         float: MSS value or None if calculation fails
-#     """
-#     try:
-#         # Filter data to lookback period
-#         hist = data.tail(lookback_period).copy()
+    Returns:
+        float: MSS value or None if calculation fails
+    """
+    try:
+        # Filter data to lookback period
+        hist = data.tail(lookback_period).copy()
         
-#         if len(hist) < 20:
-#             return None
+        if len(hist) < 20:
+            return None
         
-#         # Calculate returns
-#         hist['returns'] = hist['Close'].pct_change()
+        # Calculate returns
+        hist['returns'] = hist['Close'].pct_change()
         
-#         # Calculate volatility (σ)
-#         volatility = hist['returns'].std()
+        # Calculate volatility (σ)
+        volatility = hist['returns'].std()
         
-#         # Calculate R² (trend clarity)
-#         prices = hist['Close'].values
-#         X = np.arange(len(prices)).reshape(-1, 1)
-#         y = prices.reshape(-1, 1)
+        # Calculate R² (trend clarity)
+        prices = hist['Close'].values
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
         
-#         model = LinearRegression()
-#         model.fit(X, y)
-#         r_squared = model.score(X, y)
+        model = LinearRegression()
+        model.fit(X, y)
+        r_squared = model.score(X, y)
         
-#         # Calculate trend consistency (directional strength)
-#         returns = hist['returns'].dropna()
-#         if len(returns) > 0:
-#             positive_days = (returns > 0).sum()
-#             trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
-#         else:
-#             trend_consistency = 0
+        # Calculate trend consistency (directional strength)
+        returns = hist['returns'].dropna()
+        if len(returns) > 0:
+            positive_days = (returns > 0).sum()
+            trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
+        else:
+            trend_consistency = 0
         
-#         # Calculate trend strength (magnitude of slope relative to price)
-#         if len(prices) > 0 and prices[0] != 0:
-#             slope_per_day = model.coef_[0][0]
-#             avg_price = np.mean(prices)
-#             trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
-#             trend_strength = min(trend_strength, 1.0)
-#         else:
-#             trend_strength = 0
+        # Calculate trend strength (magnitude of slope relative to price)
+        if len(prices) > 0 and prices[0] != 0:
+            slope_per_day = model.coef_[0][0]
+            avg_price = np.mean(prices)
+            trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
+            trend_strength = min(trend_strength, 1.0)
+        else:
+            trend_strength = 0
         
-#         # Calculate liquidity factor
-#         avg_volume = hist['Volume'].mean()
+        # Calculate liquidity factor
+        avg_volume = hist['Volume'].mean()
         
-#         if avg_volume > 10000000:
-#             liquidity_factor = 1.2
-#         elif avg_volume > 1000000:
-#             liquidity_factor = 1.0
-#         elif avg_volume > 100000:
-#             liquidity_factor = 0.9
-#         else:
-#             liquidity_factor = 0.8
+        if avg_volume > 10000000:
+            liquidity_factor = 1.2
+        elif avg_volume > 1000000:
+            liquidity_factor = 1.0
+        elif avg_volume > 100000:
+            liquidity_factor = 0.9
+        else:
+            liquidity_factor = 0.8
         
-#         # Normalize volatility (simple normalization)
-#         # In single-asset case, we use a fixed reference
-#         normalized_volatility = min(volatility / 0.05, 1.0)  # 0.05 as reference volatility
+        # Normalize volatility (simple normalization)
+        # In single-asset case, we use a fixed reference
+        normalized_volatility = min(volatility / 0.05, 1.0)  # 0.05 as reference volatility
         
-#         # Calculate trend score
-#         trend_score = (
-#             r_squared * 0.5 +
-#             trend_consistency * 0.3 +
-#             trend_strength * 0.2
-#         ) * 100
+        # Calculate trend score
+        trend_score = (
+            r_squared * 0.5 +
+            trend_consistency * 0.3 +
+            trend_strength * 0.2
+        ) * 100
         
-#         # Apply stability factor
-#         stability_factor = (1 - normalized_volatility) ** 0.6
+        # Apply stability factor
+        stability_factor = (1 - normalized_volatility) ** 0.6
         
-#         # Calculate MSS
-#         mss = trend_score * stability_factor * liquidity_factor
-#         mss = min(max(mss, 0), 100)
+        # Calculate MSS
+        mss = trend_score * stability_factor * liquidity_factor
+        mss = min(max(mss, 0), 100)
         
-#         return mss
+        return mss
         
-#     except Exception as e:
-#         return None
+    except Exception as e:
+        return None
 
 
 def is_stable_market(data, lookback_period):
@@ -24963,229 +24963,6 @@ def is_volatile_market(data, lookback_period):
     except Exception:
         return False
 
-
-import numpy as np
-import pandas as pd
-from sklearn.linear_model import LinearRegression
-
-
-def _calculate_mss(data, lookback_period):
-    """
-    Internal function to calculate Market Stability Score
-    
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
-        lookback_period (int): Number of days to analyze
-        
-    Returns:
-        tuple: (mss_value, is_bullish) or (None, None) if calculation fails
-    """
-    try:
-        # Filter data to lookback period
-        hist = data.tail(lookback_period).copy()
-        
-        if len(hist) < 20:
-            return None, None
-        
-        # Calculate returns
-        hist['returns'] = hist['Close'].pct_change()
-        
-        # Calculate volatility (σ)
-        volatility = hist['returns'].std()
-        
-        # Calculate R² (trend clarity)
-        prices = hist['Close'].values
-        X = np.arange(len(prices)).reshape(-1, 1)
-        y = prices.reshape(-1, 1)
-        
-        model = LinearRegression()
-        model.fit(X, y)
-        r_squared = model.score(X, y)
-        
-        # Determine trend direction from slope
-        slope = model.coef_[0][0]
-        is_bullish = slope > 0
-        
-        # Calculate trend consistency (directional strength)
-        returns = hist['returns'].dropna()
-        if len(returns) > 0:
-            positive_days = (returns > 0).sum()
-            trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
-        else:
-            trend_consistency = 0
-        
-        # Calculate trend strength (magnitude of slope relative to price)
-        if len(prices) > 0 and prices[0] != 0:
-            slope_per_day = model.coef_[0][0]
-            avg_price = np.mean(prices)
-            trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
-            trend_strength = min(trend_strength, 1.0)
-        else:
-            trend_strength = 0
-        
-        # Calculate liquidity factor
-        avg_volume = hist['Volume'].mean()
-        
-        if avg_volume > 10000000:
-            liquidity_factor = 1.2
-        elif avg_volume > 1000000:
-            liquidity_factor = 1.0
-        elif avg_volume > 100000:
-            liquidity_factor = 0.9
-        else:
-            liquidity_factor = 0.8
-        
-        # Normalize volatility
-        normalized_volatility = min(volatility / 0.05, 1.0)
-        
-        # Calculate trend score
-        trend_score = (
-            r_squared * 0.5 +
-            trend_consistency * 0.3 +
-            trend_strength * 0.2
-        ) * 100
-        
-        # Apply stability factor
-        stability_factor = (1 - normalized_volatility) ** 0.6
-        
-        # Calculate MSS
-        mss = trend_score * stability_factor * liquidity_factor
-        mss = min(max(mss, 0), 100)
-        
-        return mss, is_bullish
-        
-    except Exception as e:
-        return None, None
-
-
-# BULLISH REGIME FUNCTIONS
-
-def is_bullish_stable_market(data, lookback_period):
-    """
-    Check if market is bullish and stable (MSS >= 50 and positive slope)
-    → BUY signal in stable conditions
-    
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
-        lookback_period (int): Number of days to analyze
-        
-    Returns:
-        bool: True if bullish stable market
-    """
-    try:
-        mss, is_bullish = _calculate_mss(data, lookback_period)
-        if mss is None:
-            return False
-        return mss >= 50 and is_bullish
-    except Exception:
-        return False
-
-
-def is_bullish_choppy_market(data, lookback_period):
-    """
-    Check if market is bullish and choppy (30 <= MSS < 50 and positive slope)
-    → Cautious BUY signal
-    
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
-        lookback_period (int): Number of days to analyze
-        
-    Returns:
-        bool: True if bullish choppy market
-    """
-    try:
-        mss, is_bullish = _calculate_mss(data, lookback_period)
-        if mss is None:
-            return False
-        return 30 <= mss < 50 and is_bullish
-    except Exception:
-        return False
-
-
-def is_bullish_volatile_market(data, lookback_period):
-    """
-    Check if market is bullish and volatile (MSS < 30 and positive slope)
-    → Risky BUY signal, proceed with caution
-    
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
-        lookback_period (int): Number of days to analyze
-        
-    Returns:
-        bool: True if bullish volatile market
-    """
-    try:
-        mss, is_bullish = _calculate_mss(data, lookback_period)
-        if mss is None:
-            return False
-        return mss < 30 and is_bullish
-    except Exception:
-        return False
-
-
-# BEARISH REGIME FUNCTIONS
-
-def is_bearish_stable_market(data, lookback_period):
-    """
-    Check if market is bearish and stable (MSS >= 50 and negative slope)
-    → SELL signal in stable conditions
-    
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
-        lookback_period (int): Number of days to analyze
-        
-    Returns:
-        bool: True if bearish stable market
-    """
-    try:
-        mss, is_bullish = _calculate_mss(data, lookback_period)
-        if mss is None:
-            return False
-        return mss >= 50 and not is_bullish
-    except Exception:
-        return False
-
-
-def is_bearish_choppy_market(data, lookback_period):
-    """
-    Check if market is bearish and choppy (30 <= MSS < 50 and negative slope)
-    → Cautious SELL signal
-    
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
-        lookback_period (int): Number of days to analyze
-        
-    Returns:
-        bool: True if bearish choppy market
-    """
-    try:
-        mss, is_bullish = _calculate_mss(data, lookback_period)
-        if mss is None:
-            return False
-        return 30 <= mss < 50 and not is_bullish
-    except Exception:
-        return False
-
-
-def is_bearish_volatile_market(data, lookback_period):
-    """
-    Check if market is bearish and volatile (MSS < 30 and negative slope)
-    → Risky SELL signal, proceed with caution
-    
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
-        lookback_period (int): Number of days to analyze
-        
-    Returns:
-        bool: True if bearish volatile market
-    """
-    try:
-        mss, is_bullish = _calculate_mss(data, lookback_period)
-        if mss is None:
-            return False
-        return mss < 30 and not is_bullish
-    except Exception:
-        return False
 
 
 # HELPER FUNCTION FOR EASY REGIME DETECTION
@@ -27455,7 +27232,165 @@ def snowai_debug_weight_shapes(request):
             'error': str(e),
             'traceback': traceback.format_exc()
         }, status=500)
+        
     
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+
+
+def _calculate_trend_metrics(data):
+    """
+    Internal function to calculate trend characteristics
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' column and datetime index
+        
+    Returns:
+        dict: Trend metrics or None if calculation fails
+    """
+    try:
+        if len(data) < 20:
+            return None
+        
+        # Calculate returns
+        data_copy = data.copy()
+        data_copy['returns'] = data_copy['Close'].pct_change()
+        
+        # Linear regression for trend
+        prices = data_copy['Close'].values
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
+        
+        model = LinearRegression()
+        model.fit(X, y)
+        
+        slope = model.coef_[0][0]
+        r_squared = model.score(X, y)
+        
+        # Calculate trend strength (normalized slope)
+        avg_price = np.mean(prices)
+        trend_strength = (slope * len(prices)) / avg_price if avg_price != 0 else 0
+        
+        # Calculate directional consistency
+        returns = data_copy['returns'].dropna()
+        if len(returns) > 0:
+            positive_ratio = (returns > 0).sum() / len(returns)
+        else:
+            positive_ratio = 0.5
+        
+        # Price momentum (current vs start)
+        price_change_pct = (prices[-1] - prices[0]) / prices[0] if prices[0] != 0 else 0
+        
+        # Calculate moving average position
+        if len(data_copy) >= 20:
+            ma_20 = data_copy['Close'].rolling(window=20).mean().iloc[-1]
+            current_price = data_copy['Close'].iloc[-1]
+            ma_position = (current_price - ma_20) / ma_20 if ma_20 != 0 else 0
+        else:
+            ma_position = 0
+        
+        return {
+            'slope': slope,
+            'r_squared': r_squared,
+            'trend_strength': trend_strength,
+            'positive_ratio': positive_ratio,
+            'price_change_pct': price_change_pct,
+            'ma_position': ma_position
+        }
+        
+    except Exception as e:
+        return None
+
+
+def is_uptrend(data):
+    """
+    Check if market is in an uptrend
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' column and datetime index
+        
+    Returns:
+        bool: True if uptrend detected
+    """
+    try:
+        metrics = _calculate_trend_metrics(data)
+        if metrics is None:
+            return False
+        
+        # Uptrend conditions
+        is_uptrend_detected = (
+            metrics['slope'] > 0.0005 and
+            metrics['r_squared'] > 0.5 and
+            metrics['positive_ratio'] > 0.60 and
+            metrics['price_change_pct'] > 0.02 and
+            metrics['ma_position'] > -0.02
+        )
+        
+        return is_uptrend_detected
+        
+    except Exception:
+        return False
+
+
+def is_downtrend(data):
+    """
+    Check if market is in a downtrend
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' column and datetime index
+        
+    Returns:
+        bool: True if downtrend detected
+    """
+    try:
+        metrics = _calculate_trend_metrics(data)
+        if metrics is None:
+            return False
+        
+        # Downtrend conditions
+        is_downtrend_detected = (
+            metrics['slope'] < -0.0005 and
+            metrics['r_squared'] > 0.5 and
+            metrics['positive_ratio'] < 0.40 and
+            metrics['price_change_pct'] < -0.02 and
+            metrics['ma_position'] < 0.02
+        )
+        
+        return is_downtrend_detected
+        
+    except Exception:
+        return False
+
+
+def is_ranging_market(data):
+    """
+    Check if market is ranging (sideways, no clear trend)
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' column and datetime index
+        
+    Returns:
+        bool: True if ranging market detected
+    """
+    try:
+        metrics = _calculate_trend_metrics(data)
+        if metrics is None:
+            return False
+        
+        # Ranging conditions: weak trend, low directional bias
+        is_ranging_detected = (
+            abs(metrics['trend_strength']) < 0.03 and
+            (metrics['r_squared'] < 0.5 or
+             (0.45 <= metrics['positive_ratio'] <= 0.55))
+        )
+        
+        return is_ranging_detected
+        
+    except Exception:
+        return False
+
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
