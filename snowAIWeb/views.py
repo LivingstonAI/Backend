@@ -26888,10 +26888,13 @@ def prepare_namespace(model, dataset):
         """Set stop loss - stores in namespace for position creation"""
         namespace['_stop_loss'] = number
         namespace['_stop_loss_type'] = type_of_setting.upper()
+
+    current_open_positions = Position.objects.filter(model=model, is_open=True).count()
+
     
     namespace = {
         'interval': model.interval,
-        'num_positions': model.num_positions,
+        'num_positions': current_open_positions,
         'dataset': dataset,
         'asset': model.asset,
         'position': position_proxy,
