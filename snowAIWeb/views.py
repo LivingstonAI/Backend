@@ -26436,6 +26436,7 @@ def execute_forward_test(model_id):
         model = ActiveForwardTestModel.objects.get(id=model_id)
         
         if not model.is_active:
+            print(f"Model {model.name} is inactive, skipping")
             return
         
         # Get market data using yfinance
@@ -26445,8 +26446,11 @@ def execute_forward_test(model_id):
             print(f"No data available for {model.asset}")
             return
         
+        print(f"✅ Got {len(dataset)} candles for {model.name} ({model.asset})")
+        
         # Check if we have open positions
         open_positions = Position.objects.filter(model=model, is_open=True)
+        print(f"Open positions: {len(open_positions)}")
         
         # Always check TP/SL for existing positions first
         if len(open_positions) > 0:
@@ -26475,11 +26479,14 @@ def execute_forward_test(model_id):
             
             # Now check if we should open a new position
             return_statement = namespace.get('return_statement', None)
+            print(f"Return statement: {return_statement}")
             
             if return_statement in ['buy', 'sell'] and len(open_positions) < model.num_positions:
                 # Open new position
                 current_price = dataset['Close'].iloc[-1]
                 position_size = model.current_equity / current_price / model.num_positions
+                
+                print(f"🎯 OPENING {return_statement.upper()} for {model.name} at ${current_price}")
                 
                 # Get TP/SL from namespace (in case set_take_profit/set_stop_loss were called)
                 tp_value = namespace.get('_take_profit', model.take_profit)
@@ -26509,14 +26516,19 @@ def execute_forward_test(model_id):
                 model.last_run = timezone.now()
                 model.save()
                 
-                print(f"Opened {return_statement} position for {model.name} at {current_price}")
+                print(f"✅ Opened {return_statement} position for {model.name} at {current_price}")
+            elif len(open_positions) >= model.num_positions:
+                print(f"Max positions reached for {model.name}")
         
         except Exception as e:
-            print(f"Error executing model code: {e}")
+            print(f"Error executing model code for {model.name}: {e}")
+            import traceback
+            traceback.print_exc()
     
     except Exception as e:
         print(f"Error in execute_forward_test: {e}")
-
+        import traceback
+        traceback.print_exc()
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
