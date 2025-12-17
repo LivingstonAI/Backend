@@ -27626,7 +27626,6 @@ STOCK_UNIVERSE = [
     'RIVN', 'LCID', 'ALB', 'SQM',
 ]
 
-
 # Model code templates
 UPTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
 set_stop_loss(number=2, type_of_setting='PERCENTAGE')
@@ -27643,17 +27642,20 @@ if num_positions == 0:
         if sell_hold(dataset=dataset):
             if is_downtrend(data=dataset):
                 return_statement = 'sell'"""
-                
+
 
 def scan_and_deploy_stocks():
     """
     Scan all stocks in universe for stability and trends
     Auto-create/remove forward testing models based on conditions
     """
-    from .models import ActiveForwardTestModel
-    from .trading_functions import is_stable_market, is_uptrend, is_downtrend
     
-    print(f"🔍 Starting stock scan at {datetime.now()}")
+    # Check if NYSE is open using existing function
+    if not new_york_session():
+        print(f"⏰ NYSE is closed - skipping stock scan at {datetime.now()}")
+        return
+    
+    print(f"🔍 Starting stock scan at {datetime.now()} (NYSE OPEN)")
     
     deployed_count = 0
     removed_count = 0
@@ -27723,7 +27725,6 @@ def deploy_or_update_model(symbol, trend, model_code):
     Returns:
         str: 'deployed', 'updated', or 'exists'
     """
-    from .models import ActiveForwardTestModel
     
     # Check if auto-deployed model already exists
     existing = ActiveForwardTestModel.objects.filter(
@@ -27772,7 +27773,6 @@ def remove_auto_model_if_exists(symbol, reason="conditions not met"):
     """
     Remove auto-deployed model if it exists
     """
-    from .models import ActiveForwardTestModel, Position
     
     existing = ActiveForwardTestModel.objects.filter(
         asset=symbol,
@@ -27820,7 +27820,7 @@ scheduler.add_job(
     id='auto_stock_scanner_job',
     name='Scan stocks and auto-deploy trading models',
     replace_existing=True
-    )
+)
 
 
 # LEGODI BACKEND CODE
