@@ -5354,6 +5354,169 @@ def detect_market_regime(close, high, low, atr_period=14, adx_period=14,
     
     return regime, adx, plus_di, minus_di
 
+# ==================== RALLY DETECTION ALGORITHMS ====================
+
+def detect_rsi_rally(close, period=14, overbought=70):
+    """
+    Detect rallies using RSI (Relative Strength Index).
+    Returns True when RSI is overbought.
+    """
+    delta = np.diff(close, prepend=close[0])
+    gain = np.where(delta > 0, delta, 0)
+    loss = np.where(delta < 0, -delta, 0)
+    
+    avg_gain = np.convolve(gain, np.ones(period)/period, mode='same')
+    avg_loss = np.convolve(loss, np.ones(period)/period, mode='same')
+    
+    rs = np.divide(avg_gain, avg_loss, out=np.zeros_like(avg_gain), where=avg_loss!=0)
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi, rsi > overbought
+
+
+def detect_bollinger_rally(close, period=20, std_dev=2):
+    """
+    Detect rallies using Bollinger Bands.
+    Returns True when price touches or goes above upper band.
+    """
+    sma = np.convolve(close, np.ones(period)/period, mode='same')
+    
+    # Calculate rolling standard deviation
+    rolling_std = np.array([
+        np.std(close[max(0, i-period):i+1]) if i >= period-1 else np.std(close[:i+1])
+        for i in range(len(close))
+    ])
+    
+    lower_band = sma - (std_dev * rolling_std)
+    upper_band = sma + (std_dev * rolling_std)
+    
+    return lower_band, upper_band, close >= upper_band
+
+
+def detect_price_momentum_rally(close, short_period=10, long_period=30, threshold=0.02):
+    """
+    Detect rallies using price momentum.
+    Returns True when short-term momentum rises significantly above long-term.
+    """
+    short_ma = np.convolve(close, np.ones(short_period)/short_period, mode='same')
+    long_ma = np.convolve(close, np.ones(long_period)/long_period, mode='same')
+    
+    momentum_diff = (short_ma - long_ma) / long_ma
+    
+    return momentum_diff, momentum_diff > threshold
+
+
+def detect_percentage_pump(close, lookback=20, pump_pct=0.03):
+    """
+    Detect rallies based on percentage rise from recent low.
+    Returns True when price has pumped by specified percentage.
+    """
+    rolling_min = np.array([
+        np.min(close[max(0, i-lookback):i+1])
+        for i in range(len(close))
+    ])
+    
+    pump = (close - rolling_min) / rolling_min
+    
+    return rolling_min, pump >= pump_pct
+
+
+# ==================== MAIN SELL_HOLD FUNCTION ====================
+
+def sell_hold(dataset, 
+              rally_threshold=2,
+              rsi_period=14, 
+              rsi_overbought=65,
+              bb_period=20, 
+              bb_std=2,
+              momentum_short=10, 
+              momentum_long=30,
+              pump_period=20, 
+              pump_pct=0.025):
+    """
+    Determines if sell conditions are met based on rally detection algorithms.
+    
+    Parameters:
+    -----------
+    dataset : pd.DataFrame
+        DataFrame with OHLCV data (must have 'Close' column)
+    rally_threshold : int
+        Minimum number of rally conditions to trigger sell (default: 2)
+    rsi_period : int
+        RSI calculation period (default: 14)
+    rsi_overbought : float
+        RSI overbought threshold (default: 65)
+    bb_period : int
+        Bollinger Bands period (default: 20)
+    bb_std : float
+        Bollinger Bands standard deviation multiplier (default: 2)
+    momentum_short : int
+        Short-term momentum period (default: 10)
+    momentum_long : int
+        Long-term momentum period (default: 30)
+    pump_period : int
+        Period for pump calculation (default: 20)
+    pump_pct : float
+        Minimum pump percentage to trigger signal (default: 0.025)
+    
+    Returns:
+    --------
+    bool : True if sell conditions are met, False otherwise
+    
+    Usage in Genesys:
+    -----------------
+    if sell_hold(dataset):
+        self.sell(size=0.95)
+        self.current_equity = self.equity
+    """
+    
+    # Get current index (last bar)
+    try:
+            
+        current_idx = len(dataset) - 1
+        
+        # Need enough data for indicators
+        min_periods = max(rsi_period, bb_period, momentum_long, pump_period)
+        if current_idx < min_periods:
+            return False  # Not enough data yet
+        
+        # Extract close prices as numpy array
+        close = dataset['Close'].values
+        
+        # ==================== CALCULATE INDICATORS ====================
+        
+        # 1. RSI Rally Detection
+        rsi, rsi_rally = detect_rsi_rally(close, rsi_period, rsi_overbought)
+        rsi_signal = rsi_rally[-1]
+        
+        # 2. Bollinger Bands Rally Detection
+        lower_bb, upper_bb, bb_rally = detect_bollinger_rally(close, bb_period, bb_std)
+        bb_signal = bb_rally[-1]
+        
+        # 3. Price Momentum Rally Detection
+        momentum, momentum_rally = detect_price_momentum_rally(close, momentum_short, momentum_long)
+        momentum_signal = momentum_rally[-1]
+        
+        # 4. Percentage Pump Detection
+        recent_low, pump_rally = detect_percentage_pump(close, pump_period, pump_pct)
+        pump_signal = pump_rally[-1]
+        
+        # ==================== CALCULATE RALLY SCORE ====================
+        
+        rally_score = (
+            int(rsi_signal) + 
+            int(bb_signal) + 
+            int(momentum_signal) + 
+            int(pump_signal)
+        )
+        
+        # Return True if rally threshold is met
+        return rally_score >= rally_threshold
+    
+    except Exception as e:
+        print(f'Exception occured in sell_hold system: {e}')
+        return False  # no trade
+
 
 # ==================== MAIN BUY_HOLD_REGIME FUNCTION ====================
 
