@@ -22587,7 +22587,7 @@ def calculate_market_stability_score(request):
                 mss = min(max(mss, 0), 100)
                 
                 # Determine category with improved thresholds
-                if mss >= 50:
+                if mss >= 47:
                     category = "stable"
                     status = "Trending - Good Conditions"
                     color = "#10b981"
