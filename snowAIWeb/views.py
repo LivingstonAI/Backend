@@ -27626,21 +27626,24 @@ STOCK_UNIVERSE = [
     'RIVN', 'LCID', 'ALB', 'SQM',
 ]
 
+
 # Model code templates
 UPTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
 set_stop_loss(number=2, type_of_setting='PERCENTAGE')
 if num_positions == 0:
     if is_stable_market(data=dataset, lookback_period=25):
-        if is_uptrend(data=dataset):
-            return_statement = 'buy'"""
+        if buy_hold(dataset=dataset):
+            if is_uptrend(data=dataset):
+                return_statement = 'buy'"""
 
 DOWNTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
 set_stop_loss(number=2, type_of_setting='PERCENTAGE')
 if num_positions == 0:
     if is_stable_market(data=dataset, lookback_period=25):
-        if is_downtrend(data=dataset):
-            return_statement = 'sell'"""
-
+        if sell_hold(dataset=dataset):
+            if is_downtrend(data=dataset):
+                return_statement = 'sell'"""
+                
 
 def scan_and_deploy_stocks():
     """
