@@ -27569,6 +27569,256 @@ def is_ranging_market(data):
         return False
 
 
+# Your stock universe
+STOCK_UNIVERSE = [
+    # Tech Giants
+    'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 
+    'TSLA', 'META', 'AMD', 'INTC', 'ORCL', 'CSCO',
+    'ADBE', 'CRM', 'AVGO', 'QCOM', 'TXN', 'AMAT',
+    'LRCX', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'NXPI',
+    
+    # Financial Services
+    'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'BLK',
+    'SCHW', 'AXP', 'SPGI', 'CME', 'ICE', 'MCO',
+    'BK', 'USB', 'PNC', 'TFC', 'COF',
+    
+    # Healthcare & Pharma
+    'JNJ', 'LLY', 'UNH', 'PFE', 'ABBV', 'MRK', 'TMO',
+    'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS',
+    'CI', 'ELV', 'HUM', 'VRTX', 'REGN', 'ISRG',
+    
+    # Consumer Discretionary
+    'HD', 'MCD', 'NKE', 'SBUX', 'TJX',
+    'LOW', 'BKNG', 'MAR', 'CMG', 'F', 'GM', 'ABNB',
+    
+    # Consumer Staples
+    'WMT', 'PG', 'KO', 'PEP', 'COST', 'PM', 'MO',
+    'MDLZ', 'CL', 'KMB', 'GIS', 'KHC', 'STZ',
+    
+    # Energy
+    'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX',
+    'VLO', 'OXY', 'HAL', 'DVN', 'HES', 'BKR',
+    
+    # Industrials
+    'BA', 'HON', 'UNP', 'CAT', 'GE', 'RTX', 'LMT',
+    'UPS', 'DE', 'MMM', 'GD', 'NOC', 'FDX', 'CSX',
+    
+    # Telecom & Media
+    'T', 'VZ', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR',
+    
+    # Payment Processors
+    'V', 'MA', 'PYPL', 'ADP', 'FISV', 'FIS',
+    
+    # E-commerce & Retail
+    'SHOP', 'MELI', 'EBAY', 'ETSY', 'TGT', 'ROST',
+    
+    # Software & Cloud
+    'NOW', 'INTU', 'WDAY', 'PANW', 'CRWD', 'ZS',
+    'DDOG', 'NET', 'SNOW', 'PLTR', 'TEAM',
+    
+    # Biotech
+    'BIIB', 'MRNA', 'BNTX', 'SGEN', 'ALNY', 'BGNE',
+    
+    # Chinese ADRs
+    'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV', 'LI',
+    
+    # EVs & Battery
+    'RIVN', 'LCID', 'ALB', 'SQM',
+]
+
+# Model code templates
+UPTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
+set_stop_loss(number=2, type_of_setting='PERCENTAGE')
+if num_positions == 0:
+    if is_stable_market(data=dataset, lookback_period=25):
+        if is_uptrend(data=dataset):
+            return_statement = 'buy'"""
+
+DOWNTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
+set_stop_loss(number=2, type_of_setting='PERCENTAGE')
+if num_positions == 0:
+    if is_stable_market(data=dataset, lookback_period=25):
+        if is_downtrend(data=dataset):
+            return_statement = 'sell'"""
+
+
+def scan_and_deploy_stocks():
+    """
+    Scan all stocks in universe for stability and trends
+    Auto-create/remove forward testing models based on conditions
+    """
+    from .models import ActiveForwardTestModel
+    from .trading_functions import is_stable_market, is_uptrend, is_downtrend
+    
+    print(f"🔍 Starting stock scan at {datetime.now()}")
+    
+    deployed_count = 0
+    removed_count = 0
+    
+    for symbol in STOCK_UNIVERSE:
+        try:
+            # Fetch data
+            ticker = yf.Ticker(symbol)
+            data = ticker.history(period='3mo', interval='1d')
+            
+            if len(data) < 50:
+                print(f"⚠️ Insufficient data for {symbol}")
+                continue
+            
+            # Check if stock is stable
+            is_stable = is_stable_market(data=data, lookback_period=25)
+            
+            if not is_stable:
+                # Check if we have an auto-deployed model for this stock and remove it
+                remove_auto_model_if_exists(symbol, reason="no longer stable")
+                continue
+            
+            # Stock is stable - check trend
+            is_up = is_uptrend(data=data)
+            is_down = is_downtrend(data=data)
+            
+            if is_up:
+                # Deploy uptrend model
+                result = deploy_or_update_model(
+                    symbol=symbol,
+                    trend='uptrend',
+                    model_code=UPTREND_MODEL_CODE
+                )
+                if result == 'deployed':
+                    deployed_count += 1
+                    print(f"✅ Deployed UPTREND model for {symbol}")
+                elif result == 'updated':
+                    print(f"🔄 Updated model for {symbol} to UPTREND")
+                    
+            elif is_down:
+                # Deploy downtrend model
+                result = deploy_or_update_model(
+                    symbol=symbol,
+                    trend='downtrend',
+                    model_code=DOWNTREND_MODEL_CODE
+                )
+                if result == 'deployed':
+                    deployed_count += 1
+                    print(f"✅ Deployed DOWNTREND model for {symbol}")
+                elif result == 'updated':
+                    print(f"🔄 Updated model for {symbol} to DOWNTREND")
+            else:
+                # Stable but no clear trend - remove if exists
+                remove_auto_model_if_exists(symbol, reason="no clear trend")
+                
+        except Exception as e:
+            print(f"❌ Error scanning {symbol}: {e}")
+            continue
+    
+    print(f"✅ Scan complete: {deployed_count} deployed, {removed_count} removed")
+
+
+def deploy_or_update_model(symbol, trend, model_code):
+    """
+    Deploy a new model or update existing one if trend changed
+    
+    Returns:
+        str: 'deployed', 'updated', or 'exists'
+    """
+    from .models import ActiveForwardTestModel
+    
+    # Check if auto-deployed model already exists
+    existing = ActiveForwardTestModel.objects.filter(
+        asset=symbol,
+        name__startswith='[AUTO]'
+    ).first()
+    
+    if existing:
+        # Check if trend changed
+        current_trend = 'uptrend' if 'is_uptrend' in existing.model_code else 'downtrend'
+        
+        if current_trend != trend:
+            # Trend changed - update model code
+            existing.model_code = model_code
+            existing.name = f"[AUTO] {symbol} - {trend.upper()}"
+            existing.save()
+            return 'updated'
+        else:
+            # Same trend, model already exists
+            return 'exists'
+    else:
+        # Create new model
+        model = ActiveForwardTestModel.objects.create(
+            name=f"[AUTO] {symbol} - {trend.upper()}",
+            asset=symbol,
+            interval='4h',
+            model_code=model_code,
+            initial_equity=10000.0,
+            current_equity=10000.0,
+            num_positions=1,
+            take_profit=4.0,
+            take_profit_type='PERCENTAGE',
+            stop_loss=2.0,
+            stop_loss_type='PERCENTAGE',
+            is_active=True
+        )
+        
+        # Initialize equity curve
+        model.equity_curve = json.dumps([model.initial_equity])
+        model.save()
+        
+        return 'deployed'
+
+
+def remove_auto_model_if_exists(symbol, reason="conditions not met"):
+    """
+    Remove auto-deployed model if it exists
+    """
+    from .models import ActiveForwardTestModel, Position
+    
+    existing = ActiveForwardTestModel.objects.filter(
+        asset=symbol,
+        name__startswith='[AUTO]'
+    ).first()
+    
+    if existing:
+        # Close any open positions first
+        open_positions = Position.objects.filter(model=existing, is_open=True)
+        
+        if len(open_positions) > 0:
+            # Get current price to close positions
+            try:
+                ticker = yf.Ticker(symbol)
+                data = ticker.history(period='1d', interval='1d')
+                if len(data) > 0:
+                    current_price = data['Close'].iloc[-1]
+                    
+                    for pos in open_positions:
+                        pos.close_position(current_price)
+                        print(f"📤 Closed position for {symbol} at ${current_price}")
+            except:
+                pass
+        
+        # Delete the model
+        existing.delete()
+        print(f"🗑️ Removed auto-model for {symbol}: {reason}")
+        return True
+    
+    return False
+
+
+def manual_trigger_stock_scan():
+    """
+    Manually trigger a stock scan (can be called via admin or API)
+    """
+    scan_and_deploy_stocks()
+    return "Stock scan completed"
+
+
+# Schedule the stock scanner to run every 10 minutes
+scheduler.add_job(
+    scan_and_deploy_stocks,
+    trigger=IntervalTrigger(minutes=10),
+    id='auto_stock_scanner_job',
+    name='Scan stocks and auto-deploy trading models',
+    replace_existing=True
+    )
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
