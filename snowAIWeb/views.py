@@ -25069,40 +25069,40 @@ def _calculate_mss(data, lookback_period):
 
 def is_stable_market(data, lookback_period):
     """
-    Check if market is stable (MSS >= 50)
+    Check if market is stable (MSS >= 47)
     
     Args:
         data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
         lookback_period (int): Number of days to analyze
         
     Returns:
-        bool: True if stable (MSS >= 50), False otherwise
+        bool: True if stable (MSS >= 47), False otherwise
     """
     try:
         mss = _calculate_mss(data, lookback_period)
         if mss is None:
             return False
-        return mss >= 50
+        return mss >= 47
     except Exception:
         return False
 
 
 def is_choppy_market(data, lookback_period):
     """
-    Check if market is choppy (30 <= MSS < 50)
+    Check if market is choppy (30 <= MSS < 47)
     
     Args:
         data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
         lookback_period (int): Number of days to analyze
         
     Returns:
-        bool: True if choppy (30 <= MSS < 50), False otherwise
+        bool: True if choppy (30 <= MSS < 47), False otherwise
     """
     try:
         mss = _calculate_mss(data, lookback_period)
         if mss is None:
             return False
-        return 30 <= mss < 50
+        return 30 <= mss < 47
     except Exception:
         return False
 
