@@ -26570,19 +26570,24 @@ def delete_snowai_forward_testing_model_endpoint(request, model_id):
         }, status=500)
     
 
-
 def execute_all_forward_tests():
     """
     Execute forward tests for all active models
     Runs every minute via scheduler
     """
     try:
-        from .models import ActiveForwardTestModel
         
         active_models = ActiveForwardTestModel.objects.filter(is_active=True)
         
+        # Check if NYSE is open for stock models
+        nyse_open = new_york_session()
+        
         for model in active_models:
             try:
+                # Skip US stock models if NYSE is closed
+                if not nyse_open and is_us_stock(model.asset):
+                    continue
+                
                 execute_forward_test(model.id)
             except Exception as e:
                 print(f"Error executing model {model.id}: {e}")
@@ -26590,6 +26595,10 @@ def execute_all_forward_tests():
     except Exception as e:
         print(f"Error in execute_all_forward_tests: {e}")
 
+
+def is_us_stock(symbol):
+    """Check if symbol is a US stock"""
+    return not (symbol.endswith('=X') or symbol.endswith('=F') or symbol.startswith('^'))
 
 def execute_forward_test(model_id):
     """
