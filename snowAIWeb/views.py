@@ -27667,13 +27667,14 @@ if num_positions == 0:
         if sell_hold(dataset=dataset):
             if is_downtrend(data=dataset):
                 return_statement = 'sell'"""
-
+                
 
 def scan_and_deploy_stocks():
     """
     Scan all stocks in universe for stability and trends
     Auto-create/remove forward testing models based on conditions
-    """    
+    """
+    
     # Check if NYSE is open using existing function
     if not new_york_session():
         print(f"⏰ NYSE is closed - skipping stock scan at {datetime.now()}")
@@ -27686,12 +27687,12 @@ def scan_and_deploy_stocks():
     
     for symbol in STOCK_UNIVERSE:
         try:
-            # Fetch 4H data (same as what models will trade on)
+            # Fetch 4H data (yfinance limits: 60 days max for 4H)
             ticker = yf.Ticker(symbol)
-            data = ticker.history(period='1mo', interval='4h')
+            data = ticker.history(period='60d', interval='4h')
             
-            if len(data) < 50:
-                print(f"⚠️ Insufficient data for {symbol}")
+            if len(data) < 30:
+                print(f"⚠️ Insufficient data for {symbol} ({len(data)} candles)")
                 continue
             
             # Check if stock is stable using 4H data
@@ -27756,7 +27757,6 @@ def deploy_or_update_model(symbol, trend, model_code):
     Returns:
         str: 'deployed', 'updated', 'reactivated', or 'exists'
     """
-    from .models import ActiveForwardTestModel
     
     # Check if auto-deployed model already exists (active or paused)
     existing = ActiveForwardTestModel.objects.filter(
@@ -27813,7 +27813,6 @@ def remove_auto_model_if_exists(symbol, reason="conditions not met"):
     """
     Deactivate auto-deployed model if it exists (preserves trading history)
     """
-    from .models import ActiveForwardTestModel, Position
     
     existing = ActiveForwardTestModel.objects.filter(
         asset=symbol,
@@ -27863,7 +27862,8 @@ scheduler.add_job(
     id='auto_stock_scanner_job',
     name='Scan stocks and auto-deploy trading models',
     replace_existing=True
-    )
+)
+
 
 
 # LEGODI BACKEND CODE
