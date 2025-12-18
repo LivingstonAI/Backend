@@ -27577,7 +27577,6 @@ def is_ranging_market(data):
     except Exception:
         return False
 
-
 # Your stock universe
 STOCK_UNIVERSE = [
     # Tech Giants
@@ -27651,13 +27650,15 @@ if num_positions == 0:
         if sell_hold(dataset=dataset):
             if is_downtrend(data=dataset):
                 return_statement = 'sell'"""
-
+                
 
 def scan_and_deploy_stocks():
     """
     Scan all stocks in universe for stability and trends
     Auto-create/remove forward testing models based on conditions
     """
+    from .models import ActiveForwardTestModel
+    from .trading_functions import is_stable_market, is_uptrend, is_downtrend, new_york_session
     
     # Check if NYSE is open using existing function
     if not new_york_session():
@@ -27671,15 +27672,15 @@ def scan_and_deploy_stocks():
     
     for symbol in STOCK_UNIVERSE:
         try:
-            # Fetch data
+            # Fetch 4H data (same as what models will trade on)
             ticker = yf.Ticker(symbol)
-            data = ticker.history(period='3mo', interval='1d')
+            data = ticker.history(period='1mo', interval='4h')
             
             if len(data) < 50:
                 print(f"⚠️ Insufficient data for {symbol}")
                 continue
             
-            # Check if stock is stable
+            # Check if stock is stable using 4H data
             is_stable = is_stable_market(data=data, lookback_period=25)
             
             if not is_stable:
@@ -27687,7 +27688,7 @@ def scan_and_deploy_stocks():
                 remove_auto_model_if_exists(symbol, reason="no longer stable")
                 continue
             
-            # Stock is stable - check trend
+            # Stock is stable - check trend on 4H data
             is_up = is_uptrend(data=data)
             is_down = is_downtrend(data=data)
             
@@ -27734,6 +27735,7 @@ def deploy_or_update_model(symbol, trend, model_code):
     Returns:
         str: 'deployed', 'updated', or 'exists'
     """
+    from .models import ActiveForwardTestModel
     
     # Check if auto-deployed model already exists
     existing = ActiveForwardTestModel.objects.filter(
@@ -27782,6 +27784,7 @@ def remove_auto_model_if_exists(symbol, reason="conditions not met"):
     """
     Remove auto-deployed model if it exists
     """
+    from .models import ActiveForwardTestModel, Position
     
     existing = ActiveForwardTestModel.objects.filter(
         asset=symbol,
