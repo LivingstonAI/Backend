@@ -27673,10 +27673,7 @@ def scan_and_deploy_stocks():
     """
     Scan all stocks in universe for stability and trends
     Auto-create/remove forward testing models based on conditions
-    """
-    from .models import ActiveForwardTestModel
-    from .trading_functions import is_stable_market, is_uptrend, is_downtrend, new_york_session
-    
+    """    
     # Check if NYSE is open using existing function
     if not new_york_session():
         print(f"⏰ NYSE is closed - skipping stock scan at {datetime.now()}")
