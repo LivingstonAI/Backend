@@ -27577,6 +27577,7 @@ def is_ranging_market(data):
     except Exception:
         return False
 
+
 # Your stock universe
 STOCK_UNIVERSE = [
     # Tech Giants
@@ -27650,7 +27651,7 @@ if num_positions == 0:
         if sell_hold(dataset=dataset):
             if is_downtrend(data=dataset):
                 return_statement = 'sell'"""
-                
+
 
 def scan_and_deploy_stocks():
     """
@@ -27702,6 +27703,9 @@ def scan_and_deploy_stocks():
                 if result == 'deployed':
                     deployed_count += 1
                     print(f"✅ Deployed UPTREND model for {symbol}")
+                elif result == 'reactivated':
+                    deployed_count += 1
+                    print(f"▶️ Reactivated UPTREND model for {symbol}")
                 elif result == 'updated':
                     print(f"🔄 Updated model for {symbol} to UPTREND")
                     
@@ -27715,6 +27719,9 @@ def scan_and_deploy_stocks():
                 if result == 'deployed':
                     deployed_count += 1
                     print(f"✅ Deployed DOWNTREND model for {symbol}")
+                elif result == 'reactivated':
+                    deployed_count += 1
+                    print(f"▶️ Reactivated DOWNTREND model for {symbol}")
                 elif result == 'updated':
                     print(f"🔄 Updated model for {symbol} to DOWNTREND")
             else:
@@ -27731,19 +27738,28 @@ def scan_and_deploy_stocks():
 def deploy_or_update_model(symbol, trend, model_code):
     """
     Deploy a new model or update existing one if trend changed
+    Reactivates paused models if conditions are met again
     
     Returns:
-        str: 'deployed', 'updated', or 'exists'
+        str: 'deployed', 'updated', 'reactivated', or 'exists'
     """
     from .models import ActiveForwardTestModel
     
-    # Check if auto-deployed model already exists
+    # Check if auto-deployed model already exists (active or paused)
     existing = ActiveForwardTestModel.objects.filter(
         asset=symbol,
-        name__startswith='[AUTO]'
+        name__startswith='[AUTO'
     ).first()
     
     if existing:
+        # Reactivate if it was paused
+        if not existing.is_active:
+            existing.is_active = True
+            existing.model_code = model_code
+            existing.name = f"[AUTO] {symbol} - {trend.upper()}"
+            existing.save()
+            return 'reactivated'
+        
         # Check if trend changed
         current_trend = 'uptrend' if 'is_uptrend' in existing.model_code else 'downtrend'
         
@@ -27782,7 +27798,7 @@ def deploy_or_update_model(symbol, trend, model_code):
 
 def remove_auto_model_if_exists(symbol, reason="conditions not met"):
     """
-    Remove auto-deployed model if it exists
+    Deactivate auto-deployed model if it exists (preserves trading history)
     """
     from .models import ActiveForwardTestModel, Position
     
@@ -27791,7 +27807,7 @@ def remove_auto_model_if_exists(symbol, reason="conditions not met"):
         name__startswith='[AUTO]'
     ).first()
     
-    if existing:
+    if existing and existing.is_active:
         # Close any open positions first
         open_positions = Position.objects.filter(model=existing, is_open=True)
         
@@ -27799,7 +27815,7 @@ def remove_auto_model_if_exists(symbol, reason="conditions not met"):
             # Get current price to close positions
             try:
                 ticker = yf.Ticker(symbol)
-                data = ticker.history(period='1d', interval='1d')
+                data = ticker.history(period='1d', interval='4h')
                 if len(data) > 0:
                     current_price = data['Close'].iloc[-1]
                     
@@ -27809,9 +27825,11 @@ def remove_auto_model_if_exists(symbol, reason="conditions not met"):
             except:
                 pass
         
-        # Delete the model
-        existing.delete()
-        print(f"🗑️ Removed auto-model for {symbol}: {reason}")
+        # Deactivate the model instead of deleting
+        existing.is_active = False
+        existing.name = f"[AUTO-PAUSED] {symbol} - {reason}"
+        existing.save()
+        print(f"⏸️ Deactivated auto-model for {symbol}: {reason}")
         return True
     
     return False
@@ -27832,7 +27850,7 @@ scheduler.add_job(
     id='auto_stock_scanner_job',
     name='Scan stocks and auto-deploy trading models',
     replace_existing=True
-)
+    )
 
 
 # LEGODI BACKEND CODE
