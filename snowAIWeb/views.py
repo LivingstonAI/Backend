@@ -27656,7 +27656,7 @@ STOCK_UNIVERSE = [
 UPTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
 set_stop_loss(number=2, type_of_setting='PERCENTAGE')
 if num_positions == 0:
-    if is_stable_market(data=dataset, lookback_period=20):
+    if is_stable_market(data=dataset, lookback_period=25):
         if buy_hold(dataset=dataset):
             if is_uptrend(data=dataset):
                 return_statement = 'buy'"""
@@ -27664,7 +27664,7 @@ if num_positions == 0:
 DOWNTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
 set_stop_loss(number=2, type_of_setting='PERCENTAGE')
 if num_positions == 0:
-    if is_stable_market(data=dataset, lookback_period=20):
+    if is_stable_market(data=dataset, lookback_period=25):
         if sell_hold(dataset=dataset):
             if is_downtrend(data=dataset):
                 return_statement = 'sell'"""
@@ -27681,34 +27681,50 @@ def scan_and_deploy_stocks():
         print(f"⏰ NYSE is closed - skipping stock scan at {datetime.now()}")
         return
     
-    print(f"🔍 Starting stock scan at {datetime.now()} (NYSE OPEN)")
+    print(f"\n{'='*60}")
+    print(f"🔍 STOCK SCANNER STARTING - {datetime.now()}")
+    print(f"{'='*60}")
     
     deployed_count = 0
     removed_count = 0
+    scanned_count = 0
+    error_count = 0
     
     for symbol in STOCK_UNIVERSE:
+        scanned_count += 1
+        
         try:
+            print(f"\n[{scanned_count}/{len(STOCK_UNIVERSE)}] Checking {symbol}...", end=" ")
+            
             # Fetch 1H data (20 days for short-term moves)
             ticker = yf.Ticker(symbol)
             data = ticker.history(period='20d', interval='1h')
             
             if len(data) < 30:
-                print(f"⚠️ Insufficient data for {symbol} ({len(data)} candles)")
+                print(f"❌ Insufficient data ({len(data)} candles)")
+                error_count += 1
                 continue
+            
+            print(f"✅ Got {len(data)} candles", end=" | ")
             
             # Check if stock is stable using 1H data
             is_stable = is_stable_market(data=data, lookback_period=25)
             
             if not is_stable:
+                print(f"📊 Not stable")
                 # Check if we have an auto-deployed model for this stock and remove it
-                remove_auto_model_if_exists(symbol, reason="no longer stable")
+                if remove_auto_model_if_exists(symbol, reason="no longer stable"):
+                    removed_count += 1
                 continue
+            
+            print(f"✅ Stable", end=" | ")
             
             # Stock is stable - check trend on 1H data
             is_up = is_uptrend(data=data)
             is_down = is_downtrend(data=data)
             
             if is_up:
+                print(f"📈 UPTREND", end=" | ")
                 # Deploy uptrend model
                 result = deploy_or_update_model(
                     symbol=symbol,
@@ -27717,14 +27733,17 @@ def scan_and_deploy_stocks():
                 )
                 if result == 'deployed':
                     deployed_count += 1
-                    print(f"✅ Deployed UPTREND model for {symbol}")
+                    print(f"🚀 DEPLOYED")
                 elif result == 'reactivated':
                     deployed_count += 1
-                    print(f"▶️ Reactivated UPTREND model for {symbol}")
+                    print(f"▶️ REACTIVATED")
                 elif result == 'updated':
-                    print(f"🔄 Updated model for {symbol} to UPTREND")
+                    print(f"🔄 UPDATED to UPTREND")
+                else:
+                    print(f"✔️ Already active")
                     
             elif is_down:
+                print(f"📉 DOWNTREND", end=" | ")
                 # Deploy downtrend model
                 result = deploy_or_update_model(
                     symbol=symbol,
@@ -27733,21 +27752,40 @@ def scan_and_deploy_stocks():
                 )
                 if result == 'deployed':
                     deployed_count += 1
-                    print(f"✅ Deployed DOWNTREND model for {symbol}")
+                    print(f"🚀 DEPLOYED")
                 elif result == 'reactivated':
                     deployed_count += 1
-                    print(f"▶️ Reactivated DOWNTREND model for {symbol}")
+                    print(f"▶️ REACTIVATED")
                 elif result == 'updated':
-                    print(f"🔄 Updated model for {symbol} to DOWNTREND")
+                    print(f"🔄 UPDATED to DOWNTREND")
+                else:
+                    print(f"✔️ Already active")
             else:
+                print(f"⚪ No clear trend")
                 # Stable but no clear trend - remove if exists
-                remove_auto_model_if_exists(symbol, reason="no clear trend")
+                if remove_auto_model_if_exists(symbol, reason="no clear trend"):
+                    removed_count += 1
                 
         except Exception as e:
-            print(f"❌ Error scanning {symbol}: {e}")
+            error_count += 1
+            error_msg = str(e)
+            
+            # Filter out noisy yfinance errors
+            if "possibly delisted" in error_msg or "No data found" in error_msg:
+                print(f"⚠️ Delisted/No data")
+            elif "timed out" in error_msg or "curl" in error_msg:
+                print(f"⚠️ Network timeout")
+            else:
+                print(f"❌ Error: {error_msg[:50]}")
             continue
     
-    print(f"✅ Scan complete: {deployed_count} deployed, {removed_count} removed")
+    print(f"\n{'='*60}")
+    print(f"📊 SCAN COMPLETE")
+    print(f"   • Scanned: {scanned_count} stocks")
+    print(f"   • Deployed/Reactivated: {deployed_count}")
+    print(f"   • Removed/Paused: {removed_count}")
+    print(f"   • Errors: {error_count}")
+    print(f"{'='*60}\n")
 
 
 def deploy_or_update_model(symbol, trend, model_code):
@@ -27758,7 +27796,6 @@ def deploy_or_update_model(symbol, trend, model_code):
     Returns:
         str: 'deployed', 'updated', 'reactivated', or 'exists'
     """
-    from .models import ActiveForwardTestModel
     
     # Check if auto-deployed model already exists (active or paused)
     existing = ActiveForwardTestModel.objects.filter(
@@ -27835,7 +27872,6 @@ def remove_auto_model_if_exists(symbol, reason="conditions not met"):
                     
                     for pos in open_positions:
                         pos.close_position(current_price)
-                        print(f"📤 Closed position for {symbol} at ${current_price}")
             except:
                 pass
         
@@ -27843,7 +27879,6 @@ def remove_auto_model_if_exists(symbol, reason="conditions not met"):
         existing.is_active = False
         existing.name = f"[AUTO-PAUSED] {symbol} - {reason}"
         existing.save()
-        print(f"⏸️ Deactivated auto-model for {symbol}: {reason}")
         return True
     
     return False
@@ -27855,6 +27890,7 @@ def manual_trigger_stock_scan():
     """
     scan_and_deploy_stocks()
     return "Stock scan completed"
+
 
 
 # Schedule the stock scanner to run every 10 minutes
