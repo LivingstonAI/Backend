@@ -27134,6 +27134,7 @@ def prepare_namespace(model, dataset):
         'is_bullish_weekly_profile': is_bullish_weekly_profile,
         'is_bearish_weekly_profile': is_bearish_weekly_profile,
         'buy_hold': buy_hold,
+        'sell_hold': sell_hold,
         'buy_hold_regime': buy_hold_regime,
         'is_bullish_bias': is_bullish_bias,
         'is_bearish_bias': is_bearish_bias,
