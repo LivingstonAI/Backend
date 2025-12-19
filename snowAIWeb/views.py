@@ -27656,7 +27656,7 @@ STOCK_UNIVERSE = [
 UPTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
 set_stop_loss(number=2, type_of_setting='PERCENTAGE')
 if num_positions == 0:
-    if is_stable_market(data=dataset, lookback_period=25):
+    if is_stable_market(data=dataset, lookback_period=20):
         if buy_hold(dataset=dataset):
             if is_uptrend(data=dataset):
                 return_statement = 'buy'"""
@@ -27664,11 +27664,11 @@ if num_positions == 0:
 DOWNTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
 set_stop_loss(number=2, type_of_setting='PERCENTAGE')
 if num_positions == 0:
-    if is_stable_market(data=dataset, lookback_period=25):
+    if is_stable_market(data=dataset, lookback_period=20):
         if sell_hold(dataset=dataset):
             if is_downtrend(data=dataset):
                 return_statement = 'sell'"""
-                
+
 
 def scan_and_deploy_stocks():
     """
@@ -27688,15 +27688,15 @@ def scan_and_deploy_stocks():
     
     for symbol in STOCK_UNIVERSE:
         try:
-            # Fetch 4H data (yfinance limits: 60 days max for 4H)
+            # Fetch 1H data (20 days for short-term moves)
             ticker = yf.Ticker(symbol)
-            data = ticker.history(period='60d', interval='4h')
+            data = ticker.history(period='20d', interval='1h')
             
             if len(data) < 30:
                 print(f"⚠️ Insufficient data for {symbol} ({len(data)} candles)")
                 continue
             
-            # Check if stock is stable using 4H data
+            # Check if stock is stable using 1H data
             is_stable = is_stable_market(data=data, lookback_period=25)
             
             if not is_stable:
@@ -27704,7 +27704,7 @@ def scan_and_deploy_stocks():
                 remove_auto_model_if_exists(symbol, reason="no longer stable")
                 continue
             
-            # Stock is stable - check trend on 4H data
+            # Stock is stable - check trend on 1H data
             is_up = is_uptrend(data=data)
             is_down = is_downtrend(data=data)
             
@@ -27758,6 +27758,7 @@ def deploy_or_update_model(symbol, trend, model_code):
     Returns:
         str: 'deployed', 'updated', 'reactivated', or 'exists'
     """
+    from .models import ActiveForwardTestModel
     
     # Check if auto-deployed model already exists (active or paused)
     existing = ActiveForwardTestModel.objects.filter(
@@ -27791,7 +27792,7 @@ def deploy_or_update_model(symbol, trend, model_code):
         model = ActiveForwardTestModel.objects.create(
             name=f"[AUTO] {symbol} - {trend.upper()}",
             asset=symbol,
-            interval='4h',
+            interval='1h',
             model_code=model_code,
             initial_equity=10000.0,
             current_equity=10000.0,
@@ -27828,7 +27829,7 @@ def remove_auto_model_if_exists(symbol, reason="conditions not met"):
             # Get current price to close positions
             try:
                 ticker = yf.Ticker(symbol)
-                data = ticker.history(period='1d', interval='4h')
+                data = ticker.history(period='1d', interval='1h')
                 if len(data) > 0:
                     current_price = data['Close'].iloc[-1]
                     
@@ -27864,7 +27865,6 @@ scheduler.add_job(
     name='Scan stocks and auto-deploy trading models',
     replace_existing=True
 )
-
 
 
 # LEGODI BACKEND CODE
