@@ -27903,6 +27903,59 @@ scheduler.add_job(
 )
 
 
+@csrf_exempt
+def detect_trend_endpoint(request):
+    """
+    Detect trend for a given symbol
+    """
+    try:
+        symbol = request.GET.get('symbol')
+        period = int(request.GET.get('period', 20))
+        
+        if not symbol:
+            return JsonResponse({'error': 'Symbol required'}, status=400)
+        
+        # Fetch data
+        ticker = yf.Ticker(symbol)
+        data = ticker.history(period=f'{period}d', interval='1h')
+        
+        if len(data) < 30:
+            return JsonResponse({
+                'symbol': symbol,
+                'trend': 'unknown',
+                'error': 'Insufficient data'
+            })
+                
+        # Check trends
+        is_up = is_uptrend(data=data)
+        is_down = is_downtrend(data=data)
+        is_ranging = is_ranging_market(data=data)
+        
+        if is_up:
+            trend = 'uptrend'
+        elif is_down:
+            trend = 'downtrend'
+        elif is_ranging:
+            trend = 'ranging'
+        else:
+            trend = 'unknown'
+        
+        return JsonResponse({
+            'symbol': symbol,
+            'trend': trend,
+            'is_uptrend': is_up,
+            'is_downtrend': is_down,
+            'is_ranging': is_ranging
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'symbol': symbol,
+            'trend': 'unknown',
+            'error': str(e)
+        }, status=500)
+
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
