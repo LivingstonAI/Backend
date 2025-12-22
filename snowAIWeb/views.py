@@ -27940,10 +27940,10 @@ def detect_trend_endpoint(request):
         # Import your trend detection functions
         print(f"🔬 Analyzing trends...", end=" ")
         
-        # Check trends
-        is_up = is_uptrend(data=data)
-        is_down = is_downtrend(data=data)
-        is_ranging = is_ranging_market(data=data)
+        # Check trends and convert to Python bool
+        is_up = bool(is_uptrend(data=data))
+        is_down = bool(is_downtrend(data=data))
+        is_ranging = bool(is_ranging_market(data=data))
         
         print(f"Up: {is_up}, Down: {is_down}, Ranging: {is_ranging}")
         
@@ -27988,6 +27988,7 @@ def detect_trend_endpoint(request):
             'error': str(e)
         }, status=500)
 
+        
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
