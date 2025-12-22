@@ -27939,7 +27939,6 @@ def detect_trend_endpoint(request):
         
         # Import your trend detection functions
         print(f"🔬 Analyzing trends...", end=" ")
-        from .trading_functions import is_uptrend, is_downtrend, is_ranging_market
         
         # Check trends
         is_up = is_uptrend(data=data)
