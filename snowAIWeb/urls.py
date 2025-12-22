@@ -443,6 +443,8 @@ urlpatterns = [
      views.snowai_debug_weight_shapes, 
      name='snowai_debug_weight_shapes'),
 
+      path('api/detect-trend/', views.detect_trend_endpoint, name='detect_trend'),
+
 
 
     # create appproprate urls.py here
