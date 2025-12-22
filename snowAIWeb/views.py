@@ -27902,34 +27902,51 @@ scheduler.add_job(
     replace_existing=True
 )
 
-
 @csrf_exempt
 def detect_trend_endpoint(request):
     """
     Detect trend for a given symbol
     """
+    symbol = None
     try:
         symbol = request.GET.get('symbol')
         period = int(request.GET.get('period', 20))
         
+        print(f"\n{'='*60}")
+        print(f"🔍 TREND DETECTION REQUEST")
+        print(f"   Symbol: {symbol}")
+        print(f"   Period: {period} days")
+        print(f"{'='*60}")
+        
         if not symbol:
+            print("❌ No symbol provided")
             return JsonResponse({'error': 'Symbol required'}, status=400)
         
         # Fetch data
+        print(f"📊 Fetching data for {symbol}...", end=" ")
         ticker = yf.Ticker(symbol)
         data = ticker.history(period=f'{period}d', interval='1h')
         
+        print(f"✅ Got {len(data)} candles")
+        
         if len(data) < 30:
+            print(f"⚠️ Insufficient data: {len(data)} candles")
             return JsonResponse({
                 'symbol': symbol,
                 'trend': 'unknown',
                 'error': 'Insufficient data'
             })
-                
+        
+        # Import your trend detection functions
+        print(f"🔬 Analyzing trends...", end=" ")
+        from .trading_functions import is_uptrend, is_downtrend, is_ranging_market
+        
         # Check trends
         is_up = is_uptrend(data=data)
         is_down = is_downtrend(data=data)
         is_ranging = is_ranging_market(data=data)
+        
+        print(f"Up: {is_up}, Down: {is_down}, Ranging: {is_ranging}")
         
         if is_up:
             trend = 'uptrend'
@@ -27940,6 +27957,9 @@ def detect_trend_endpoint(request):
         else:
             trend = 'unknown'
         
+        print(f"✅ Final trend: {trend.upper()}")
+        print(f"{'='*60}\n")
+        
         return JsonResponse({
             'symbol': symbol,
             'trend': trend,
@@ -27948,13 +27968,26 @@ def detect_trend_endpoint(request):
             'is_ranging': is_ranging
         })
     
-    except Exception as e:
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        print(f"   Make sure trading_functions module exists and has the required functions")
+        import traceback
+        traceback.print_exc()
         return JsonResponse({
-            'symbol': symbol,
+            'symbol': symbol or 'unknown',
+            'trend': 'unknown',
+            'error': f'Import error: {str(e)}'
+        }, status=500)
+    
+    except Exception as e:
+        print(f"❌ ERROR for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'symbol': symbol or 'unknown',
             'trend': 'unknown',
             'error': str(e)
         }, status=500)
-
 
 # LEGODI BACKEND CODE
 def send_simple_message():
