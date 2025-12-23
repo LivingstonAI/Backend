@@ -26812,6 +26812,22 @@ def snowai_model_detail(request, model_id):
     
     if request.method == 'GET':
         positions = Position.objects.filter(model=model)
+        closed_positions = positions.filter(is_open=False)
+        
+        # Calculate real-time metrics from positions
+        total_trades = closed_positions.count()
+        total_pnl = sum(pos.pnl for pos in closed_positions)
+        winning_trades = closed_positions.filter(pnl__gt=0).count()
+        losing_trades = closed_positions.filter(pnl__lt=0).count()
+        
+        # Calculate win rate
+        if total_trades > 0:
+            win_rate = (winning_trades / total_trades) * 100
+        else:
+            win_rate = 0.0
+        
+        # Calculate current equity
+        current_equity = model.initial_equity + total_pnl
         
         positions_data = [{
             'type': pos.position_type,
@@ -26833,17 +26849,17 @@ def snowai_model_detail(request, model_id):
             'model_code': model.model_code,
             'is_active': model.is_active,
             'initial_equity': model.initial_equity,
-            'current_equity': model.current_equity,
+            'current_equity': current_equity,  # ← Calculated from positions
             'num_positions': model.num_positions,
             'take_profit': model.take_profit,
             'take_profit_type': model.take_profit_type,
             'stop_loss': model.stop_loss,
             'stop_loss_type': model.stop_loss_type,
-            'total_trades': model.total_trades,
-            'winning_trades': model.winning_trades,
-            'losing_trades': model.losing_trades,
-            'total_pnl': model.total_pnl,
-            'win_rate': model.win_rate,
+            'total_trades': total_trades,  # ← Calculated
+            'winning_trades': winning_trades,  # ← Calculated
+            'losing_trades': losing_trades,  # ← Calculated
+            'total_pnl': total_pnl,  # ← Calculated
+            'win_rate': win_rate,  # ← Calculated
             'equity_curve': json.loads(model.equity_curve),
             'positions': positions_data,
             'created_at': model.created_at.isoformat(),
