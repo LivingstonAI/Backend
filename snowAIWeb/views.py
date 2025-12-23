@@ -27508,89 +27508,43 @@ def _calculate_trend_metrics(data):
 
 
 def is_uptrend(data):
-    """
-    Check if market is in an uptrend
-    
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' column and datetime index
-        
-    Returns:
-        bool: True if uptrend detected
-    """
     try:
         metrics = _calculate_trend_metrics(data)
         if metrics is None:
             return False
         
-        # Uptrend conditions
-        is_uptrend_detected = (
-            metrics['slope'] > 0.0005 and
-            metrics['r_squared'] > 0.5 and
-            metrics['positive_ratio'] > 0.60 and
-            metrics['price_change_pct'] > 0.02 and
-            metrics['ma_position'] > -0.02
+        return (
+            metrics['slope'] > 0 and
+            metrics['price_change_pct'] > 0.01
         )
-        
-        return is_uptrend_detected
-        
     except Exception:
         return False
 
 
 def is_downtrend(data):
-    """
-    Check if market is in a downtrend
-    
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' column and datetime index
-        
-    Returns:
-        bool: True if downtrend detected
-    """
     try:
         metrics = _calculate_trend_metrics(data)
         if metrics is None:
             return False
         
-        # Downtrend conditions
-        is_downtrend_detected = (
-            metrics['slope'] < -0.0005 and
-            metrics['r_squared'] > 0.5 and
-            metrics['positive_ratio'] < 0.40 and
-            metrics['price_change_pct'] < -0.02 and
-            metrics['ma_position'] < 0.02
+        return (
+            metrics['slope'] < 0 and
+            metrics['price_change_pct'] < -0.01
         )
-        
-        return is_downtrend_detected
-        
     except Exception:
         return False
 
 
 def is_ranging_market(data):
-    """
-    Check if market is ranging (sideways, no clear trend)
-    
-    Args:
-        data (pd.DataFrame): DataFrame with 'Close' column and datetime index
-        
-    Returns:
-        bool: True if ranging market detected
-    """
     try:
         metrics = _calculate_trend_metrics(data)
         if metrics is None:
             return False
         
-        # Ranging conditions: weak trend, low directional bias
-        is_ranging_detected = (
-            abs(metrics['trend_strength']) < 0.03 and
-            (metrics['r_squared'] < 0.5 or
-             (0.45 <= metrics['positive_ratio'] <= 0.55))
+        return (
+            abs(metrics['price_change_pct']) <= 0.01 or
+            (0.45 <= metrics['positive_ratio'] <= 0.55)
         )
-        
-        return is_ranging_detected
-        
     except Exception:
         return False
 
