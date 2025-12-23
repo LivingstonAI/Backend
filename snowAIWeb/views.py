@@ -26728,7 +26728,24 @@ def snowai_models_list(request):
         data = []
         
         for model in models:
-            positions = Position.objects.filter(model=model)
+            # Get all positions for this model
+            all_positions = Position.objects.filter(model=model)
+            closed_positions = all_positions.filter(is_open=False)
+            
+            # Calculate real-time metrics
+            total_trades = closed_positions.count()
+            total_pnl = sum(pos.pnl for pos in closed_positions)
+            winning_trades = closed_positions.filter(pnl__gt=0).count()
+            losing_trades = closed_positions.filter(pnl__lt=0).count()
+            
+            # Calculate win rate
+            if total_trades > 0:
+                win_rate = (winning_trades / total_trades) * 100
+            else:
+                win_rate = 0.0
+            
+            # Calculate current equity
+            current_equity = model.initial_equity + total_pnl
             
             data.append({
                 'id': model.id,
@@ -26737,12 +26754,12 @@ def snowai_models_list(request):
                 'interval': model.interval,
                 'is_active': model.is_active,
                 'initial_equity': model.initial_equity,
-                'current_equity': model.current_equity,
-                'total_trades': model.total_trades,
-                'winning_trades': model.winning_trades,
-                'losing_trades': model.losing_trades,
-                'total_pnl': model.total_pnl,
-                'win_rate': model.win_rate,
+                'current_equity': current_equity,  # Calculated from positions
+                'total_trades': total_trades,  # Calculated from positions
+                'winning_trades': winning_trades,  # Calculated from positions
+                'losing_trades': losing_trades,  # Calculated from positions
+                'total_pnl': total_pnl,  # Calculated from positions
+                'win_rate': win_rate,  # Calculated from positions
                 'created_at': model.created_at.isoformat(),
                 'last_run': model.last_run.isoformat() if model.last_run else None,
             })
