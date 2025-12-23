@@ -1759,11 +1759,10 @@ class Position(models.Model):
         else:
             model.losing_trades += 1
         
-        model.add_to_equity_curve()
-        model.update_metrics()
+        model.add_to_equity_curve()  # Add current equity to curve
+        model.update_metrics()  # Recalculate win rate
         
         return self.pnl
-
 
 
 
