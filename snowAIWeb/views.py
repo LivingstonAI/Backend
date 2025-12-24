@@ -27975,6 +27975,75 @@ def detect_trend_endpoint(request):
             'error': str(e)
         }, status=500)
 
+
+from django.utils.decorators import method_decorator
+from django.views import View
+
+
+# --- UTILS (To be placed in a utils file or kept here) ---
+def _verify_sovereign_neural_signature(fidelity_score):
+    """
+    Mock verification of the neural signature.
+    In prod, this would check against a stored biometric hash.
+    """
+    if fidelity_score > 0.90:
+        return True
+    return False
+
+# --- VIEWS ---
+
+@csrf_exempt
+def receive_sovereign_neuro_command_v1(request):
+    """
+    The Primary endpoint for SnowAI Neuro-Link.
+    Receives JSON payload from the React BCI component.
+    PATH: /snow-ai/neuro-command/receive/
+    """
+    if request.method == 'POST':
+        try:
+            # 1. Parse Data
+            data = json.loads(request.body)
+            command = data.get('command_signature', 'UNKNOWN')
+            fidelity = data.get('neural_fidelity', 0.0)
+            
+            # 2. Security Check (Sovereign User Only)
+            if not _verify_sovereign_neural_signature(fidelity):
+                return JsonResponse({
+                    "status": "DENIED",
+                    "message": "Neural fidelity too low. Verification failed."
+                }, status=403)
+
+            # 3. Execute SnowAI Logic (Mocked for now)
+            execution_log = f"Processed {command} at {time.time()}"
+            
+            # Logic router based on unique command strings
+            response_message = ""
+            if command == "EXECUTE_HEDGE_STRATEGY":
+                response_message = "Hedge initialized. Shorting Volatility Index."
+            elif command == "SCAN_MARKET_VOLATILITY":
+                response_message = "Scan complete. VIX: 18.4 (Stable)."
+            elif command == "OPTIMIZE_LATENCY":
+                response_message = "Rerouting to Seoul-AWS-South-1. Latency: 4ms."
+            elif command == "DEPLOY_SMART_CONTRACT":
+                response_message = "Contract 0x7F... deployed to Mainnet."
+            else:
+                response_message = f"Command {command} acknowledged."
+
+            # 4. Return Success
+            return JsonResponse({
+                "status": "SUCCESS",
+                "message": response_message,
+                "execution_id": f"SNOW-{int(time.time())}"
+            })
+
+        except json.JSONDecodeError:
+            return JsonResponse({"status": "ERROR", "message": "Invalid JSON"}, status=400)
+        except Exception as e:
+            return JsonResponse({"status": "ERROR", "message": str(e)}, status=500)
+
+    return JsonResponse({"status": "METHOD_NOT_ALLOWED"}, status=405)
+
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
