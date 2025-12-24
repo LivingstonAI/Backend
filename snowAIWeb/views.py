@@ -26653,28 +26653,11 @@ def execute_forward_test(model_id):
             return_statement = namespace.get('return_statement', None)
             print(f"Return statement: {return_statement}")
             
+            # In execute_forward_test function, find this section and fix the order:
+            
             if return_statement in ['buy', 'sell'] and len(open_positions) < model.num_positions:
                 # Open new position
                 current_price = dataset['Close'].iloc[-1]
-                # position_size = model.current_equity / current_price / model.num_positions
-                # Calculate position size based on risk per trade
-                risk_per_trade = 0.02  # Risk 2% of equity per trade
-                risk_amount = model.current_equity * risk_per_trade
-                
-                # Calculate distance to stop loss in dollars
-                if return_statement == 'buy':
-                    sl_distance = current_price - sl_price
-                else:  # sell
-                    sl_distance = sl_price - current_price
-                
-                # Position size = Risk amount / Stop loss distance
-                if sl_distance > 0:
-                    position_size = risk_amount / sl_distance
-                else:
-                    # Fallback if SL distance is 0 or negative
-                    position_size = (model.current_equity * 0.05) / current_price  # Use 5% of equity
-                
-                print(f"🎯 OPENING {return_statement.upper()} for {model.name} at ${current_price}")
                 
                 # Get TP/SL from namespace (in case set_take_profit/set_stop_loss were called)
                 tp_value = namespace.get('_take_profit', model.take_profit)
@@ -26682,7 +26665,7 @@ def execute_forward_test(model_id):
                 sl_value = namespace.get('_stop_loss', model.stop_loss)
                 sl_type = namespace.get('_stop_loss_type', model.stop_loss_type)
                 
-                # Calculate TP/SL prices
+                # Calculate TP/SL prices FIRST
                 tp_price, sl_price = calculate_tp_sl(
                     current_price,
                     return_statement,
@@ -26691,6 +26674,22 @@ def execute_forward_test(model_id):
                     sl_value,
                     sl_type
                 )
+                
+                # NOW calculate position size based on stop loss distance
+                if return_statement == 'buy':
+                    sl_distance = current_price - sl_price
+                else:  # sell
+                    sl_distance = sl_price - current_price
+                
+                # Calculate position size based on risk
+                risk_per_trade = 0.02  # Risk 2% of equity per trade
+                risk_amount = model.current_equity * risk_per_trade
+                
+                if sl_distance > 0:
+                    position_size = risk_amount / sl_distance
+                else:
+                    # Fallback if SL distance is 0 or negative
+                    position_size = (model.current_equity * 0.1) / current_price
                 
                 position = Position.objects.create(
                     model=model,
