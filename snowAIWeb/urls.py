@@ -443,7 +443,10 @@ urlpatterns = [
      views.snowai_debug_weight_shapes, 
      name='snowai_debug_weight_shapes'),
 
-      path('api/detect-trend/', views.detect_trend_endpoint, name='detect_trend'),
+     path('api/detect-trend/', views.detect_trend_endpoint, name='detect_trend'),
+
+     path('snow-ai/neuro-command/receive/', neuro_views.receive_sovereign_neuro_command_v1, name='neuro_command_receive'),
+
 
 
 
