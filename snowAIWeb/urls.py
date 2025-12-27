@@ -447,6 +447,10 @@ urlpatterns = [
 
      path('snow-ai/neuro-command/receive/', views.receive_sovereign_neuro_command_v1, name='neuro_command_receive'),
 
+     path('api/snowai-sandbox/train/', views.snowai_sandbox_train, name='snowai_sandbox_train'),
+     path('api/snowai-sandbox/status/<str:session_id>/', views.snowai_sandbox_status, name='snowai_sandbox_status'),
+
+
 
 
 
