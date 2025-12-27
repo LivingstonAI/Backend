@@ -124,6 +124,105 @@ def asian_session():
     hong_kong_now = datetime.now(pytz.timezone('Asia/Hong_Kong')).time()
     return (datetime_time(8, 0) <= tokyo_now <= datetime_time(17, 0)) or (datetime_time(8, 0) <= hong_kong_now <= datetime_time(17, 0))
 
+def is_bullish_market_retracement(data):
+    """
+    Check if market is in a bullish retracement - suitable for buying dips in uptrends
+    Less strict than buy_hold - looks for small pullbacks in trending markets
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        
+    Returns:
+        bool: True if suitable bullish retracement detected
+    """
+    try:
+        if len(data) < 10:
+            return False
+        
+        # Get recent candles
+        recent_5 = data.iloc[-5:]
+        recent_3 = data.iloc[-3:]
+        current = data.iloc[-1]
+        prev = data.iloc[-2]
+        
+        # Calculate short-term momentum (5 periods)
+        short_ma = recent_5['Close'].mean()
+        current_price = current['Close']
+        
+        # Check if we're above short MA (still in uptrend context)
+        above_ma = current_price > short_ma * 0.98  # Allow 2% below MA
+        
+        # Check for recent pullback (last 2-3 candles showing weakness)
+        recent_pullback = (
+            current['Close'] < recent_3['Close'].max() * 0.995 or  # Slight pullback from recent high
+            current['Close'] < prev['Close']  # Current candle lower than previous
+        )
+        
+        # But not a major crash (still within reasonable range)
+        not_major_crash = current['Close'] > recent_5['Close'].min() * 0.98
+        
+        # Volume check (if available) - prefer higher volume on current candle
+        volume_ok = True
+        if 'Volume' in data.columns:
+            avg_volume = recent_5['Volume'].mean()
+            volume_ok = current['Volume'] > avg_volume * 0.5  # At least 50% of average
+        
+        return above_ma and recent_pullback and not_major_crash and volume_ok
+        
+    except Exception as e:
+        return False
+
+
+def is_bearish_market_retracement(data):
+    """
+    Check if market is in a bearish retracement - suitable for selling rallies in downtrends
+    Less strict than sell_hold - looks for small bounces in trending markets
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        
+    Returns:
+        bool: True if suitable bearish retracement detected
+    """
+    try:
+        if len(data) < 10:
+            return False
+        
+        # Get recent candles
+        recent_5 = data.iloc[-5:]
+        recent_3 = data.iloc[-3:]
+        current = data.iloc[-1]
+        prev = data.iloc[-2]
+        
+        # Calculate short-term momentum (5 periods)
+        short_ma = recent_5['Close'].mean()
+        current_price = current['Close']
+        
+        # Check if we're below short MA (still in downtrend context)
+        below_ma = current_price < short_ma * 1.02  # Allow 2% above MA
+        
+        # Check for recent bounce (last 2-3 candles showing strength)
+        recent_bounce = (
+            current['Close'] > recent_3['Close'].min() * 1.005 or  # Slight bounce from recent low
+            current['Close'] > prev['Close']  # Current candle higher than previous
+        )
+        
+        # But not a major reversal (still within reasonable range)
+        not_major_reversal = current['Close'] < recent_5['Close'].max() * 1.02
+        
+        # Volume check (if available) - prefer higher volume on current candle
+        volume_ok = True
+        if 'Volume' in data.columns:
+            avg_volume = recent_5['Volume'].mean()
+            volume_ok = current['Volume'] > avg_volume * 0.5  # At least 50% of average
+        
+        return below_ma and recent_bounce and not_major_reversal and volume_ok
+        
+    except Exception as e:
+        return False
+
+
+
 
 @csrf_exempt
 def zinaida_feedback_form(request):
@@ -28042,103 +28141,6 @@ def receive_sovereign_neuro_command_v1(request):
 
     return JsonResponse({"status": "METHOD_NOT_ALLOWED"}, status=405)
 
-
-def is_bullish_market_retracement(data):
-    """
-    Check if market is in a bullish retracement - suitable for buying dips in uptrends
-    Less strict than buy_hold - looks for small pullbacks in trending markets
-    
-    Args:
-        data (pd.DataFrame): DataFrame with OHLC data
-        
-    Returns:
-        bool: True if suitable bullish retracement detected
-    """
-    try:
-        if len(data) < 10:
-            return False
-        
-        # Get recent candles
-        recent_5 = data.iloc[-5:]
-        recent_3 = data.iloc[-3:]
-        current = data.iloc[-1]
-        prev = data.iloc[-2]
-        
-        # Calculate short-term momentum (5 periods)
-        short_ma = recent_5['Close'].mean()
-        current_price = current['Close']
-        
-        # Check if we're above short MA (still in uptrend context)
-        above_ma = current_price > short_ma * 0.98  # Allow 2% below MA
-        
-        # Check for recent pullback (last 2-3 candles showing weakness)
-        recent_pullback = (
-            current['Close'] < recent_3['Close'].max() * 0.995 or  # Slight pullback from recent high
-            current['Close'] < prev['Close']  # Current candle lower than previous
-        )
-        
-        # But not a major crash (still within reasonable range)
-        not_major_crash = current['Close'] > recent_5['Close'].min() * 0.98
-        
-        # Volume check (if available) - prefer higher volume on current candle
-        volume_ok = True
-        if 'Volume' in data.columns:
-            avg_volume = recent_5['Volume'].mean()
-            volume_ok = current['Volume'] > avg_volume * 0.5  # At least 50% of average
-        
-        return above_ma and recent_pullback and not_major_crash and volume_ok
-        
-    except Exception as e:
-        return False
-
-
-def is_bearish_market_retracement(data):
-    """
-    Check if market is in a bearish retracement - suitable for selling rallies in downtrends
-    Less strict than sell_hold - looks for small bounces in trending markets
-    
-    Args:
-        data (pd.DataFrame): DataFrame with OHLC data
-        
-    Returns:
-        bool: True if suitable bearish retracement detected
-    """
-    try:
-        if len(data) < 10:
-            return False
-        
-        # Get recent candles
-        recent_5 = data.iloc[-5:]
-        recent_3 = data.iloc[-3:]
-        current = data.iloc[-1]
-        prev = data.iloc[-2]
-        
-        # Calculate short-term momentum (5 periods)
-        short_ma = recent_5['Close'].mean()
-        current_price = current['Close']
-        
-        # Check if we're below short MA (still in downtrend context)
-        below_ma = current_price < short_ma * 1.02  # Allow 2% above MA
-        
-        # Check for recent bounce (last 2-3 candles showing strength)
-        recent_bounce = (
-            current['Close'] > recent_3['Close'].min() * 1.005 or  # Slight bounce from recent low
-            current['Close'] > prev['Close']  # Current candle higher than previous
-        )
-        
-        # But not a major reversal (still within reasonable range)
-        not_major_reversal = current['Close'] < recent_5['Close'].max() * 1.02
-        
-        # Volume check (if available) - prefer higher volume on current candle
-        volume_ok = True
-        if 'Volume' in data.columns:
-            avg_volume = recent_5['Volume'].mean()
-            volume_ok = current['Volume'] > avg_volume * 0.5  # At least 50% of average
-        
-        return below_ma and recent_bounce and not_major_reversal and volume_ok
-        
-    except Exception as e:
-        return False
 
 # Add to views.py
 
