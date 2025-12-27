@@ -28267,12 +28267,11 @@ def run_ai_training(session_id):
             'is_ranging_market',
             'is_bullish_market_retracement',
             'is_bearish_market_retracement',
-            'is_bullish_engulfing',
-            'is_bearish_engulfing',
-            'is_morning_star',
-            'is_evening_star',
-            'is_hammer',
-            'is_shooting_star',
+            'is_resistance_level',
+            'is_support_level',
+            'buy_hold',
+             'sell_hold',
+             'is_stable_market'
         ]
         
         session['logs'].append(f'🧬 Initializing population of {config["population_size"]} strategies...')
@@ -28457,12 +28456,11 @@ def evaluate_strategy(functions, datasets, config):
         'is_ranging_market': is_ranging_market,
         'is_bullish_market_retracement': is_bullish_market_retracement,
         'is_bearish_market_retracement': is_bearish_market_retracement,
-        'is_bullish_engulfing': is_bullish_engulfing,
-        'is_bearish_engulfing': is_bearish_engulfing,
-        'is_morning_star': is_morning_star,
-        'is_evening_star': is_evening_star,
-        'is_hammer': is_hammer,
-        'is_shooting_star': is_shooting_star,
+        'is_resistance_level': is_resistance_level,
+        'is_support_level': is_support_level,
+        'buy_hold': buy_hold,
+        'sell_hold': sell_hold,
+        'is_stable_market': is_stable_market
     }
     
     total_pnl = 0
