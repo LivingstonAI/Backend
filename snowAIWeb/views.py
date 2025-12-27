@@ -28140,6 +28140,378 @@ def is_bearish_market_retracement(data):
     except Exception as e:
         return False
 
+# Add to views.py
+
+import random
+import json
+import pandas as pd
+from django.core.files.storage import default_storage
+from django.core.cache import cache
+import uuid
+import time
+
+# Training session storage (in production, use Redis or database)
+TRAINING_SESSIONS = {}
+
+@csrf_exempt
+def snowai_sandbox_train(request):
+    """
+    Start AI training session with uploaded CSV files
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    
+    try:
+        files = request.FILES.getlist('files')
+        config = json.loads(request.POST.get('config', '{}'))
+        
+        if not files:
+            return JsonResponse({'error': 'No files uploaded'}, status=400)
+        
+        # Generate session ID
+        session_id = str(uuid.uuid4())
+        
+        # Save files temporarily
+        file_paths = []
+        for file in files:
+            file_path = default_storage.save(f'sandbox/{session_id}/{file.name}', file)
+            file_paths.append(file_path)
+        
+        # Initialize training session
+        TRAINING_SESSIONS[session_id] = {
+            'status': 'starting',
+            'progress': 0,
+            'files': file_paths,
+            'config': config,
+            'logs': [],
+            'completed': False,
+            'results': None
+        }
+        
+        # Start training in background (you might want to use Celery for this)
+        import threading
+        thread = threading.Thread(target=run_ai_training, args=(session_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return JsonResponse({'session_id': session_id, 'message': 'Training started'})
+    
+    except Exception as e:
+        print(f"Error starting training: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowai_sandbox_status(request, session_id):
+    """
+    Get training status and progress
+    """
+    session = TRAINING_SESSIONS.get(session_id)
+    
+    if not session:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    
+    # Get latest log
+    latest_log = session['logs'][-1] if session['logs'] else None
+    
+    return JsonResponse({
+        'session_id': session_id,
+        'status': session['status'],
+        'progress': session['progress'],
+        'completed': session['completed'],
+        'results': session['results'],
+        'log': latest_log,
+        'error': session.get('error')
+    })
+
+
+def run_ai_training(session_id):
+    """
+    Main AI training loop - uses genetic algorithm to find best function combinations
+    """
+    session = TRAINING_SESSIONS[session_id]
+    
+    try:
+        config = session['config']
+        file_paths = session['files']
+        
+        session['logs'].append('📊 Loading training data...')
+        session['status'] = 'Loading data'
+        
+        # Load all CSV files
+        datasets = []
+        for file_path in file_paths:
+            try:
+                df = pd.read_csv(default_storage.path(file_path))
+                # Ensure it has OHLCV columns
+                if all(col in df.columns for col in ['Open', 'High', 'Low', 'Close']):
+                    datasets.append(df)
+                    session['logs'].append(f'✅ Loaded {file_path.split("/")[-1]}')
+            except Exception as e:
+                session['logs'].append(f'⚠️ Error loading {file_path}: {str(e)}')
+        
+        if not datasets:
+            session['error'] = 'No valid datasets loaded'
+            session['completed'] = True
+            return
+        
+        # Available trading functions
+        available_functions = [
+            'is_uptrend',
+            'is_downtrend',
+            'is_ranging_market',
+            'is_bullish_market_retracement',
+            'is_bearish_market_retracement',
+            'is_bullish_engulfing',
+            'is_bearish_engulfing',
+            'is_morning_star',
+            'is_evening_star',
+            'is_hammer',
+            'is_shooting_star',
+        ]
+        
+        session['logs'].append(f'🧬 Initializing population of {config["population_size"]} strategies...')
+        
+        # Initialize population (random combinations of functions)
+        population = []
+        for _ in range(config['population_size']):
+            # Each strategy is 2-4 functions combined
+            num_functions = random.randint(2, 4)
+            functions = random.sample(available_functions, num_functions)
+            population.append({
+                'functions': functions,
+                'fitness': 0,
+                'trades': 0,
+                'wins': 0,
+                'pnl': 0
+            })
+        
+        # Evolution loop
+        max_iterations = config['max_iterations']
+        
+        for iteration in range(max_iterations):
+            session['progress'] = int((iteration / max_iterations) * 100)
+            session['status'] = f'Generation {iteration + 1}/{max_iterations}'
+            session['logs'].append(f'🔬 Generation {iteration + 1}: Testing strategies...')
+            
+            # Evaluate each strategy
+            for strategy in population:
+                strategy['fitness'], strategy['trades'], strategy['wins'], strategy['pnl'] = evaluate_strategy(
+                    strategy['functions'],
+                    datasets,
+                    config
+                )
+            
+            # Sort by fitness
+            population.sort(key=lambda x: x['fitness'], reverse=True)
+            
+            # Log best strategy of this generation
+            best = population[0]
+            session['logs'].append(
+                f'🏆 Best: {" + ".join(best["functions"][:2])}... | '
+                f'Fitness: {best["fitness"]:.2f} | Win Rate: {(best["wins"]/max(best["trades"], 1)*100):.1f}%'
+            )
+            
+            # Selection and reproduction (keep top 50%, breed rest)
+            survivors = population[:config['population_size'] // 2]
+            
+            # Create next generation
+            next_gen = survivors.copy()
+            while len(next_gen) < config['population_size']:
+                parent1 = random.choice(survivors)
+                parent2 = random.choice(survivors)
+                
+                # Crossover
+                child_functions = []
+                for func in parent1['functions'] + parent2['functions']:
+                    if func not in child_functions:
+                        child_functions.append(func)
+                
+                # Mutation (10% chance to add/remove a function)
+                if random.random() < 0.1:
+                    if random.random() < 0.5 and len(child_functions) < 5:
+                        new_func = random.choice(available_functions)
+                        if new_func not in child_functions:
+                            child_functions.append(new_func)
+                    elif len(child_functions) > 2:
+                        child_functions.pop(random.randint(0, len(child_functions) - 1))
+                
+                next_gen.append({
+                    'functions': child_functions[:4],  # Max 4 functions
+                    'fitness': 0,
+                    'trades': 0,
+                    'wins': 0,
+                    'pnl': 0
+                })
+            
+            population = next_gen
+            time.sleep(0.1)  # Prevent overwhelming the server
+        
+        # Final results
+        population.sort(key=lambda x: x['fitness'], reverse=True)
+        top_5 = population[:5]
+        
+        # Generate insights
+        insights = generate_insights(top_5, available_functions)
+        
+        session['results'] = {
+            'top_strategies': [
+                {
+                    'functions': s['functions'],
+                    'fitness': s['fitness'],
+                    'total_trades': s['trades'],
+                    'win_rate': (s['wins'] / max(s['trades'], 1)) * 100,
+                    'total_pnl': s['pnl']
+                }
+                for s in top_5
+            ],
+            'insights': insights
+        }
+        
+        session['status'] = 'Completed'
+        session['progress'] = 100
+        session['completed'] = True
+        session['logs'].append('🎉 Training completed successfully!')
+        
+    except Exception as e:
+        session['error'] = str(e)
+        session['completed'] = True
+        session['logs'].append(f'❌ Error: {str(e)}')
+        print(f"Training error: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def evaluate_strategy(functions, datasets, config):
+    """
+    Backtest a strategy on all datasets and calculate fitness
+    """
+    from .trading_functions import (
+        is_uptrend, is_downtrend, is_ranging_market,
+        is_bullish_market_retracement, is_bearish_market_retracement,
+        is_bullish_engulfing, is_bearish_engulfing,
+        is_morning_star, is_evening_star,
+        is_hammer, is_shooting_star
+    )
+    
+    # Map function names to actual functions
+    func_map = {
+        'is_uptrend': is_uptrend,
+        'is_downtrend': is_downtrend,
+        'is_ranging_market': is_ranging_market,
+        'is_bullish_market_retracement': is_bullish_market_retracement,
+        'is_bearish_market_retracement': is_bearish_market_retracement,
+        'is_bullish_engulfing': is_bullish_engulfing,
+        'is_bearish_engulfing': is_bearish_engulfing,
+        'is_morning_star': is_morning_star,
+        'is_evening_star': is_evening_star,
+        'is_hammer': is_hammer,
+        'is_shooting_star': is_shooting_star,
+    }
+    
+    total_pnl = 0
+    total_trades = 0
+    winning_trades = 0
+    
+    for dataset in datasets:
+        equity = config['initial_equity']
+        in_position = False
+        entry_price = 0
+        
+        # Simple backtest through the data
+        for i in range(50, len(dataset)):
+            window = dataset.iloc[max(0, i-50):i]
+            
+            if len(window) < 20:
+                continue
+            
+            try:
+                # Check if ALL functions return True
+                all_signals = True
+                for func_name in functions:
+                    if func_name in func_map:
+                        if not func_map[func_name](window):
+                            all_signals = False
+                            break
+                
+                current_price = dataset.iloc[i]['Close']
+                
+                # Entry logic
+                if not in_position and all_signals:
+                    in_position = True
+                    entry_price = current_price
+                    total_trades += 1
+                
+                # Exit logic (TP/SL)
+                elif in_position:
+                    price_change = ((current_price - entry_price) / entry_price) * 100
+                    
+                    if price_change >= config['take_profit']:
+                        # Take profit hit
+                        pnl = equity * (config['take_profit'] / 100)
+                        total_pnl += pnl
+                        equity += pnl
+                        winning_trades += 1
+                        in_position = False
+                    elif price_change <= -config['stop_loss']:
+                        # Stop loss hit
+                        pnl = -equity * (config['stop_loss'] / 100)
+                        total_pnl += pnl
+                        equity += pnl
+                        in_position = False
+                        
+            except Exception as e:
+                continue
+    
+    # Fitness = combination of win rate and total P&L
+    win_rate = (winning_trades / max(total_trades, 1)) * 100
+    fitness = (win_rate * 0.5) + (total_pnl / config['initial_equity'] * 50)
+    
+    return fitness, total_trades, winning_trades, total_pnl
+
+
+def generate_insights(top_strategies, all_functions):
+    """
+    Generate human-readable insights from the training results
+    """
+    insights = []
+    
+    # Most common functions across top strategies
+    function_counts = {}
+    for strategy in top_strategies:
+        for func in strategy['functions']:
+            function_counts[func] = function_counts.get(func, 0) + 1
+    
+    most_common = sorted(function_counts.items(), key=lambda x: x[1], reverse=True)
+    
+    if most_common:
+        insights.append(
+            f"🔥 Most effective function: '{most_common[0][0]}' appeared in {most_common[0][1]}/{len(top_strategies)} top strategies"
+        )
+    
+    # Best performing strategy
+    best = top_strategies[0]
+    insights.append(
+        f"🏆 Best strategy combines: {', '.join(best['functions'])} with {best['fitness']:.1f} fitness score"
+    )
+    
+    # Average metrics
+    avg_win_rate = sum((s['wins'] / max(s['trades'], 1)) * 100 for s in top_strategies) / len(top_strategies)
+    insights.append(
+        f"📊 Top strategies average {avg_win_rate:.1f}% win rate across all test data"
+    )
+    
+    # Function combinations
+    if len(best['functions']) > 2:
+        insights.append(
+            f"💡 Combining {len(best['functions'])} functions yields better results than single indicators"
+        )
+    
+    return insights
+
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
