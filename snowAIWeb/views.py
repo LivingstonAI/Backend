@@ -27297,6 +27297,8 @@ def prepare_namespace(model, dataset):
         'arctic_delta_short': arctic_delta_short,
         'permafrost_theta_buy': permafrost_theta_buy,
         'permafrost_theta_short': permafrost_theta_short,
+        'is_bullish_market_retracement': is_bullish_market_retracement,
+        'is_bearish_market_retracement': is_bearish_market_retracement    
     }
     
     return namespace
@@ -28247,7 +28249,6 @@ def run_ai_training(session_id):
         for file_path in file_paths:
             try:
                 df = pd.read_csv(default_storage.path(file_path))
-                # Ensure it has OHLCV columns
                 if all(col in df.columns for col in ['Open', 'High', 'Low', 'Close']):
                     datasets.append(df)
                     session['logs'].append(f'✅ Loaded {file_path.split("/")[-1]}')
@@ -28276,19 +28277,30 @@ def run_ai_training(session_id):
         
         session['logs'].append(f'🧬 Initializing population of {config["population_size"]} strategies...')
         
-        # Initialize population (random combinations of functions)
+        # Initialize population with DIVERSE combinations
         population = []
-        for _ in range(config['population_size']):
-            # Each strategy is 2-4 functions combined
+        used_combinations = set()
+        
+        attempts = 0
+        max_attempts = config['population_size'] * 10
+        
+        while len(population) < config['population_size'] and attempts < max_attempts:
+            attempts += 1
             num_functions = random.randint(2, 4)
-            functions = random.sample(available_functions, num_functions)
-            population.append({
-                'functions': functions,
-                'fitness': 0,
-                'trades': 0,
-                'wins': 0,
-                'pnl': 0
-            })
+            functions = tuple(sorted(random.sample(available_functions, num_functions)))
+            
+            # Ensure uniqueness
+            if functions not in used_combinations:
+                used_combinations.add(functions)
+                population.append({
+                    'functions': list(functions),
+                    'fitness': 0,
+                    'trades': 0,
+                    'wins': 0,
+                    'pnl': 0
+                })
+        
+        session['logs'].append(f'✅ Created {len(population)} unique strategies')
         
         # Evolution loop
         max_iterations = config['max_iterations']
@@ -28298,62 +28310,108 @@ def run_ai_training(session_id):
             session['status'] = f'Generation {iteration + 1}/{max_iterations}'
             session['logs'].append(f'🔬 Generation {iteration + 1}: Testing strategies...')
             
-            # Evaluate each strategy
+            # Evaluate each strategy (only if not evaluated before)
             for strategy in population:
-                strategy['fitness'], strategy['trades'], strategy['wins'], strategy['pnl'] = evaluate_strategy(
-                    strategy['functions'],
-                    datasets,
-                    config
-                )
+                if strategy['fitness'] == 0:  # Not evaluated yet
+                    strategy['fitness'], strategy['trades'], strategy['wins'], strategy['pnl'] = evaluate_strategy(
+                        strategy['functions'],
+                        datasets,
+                        config
+                    )
             
             # Sort by fitness
             population.sort(key=lambda x: x['fitness'], reverse=True)
             
-            # Log best strategy of this generation
-            best = population[0]
-            session['logs'].append(
-                f'🏆 Best: {" + ".join(best["functions"][:2])}... | '
-                f'Fitness: {best["fitness"]:.2f} | Win Rate: {(best["wins"]/max(best["trades"], 1)*100):.1f}%'
-            )
+            # Log top 3 strategies of this generation
+            session['logs'].append(f'🏆 Top 3 this generation:')
+            for i in range(min(3, len(population))):
+                s = population[i]
+                session['logs'].append(
+                    f'   #{i+1}: {" + ".join(s["functions"][:2])}{"..." if len(s["functions"]) > 2 else ""} | '
+                    f'Fitness: {s["fitness"]:.2f} | Trades: {s["trades"]}'
+                )
             
-            # Selection and reproduction (keep top 50%, breed rest)
-            survivors = population[:config['population_size'] // 2]
+            # Selection: Keep top 30% as elites
+            elite_count = max(3, config['population_size'] // 3)
+            elites = population[:elite_count]
             
             # Create next generation
-            next_gen = survivors.copy()
+            next_gen = elites.copy()  # Keep best performers
+            
+            # Fill rest with crossover and mutation
             while len(next_gen) < config['population_size']:
-                parent1 = random.choice(survivors)
-                parent2 = random.choice(survivors)
+                # Tournament selection (pick best of 3 random)
+                tournament = random.sample(elites, min(3, len(elites)))
+                parent1 = max(tournament, key=lambda x: x['fitness'])
                 
-                # Crossover
-                child_functions = []
-                for func in parent1['functions'] + parent2['functions']:
-                    if func not in child_functions:
-                        child_functions.append(func)
+                tournament = random.sample(elites, min(3, len(elites)))
+                parent2 = max(tournament, key=lambda x: x['fitness'])
                 
-                # Mutation (10% chance to add/remove a function)
-                if random.random() < 0.1:
-                    if random.random() < 0.5 and len(child_functions) < 5:
-                        new_func = random.choice(available_functions)
-                        if new_func not in child_functions:
-                            child_functions.append(new_func)
-                    elif len(child_functions) > 2:
+                # Crossover: combine functions from both parents
+                all_parent_functions = list(set(parent1['functions'] + parent2['functions']))
+                child_size = random.randint(2, min(4, len(all_parent_functions)))
+                child_functions = random.sample(all_parent_functions, child_size)
+                
+                # Mutation (20% chance)
+                if random.random() < 0.2:
+                    mutation_type = random.choice(['add', 'remove', 'replace'])
+                    
+                    if mutation_type == 'add' and len(child_functions) < 4:
+                        # Add a random new function
+                        available = [f for f in available_functions if f not in child_functions]
+                        if available:
+                            child_functions.append(random.choice(available))
+                    
+                    elif mutation_type == 'remove' and len(child_functions) > 2:
+                        # Remove a random function
                         child_functions.pop(random.randint(0, len(child_functions) - 1))
+                    
+                    elif mutation_type == 'replace':
+                        # Replace one function with another
+                        idx = random.randint(0, len(child_functions) - 1)
+                        available = [f for f in available_functions if f not in child_functions]
+                        if available:
+                            child_functions[idx] = random.choice(available)
                 
+                # Create child (mark as unevaluated)
                 next_gen.append({
-                    'functions': child_functions[:4],  # Max 4 functions
-                    'fitness': 0,
+                    'functions': child_functions,
+                    'fitness': 0,  # Will be evaluated next iteration
                     'trades': 0,
                     'wins': 0,
                     'pnl': 0
                 })
             
             population = next_gen
-            time.sleep(0.1)  # Prevent overwhelming the server
+            time.sleep(0.05)
         
-        # Final results
+        # Final evaluation of any unevaluated strategies
+        session['logs'].append('🔬 Final evaluation...')
+        for strategy in population:
+            if strategy['fitness'] == 0:
+                strategy['fitness'], strategy['trades'], strategy['wins'], strategy['pnl'] = evaluate_strategy(
+                    strategy['functions'],
+                    datasets,
+                    config
+                )
+        
+        # Final results - get UNIQUE top strategies
         population.sort(key=lambda x: x['fitness'], reverse=True)
-        top_5 = population[:5]
+        
+        # Deduplicate based on function combinations
+        seen_combinations = set()
+        unique_strategies = []
+        
+        for strategy in population:
+            func_tuple = tuple(sorted(strategy['functions']))
+            if func_tuple not in seen_combinations:
+                seen_combinations.add(func_tuple)
+                unique_strategies.append(strategy)
+            
+            if len(unique_strategies) >= 5:
+                break
+        
+        top_5 = unique_strategies[:5]
         
         # Generate insights
         insights = generate_insights(top_5, available_functions)
@@ -28376,6 +28434,7 @@ def run_ai_training(session_id):
         session['progress'] = 100
         session['completed'] = True
         session['logs'].append('🎉 Training completed successfully!')
+        session['logs'].append(f'📊 Found {len(unique_strategies)} unique high-performing strategies')
         
     except Exception as e:
         session['error'] = str(e)
@@ -28384,7 +28443,7 @@ def run_ai_training(session_id):
         print(f"Training error: {e}")
         import traceback
         traceback.print_exc()
-
+        
 
 def evaluate_strategy(functions, datasets, config):
     """
