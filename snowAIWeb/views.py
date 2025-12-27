@@ -28388,14 +28388,7 @@ def evaluate_strategy(functions, datasets, config):
     """
     Backtest a strategy on all datasets and calculate fitness
     """
-    from .trading_functions import (
-        is_uptrend, is_downtrend, is_ranging_market,
-        is_bullish_market_retracement, is_bearish_market_retracement,
-        is_bullish_engulfing, is_bearish_engulfing,
-        is_morning_star, is_evening_star,
-        is_hammer, is_shooting_star
-    )
-    
+ 
     # Map function names to actual functions
     func_map = {
         'is_uptrend': is_uptrend,
