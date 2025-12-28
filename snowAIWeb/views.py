@@ -28577,6 +28577,83 @@ def generate_insights(top_strategies, all_functions):
     return insights
 
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_hyper_volumetric_relativistic_analyzer(request):
+    """
+    Ultra-specific named endpoint for relative volume analysis across asset classes.
+    Calculates relative volume compared to historical averages (high/average/low).
+    """
+    try:
+        data = json.loads(request.body)
+        symbols = data.get('symbols', [])
+        
+        if not symbols:
+            return JsonResponse({
+                'success': False,
+                'error': 'No symbols provided'
+            })
+        
+        volume_data = []
+        
+        for symbol in symbols:
+            try:
+                # Fetch 60 days of data for volume analysis
+                ticker = yf.Ticker(symbol)
+                hist = ticker.history(period='60d', interval='1d')
+                
+                if hist.empty or 'Volume' not in hist.columns:
+                    continue
+                
+                volumes = hist['Volume'].values
+                current_volume = volumes[-1]  # Most recent volume
+                
+                # Calculate statistics
+                avg_volume = np.mean(volumes[:-1])  # Exclude current day
+                high_volume = np.percentile(volumes[:-1], 75)  # 75th percentile
+                low_volume = np.percentile(volumes[:-1], 25)   # 25th percentile
+                
+                # Calculate relative volume
+                if avg_volume > 0:
+                    relative_volume = round(current_volume / avg_volume, 2)
+                else:
+                    relative_volume = 0
+                
+                # Categorize volume
+                if relative_volume >= 1.5:
+                    category = 'high'
+                elif relative_volume <= 0.7:
+                    category = 'low'
+                else:
+                    category = 'average'
+                
+                volume_data.append({
+                    'symbol': symbol,
+                    'current_volume': int(current_volume),
+                    'avg_volume': int(avg_volume),
+                    'high_volume': int(high_volume),
+                    'low_volume': int(low_volume),
+                    'relative_volume': relative_volume,
+                    'category': category
+                })
+                
+            except Exception as e:
+                print(f"Error processing {symbol}: {str(e)}")
+                continue
+        
+        return JsonResponse({
+            'success': True,
+            'volume_data': volume_data,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
