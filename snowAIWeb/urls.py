@@ -450,6 +450,9 @@ urlpatterns = [
      path('api/snowai-sandbox/train/', views.snowai_sandbox_train, name='snowai_sandbox_train'),
      path('api/snowai-sandbox/status/<str:session_id>/', views.snowai_sandbox_status, name='snowai_sandbox_status'),
 
+     path('api/mss-hyper-volumetric-relativistic-analyzer/', views.mss_hyper_volumetric_relativistic_analyzer, name='mss-hyper-volumetric-relativistic-analyzer'),
+
+
 
 
 
