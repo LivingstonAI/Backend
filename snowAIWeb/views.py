@@ -28143,16 +28143,13 @@ def receive_sovereign_neuro_command_v1(request):
 
     return JsonResponse({"status": "METHOD_NOT_ALLOWED"}, status=405)
 
-
-# Add to views.py
-
 import random
-import json
-import pandas as pd
 from django.core.files.storage import default_storage
 from django.core.cache import cache
 import uuid
 import time
+import pickle
+import os
 
 # Training session storage (in production, use Redis or database)
 TRAINING_SESSIONS = {}
@@ -28168,9 +28165,10 @@ def snowai_sandbox_train(request):
     try:
         files = request.FILES.getlist('files')
         config = json.loads(request.POST.get('config', '{}'))
+        checkpoint_id = request.POST.get('checkpoint_id', None)
         
-        if not files:
-            return JsonResponse({'error': 'No files uploaded'}, status=400)
+        if not files and not checkpoint_id:
+            return JsonResponse({'error': 'No files uploaded or checkpoint provided'}, status=400)
         
         # Generate session ID
         session_id = str(uuid.uuid4())
@@ -28181,6 +28179,14 @@ def snowai_sandbox_train(request):
             file_path = default_storage.save(f'sandbox/{session_id}/{file.name}', file)
             file_paths.append(file_path)
         
+        # Load checkpoint if provided
+        checkpoint_data = None
+        if checkpoint_id:
+            checkpoint_path = f'sandbox/checkpoints/{checkpoint_id}.pkl'
+            if default_storage.exists(checkpoint_path):
+                with default_storage.open(checkpoint_path, 'rb') as f:
+                    checkpoint_data = pickle.load(f)
+        
         # Initialize training session
         TRAINING_SESSIONS[session_id] = {
             'status': 'starting',
@@ -28189,10 +28195,14 @@ def snowai_sandbox_train(request):
             'config': config,
             'logs': [],
             'completed': False,
-            'results': None
+            'results': None,
+            'paused': False,
+            'current_iteration': 0,
+            'checkpoint_id': checkpoint_id,
+            'checkpoint_data': checkpoint_data
         }
         
-        # Start training in background (you might want to use Celery for this)
+        # Start training in background
         import threading
         thread = threading.Thread(target=run_ai_training, args=(session_id,))
         thread.daemon = True
@@ -28217,8 +28227,8 @@ def snowai_sandbox_status(request, session_id):
     if not session:
         return JsonResponse({'error': 'Session not found'}, status=404)
     
-    # Get latest log
-    latest_log = session['logs'][-1] if session['logs'] else None
+    # Get latest logs (last 5)
+    latest_logs = session['logs'][-5:] if session['logs'] else []
     
     return JsonResponse({
         'session_id': session_id,
@@ -28226,20 +28236,123 @@ def snowai_sandbox_status(request, session_id):
         'progress': session['progress'],
         'completed': session['completed'],
         'results': session['results'],
-        'log': latest_log,
-        'error': session.get('error')
+        'logs': latest_logs,
+        'error': session.get('error'),
+        'paused': session.get('paused', False),
+        'current_iteration': session.get('current_iteration', 0),
+        'can_checkpoint': session.get('current_iteration', 0) > 0
     })
+
+
+@csrf_exempt
+def snowai_sandbox_pause(request, session_id):
+    """
+    Pause training session
+    """
+    session = TRAINING_SESSIONS.get(session_id)
+    
+    if not session:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    
+    session['paused'] = True
+    session['logs'].append('⏸️ Training paused by user')
+    
+    return JsonResponse({'message': 'Training paused', 'session_id': session_id})
+
+
+@csrf_exempt
+def snowai_sandbox_resume(request, session_id):
+    """
+    Resume training session
+    """
+    session = TRAINING_SESSIONS.get(session_id)
+    
+    if not session:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    
+    session['paused'] = False
+    session['logs'].append('▶️ Training resumed')
+    
+    return JsonResponse({'message': 'Training resumed', 'session_id': session_id})
+
+
+@csrf_exempt
+def snowai_sandbox_save_checkpoint(request, session_id):
+    """
+    Save current training state as checkpoint
+    """
+    session = TRAINING_SESSIONS.get(session_id)
+    
+    if not session:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    
+    try:
+        checkpoint_id = str(uuid.uuid4())
+        checkpoint_data = {
+            'population': session.get('population', []),
+            'iteration': session.get('current_iteration', 0),
+            'config': session['config'],
+            'best_fitness_history': session.get('best_fitness_history', [])
+        }
+        
+        # Save checkpoint to storage
+        checkpoint_path = f'sandbox/checkpoints/{checkpoint_id}.pkl'
+        os.makedirs(os.path.dirname(default_storage.path(checkpoint_path)), exist_ok=True)
+        
+        with default_storage.open(checkpoint_path, 'wb') as f:
+            pickle.dump(checkpoint_data, f)
+        
+        session['logs'].append(f'💾 Checkpoint saved: {checkpoint_id[:8]}...')
+        
+        return JsonResponse({
+            'message': 'Checkpoint saved',
+            'checkpoint_id': checkpoint_id,
+            'iteration': checkpoint_data['iteration']
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowai_sandbox_list_checkpoints(request):
+    """
+    List all available checkpoints
+    """
+    try:
+        checkpoint_dir = 'sandbox/checkpoints/'
+        checkpoints = []
+        
+        if default_storage.exists(checkpoint_dir):
+            dirs, files = default_storage.listdir(checkpoint_dir)
+            for file in files:
+                if file.endswith('.pkl'):
+                    checkpoint_path = os.path.join(checkpoint_dir, file)
+                    with default_storage.open(checkpoint_path, 'rb') as f:
+                        data = pickle.load(f)
+                        checkpoints.append({
+                            'id': file.replace('.pkl', ''),
+                            'iteration': data.get('iteration', 0),
+                            'config': data.get('config', {}),
+                            'population_size': len(data.get('population', []))
+                        })
+        
+        return JsonResponse({'checkpoints': checkpoints})
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 def run_ai_training(session_id):
     """
-    Main AI training loop - uses genetic algorithm to find best function combinations
+    Main AI training loop with checkpoint support
     """
     session = TRAINING_SESSIONS[session_id]
     
     try:
         config = session['config']
         file_paths = session['files']
+        checkpoint_data = session.get('checkpoint_data')
         
         session['logs'].append('📊 Loading training data...')
         session['status'] = 'Loading data'
@@ -28260,63 +28373,71 @@ def run_ai_training(session_id):
             session['completed'] = True
             return
 
-        # Right after loading datasets
         session['logs'].append(f'⚡ Optimization: Sampling datasets for faster training')
-        for i, df in enumerate(datasets):
-            session['logs'].append(f'   Dataset {i+1}: {len(df)} candles → {len(df)//10} samples')
-                
+        
         # Available trading functions
         available_functions = [
-            'is_uptrend',
-            'is_downtrend',
-            'is_ranging_market',
-            'is_bullish_market_retracement',
-            'is_bearish_market_retracement',
-            'is_resistance_level',
-            'is_support_level',
-            'buy_hold',
-             'sell_hold',
-             'is_stable_market'
+            'is_uptrend', 'is_downtrend', 'is_ranging_market',
+            'is_bullish_market_retracement', 'is_bearish_market_retracement',
+            'is_resistance_level', 'is_support_level',
+            'buy_hold', 'sell_hold', 'is_stable_market'
         ]
         
-        session['logs'].append(f'🧬 Initializing population of {config["population_size"]} strategies...')
-        
-        # Initialize population with DIVERSE combinations
-        population = []
-        used_combinations = set()
-        
-        attempts = 0
-        max_attempts = config['population_size'] * 10
-        
-        while len(population) < config['population_size'] and attempts < max_attempts:
-            attempts += 1
-            num_functions = random.randint(2, 4)
-            functions = tuple(sorted(random.sample(available_functions, num_functions)))
+        # Initialize or load population
+        if checkpoint_data:
+            population = checkpoint_data['population']
+            start_iteration = checkpoint_data['iteration']
+            session['logs'].append(f'🔄 Resuming from iteration {start_iteration}')
+            session['logs'].append(f'📦 Loaded {len(population)} strategies from checkpoint')
+            session['best_fitness_history'] = checkpoint_data.get('best_fitness_history', [])
+        else:
+            session['logs'].append(f'🧬 Initializing population of {config["population_size"]} strategies...')
+            population = []
+            used_combinations = set()
             
-            # Ensure uniqueness
-            if functions not in used_combinations:
-                used_combinations.add(functions)
-                population.append({
-                    'functions': list(functions),
-                    'fitness': 0,
-                    'trades': 0,
-                    'wins': 0,
-                    'pnl': 0
-                })
+            attempts = 0
+            max_attempts = config['population_size'] * 10
+            
+            while len(population) < config['population_size'] and attempts < max_attempts:
+                attempts += 1
+                num_functions = random.randint(2, 4)
+                functions = tuple(sorted(random.sample(available_functions, num_functions)))
+                
+                if functions not in used_combinations:
+                    used_combinations.add(functions)
+                    population.append({
+                        'functions': list(functions),
+                        'fitness': 0,
+                        'trades': 0,
+                        'wins': 0,
+                        'pnl': 0
+                    })
+            
+            start_iteration = 0
+            session['logs'].append(f'✅ Created {len(population)} unique strategies')
+            session['best_fitness_history'] = []
         
-        session['logs'].append(f'✅ Created {len(population)} unique strategies')
+        # Store population in session
+        session['population'] = population
         
         # Evolution loop
         max_iterations = config['max_iterations']
         
-        for iteration in range(max_iterations):
+        for iteration in range(start_iteration, max_iterations):
+            # Check for pause
+            while session.get('paused', False):
+                time.sleep(1)
+                if session.get('completed', False):
+                    return
+            
+            session['current_iteration'] = iteration
             session['progress'] = int((iteration / max_iterations) * 100)
             session['status'] = f'Generation {iteration + 1}/{max_iterations}'
             session['logs'].append(f'🔬 Generation {iteration + 1}: Testing strategies...')
             
-            # Evaluate each strategy (only if not evaluated before)
+            # Evaluate each strategy
             for strategy in population:
-                if strategy['fitness'] == 0:  # Not evaluated yet
+                if strategy['fitness'] == 0:
                     strategy['fitness'], strategy['trades'], strategy['wins'], strategy['pnl'] = evaluate_strategy(
                         strategy['functions'],
                         datasets,
@@ -28326,7 +28447,10 @@ def run_ai_training(session_id):
             # Sort by fitness
             population.sort(key=lambda x: x['fitness'], reverse=True)
             
-            # Log top 3 strategies of this generation
+            # Track best fitness
+            session['best_fitness_history'].append(population[0]['fitness'])
+            
+            # Log top 3 strategies
             session['logs'].append(f'🏆 Top 3 this generation:')
             for i in range(min(3, len(population))):
                 s = population[i]
@@ -28335,61 +28459,58 @@ def run_ai_training(session_id):
                     f'Fitness: {s["fitness"]:.2f} | Trades: {s["trades"]}'
                 )
             
-            # Selection: Keep top 30% as elites
+            # Auto-checkpoint every 10 iterations
+            if (iteration + 1) % 10 == 0:
+                session['logs'].append(f'💾 Auto-checkpoint at iteration {iteration + 1}')
+            
+            # Selection and evolution
             elite_count = max(3, config['population_size'] // 3)
             elites = population[:elite_count]
+            next_gen = elites.copy()
             
-            # Create next generation
-            next_gen = elites.copy()  # Keep best performers
-            
-            # Fill rest with crossover and mutation
+            # Create offspring
             while len(next_gen) < config['population_size']:
-                # Tournament selection (pick best of 3 random)
                 tournament = random.sample(elites, min(3, len(elites)))
                 parent1 = max(tournament, key=lambda x: x['fitness'])
                 
                 tournament = random.sample(elites, min(3, len(elites)))
                 parent2 = max(tournament, key=lambda x: x['fitness'])
                 
-                # Crossover: combine functions from both parents
                 all_parent_functions = list(set(parent1['functions'] + parent2['functions']))
                 child_size = random.randint(2, min(4, len(all_parent_functions)))
                 child_functions = random.sample(all_parent_functions, child_size)
                 
-                # Mutation (20% chance)
+                # Mutation
                 if random.random() < 0.2:
                     mutation_type = random.choice(['add', 'remove', 'replace'])
                     
                     if mutation_type == 'add' and len(child_functions) < 4:
-                        # Add a random new function
                         available = [f for f in available_functions if f not in child_functions]
                         if available:
                             child_functions.append(random.choice(available))
                     
                     elif mutation_type == 'remove' and len(child_functions) > 2:
-                        # Remove a random function
                         child_functions.pop(random.randint(0, len(child_functions) - 1))
                     
                     elif mutation_type == 'replace':
-                        # Replace one function with another
                         idx = random.randint(0, len(child_functions) - 1)
                         available = [f for f in available_functions if f not in child_functions]
                         if available:
                             child_functions[idx] = random.choice(available)
                 
-                # Create child (mark as unevaluated)
                 next_gen.append({
                     'functions': child_functions,
-                    'fitness': 0,  # Will be evaluated next iteration
+                    'fitness': 0,
                     'trades': 0,
                     'wins': 0,
                     'pnl': 0
                 })
             
             population = next_gen
+            session['population'] = population
             time.sleep(0.05)
         
-        # Final evaluation of any unevaluated strategies
+        # Final evaluation
         session['logs'].append('🔬 Final evaluation...')
         for strategy in population:
             if strategy['fitness'] == 0:
@@ -28399,10 +28520,9 @@ def run_ai_training(session_id):
                     config
                 )
         
-        # Final results - get UNIQUE top strategies
+        # Final results
         population.sort(key=lambda x: x['fitness'], reverse=True)
         
-        # Deduplicate based on function combinations
         seen_combinations = set()
         unique_strategies = []
         
@@ -28416,8 +28536,6 @@ def run_ai_training(session_id):
                 break
         
         top_5 = unique_strategies[:5]
-        
-        # Generate insights
         insights = generate_insights(top_5, available_functions)
         
         session['results'] = {
@@ -28431,14 +28549,14 @@ def run_ai_training(session_id):
                 }
                 for s in top_5
             ],
-            'insights': insights
+            'insights': insights,
+            'best_fitness_history': session['best_fitness_history']
         }
         
         session['status'] = 'Completed'
         session['progress'] = 100
         session['completed'] = True
         session['logs'].append('🎉 Training completed successfully!')
-        session['logs'].append(f'📊 Found {len(unique_strategies)} unique high-performing strategies')
         
     except Exception as e:
         session['error'] = str(e)
@@ -28449,12 +28567,8 @@ def run_ai_training(session_id):
         traceback.print_exc()
 
 
-
 def evaluate_strategy(functions, datasets, config):
-    """
-    Optimized backtest - much faster evaluation
-    """
-    
+    """Optimized backtest evaluation"""
     func_map = {
         'is_uptrend': is_uptrend,
         'is_downtrend': is_downtrend,
@@ -28477,38 +28591,30 @@ def evaluate_strategy(functions, datasets, config):
         in_position = False
         entry_price = 0
         
-        # OPTIMIZATION 1: Sample every Nth candle instead of all 100k
-        # For 100k dataset, sample every 10th = 10k checks instead of 100k
-        sample_rate = max(1, len(dataset) // 10000)  # Cap at 10k samples
-        
-        # OPTIMIZATION 2: Pre-calculate windows once
+        sample_rate = max(1, len(dataset) // 10000)
         sampled_indices = range(50, len(dataset), sample_rate)
         
         for i in sampled_indices:
-            # OPTIMIZATION 3: Use smaller window (20 candles instead of 50)
             window = dataset.iloc[i-20:i]
             
             if len(window) < 20:
                 continue
             
             try:
-                # OPTIMIZATION 4: Early exit - if first function fails, skip rest
                 all_signals = True
                 for func_name in functions:
                     if func_name in func_map:
                         if not func_map[func_name](window):
                             all_signals = False
-                            break  # Don't check remaining functions
+                            break
                 
                 current_price = dataset.iloc[i]['Close']
                 
-                # Entry logic
                 if not in_position and all_signals:
                     in_position = True
                     entry_price = current_price
                     total_trades += 1
                 
-                # Exit logic (TP/SL)
                 elif in_position:
                     price_change = ((current_price - entry_price) / entry_price) * 100
                     
@@ -28524,10 +28630,9 @@ def evaluate_strategy(functions, datasets, config):
                         equity += pnl
                         in_position = False
                         
-            except Exception as e:
+            except Exception:
                 continue
     
-    # Fitness calculation
     if total_trades == 0:
         return 0, 0, 0, 0
     
@@ -28535,15 +28640,12 @@ def evaluate_strategy(functions, datasets, config):
     fitness = (win_rate * 0.5) + (total_pnl / config['initial_equity'] * 50)
     
     return fitness, total_trades, winning_trades, total_pnl
-    
+
 
 def generate_insights(top_strategies, all_functions):
-    """
-    Generate human-readable insights from the training results
-    """
+    """Generate insights from results"""
     insights = []
     
-    # Most common functions across top strategies
     function_counts = {}
     for strategy in top_strategies:
         for func in strategy['functions']:
@@ -28556,19 +28658,16 @@ def generate_insights(top_strategies, all_functions):
             f"🔥 Most effective function: '{most_common[0][0]}' appeared in {most_common[0][1]}/{len(top_strategies)} top strategies"
         )
     
-    # Best performing strategy
     best = top_strategies[0]
     insights.append(
         f"🏆 Best strategy combines: {', '.join(best['functions'])} with {best['fitness']:.1f} fitness score"
     )
     
-    # Average metrics
     avg_win_rate = sum((s['wins'] / max(s['trades'], 1)) * 100 for s in top_strategies) / len(top_strategies)
     insights.append(
         f"📊 Top strategies average {avg_win_rate:.1f}% win rate across all test data"
     )
     
-    # Function combinations
     if len(best['functions']) > 2:
         insights.append(
             f"💡 Combining {len(best['functions'])} functions yields better results than single indicators"
