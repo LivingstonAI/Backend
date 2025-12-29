@@ -23098,12 +23098,13 @@ SECTOR_MAPPINGS = {
     'LI': 'Consumer Cyclical',
 }
 
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def mss_quantum_sector_momentum_flux_analyzer(request):
     """
     Ultra-specific endpoint for analyzing sector-level performance and money flow.
-    Calculates relative strength, returns, and capital allocation per sector.
+    Now includes time-series data for each sector's performance over time.
     """
     try:
         data = json.loads(request.body)
@@ -23120,7 +23121,8 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
             'returns': [],
             'volumes': [],
             'volume_dollars': [],
-            'symbols': []
+            'symbols': [],
+            'historical_data': defaultdict(list)
         })
         
         for symbol in symbols:
@@ -23148,12 +23150,19 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
                 sector_data[sector]['volume_dollars'].append(volume_dollars)
                 sector_data[sector]['symbols'].append(symbol)
                 
+                # Store daily returns for time-series
+                baseline_price = hist['Close'].iloc[0]
+                for date, row in hist.iterrows():
+                    daily_return = ((row['Close'] - baseline_price) / baseline_price) * 100
+                    sector_data[sector]['historical_data'][date].append(daily_return)
+                
             except Exception as e:
                 print(f"Error processing {symbol}: {str(e)}")
                 continue
         
         # Calculate sector-level metrics
         sector_performance = []
+        sector_timeseries = []
         total_volume_dollars = 0
         
         for sector, metrics in sector_data.items():
@@ -23170,6 +23179,20 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
                 'num_stocks': len(metrics['returns']),
                 'total_volume_dollars': total_sector_volume,
                 'symbols': metrics['symbols']
+            })
+            
+            # Build time-series for this sector
+            timeseries_data = []
+            for date in sorted(metrics['historical_data'].keys()):
+                avg_sector_return = np.mean(metrics['historical_data'][date])
+                timeseries_data.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'return': round(avg_sector_return, 2)
+                })
+            
+            sector_timeseries.append({
+                'sector': sector,
+                'data': timeseries_data
             })
         
         # Calculate relative strength (normalized to 0-100)
@@ -23190,6 +23213,7 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
         return JsonResponse({
             'success': True,
             'sector_performance': sector_performance,
+            'sector_timeseries': sector_timeseries,
             'total_volume_dollars': total_volume_dollars,
             'overall_avg_return': round(np.mean([s['avg_return'] for s in sector_performance]), 2) if sector_performance else 0,
             'timestamp': datetime.now().isoformat()
@@ -23206,8 +23230,8 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
 @require_http_methods(["POST"])
 def mss_stock_sector_relativistic_performance_comparator(request):
     """
-    Ultra-specific endpoint for comparing individual stock performance against its sector.
-    Generates time-series comparison data showing relative outperformance/underperformance.
+    Compares stock PRICE against sector STRENGTH INDEX (average of sector stock prices).
+    Shows actual price movements, not just percentage returns.
     """
     try:
         data = json.loads(request.body)
@@ -23240,10 +23264,10 @@ def mss_stock_sector_relativistic_performance_comparator(request):
         # Get all stocks in the same sector
         sector_symbols = [s for s, sec in SECTOR_MAPPINGS.items() if sec == sector and s != symbol]
         
-        # Calculate sector average performance
-        sector_prices = defaultdict(list)
+        # Calculate sector index (average price of all stocks in sector)
+        sector_prices_by_date = defaultdict(list)
         
-        for sec_symbol in sector_symbols[:20]:  # Limit to 20 stocks for performance
+        for sec_symbol in sector_symbols[:30]:  # Limit to 30 stocks for performance
             try:
                 sec_ticker = yf.Ticker(sec_symbol)
                 sec_hist = sec_ticker.history(period=f'{period_days}d')
@@ -23251,39 +23275,57 @@ def mss_stock_sector_relativistic_performance_comparator(request):
                 if sec_hist.empty:
                     continue
                 
-                # Align dates with stock_hist
-                for date in stock_hist.index:
-                    if date in sec_hist.index:
-                        sec_prices[date].append(sec_hist.loc[date, 'Close'])
-            except:
+                # Normalize each stock's price to 100 at start for fair comparison
+                baseline = sec_hist['Close'].iloc[0]
+                for date in sec_hist.index:
+                    if date in stock_hist.index:
+                        normalized_price = (sec_hist.loc[date, 'Close'] / baseline) * 100
+                        sector_prices_by_date[date].append(normalized_price)
+            except Exception as e:
+                print(f"Error processing {sec_symbol}: {str(e)}")
                 continue
+        
+        if not sector_prices_by_date:
+            return JsonResponse({
+                'success': False,
+                'error': f'Could not calculate sector index for {sector}'
+            })
         
         # Build comparison data
         comparison_data = []
         stock_baseline = stock_hist['Close'].iloc[0]
         
+        stock_prices = []
+        sector_indices = []
+        
         for date in stock_hist.index:
-            if date not in sector_prices or not sector_prices[date]:
+            if date not in sector_prices_by_date or not sector_prices_by_date[date]:
                 continue
             
             stock_price = stock_hist.loc[date, 'Close']
-            stock_return = ((stock_price - stock_baseline) / stock_baseline) * 100
-            
-            # Calculate sector average return
-            sector_avg_price = np.mean(sector_prices[date])
-            sector_baseline = np.mean(sector_prices[stock_hist.index[0]]) if stock_hist.index[0] in sector_prices else sector_avg_price
-            sector_return = ((sector_avg_price - sector_baseline) / sector_baseline) * 100 if sector_baseline != 0 else 0
+            sector_index = np.mean(sector_prices_by_date[date])
             
             comparison_data.append({
                 'date': date.strftime('%Y-%m-%d'),
-                'stock_return': round(stock_return, 2),
-                'sector_return': round(sector_return, 2)
+                'stock_price': round(stock_price, 2),
+                'sector_index': round(sector_index, 2)
             })
+            
+            stock_prices.append(stock_price)
+            sector_indices.append(sector_index)
         
-        # Calculate overall metrics
-        stock_performance = comparison_data[-1]['stock_return'] if comparison_data else 0
-        sector_performance = comparison_data[-1]['sector_return'] if comparison_data else 0
+        # Calculate performance metrics
+        stock_performance = ((stock_hist['Close'].iloc[-1] - stock_hist['Close'].iloc[0]) / stock_hist['Close'].iloc[0]) * 100
+        
+        # Sector performance based on index movement
+        sector_start = comparison_data[0]['sector_index'] if comparison_data else 100
+        sector_end = comparison_data[-1]['sector_index'] if comparison_data else 100
+        sector_performance = ((sector_end - sector_start) / sector_start) * 100
+        
         outperformance = stock_performance - sector_performance
+        
+        # Calculate correlation
+        correlation = np.corrcoef(stock_prices, sector_indices)[0, 1] if len(stock_prices) > 1 else 0
         
         return JsonResponse({
             'success': True,
@@ -23293,6 +23335,8 @@ def mss_stock_sector_relativistic_performance_comparator(request):
             'stock_performance': round(stock_performance, 2),
             'sector_performance': round(sector_performance, 2),
             'outperformance': round(outperformance, 2),
+            'correlation': round(correlation, 2),
+            'num_sector_stocks': len(sector_symbols),
             'timestamp': datetime.now().isoformat()
         })
         
