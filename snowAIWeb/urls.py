@@ -455,6 +455,8 @@ urlpatterns = [
      path('api/snowai-sandbox/checkpoints/', snowai_sandbox_list_checkpoints),
 
      path('api/mss-hyper-volumetric-relativistic-analyzer/', views.mss_hyper_volumetric_relativistic_analyzer, name='mss-hyper-volumetric-relativistic-analyzer'),
+     path('api/mss-quantum-sector-momentum-flux-analyzer/', views.mss_quantum_sector_momentum_flux_analyzer, name='mss-quantum-sector-momentum-flux-analyzer'),
+     path('api/mss-stock-sector-relativistic-performance-comparator/', views.mss_stock_sector_relativistic_performance_comparator, name='mss-stock-sector-relativistic-performance-comparator'),
 
 
 
