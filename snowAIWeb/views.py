@@ -22992,6 +22992,318 @@ def get_predefined_asset_lists(request):
     })
 
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+import yfinance as yf
+import json
+from datetime import datetime, timedelta
+import numpy as np
+from collections import defaultdict
+
+# Sector mapping for US stocks
+SECTOR_MAPPINGS = {
+    # Tech Giants
+    'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
+    'AMZN': 'Consumer Cyclical', 'NVDA': 'Technology', 'TSLA': 'Consumer Cyclical',
+    'META': 'Technology', 'AMD': 'Technology', 'INTC': 'Technology', 'ORCL': 'Technology',
+    'CSCO': 'Technology', 'ADBE': 'Technology', 'CRM': 'Technology', 'AVGO': 'Technology',
+    'QCOM': 'Technology', 'TXN': 'Technology', 'AMAT': 'Technology', 'LRCX': 'Technology',
+    'KLAC': 'Technology', 'SNPS': 'Technology', 'CDNS': 'Technology', 'MRVL': 'Technology',
+    'NXPI': 'Technology', 'MU': 'Technology', 'ADI': 'Technology', 'MPWR': 'Technology',
+    'SWKS': 'Technology', 'QRVO': 'Technology', 'ON': 'Technology',
+    
+    # Financial Services
+    'JPM': 'Financial', 'BAC': 'Financial', 'WFC': 'Financial', 'C': 'Financial',
+    'GS': 'Financial', 'MS': 'Financial', 'BLK': 'Financial', 'SCHW': 'Financial',
+    'AXP': 'Financial', 'SPGI': 'Financial', 'CME': 'Financial', 'ICE': 'Financial',
+    'MCO': 'Financial', 'BK': 'Financial', 'USB': 'Financial', 'PNC': 'Financial',
+    'TFC': 'Financial', 'COF': 'Financial', 'V': 'Financial', 'MA': 'Financial',
+    'PYPL': 'Financial', 'ADP': 'Financial', 'FISV': 'Financial', 'FIS': 'Financial',
+    
+    # Healthcare & Pharma
+    'JNJ': 'Healthcare', 'LLY': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare',
+    'ABBV': 'Healthcare', 'MRK': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
+    'DHR': 'Healthcare', 'BMY': 'Healthcare', 'AMGN': 'Healthcare', 'GILD': 'Healthcare',
+    'CVS': 'Healthcare', 'CI': 'Healthcare', 'ELV': 'Healthcare', 'HUM': 'Healthcare',
+    'VRTX': 'Healthcare', 'REGN': 'Healthcare', 'ISRG': 'Healthcare', 'BIIB': 'Healthcare',
+    'MRNA': 'Healthcare', 'BNTX': 'Healthcare', 'SGEN': 'Healthcare', 'ALNY': 'Healthcare',
+    'BGNE': 'Healthcare', 'MCK': 'Healthcare', 'CAH': 'Healthcare', 'COR': 'Healthcare',
+    'IDXX': 'Healthcare', 'A': 'Healthcare', 'WAT': 'Healthcare',
+    
+    # Consumer Discretionary
+    'HD': 'Consumer Cyclical', 'MCD': 'Consumer Cyclical', 'NKE': 'Consumer Cyclical',
+    'SBUX': 'Consumer Cyclical', 'TJX': 'Consumer Cyclical', 'LOW': 'Consumer Cyclical',
+    'BKNG': 'Consumer Cyclical', 'MAR': 'Consumer Cyclical', 'CMG': 'Consumer Cyclical',
+    'F': 'Consumer Cyclical', 'GM': 'Consumer Cyclical', 'ABNB': 'Consumer Cyclical',
+    'SHOP': 'Consumer Cyclical', 'MELI': 'Consumer Cyclical', 'EBAY': 'Consumer Cyclical',
+    'ETSY': 'Consumer Cyclical', 'TGT': 'Consumer Cyclical', 'ROST': 'Consumer Cyclical',
+    'YUM': 'Consumer Cyclical', 'DPZ': 'Consumer Cyclical', 'QSR': 'Consumer Cyclical',
+    'AAL': 'Consumer Cyclical', 'DAL': 'Consumer Cyclical', 'UAL': 'Consumer Cyclical',
+    'LUV': 'Consumer Cyclical', 'CCL': 'Consumer Cyclical', 'RCL': 'Consumer Cyclical',
+    'EA': 'Consumer Cyclical', 'TTWO': 'Consumer Cyclical', 'RBLX': 'Consumer Cyclical',
+    'U': 'Consumer Cyclical', 'RIVN': 'Consumer Cyclical', 'LCID': 'Consumer Cyclical',
+    
+    # Consumer Staples
+    'WMT': 'Consumer Defensive', 'PG': 'Consumer Defensive', 'KO': 'Consumer Defensive',
+    'PEP': 'Consumer Defensive', 'COST': 'Consumer Defensive', 'PM': 'Consumer Defensive',
+    'MO': 'Consumer Defensive', 'MDLZ': 'Consumer Defensive', 'CL': 'Consumer Defensive',
+    'KMB': 'Consumer Defensive', 'GIS': 'Consumer Defensive', 'KHC': 'Consumer Defensive',
+    'STZ': 'Consumer Defensive',
+    
+    # Energy
+    'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy', 'EOG': 'Energy', 'SLB': 'Energy',
+    'MPC': 'Energy', 'PSX': 'Energy', 'VLO': 'Energy', 'OXY': 'Energy', 'HAL': 'Energy',
+    'DVN': 'Energy', 'HES': 'Energy', 'BKR': 'Energy',
+    
+    # Industrials
+    'BA': 'Industrials', 'HON': 'Industrials', 'UNP': 'Industrials', 'CAT': 'Industrials',
+    'GE': 'Industrials', 'RTX': 'Industrials', 'LMT': 'Industrials', 'UPS': 'Industrials',
+    'DE': 'Industrials', 'MMM': 'Industrials', 'GD': 'Industrials', 'NOC': 'Industrials',
+    'FDX': 'Industrials', 'CSX': 'Industrials', 'HWM': 'Industrials', 'TDG': 'Industrials',
+    'HEI': 'Industrials', 'LHX': 'Industrials', 'TXT': 'Industrials',
+    
+    # Communication Services
+    'T': 'Communication', 'VZ': 'Communication', 'CMCSA': 'Communication',
+    'NFLX': 'Communication', 'DIS': 'Communication', 'TMUS': 'Communication',
+    'CHTR': 'Communication',
+    
+    # Real Estate
+    'AMT': 'Real Estate', 'PLD': 'Real Estate', 'CCI': 'Real Estate',
+    'EQIX': 'Real Estate', 'PSA': 'Real Estate', 'SPG': 'Real Estate', 'O': 'Real Estate',
+    
+    # Materials
+    'LIN': 'Materials', 'APD': 'Materials', 'SHW': 'Materials', 'ECL': 'Materials',
+    'DD': 'Materials', 'NEM': 'Materials', 'FCX': 'Materials', 'DOW': 'Materials',
+    'LYB': 'Materials', 'CE': 'Materials', 'ALB': 'Materials', 'EMN': 'Materials',
+    'SQM': 'Materials',
+    
+    # Utilities
+    'NEE': 'Utilities', 'DUK': 'Utilities', 'SO': 'Utilities', 'D': 'Utilities',
+    'AEP': 'Utilities', 'EXC': 'Utilities', 'SRE': 'Utilities',
+    
+    # Software & Cloud
+    'NOW': 'Technology', 'INTU': 'Technology', 'WDAY': 'Technology', 'PANW': 'Technology',
+    'CRWD': 'Technology', 'ZS': 'Technology', 'DDOG': 'Technology', 'NET': 'Technology',
+    'SNOW': 'Technology', 'PLTR': 'Technology', 'TEAM': 'Technology', 'FTNT': 'Technology',
+    'OKTA': 'Technology', 'S': 'Technology', 'CYBR': 'Technology',
+    
+    # Insurance
+    'BRK-B': 'Financial', 'PGR': 'Financial', 'ALL': 'Financial', 'TRV': 'Financial',
+    'AIG': 'Financial', 'MET': 'Financial', 'PRU': 'Financial',
+    
+    # Chinese ADRs
+    'BABA': 'Technology', 'JD': 'Consumer Cyclical', 'PDD': 'Consumer Cyclical',
+    'BIDU': 'Technology', 'NIO': 'Consumer Cyclical', 'XPEV': 'Consumer Cyclical',
+    'LI': 'Consumer Cyclical',
+}
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_quantum_sector_momentum_flux_analyzer(request):
+    """
+    Ultra-specific endpoint for analyzing sector-level performance and money flow.
+    Calculates relative strength, returns, and capital allocation per sector.
+    """
+    try:
+        data = json.loads(request.body)
+        symbols = data.get('symbols', [])
+        period_days = data.get('period', 30)
+        
+        if not symbols:
+            return JsonResponse({
+                'success': False,
+                'error': 'No symbols provided'
+            })
+        
+        sector_data = defaultdict(lambda: {
+            'returns': [],
+            'volumes': [],
+            'volume_dollars': [],
+            'symbols': []
+        })
+        
+        for symbol in symbols:
+            try:
+                sector = SECTOR_MAPPINGS.get(symbol, 'Unknown')
+                if sector == 'Unknown':
+                    continue
+                
+                ticker = yf.Ticker(symbol)
+                hist = ticker.history(period=f'{period_days}d')
+                
+                if hist.empty or len(hist) < 2:
+                    continue
+                
+                # Calculate return
+                period_return = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
+                
+                # Calculate average volume and volume * price (money flow)
+                avg_volume = hist['Volume'].mean()
+                avg_price = hist['Close'].mean()
+                volume_dollars = avg_volume * avg_price
+                
+                sector_data[sector]['returns'].append(period_return)
+                sector_data[sector]['volumes'].append(avg_volume)
+                sector_data[sector]['volume_dollars'].append(volume_dollars)
+                sector_data[sector]['symbols'].append(symbol)
+                
+            except Exception as e:
+                print(f"Error processing {symbol}: {str(e)}")
+                continue
+        
+        # Calculate sector-level metrics
+        sector_performance = []
+        total_volume_dollars = 0
+        
+        for sector, metrics in sector_data.items():
+            if not metrics['returns']:
+                continue
+            
+            avg_return = np.mean(metrics['returns'])
+            total_sector_volume = sum(metrics['volume_dollars'])
+            total_volume_dollars += total_sector_volume
+            
+            sector_performance.append({
+                'sector': sector,
+                'avg_return': round(avg_return, 2),
+                'num_stocks': len(metrics['returns']),
+                'total_volume_dollars': total_sector_volume,
+                'symbols': metrics['symbols']
+            })
+        
+        # Calculate relative strength (normalized to 0-100)
+        if sector_performance:
+            returns = [s['avg_return'] for s in sector_performance]
+            min_return = min(returns)
+            max_return = max(returns)
+            range_return = max_return - min_return if max_return != min_return else 1
+            
+            for sector in sector_performance:
+                relative_strength = ((sector['avg_return'] - min_return) / range_return) * 100
+                sector['relative_strength'] = round(relative_strength, 2)
+                sector['money_flow_pct'] = round((sector['total_volume_dollars'] / total_volume_dollars) * 100, 2) if total_volume_dollars > 0 else 0
+        
+        # Sort by avg return descending
+        sector_performance.sort(key=lambda x: x['avg_return'], reverse=True)
+        
+        return JsonResponse({
+            'success': True,
+            'sector_performance': sector_performance,
+            'total_volume_dollars': total_volume_dollars,
+            'overall_avg_return': round(np.mean([s['avg_return'] for s in sector_performance]), 2) if sector_performance else 0,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_stock_sector_relativistic_performance_comparator(request):
+    """
+    Ultra-specific endpoint for comparing individual stock performance against its sector.
+    Generates time-series comparison data showing relative outperformance/underperformance.
+    """
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        period_days = data.get('period', 30)
+        
+        if not symbol:
+            return JsonResponse({
+                'success': False,
+                'error': 'No symbol provided'
+            })
+        
+        sector = SECTOR_MAPPINGS.get(symbol)
+        if not sector:
+            return JsonResponse({
+                'success': False,
+                'error': f'Sector not found for {symbol}'
+            })
+        
+        # Get stock data
+        ticker = yf.Ticker(symbol)
+        stock_hist = ticker.history(period=f'{period_days}d')
+        
+        if stock_hist.empty:
+            return JsonResponse({
+                'success': False,
+                'error': f'No data found for {symbol}'
+            })
+        
+        # Get all stocks in the same sector
+        sector_symbols = [s for s, sec in SECTOR_MAPPINGS.items() if sec == sector and s != symbol]
+        
+        # Calculate sector average performance
+        sector_prices = defaultdict(list)
+        
+        for sec_symbol in sector_symbols[:20]:  # Limit to 20 stocks for performance
+            try:
+                sec_ticker = yf.Ticker(sec_symbol)
+                sec_hist = sec_ticker.history(period=f'{period_days}d')
+                
+                if sec_hist.empty:
+                    continue
+                
+                # Align dates with stock_hist
+                for date in stock_hist.index:
+                    if date in sec_hist.index:
+                        sec_prices[date].append(sec_hist.loc[date, 'Close'])
+            except:
+                continue
+        
+        # Build comparison data
+        comparison_data = []
+        stock_baseline = stock_hist['Close'].iloc[0]
+        
+        for date in stock_hist.index:
+            if date not in sector_prices or not sector_prices[date]:
+                continue
+            
+            stock_price = stock_hist.loc[date, 'Close']
+            stock_return = ((stock_price - stock_baseline) / stock_baseline) * 100
+            
+            # Calculate sector average return
+            sector_avg_price = np.mean(sector_prices[date])
+            sector_baseline = np.mean(sector_prices[stock_hist.index[0]]) if stock_hist.index[0] in sector_prices else sector_avg_price
+            sector_return = ((sector_avg_price - sector_baseline) / sector_baseline) * 100 if sector_baseline != 0 else 0
+            
+            comparison_data.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'stock_return': round(stock_return, 2),
+                'sector_return': round(sector_return, 2)
+            })
+        
+        # Calculate overall metrics
+        stock_performance = comparison_data[-1]['stock_return'] if comparison_data else 0
+        sector_performance = comparison_data[-1]['sector_return'] if comparison_data else 0
+        outperformance = stock_performance - sector_performance
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'sector': sector,
+            'comparison_data': comparison_data,
+            'stock_performance': round(stock_performance, 2),
+            'sector_performance': round(sector_performance, 2),
+            'outperformance': round(outperformance, 2),
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+
 @csrf_exempt
 @require_http_methods(["GET"])
 def snowai_get_all_hedge_funds(request):
