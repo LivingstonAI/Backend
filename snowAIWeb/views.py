@@ -28254,8 +28254,10 @@ def snowai_sandbox_pause(request, session_id):
     if not session:
         return JsonResponse({'error': 'Session not found'}, status=404)
     
-    session['paused'] = True
-    session['logs'].append('⏸️ Training paused by user')
+    if not session.get('paused', False):
+        session['paused'] = True
+        session['status'] = 'Paused'
+        session['logs'].append('⏸️ Training paused by user')
     
     return JsonResponse({'message': 'Training paused', 'session_id': session_id})
 
@@ -28270,8 +28272,11 @@ def snowai_sandbox_resume(request, session_id):
     if not session:
         return JsonResponse({'error': 'Session not found'}, status=404)
     
-    session['paused'] = False
-    session['logs'].append('▶️ Training resumed')
+    if session.get('paused', False):
+        session['paused'] = False
+        session['just_resumed'] = True
+        session['status'] = f'Generation {session.get("current_iteration", 0) + 1}/{session["config"]["max_iterations"]}'
+        session['logs'].append('▶️ Training resumed')
     
     return JsonResponse({'message': 'Training resumed', 'session_id': session_id})
 
@@ -28424,16 +28429,23 @@ def run_ai_training(session_id):
         max_iterations = config['max_iterations']
         
         for iteration in range(start_iteration, max_iterations):
-            # Check for pause
+            # Check for pause - proper blocking loop
             while session.get('paused', False):
-                time.sleep(1)
+                time.sleep(0.5)
                 if session.get('completed', False):
                     return
+            
+            # Check if we just resumed (to avoid duplicate logs)
+            if iteration > start_iteration and session.get('just_resumed', False):
+                session['just_resumed'] = False
             
             session['current_iteration'] = iteration
             session['progress'] = int((iteration / max_iterations) * 100)
             session['status'] = f'Generation {iteration + 1}/{max_iterations}'
-            session['logs'].append(f'🔬 Generation {iteration + 1}: Testing strategies...')
+            
+            # Only log if not paused
+            if not session.get('paused', False):
+                session['logs'].append(f'🔬 Generation {iteration + 1}: Testing strategies...')
             
             # Evaluate each strategy
             for strategy in population:
@@ -28450,17 +28462,18 @@ def run_ai_training(session_id):
             # Track best fitness
             session['best_fitness_history'].append(population[0]['fitness'])
             
-            # Log top 3 strategies
-            session['logs'].append(f'🏆 Top 3 this generation:')
-            for i in range(min(3, len(population))):
-                s = population[i]
-                session['logs'].append(
-                    f'   #{i+1}: {" + ".join(s["functions"][:2])}{"..." if len(s["functions"]) > 2 else ""} | '
-                    f'Fitness: {s["fitness"]:.2f} | Trades: {s["trades"]}'
-                )
+            # Log top 3 strategies - only if not paused
+            if not session.get('paused', False):
+                session['logs'].append(f'🏆 Top 3 this generation:')
+                for i in range(min(3, len(population))):
+                    s = population[i]
+                    session['logs'].append(
+                        f'   #{i+1}: {" + ".join(s["functions"][:2])}{"..." if len(s["functions"]) > 2 else ""} | '
+                        f'Fitness: {s["fitness"]:.2f} | Trades: {s["trades"]}'
+                    )
             
             # Auto-checkpoint every 10 iterations
-            if (iteration + 1) % 10 == 0:
+            if (iteration + 1) % 10 == 0 and not session.get('paused', False):
                 session['logs'].append(f'💾 Auto-checkpoint at iteration {iteration + 1}')
             
             # Selection and evolution
