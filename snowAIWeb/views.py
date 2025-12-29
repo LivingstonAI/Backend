@@ -23099,12 +23099,29 @@ SECTOR_MAPPINGS = {
 }
 
 
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def mss_stock_sector_identifier(request):
+    """
+    Simple endpoint to get sector for a stock symbol.
+    """
+    symbol = request.GET.get('symbol', '')
+    sector = SECTOR_MAPPINGS.get(symbol, None)
+    
+    return JsonResponse({
+        'success': True,
+        'symbol': symbol,
+        'sector': sector
+    })
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def mss_quantum_sector_momentum_flux_analyzer(request):
     """
-    Ultra-specific endpoint for analyzing sector-level performance and money flow.
-    Now includes time-series data for each sector's performance over time.
+    Ultra-specific endpoint for analyzing sector-level performance with MARKET CAP WEIGHTING.
+    Each sector line is calculated by aggregating price movements weighted by market cap.
     """
     try:
         data = json.loads(request.body)
@@ -23122,9 +23139,10 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
             'volumes': [],
             'volume_dollars': [],
             'symbols': [],
-            'historical_data': defaultdict(list)
+            'stock_data': []
         })
         
+        # First pass: Get all stock data with market caps
         for symbol in symbols:
             try:
                 sector = SECTOR_MAPPINGS.get(symbol, 'Unknown')
@@ -23133,9 +23151,16 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
                 
                 ticker = yf.Ticker(symbol)
                 hist = ticker.history(period=f'{period_days}d')
+                info = ticker.info
                 
                 if hist.empty or len(hist) < 2:
                     continue
+                
+                # Get market cap (fallback to volume-based if not available)
+                market_cap = info.get('marketCap', None)
+                if not market_cap or market_cap == 0:
+                    # Estimate using average volume * price as proxy
+                    market_cap = hist['Volume'].mean() * hist['Close'].mean()
                 
                 # Calculate return
                 period_return = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
@@ -23150,23 +23175,25 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
                 sector_data[sector]['volume_dollars'].append(volume_dollars)
                 sector_data[sector]['symbols'].append(symbol)
                 
-                # Store daily returns for time-series
-                baseline_price = hist['Close'].iloc[0]
-                for date, row in hist.iterrows():
-                    daily_return = ((row['Close'] - baseline_price) / baseline_price) * 100
-                    sector_data[sector]['historical_data'][date].append(daily_return)
+                # Store complete stock data with market cap
+                sector_data[sector]['stock_data'].append({
+                    'symbol': symbol,
+                    'history': hist,
+                    'market_cap': market_cap,
+                    'baseline_price': hist['Close'].iloc[0]
+                })
                 
             except Exception as e:
                 print(f"Error processing {symbol}: {str(e)}")
                 continue
         
-        # Calculate sector-level metrics
+        # Calculate sector-level metrics and time-series
         sector_performance = []
         sector_timeseries = []
         total_volume_dollars = 0
         
         for sector, metrics in sector_data.items():
-            if not metrics['returns']:
+            if not metrics['returns'] or not metrics['stock_data']:
                 continue
             
             avg_return = np.mean(metrics['returns'])
@@ -23181,14 +23208,44 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
                 'symbols': metrics['symbols']
             })
             
-            # Build time-series for this sector
+            # Calculate market-cap weighted sector index
+            # Get all unique dates across all stocks in sector
+            all_dates = set()
+            for stock in metrics['stock_data']:
+                all_dates.update(stock['history'].index)
+            
+            sorted_dates = sorted(all_dates)
+            
+            # Calculate total market cap for sector
+            total_market_cap = sum(stock['market_cap'] for stock in metrics['stock_data'])
+            
+            # Build time-series with market cap weighting
             timeseries_data = []
-            for date in sorted(metrics['historical_data'].keys()):
-                avg_sector_return = np.mean(metrics['historical_data'][date])
-                timeseries_data.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'return': round(avg_sector_return, 2)
-                })
+            baseline_index = 100  # Start index at 100
+            
+            for date in sorted_dates:
+                weighted_price_sum = 0
+                total_weight = 0
+                
+                for stock in metrics['stock_data']:
+                    if date in stock['history'].index:
+                        current_price = stock['history'].loc[date, 'Close']
+                        baseline_price = stock['baseline_price']
+                        
+                        # Normalize to index value (baseline = 100)
+                        normalized_value = (current_price / baseline_price) * 100
+                        
+                        # Weight by market cap
+                        weight = stock['market_cap'] / total_market_cap
+                        weighted_price_sum += normalized_value * weight
+                        total_weight += weight
+                
+                if total_weight > 0:
+                    sector_index = weighted_price_sum / total_weight
+                    timeseries_data.append({
+                        'date': date.strftime('%Y-%m-%d'),
+                        'index': round(sector_index, 2)
+                    })
             
             sector_timeseries.append({
                 'sector': sector,
@@ -23230,8 +23287,8 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
 @require_http_methods(["POST"])
 def mss_stock_sector_relativistic_performance_comparator(request):
     """
-    Compares stock PRICE against sector STRENGTH INDEX (average of sector stock prices).
-    Shows actual price movements, not just percentage returns.
+    Compares stock PRICE against MARKET CAP WEIGHTED sector index.
+    Shows actual price movements weighted by company size.
     """
     try:
         data = json.loads(request.body)
@@ -23261,63 +23318,81 @@ def mss_stock_sector_relativistic_performance_comparator(request):
                 'error': f'No data found for {symbol}'
             })
         
-        # Get all stocks in the same sector
+        # Get all stocks in the same sector with market caps
         sector_symbols = [s for s, sec in SECTOR_MAPPINGS.items() if sec == sector and s != symbol]
         
-        # Calculate sector index (average price of all stocks in sector)
-        sector_prices_by_date = defaultdict(list)
+        sector_stocks_data = []
+        total_market_cap = 0
         
-        for sec_symbol in sector_symbols[:30]:  # Limit to 30 stocks for performance
+        for sec_symbol in sector_symbols[:30]:
             try:
                 sec_ticker = yf.Ticker(sec_symbol)
                 sec_hist = sec_ticker.history(period=f'{period_days}d')
+                sec_info = sec_ticker.info
                 
                 if sec_hist.empty:
                     continue
                 
-                # Normalize each stock's price to 100 at start for fair comparison
-                baseline = sec_hist['Close'].iloc[0]
-                for date in sec_hist.index:
-                    if date in stock_hist.index:
-                        normalized_price = (sec_hist.loc[date, 'Close'] / baseline) * 100
-                        sector_prices_by_date[date].append(normalized_price)
+                market_cap = sec_info.get('marketCap', None)
+                if not market_cap or market_cap == 0:
+                    market_cap = sec_hist['Volume'].mean() * sec_hist['Close'].mean()
+                
+                sector_stocks_data.append({
+                    'history': sec_hist,
+                    'market_cap': market_cap,
+                    'baseline': sec_hist['Close'].iloc[0]
+                })
+                
+                total_market_cap += market_cap
+                
             except Exception as e:
                 print(f"Error processing {sec_symbol}: {str(e)}")
                 continue
         
-        if not sector_prices_by_date:
+        if not sector_stocks_data or total_market_cap == 0:
             return JsonResponse({
                 'success': False,
                 'error': f'Could not calculate sector index for {sector}'
             })
         
-        # Build comparison data
+        # Build comparison data with market cap weighting
         comparison_data = []
-        stock_baseline = stock_hist['Close'].iloc[0]
-        
         stock_prices = []
         sector_indices = []
         
         for date in stock_hist.index:
-            if date not in sector_prices_by_date or not sector_prices_by_date[date]:
-                continue
+            weighted_index_sum = 0
+            total_weight = 0
             
-            stock_price = stock_hist.loc[date, 'Close']
-            sector_index = np.mean(sector_prices_by_date[date])
+            for stock_data in sector_stocks_data:
+                if date in stock_data['history'].index:
+                    current_price = stock_data['history'].loc[date, 'Close']
+                    baseline_price = stock_data['baseline']
+                    
+                    # Normalize to index (baseline = 100)
+                    normalized_value = (current_price / baseline_price) * 100
+                    
+                    # Weight by market cap
+                    weight = stock_data['market_cap'] / total_market_cap
+                    weighted_index_sum += normalized_value * weight
+                    total_weight += weight
             
-            comparison_data.append({
-                'date': date.strftime('%Y-%m-%d'),
-                'stock_price': round(stock_price, 2),
-                'sector_index': round(sector_index, 2)
-            })
-            
-            stock_prices.append(stock_price)
-            sector_indices.append(sector_index)
+            if total_weight > 0:
+                sector_index = weighted_index_sum / total_weight
+                stock_price = stock_hist.loc[date, 'Close']
+                
+                comparison_data.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'stock_price': round(stock_price, 2),
+                    'sector_index': round(sector_index, 2)
+                })
+                
+                stock_prices.append(stock_price)
+                sector_indices.append(sector_index)
         
         # Calculate performance metrics
         stock_performance = ((stock_hist['Close'].iloc[-1] - stock_hist['Close'].iloc[0]) / stock_hist['Close'].iloc[0]) * 100
         
-        # Sector performance based on index movement
         sector_start = comparison_data[0]['sector_index'] if comparison_data else 100
         sector_end = comparison_data[-1]['sector_index'] if comparison_data else 100
         sector_performance = ((sector_end - sector_start) / sector_start) * 100
@@ -23336,7 +23411,7 @@ def mss_stock_sector_relativistic_performance_comparator(request):
             'sector_performance': round(sector_performance, 2),
             'outperformance': round(outperformance, 2),
             'correlation': round(correlation, 2),
-            'num_sector_stocks': len(sector_symbols),
+            'num_sector_stocks': len(sector_stocks_data),
             'timestamp': datetime.now().isoformat()
         })
         
@@ -23345,6 +23420,7 @@ def mss_stock_sector_relativistic_performance_comparator(request):
             'success': False,
             'error': str(e)
         }, status=500)
+
 
 
 
