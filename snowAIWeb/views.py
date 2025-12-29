@@ -28144,6 +28144,8 @@ def receive_sovereign_neuro_command_v1(request):
     return JsonResponse({"status": "METHOD_NOT_ALLOWED"}, status=405)
 
 import random
+import json
+import pandas as pd
 from django.core.files.storage import default_storage
 from django.core.cache import cache
 import uuid
@@ -28227,8 +28229,10 @@ def snowai_sandbox_status(request, session_id):
     if not session:
         return JsonResponse({'error': 'Session not found'}, status=404)
     
-    # Get latest logs (last 5)
-    latest_logs = session['logs'][-5:] if session['logs'] else []
+    # Get only NEW logs since last check
+    last_log_count = session.get('last_log_count', 0)
+    new_logs = session['logs'][last_log_count:] if session['logs'] else []
+    session['last_log_count'] = len(session['logs'])
     
     return JsonResponse({
         'session_id': session_id,
@@ -28236,7 +28240,7 @@ def snowai_sandbox_status(request, session_id):
         'progress': session['progress'],
         'completed': session['completed'],
         'results': session['results'],
-        'logs': latest_logs,
+        'logs': new_logs,  # Only new logs
         'error': session.get('error'),
         'paused': session.get('paused', False),
         'current_iteration': session.get('current_iteration', 0),
@@ -28393,10 +28397,8 @@ def run_ai_training(session_id):
             population = checkpoint_data['population']
             start_iteration = checkpoint_data['iteration']
             session['logs'].append(f'🔄 Resuming from iteration {start_iteration}')
-            session['logs'].append(f'📦 Loaded {len(population)} strategies from checkpoint')
             session['best_fitness_history'] = checkpoint_data.get('best_fitness_history', [])
         else:
-            session['logs'].append(f'🧬 Initializing population of {config["population_size"]} strategies...')
             population = []
             used_combinations = set()
             
@@ -28419,7 +28421,7 @@ def run_ai_training(session_id):
                     })
             
             start_iteration = 0
-            session['logs'].append(f'✅ Created {len(population)} unique strategies')
+            session['logs'].append(f'✅ Training initialized with {len(population)} strategies')
             session['best_fitness_history'] = []
         
         # Store population in session
@@ -28462,19 +28464,13 @@ def run_ai_training(session_id):
             # Track best fitness
             session['best_fitness_history'].append(population[0]['fitness'])
             
-            # Log top 3 strategies - only if not paused
-            if not session.get('paused', False):
-                session['logs'].append(f'🏆 Top 3 this generation:')
-                for i in range(min(3, len(population))):
-                    s = population[i]
-                    session['logs'].append(
-                        f'   #{i+1}: {" + ".join(s["functions"][:2])}{"..." if len(s["functions"]) > 2 else ""} | '
-                        f'Fitness: {s["fitness"]:.2f} | Trades: {s["trades"]}'
-                    )
+            # Log top 3 strategies - only every 10 iterations to reduce spam
+            if (iteration + 1) % 10 == 0 and not session.get('paused', False):
+                session['logs'].append(f'🏆 Top strategy: {" + ".join(population[0]["functions"])} | Fitness: {population[0]["fitness"]:.2f}')
             
             # Auto-checkpoint every 10 iterations
             if (iteration + 1) % 10 == 0 and not session.get('paused', False):
-                session['logs'].append(f'💾 Auto-checkpoint at iteration {iteration + 1}')
+                session['logs'].append(f'💾 Auto-save at iteration {iteration + 1}')
             
             # Selection and evolution
             elite_count = max(3, config['population_size'] // 3)
@@ -28687,7 +28683,6 @@ def generate_insights(top_strategies, all_functions):
         )
     
     return insights
-
 
 @csrf_exempt
 @require_http_methods(["POST"])
