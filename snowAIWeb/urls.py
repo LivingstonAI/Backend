@@ -447,8 +447,10 @@ urlpatterns = [
 
      path('snow-ai/neuro-command/receive/', views.receive_sovereign_neuro_command_v1, name='neuro_command_receive'),
 
-     path('api/snowai-sandbox/train/', views.snowai_sandbox_train, name='snowai_sandbox_train'),
-     path('api/snowai-sandbox/status/<str:session_id>/', views.snowai_sandbox_status, name='snowai_sandbox_status'),
+     path('api/snowai-sandbox/pause/<str:session_id>/', snowai_sandbox_pause),
+     path('api/snowai-sandbox/resume/<str:session_id>/', snowai_sandbox_resume),
+     path('api/snowai-sandbox/checkpoint/<str:session_id>/', snowai_sandbox_save_checkpoint),
+     path('api/snowai-sandbox/checkpoints/', snowai_sandbox_list_checkpoints),
 
      path('api/mss-hyper-volumetric-relativistic-analyzer/', views.mss_hyper_volumetric_relativistic_analyzer, name='mss-hyper-volumetric-relativistic-analyzer'),
 
