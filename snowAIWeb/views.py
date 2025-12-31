@@ -28877,9 +28877,8 @@ def run_ai_training(session_id):
             session['progress'] = int((iteration / max_iterations) * 100)
             session['status'] = f'Generation {iteration + 1}/{max_iterations}'
             
-            # Only log if not paused
-            if not session.get('paused', False):
-                session['logs'].append(f'🔬 Generation {iteration + 1}: Testing strategies...')
+            # Always log current generation (users like seeing progress!)
+            session['logs'].append(f'🔬 Generation {iteration + 1}: Testing strategies...')
             
             # Evaluate each strategy
             for strategy in population:
@@ -28896,9 +28895,14 @@ def run_ai_training(session_id):
             # Track best fitness
             session['best_fitness_history'].append(population[0]['fitness'])
             
-            # Log top 3 strategies - only every 10 iterations to reduce spam
-            if (iteration + 1) % 10 == 0 and not session.get('paused', False):
-                session['logs'].append(f'🏆 Top strategy: {" + ".join(population[0]["functions"])} | Fitness: {population[0]["fitness"]:.2f}')
+            # Log top 3 strategies every iteration
+            session['logs'].append(f'🏆 Top 3 this generation:')
+            for i in range(min(3, len(population))):
+                s = population[i]
+                session['logs'].append(
+                    f'   #{i+1}: {" + ".join(s["functions"][:2])}{"..." if len(s["functions"]) > 2 else ""} | '
+                    f'Fitness: {s["fitness"]:.2f} | Trades: {s["trades"]}'
+                )
             
             # Auto-checkpoint every 10 iterations
             if (iteration + 1) % 10 == 0 and not session.get('paused', False):
@@ -29116,6 +29120,7 @@ def generate_insights(top_strategies, all_functions):
     
     return insights
 
+    
 @csrf_exempt
 @require_http_methods(["POST"])
 def mss_hyper_volumetric_relativistic_analyzer(request):
