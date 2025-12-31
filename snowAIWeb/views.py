@@ -28574,6 +28574,9 @@ def receive_sovereign_neuro_command_v1(request):
             return JsonResponse({"status": "ERROR", "message": str(e)}, status=500)
 
     return JsonResponse({"status": "METHOD_NOT_ALLOWED"}, status=405)
+
+
+
 import random
 import json
 import pandas as pd
@@ -29121,6 +29124,7 @@ def generate_insights(top_strategies, all_functions):
         )
     
     return insights
+
 
     
 @csrf_exempt
