@@ -28574,7 +28574,6 @@ def receive_sovereign_neuro_command_v1(request):
             return JsonResponse({"status": "ERROR", "message": str(e)}, status=500)
 
     return JsonResponse({"status": "METHOD_NOT_ALLOWED"}, status=405)
-
 import random
 import json
 import pandas as pd
@@ -28877,17 +28876,20 @@ def run_ai_training(session_id):
             session['progress'] = int((iteration / max_iterations) * 100)
             session['status'] = f'Generation {iteration + 1}/{max_iterations}'
             
-            # Always log current generation (users like seeing progress!)
+            # Log start of generation
             session['logs'].append(f'🔬 Generation {iteration + 1}: Testing strategies...')
             
             # Evaluate each strategy
-            for strategy in population:
+            for idx, strategy in enumerate(population):
                 if strategy['fitness'] == 0:
                     strategy['fitness'], strategy['trades'], strategy['wins'], strategy['pnl'] = evaluate_strategy(
                         strategy['functions'],
                         datasets,
                         config
                     )
+                    # Log progress every 5 strategies
+                    if (idx + 1) % 5 == 0:
+                        session['logs'].append(f'   📈 Evaluated {idx + 1}/{len(population)} strategies...')
             
             # Sort by fitness
             population.sort(key=lambda x: x['fitness'], reverse=True)
