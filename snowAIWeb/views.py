@@ -23287,8 +23287,8 @@ def mss_quantum_sector_momentum_flux_analyzer(request):
 @require_http_methods(["POST"])
 def mss_stock_sector_relativistic_performance_comparator(request):
     """
-    Compares stock PRICE against MARKET CAP WEIGHTED sector index.
-    Shows actual price movements weighted by company size.
+    Compares stock PERCENTAGE RETURN against sector PERCENTAGE RETURN.
+    Both normalized to start at 0% for easy comparison.
     """
     try:
         data = json.loads(request.body)
@@ -23355,13 +23355,12 @@ def mss_stock_sector_relativistic_performance_comparator(request):
                 'error': f'Could not calculate sector index for {sector}'
             })
         
-        # Build comparison data with market cap weighting
+        # Build comparison data with PERCENTAGE RETURNS (normalized to 0%)
         comparison_data = []
-        stock_prices = []
-        sector_indices = []
+        stock_baseline = stock_hist['Close'].iloc[0]
         
         for date in stock_hist.index:
-            weighted_index_sum = 0
+            weighted_return_sum = 0
             total_weight = 0
             
             for stock_data in sector_stocks_data:
@@ -23369,38 +23368,34 @@ def mss_stock_sector_relativistic_performance_comparator(request):
                     current_price = stock_data['history'].loc[date, 'Close']
                     baseline_price = stock_data['baseline']
                     
-                    # Normalize to index (baseline = 100)
-                    normalized_value = (current_price / baseline_price) * 100
+                    # Calculate percentage return
+                    pct_return = ((current_price - baseline_price) / baseline_price) * 100
                     
                     # Weight by market cap
                     weight = stock_data['market_cap'] / total_market_cap
-                    weighted_index_sum += normalized_value * weight
+                    weighted_return_sum += pct_return * weight
                     total_weight += weight
             
             if total_weight > 0:
-                sector_index = weighted_index_sum / total_weight
+                sector_return = weighted_return_sum / total_weight
                 stock_price = stock_hist.loc[date, 'Close']
+                stock_return = ((stock_price - stock_baseline) / stock_baseline) * 100
                 
                 comparison_data.append({
                     'date': date.strftime('%Y-%m-%d'),
-                    'stock_price': round(stock_price, 2),
-                    'sector_index': round(sector_index, 2)
+                    'stock_return': round(stock_return, 2),
+                    'sector_return': round(sector_return, 2)
                 })
-                
-                stock_prices.append(stock_price)
-                sector_indices.append(sector_index)
         
-        # Calculate performance metrics
-        stock_performance = ((stock_hist['Close'].iloc[-1] - stock_hist['Close'].iloc[0]) / stock_hist['Close'].iloc[0]) * 100
-        
-        sector_start = comparison_data[0]['sector_index'] if comparison_data else 100
-        sector_end = comparison_data[-1]['sector_index'] if comparison_data else 100
-        sector_performance = ((sector_end - sector_start) / sector_start) * 100
-        
+        # Calculate final performance metrics
+        stock_performance = comparison_data[-1]['stock_return'] if comparison_data else 0
+        sector_performance = comparison_data[-1]['sector_return'] if comparison_data else 0
         outperformance = stock_performance - sector_performance
         
         # Calculate correlation
-        correlation = np.corrcoef(stock_prices, sector_indices)[0, 1] if len(stock_prices) > 1 else 0
+        stock_returns = [d['stock_return'] for d in comparison_data]
+        sector_returns = [d['sector_return'] for d in comparison_data]
+        correlation = np.corrcoef(stock_returns, sector_returns)[0, 1] if len(stock_returns) > 1 else 0
         
         return JsonResponse({
             'success': True,
@@ -23420,7 +23415,6 @@ def mss_stock_sector_relativistic_performance_comparator(request):
             'success': False,
             'error': str(e)
         }, status=500)
-
 
 
 
