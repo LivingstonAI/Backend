@@ -281,6 +281,7 @@ def is_bullish_candle(candle):
         return True
     return False
 
+
 from typing import Union
 
 def is_monte_carlo_bullish_prediction(
@@ -307,6 +308,7 @@ def is_monte_carlo_bullish_prediction(
         close_prices = _extract_close_prices(data)
         
         if len(close_prices) < lookback_days + 1:
+            print(f"[Monte Carlo Bullish] Error: Insufficient data. Got {len(close_prices)} periods, need at least {lookback_days + 1}")
             return False
         
         # Use last lookback_days for simulation
@@ -317,6 +319,7 @@ def is_monte_carlo_bullish_prediction(
         
         # Check for invalid returns (NaN, inf)
         if np.any(~np.isfinite(log_returns)):
+            print("[Monte Carlo Bullish] Error: Invalid log returns detected (NaN or inf values)")
             return False
         
         # Calculate mean and std of returns
@@ -325,12 +328,14 @@ def is_monte_carlo_bullish_prediction(
         
         # Check for invalid statistics
         if not np.isfinite(mu) or not np.isfinite(sigma) or sigma <= 0:
+            print(f"[Monte Carlo Bullish] Error: Invalid statistics - mu: {mu}, sigma: {sigma}")
             return False
         
         # Current price
         current_price = close_prices[-1]
         
         if not np.isfinite(current_price) or current_price <= 0:
+            print(f"[Monte Carlo Bullish] Error: Invalid current price: {current_price}")
             return False
         
         # Run Monte Carlo simulation
@@ -340,11 +345,13 @@ def is_monte_carlo_bullish_prediction(
         prob_increase = np.mean(final_prices > current_price)
         
         if not np.isfinite(prob_increase):
+            print(f"[Monte Carlo Bullish] Error: Invalid probability calculated: {prob_increase}")
             return False
         
         return prob_increase >= threshold
     
-    except Exception:
+    except Exception as e:
+        print(f"[Monte Carlo Bullish] Error: Unexpected exception - {type(e).__name__}: {str(e)}")
         return False
 
 
@@ -372,6 +379,7 @@ def is_monte_carlo_bearish_prediction(
         close_prices = _extract_close_prices(data)
         
         if len(close_prices) < lookback_days + 1:
+            print(f"[Monte Carlo Bearish] Error: Insufficient data. Got {len(close_prices)} periods, need at least {lookback_days + 1}")
             return False
         
         # Use last lookback_days for simulation
@@ -382,6 +390,7 @@ def is_monte_carlo_bearish_prediction(
         
         # Check for invalid returns (NaN, inf)
         if np.any(~np.isfinite(log_returns)):
+            print("[Monte Carlo Bearish] Error: Invalid log returns detected (NaN or inf values)")
             return False
         
         # Calculate mean and std of returns
@@ -390,12 +399,14 @@ def is_monte_carlo_bearish_prediction(
         
         # Check for invalid statistics
         if not np.isfinite(mu) or not np.isfinite(sigma) or sigma <= 0:
+            print(f"[Monte Carlo Bearish] Error: Invalid statistics - mu: {mu}, sigma: {sigma}")
             return False
         
         # Current price
         current_price = close_prices[-1]
         
         if not np.isfinite(current_price) or current_price <= 0:
+            print(f"[Monte Carlo Bearish] Error: Invalid current price: {current_price}")
             return False
         
         # Run Monte Carlo simulation
@@ -405,32 +416,41 @@ def is_monte_carlo_bearish_prediction(
         prob_decrease = np.mean(final_prices < current_price)
         
         if not np.isfinite(prob_decrease):
+            print(f"[Monte Carlo Bearish] Error: Invalid probability calculated: {prob_decrease}")
             return False
         
         return prob_decrease >= threshold
     
-    except Exception:
+    except Exception as e:
+        print(f"[Monte Carlo Bearish] Error: Unexpected exception - {type(e).__name__}: {str(e)}")
         return False
 
 
 def _extract_close_prices(data: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
     """Extract close prices from various data formats."""
-    if isinstance(data, pd.DataFrame):
-        # Try common column names for close price
-        for col in ['close', 'Close', 'CLOSE', 'c', 'C']:
-            if col in data.columns:
-                return data[col].values
-        raise ValueError("DataFrame must contain a 'close' column (or 'Close', 'CLOSE', 'c', 'C')")
-    elif isinstance(data, np.ndarray):
-        if data.ndim == 1:
-            return data
-        elif data.ndim == 2:
-            # Assume close is last column in OHLC format
-            return data[:, -1]
+    try:
+        if isinstance(data, pd.DataFrame):
+            # Try common column names for close price
+            for col in ['close', 'Close', 'CLOSE', 'c', 'C']:
+                if col in data.columns:
+                    return data[col].values
+            print(f"[Monte Carlo] Error: DataFrame columns {list(data.columns)} don't contain 'close' column")
+            raise ValueError("DataFrame must contain a 'close' column (or 'Close', 'CLOSE', 'c', 'C')")
+        elif isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                return data
+            elif data.ndim == 2:
+                # Assume close is last column in OHLC format
+                return data[:, -1]
+            else:
+                print(f"[Monte Carlo] Error: Numpy array has {data.ndim} dimensions, expected 1D or 2D")
+                raise ValueError("Numpy array must be 1D or 2D")
         else:
-            raise ValueError("Numpy array must be 1D or 2D")
-    else:
-        raise TypeError("Data must be pandas DataFrame or numpy array")
+            print(f"[Monte Carlo] Error: Data type {type(data)} not supported")
+            raise TypeError("Data must be pandas DataFrame or numpy array")
+    except Exception as e:
+        print(f"[Monte Carlo] Error in _extract_close_prices: {type(e).__name__}: {str(e)}")
+        raise
 
 
 def _run_monte_carlo(
@@ -467,8 +487,6 @@ def _run_monte_carlo(
     final_prices = current_price * cumulative_returns
     
     return final_prices
-
-
 
 
 # def get_openai_key(request):
