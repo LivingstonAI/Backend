@@ -29405,6 +29405,185 @@ def mss_hyper_volumetric_relativistic_analyzer(request):
         }, status=500)
 
 
+@csrf_exempt
+def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
+    """
+    Ultra-unique Monte Carlo simulation endpoint for MSS component.
+    Runs probabilistic forecasting based on historical price movements.
+    
+    POST /api/monte-carlo-prediction/
+    Body: {
+        "symbol": "AAPL",
+        "lookback_days": 120,
+        "forecast_days": 5,
+        "num_simulations": 10000,
+        "threshold": 0.60
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({
+            'success': False,
+            'error': 'Only POST method is allowed'
+        }, status=405)
+    
+    try:
+        # Parse request body
+        body = json.loads(request.body)
+        symbol = body.get('symbol')
+        lookback_days = body.get('lookback_days', 120)
+        forecast_days = body.get('forecast_days', 5)
+        num_simulations = body.get('num_simulations', 10000)
+        threshold = body.get('threshold', 0.60)
+        
+        # Validate inputs
+        if not symbol:
+            return JsonResponse({
+                'success': False,
+                'error': 'Symbol is required'
+            }, status=400)
+        
+        # Validate numeric parameters
+        try:
+            lookback_days = int(lookback_days)
+            forecast_days = int(forecast_days)
+            num_simulations = int(num_simulations)
+            threshold = float(threshold)
+        except (ValueError, TypeError):
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid numeric parameters'
+            }, status=400)
+        
+        # Sanity checks
+        if lookback_days < 30 or lookback_days > 365:
+            return JsonResponse({
+                'success': False,
+                'error': 'lookback_days must be between 30 and 365'
+            }, status=400)
+        
+        if forecast_days < 1 or forecast_days > 30:
+            return JsonResponse({
+                'success': False,
+                'error': 'forecast_days must be between 1 and 30'
+            }, status=400)
+        
+        if num_simulations < 1000 or num_simulations > 50000:
+            return JsonResponse({
+                'success': False,
+                'error': 'num_simulations must be between 1,000 and 50,000'
+            }, status=400)
+        
+        if threshold < 0.5 or threshold > 1.0:
+            return JsonResponse({
+                'success': False,
+                'error': 'threshold must be between 0.5 and 1.0'
+            }, status=400)
+        
+        # Fetch historical data
+        print(f"[Monte Carlo API] Fetching data for {symbol} with {lookback_days} day lookback...")
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=lookback_days + 10)  # Extra buffer for weekends/holidays
+        
+        try:
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(start=start_date, end=end_date, interval='1d')
+        except Exception as e:
+            print(f"[Monte Carlo API] Error fetching data: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Failed to fetch data for {symbol}: {str(e)}'
+            }, status=500)
+        
+        if df.empty or len(df) < lookback_days:
+            return JsonResponse({
+                'success': False,
+                'error': f'Insufficient data for {symbol}. Got {len(df)} days, need {lookback_days}'
+            }, status=400)
+        
+        # Prepare data for Monte Carlo
+        df_clean = df[['Close']].copy()
+        df_clean.columns = ['close']
+        df_clean = df_clean.tail(lookback_days)  # Use exact lookback period
+        
+        current_price = float(df_clean['close'].iloc[-1])
+        
+        print(f"[Monte Carlo API] Running simulations for {symbol}...")
+        print(f"[Monte Carlo API] Current price: ${current_price:.2f}")
+        print(f"[Monte Carlo API] Data points: {len(df_clean)}")
+        
+        # Run Monte Carlo predictions
+        is_bullish = is_monte_carlo_bullish_prediction(
+            data=df_clean,
+            lookback_days=lookback_days,
+            forecast_days=forecast_days,
+            num_simulations=num_simulations,
+            threshold=threshold
+        )
+        
+        is_bearish = is_monte_carlo_bearish_prediction(
+            data=df_clean,
+            lookback_days=lookback_days,
+            forecast_days=forecast_days,
+            num_simulations=num_simulations,
+            threshold=threshold
+        )
+        
+        # Calculate actual probabilities for display
+        close_prices = df_clean['close'].values
+        recent_prices = close_prices[-lookback_days:]
+        log_returns = np.log(recent_prices[1:] / recent_prices[:-1])
+        mu = np.mean(log_returns)
+        sigma = np.std(log_returns)
+        
+        # Run simulation to get probabilities
+        final_prices = _run_monte_carlo(current_price, mu, sigma, forecast_days, num_simulations)
+        bullish_prob = float(np.mean(final_prices > current_price))
+        bearish_prob = float(np.mean(final_prices < current_price))
+        
+        print(f"[Monte Carlo API] Results for {symbol}:")
+        print(f"  - Bullish Probability: {bullish_prob*100:.2f}%")
+        print(f"  - Bearish Probability: {bearish_prob*100:.2f}%")
+        print(f"  - Is Bullish (≥{threshold*100}%): {is_bullish}")
+        print(f"  - Is Bearish (≥{threshold*100}%): {is_bearish}")
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'current_price': current_price,
+            'bullish_probability': bullish_prob,
+            'bearish_probability': bearish_prob,
+            'is_bullish': is_bullish,
+            'is_bearish': is_bearish,
+            'parameters': {
+                'lookback_days': lookback_days,
+                'forecast_days': forecast_days,
+                'num_simulations': num_simulations,
+                'threshold': threshold
+            },
+            'statistics': {
+                'mean_return': float(mu),
+                'volatility': float(sigma),
+                'data_points': len(df_clean)
+            },
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON in request body'
+        }, status=400)
+    
+    except Exception as e:
+        print(f"[Monte Carlo API] Unexpected error: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }, status=500)
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
