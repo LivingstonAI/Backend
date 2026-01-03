@@ -29404,7 +29404,7 @@ def mss_hyper_volumetric_relativistic_analyzer(request):
             'error': str(e)
         }, status=500)
 
-
+    
 @csrf_exempt
 def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
     """
@@ -29414,7 +29414,7 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
     POST /api/monte-carlo-prediction/
     Body: {
         "symbol": "AAPL",
-        "lookback_days": 120,
+        "lookback_days": 85,  # Updated default
         "forecast_days": 5,
         "num_simulations": 10000,
         "threshold": 0.60
@@ -29430,7 +29430,7 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
         # Parse request body
         body = json.loads(request.body)
         symbol = body.get('symbol')
-        lookback_days = body.get('lookback_days', 120)
+        lookback_days = body.get('lookback_days', 85)  # Changed default from 120 to 85
         forecast_days = body.get('forecast_days', 5)
         num_simulations = body.get('num_simulations', 10000)
         threshold = body.get('threshold', 0.60)
@@ -29454,7 +29454,7 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
                 'error': 'Invalid numeric parameters'
             }, status=400)
         
-        # Sanity checks
+        # FIX 4: Update sanity checks for lookback_days
         if lookback_days < 30 or lookback_days > 365:
             return JsonResponse({
                 'success': False,
@@ -29479,11 +29479,12 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
                 'error': 'threshold must be between 0.5 and 1.0'
             }, status=400)
         
-        # Fetch historical data
+        # FIX 5: Increase buffer significantly to account for weekends, holidays, and market closures
+        # For 85 trading days, we need ~120 calendar days (85 * 1.4)
         print(f"[Monte Carlo API] Fetching data for {symbol} with {lookback_days} day lookback...")
         
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=lookback_days + 10)  # Extra buffer for weekends/holidays
+        start_date = end_date - timedelta(days=lookback_days * 2)  # Double the lookback for safety
         
         try:
             ticker = yf.Ticker(symbol)
@@ -29495,16 +29496,31 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
                 'error': f'Failed to fetch data for {symbol}: {str(e)}'
             }, status=500)
         
-        if df.empty or len(df) < lookback_days:
+        # FIX 6: Check if we have enough data, if not use what we have (minimum 60 days)
+        if df.empty:
             return JsonResponse({
                 'success': False,
-                'error': f'Insufficient data for {symbol}. Got {len(df)} days, need {lookback_days}'
+                'error': f'No data available for {symbol}'
             }, status=400)
+        
+        actual_data_points = len(df)
+        
+        if actual_data_points < 60:
+            return JsonResponse({
+                'success': False,
+                'error': f'Insufficient data for {symbol}. Got {actual_data_points} days, need at least 60'
+            }, status=400)
+        
+        # Use available data up to lookback_days, but at least 60 days
+        effective_lookback = min(lookback_days, actual_data_points)
+        
+        print(f"[Monte Carlo API] Available data: {actual_data_points} days")
+        print(f"[Monte Carlo API] Using lookback: {effective_lookback} days")
         
         # Prepare data for Monte Carlo
         df_clean = df[['Close']].copy()
         df_clean.columns = ['close']
-        df_clean = df_clean.tail(lookback_days)  # Use exact lookback period
+        df_clean = df_clean.tail(effective_lookback)  # Use effective lookback period
         
         current_price = float(df_clean['close'].iloc[-1])
         
@@ -29512,10 +29528,10 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
         print(f"[Monte Carlo API] Current price: ${current_price:.2f}")
         print(f"[Monte Carlo API] Data points: {len(df_clean)}")
         
-        # Run Monte Carlo predictions
+        # FIX 7: Run Monte Carlo predictions with effective lookback
         is_bullish = is_monte_carlo_bullish_prediction(
             data=df_clean,
-            lookback_days=lookback_days,
+            lookback_days=effective_lookback,  # Use effective lookback
             forecast_days=forecast_days,
             num_simulations=num_simulations,
             threshold=threshold
@@ -29523,7 +29539,7 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
         
         is_bearish = is_monte_carlo_bearish_prediction(
             data=df_clean,
-            lookback_days=lookback_days,
+            lookback_days=effective_lookback,  # Use effective lookback
             forecast_days=forecast_days,
             num_simulations=num_simulations,
             threshold=threshold
@@ -29531,7 +29547,7 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
         
         # Calculate actual probabilities for display
         close_prices = df_clean['close'].values
-        recent_prices = close_prices[-lookback_days:]
+        recent_prices = close_prices[-effective_lookback:]
         log_returns = np.log(recent_prices[1:] / recent_prices[:-1])
         mu = np.mean(log_returns)
         sigma = np.std(log_returns)
@@ -29556,7 +29572,7 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
             'is_bullish': is_bullish,
             'is_bearish': is_bearish,
             'parameters': {
-                'lookback_days': lookback_days,
+                'lookback_days': effective_lookback,  # Return actual days used
                 'forecast_days': forecast_days,
                 'num_simulations': num_simulations,
                 'threshold': threshold
@@ -29583,7 +29599,6 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
             'success': False,
             'error': f'Internal server error: {str(e)}'
         }, status=500)
-
         
 # LEGODI BACKEND CODE
 def send_simple_message():
