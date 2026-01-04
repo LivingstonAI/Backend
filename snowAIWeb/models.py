@@ -1765,6 +1765,63 @@ class Position(models.Model):
         return self.pnl
 
 
+class SnowAIPersonOfInterestUniqueV1(models.Model):
+    """Model to store People of Interest data"""
+    
+    person_id = models.CharField(max_length=100, unique=True, primary_key=True)
+    name = models.CharField(max_length=255)
+    image = models.ImageField(upload_to='people_of_interest/', blank=True, null=True)
+    accomplishments = models.TextField(blank=True, null=True)
+    bio = models.TextField(blank=True, null=True)
+    works = models.TextField(blank=True, null=True)
+    youtube_urls_json = models.TextField(blank=True, null=True)  # Store as JSON string
+    estimated_iq = models.CharField(max_length=50, blank=True, null=True)
+    additional_notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'snowai_people_of_interest_v1'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.name} ({self.person_id})"
+    
+    def set_youtube_urls(self, urls_list):
+        """Convert list to JSON string for storage"""
+        self.youtube_urls_json = json.dumps(urls_list)
+    
+    def get_youtube_urls(self):
+        """Convert JSON string back to list"""
+        if self.youtube_urls_json:
+            try:
+                return json.loads(self.youtube_urls_json)
+            except json.JSONDecodeError:
+                return []
+        return []
+    
+    def to_dict(self, request=None):
+        """Convert model instance to dictionary"""
+        image_url = ''
+        if self.image:
+            if request:
+                image_url = request.build_absolute_uri(self.image.url)
+            else:
+                image_url = self.image.url
+        
+        return {
+            'id': self.person_id,
+            'name': self.name,
+            'image_url': image_url,
+            'accomplishments': self.accomplishments or '',
+            'bio': self.bio or '',
+            'works': self.works or '',
+            'youtube_urls': self.get_youtube_urls(),
+            'estimated_iq': self.estimated_iq or '',
+            'additional_notes': self.additional_notes or '',
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
 
 
 

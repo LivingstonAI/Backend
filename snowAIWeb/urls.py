@@ -460,8 +460,11 @@ urlpatterns = [
      path('api/mss-stock-sector-identifier/', views.mss_stock_sector_identifier, name='mss-stock-sector-identifier'),
      path('api/monte-carlo-prediction/', views.mss_quantum_probabilistic_monte_carlo_forecaster_api, name='monte_carlo_prediction'),
 
-     
-
+     path('snowai_poi_create_person_unique_v1/', views.snowai_poi_create_person_unique_v1, name='snowai_poi_create_person_unique_v1'),
+     path('snowai_poi_get_all_people_unique_v1/', views.snowai_poi_get_all_people_unique_v1, name='snowai_poi_get_all_people_unique_v1'),
+     path('snowai_poi_get_person_unique_v1/<str:person_id>/', views.snowai_poi_get_person_unique_v1, name='snowai_poi_get_person_unique_v1'),
+     path('snowai_poi_update_person_unique_v1/<str:person_id>/', views.snowai_poi_update_person_unique_v1, name='snowai_poi_update_person_unique_v1'),
+     path('snowai_poi_delete_person_unique_v1/<str:person_id>/', views.snowai_poi_delete_person_unique_v1, name='snowai_poi_delete_person_unique_v1'),
 
 
 
