@@ -29773,6 +29773,296 @@ def snowai_poi_delete_person_unique_v1(request, person_id):
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
     
     return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
+
+
+from scipy import stats
+
+@csrf_exempt
+def mss_quantum_retracement_fibonacci_entry_optimizer(request):
+    """
+    Calculates optimal entry points based on historical retracement patterns.
+    Analyzes past price movements to determine typical retracement depths
+    before trend continuation.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        lookback_period = data.get('lookback_period', 90)  # Days to analyze
+        retracement_sensitivity = data.get('sensitivity', 'medium')  # low, medium, high
+        
+        if not symbol:
+            return JsonResponse({'error': 'Symbol is required'}, status=400)
+        
+        # Download extended historical data
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=lookback_period + 60)
+        
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(start=start_date, end=end_date, interval='1d')
+        
+        if df.empty:
+            return JsonResponse({
+                'success': False,
+                'error': f'No data available for {symbol}'
+            })
+        
+        # Calculate trends and swings
+        df['SMA_20'] = df['Close'].rolling(window=20).mean()
+        df['SMA_50'] = df['Close'].rolling(window=50).mean()
+        
+        # Identify swing highs and lows
+        swing_highs = []
+        swing_lows = []
+        retracements_bullish = []
+        retracements_bearish = []
+        
+        # Find local peaks and troughs
+        for i in range(5, len(df) - 5):
+            # Swing high
+            if df['High'].iloc[i] == df['High'].iloc[i-5:i+6].max():
+                swing_highs.append({
+                    'index': i,
+                    'price': df['High'].iloc[i],
+                    'date': df.index[i]
+                })
+            
+            # Swing low
+            if df['Low'].iloc[i] == df['Low'].iloc[i-5:i+6].min():
+                swing_lows.append({
+                    'index': i,
+                    'price': df['Low'].iloc[i],
+                    'date': df.index[i]
+                })
+        
+        # Calculate retracements in bullish trends
+        for i in range(len(swing_lows) - 1):
+            low = swing_lows[i]
+            
+            # Find next swing high
+            next_highs = [h for h in swing_highs if h['index'] > low['index']]
+            if not next_highs:
+                continue
+            
+            high = next_highs[0]
+            
+            # Find retracement (next swing low) after the high
+            next_lows = [l for l in swing_lows if l['index'] > high['index']]
+            if not next_lows:
+                continue
+            
+            retracement_low = next_lows[0]
+            
+            # Calculate retracement percentage
+            swing_range = high['price'] - low['price']
+            retracement_depth = high['price'] - retracement_low['price']
+            
+            if swing_range > 0:
+                retracement_pct = (retracement_depth / swing_range) * 100
+                
+                # Only count if trend continued (price went higher after retracement)
+                future_highs = [h for h in swing_highs if h['index'] > retracement_low['index']]
+                if future_highs and future_highs[0]['price'] > high['price']:
+                    retracements_bullish.append({
+                        'swing_low': low['price'],
+                        'swing_high': high['price'],
+                        'retracement_low': retracement_low['price'],
+                        'retracement_pct': retracement_pct,
+                        'continuation_high': future_highs[0]['price'],
+                        'date': retracement_low['date'].strftime('%Y-%m-%d')
+                    })
+        
+        # Calculate retracements in bearish trends
+        for i in range(len(swing_highs) - 1):
+            high = swing_highs[i]
+            
+            # Find next swing low
+            next_lows = [l for l in swing_lows if l['index'] > high['index']]
+            if not next_lows:
+                continue
+            
+            low = next_lows[0]
+            
+            # Find retracement (next swing high) after the low
+            next_highs = [h for h in swing_highs if h['index'] > low['index']]
+            if not next_highs:
+                continue
+            
+            retracement_high = next_highs[0]
+            
+            # Calculate retracement percentage
+            swing_range = high['price'] - low['price']
+            retracement_depth = retracement_high['price'] - low['price']
+            
+            if swing_range > 0:
+                retracement_pct = (retracement_depth / swing_range) * 100
+                
+                # Only count if trend continued (price went lower after retracement)
+                future_lows = [l for l in swing_lows if l['index'] > retracement_high['index']]
+                if future_lows and future_lows[0]['price'] < low['price']:
+                    retracements_bearish.append({
+                        'swing_high': high['price'],
+                        'swing_low': low['price'],
+                        'retracement_high': retracement_high['price'],
+                        'retracement_pct': retracement_pct,
+                        'continuation_low': future_lows[0]['price'],
+                        'date': retracement_high['date'].strftime('%Y-%m-%d')
+                    })
+        
+        # Statistical analysis of retracements
+        bullish_pcts = [r['retracement_pct'] for r in retracements_bullish]
+        bearish_pcts = [r['retracement_pct'] for r in retracements_bearish]
+        
+        # Current market state
+        current_price = float(df['Close'].iloc[-1])
+        current_trend = 'uptrend' if df['SMA_20'].iloc[-1] > df['SMA_50'].iloc[-1] else 'downtrend'
+        
+        # Calculate optimal entry zones
+        result = {
+            'success': True,
+            'symbol': symbol,
+            'current_price': round(current_price, 2),
+            'current_trend': current_trend,
+            'analysis_period_days': lookback_period,
+            'bullish_retracements': {
+                'count': len(retracements_bullish),
+                'mean_retracement_pct': round(np.mean(bullish_pcts), 2) if bullish_pcts else 0,
+                'median_retracement_pct': round(np.median(bullish_pcts), 2) if bullish_pcts else 0,
+                'std_dev': round(np.std(bullish_pcts), 2) if bullish_pcts else 0,
+                'min': round(min(bullish_pcts), 2) if bullish_pcts else 0,
+                'max': round(max(bullish_pcts), 2) if bullish_pcts else 0,
+                'percentile_25': round(np.percentile(bullish_pcts, 25), 2) if bullish_pcts else 0,
+                'percentile_75': round(np.percentile(bullish_pcts, 75), 2) if bullish_pcts else 0,
+                'historical_patterns': retracements_bullish[-5:]  # Last 5 patterns
+            },
+            'bearish_retracements': {
+                'count': len(retracements_bearish),
+                'mean_retracement_pct': round(np.mean(bearish_pcts), 2) if bearish_pcts else 0,
+                'median_retracement_pct': round(np.median(bearish_pcts), 2) if bearish_pcts else 0,
+                'std_dev': round(np.std(bearish_pcts), 2) if bearish_pcts else 0,
+                'min': round(min(bearish_pcts), 2) if bearish_pcts else 0,
+                'max': round(max(bearish_pcts), 2) if bearish_pcts else 0,
+                'percentile_25': round(np.percentile(bearish_pcts, 25), 2) if bearish_pcts else 0,
+                'percentile_75': round(np.percentile(bearish_pcts, 75), 2) if bearish_pcts else 0,
+                'historical_patterns': retracements_bearish[-5:]  # Last 5 patterns
+            }
+        }
+        
+        # Calculate optimal entry zones based on current trend
+        if current_trend == 'uptrend' and bullish_pcts:
+            # Find recent swing low and high
+            recent_lows = [l for l in swing_lows if l['index'] >= len(df) - 30]
+            recent_highs = [h for h in swing_highs if h['index'] >= len(df) - 30]
+            
+            if recent_lows and recent_highs:
+                recent_low = min([l['price'] for l in recent_lows])
+                recent_high = max([h['price'] for h in recent_highs])
+                swing_range = recent_high - recent_low
+                
+                # Calculate entry zones
+                median_ret = result['bullish_retracements']['median_retracement_pct'] / 100
+                mean_ret = result['bullish_retracements']['mean_retracement_pct'] / 100
+                p25_ret = result['bullish_retracements']['percentile_25'] / 100
+                p75_ret = result['bullish_retracements']['percentile_75'] / 100
+                
+                result['entry_zones'] = {
+                    'aggressive_entry': round(recent_high - (swing_range * p25_ret), 2),
+                    'optimal_entry': round(recent_high - (swing_range * median_ret), 2),
+                    'conservative_entry': round(recent_high - (swing_range * p75_ret), 2),
+                    'recent_swing_low': round(recent_low, 2),
+                    'recent_swing_high': round(recent_high, 2),
+                    'invalidation_level': round(recent_low * 0.98, 2),  # 2% below swing low
+                }
+                
+                # Entry quality assessment
+                if current_price <= result['entry_zones']['aggressive_entry']:
+                    result['entry_signal'] = 'STRONG BUY - Within aggressive entry zone'
+                    result['entry_quality'] = 'excellent'
+                elif current_price <= result['entry_zones']['optimal_entry']:
+                    result['entry_signal'] = 'BUY - Within optimal entry zone'
+                    result['entry_quality'] = 'good'
+                elif current_price <= result['entry_zones']['conservative_entry']:
+                    result['entry_signal'] = 'CONSIDER BUY - Within conservative entry zone'
+                    result['entry_quality'] = 'fair'
+                else:
+                    result['entry_signal'] = 'WAIT - Price above typical retracement zones'
+                    result['entry_quality'] = 'poor'
+        
+        elif current_trend == 'downtrend' and bearish_pcts:
+            # Find recent swing high and low
+            recent_highs = [h for h in swing_highs if h['index'] >= len(df) - 30]
+            recent_lows = [l for l in swing_lows if l['index'] >= len(df) - 30]
+            
+            if recent_highs and recent_lows:
+                recent_high = max([h['price'] for h in recent_highs])
+                recent_low = min([l['price'] for l in recent_lows])
+                swing_range = recent_high - recent_low
+                
+                # Calculate entry zones for short positions
+                median_ret = result['bearish_retracements']['median_retracement_pct'] / 100
+                p25_ret = result['bearish_retracements']['percentile_25'] / 100
+                p75_ret = result['bearish_retracements']['percentile_75'] / 100
+                
+                result['entry_zones'] = {
+                    'aggressive_entry': round(recent_low + (swing_range * p25_ret), 2),
+                    'optimal_entry': round(recent_low + (swing_range * median_ret), 2),
+                    'conservative_entry': round(recent_low + (swing_range * p75_ret), 2),
+                    'recent_swing_high': round(recent_high, 2),
+                    'recent_swing_low': round(recent_low, 2),
+                    'invalidation_level': round(recent_high * 1.02, 2),  # 2% above swing high
+                }
+                
+                # Entry quality assessment
+                if current_price >= result['entry_zones']['aggressive_entry']:
+                    result['entry_signal'] = 'STRONG SELL - Within aggressive entry zone'
+                    result['entry_quality'] = 'excellent'
+                elif current_price >= result['entry_zones']['optimal_entry']:
+                    result['entry_signal'] = 'SELL - Within optimal entry zone'
+                    result['entry_quality'] = 'good'
+                elif current_price >= result['entry_zones']['conservative_entry']:
+                    result['entry_signal'] = 'CONSIDER SELL - Within conservative entry zone'
+                    result['entry_quality'] = 'fair'
+                else:
+                    result['entry_signal'] = 'WAIT - Price below typical retracement zones'
+                    result['entry_quality'] = 'poor'
+        else:
+            result['entry_zones'] = None
+            result['entry_signal'] = 'INSUFFICIENT DATA - Need more historical patterns'
+            result['entry_quality'] = 'unknown'
+        
+        # Add price chart data for visualization
+        chart_data = []
+        for i in range(len(df[-60:])):  # Last 60 days
+            chart_data.append({
+                'date': df.index[-60:][i].strftime('%Y-%m-%d'),
+                'price': round(float(df['Close'].iloc[-60:].iloc[i]), 2),
+                'sma_20': round(float(df['SMA_20'].iloc[-60:].iloc[i]), 2) if not pd.isna(df['SMA_20'].iloc[-60:].iloc[i]) else None,
+                'sma_50': round(float(df['SMA_50'].iloc[-60:].iloc[i]), 2) if not pd.isna(df['SMA_50'].iloc[-60:].iloc[i]) else None
+            })
+        
+        result['chart_data'] = chart_data
+        
+        # Add swing points for visualization
+        result['swing_highs'] = [{
+            'date': h['date'].strftime('%Y-%m-%d'),
+            'price': round(h['price'], 2)
+        } for h in swing_highs[-10:]]
+        
+        result['swing_lows'] = [{
+            'date': l['date'].strftime('%Y-%m-%d'),
+            'price': round(l['price'], 2)
+        } for l in swing_lows[-10:]]
+        
+        return JsonResponse(result)
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():

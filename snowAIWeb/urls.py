@@ -466,6 +466,10 @@ urlpatterns = [
      path('snowai_poi_update_person_unique_v1/<str:person_id>/', views.snowai_poi_update_person_unique_v1, name='snowai_poi_update_person_unique_v1'),
      path('snowai_poi_delete_person_unique_v1/<str:person_id>/', views.snowai_poi_delete_person_unique_v1, name='snowai_poi_delete_person_unique_v1'),
 
+     path('api/mss-quantum-retracement-fibonacci-entry-optimizer/', 
+         views.mss_quantum_retracement_fibonacci_entry_optimizer, 
+         name='mss_retracement_optimizer'),
+
 
 
 
