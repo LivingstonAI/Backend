@@ -29801,7 +29801,7 @@ def mss_quantum_retracement_fibonacci_entry_optimizer(request):
         start_date = end_date - timedelta(days=lookback_period + 60)
         
         ticker = yf.Ticker(symbol)
-        df = ticker.history(start=start_date, end=end_date, interval='1d')
+        df = ticker.history(start=start_date, end=end_date, interval='4h')
         
         if df.empty:
             return JsonResponse({
