@@ -29781,8 +29781,8 @@ from scipy import stats
 def mss_quantum_retracement_fibonacci_entry_optimizer(request):
     """
     Calculates optimal entry points based on historical retracement patterns.
-    Analyzes past price movements to determine typical retracement depths
-    before trend continuation.
+    Automatically detects trend duration and uses appropriate lookback period.
+    Uses 1-hour timeframe for precise entry calculations.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'POST method required'}, status=405)
@@ -29790,54 +29790,119 @@ def mss_quantum_retracement_fibonacci_entry_optimizer(request):
     try:
         data = json.loads(request.body)
         symbol = data.get('symbol')
-        lookback_period = data.get('lookback_period', 90)  # Days to analyze
-        retracement_sensitivity = data.get('sensitivity', 'medium')  # low, medium, high
         
         if not symbol:
             return JsonResponse({'error': 'Symbol is required'}, status=400)
         
-        # Download extended historical data
+        # Step 1: Detect trend duration using daily data first
+        print(f"[{symbol}] Step 1: Detecting trend duration...")
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=lookback_period + 60)
+        start_date = end_date - timedelta(days=180)  # 6 months for trend detection
         
         ticker = yf.Ticker(symbol)
-        df = ticker.history(start=start_date, end=end_date, interval='1h')
+        df_daily = ticker.history(start=start_date, end=end_date, interval='1d')
         
-        if df.empty:
+        if df_daily.empty:
             return JsonResponse({
                 'success': False,
                 'error': f'No data available for {symbol}'
             })
         
-        # Calculate trends and swings
-        df['SMA_20'] = df['Close'].rolling(window=20).mean()
-        df['SMA_50'] = df['Close'].rolling(window=50).mean()
+        # Calculate EMAs for trend detection
+        df_daily['EMA_20'] = df_daily['Close'].ewm(span=20, adjust=False).mean()
+        df_daily['EMA_50'] = df_daily['Close'].ewm(span=50, adjust=False).mean()
+        df_daily['EMA_100'] = df_daily['Close'].ewm(span=100, adjust=False).mean()
         
-        # Identify swing highs and lows
+        # Detect current trend and its duration
+        trend_start_index = None
+        current_trend = None
+        
+        # Determine current trend
+        if df_daily['EMA_20'].iloc[-1] > df_daily['EMA_50'].iloc[-1] > df_daily['EMA_100'].iloc[-1]:
+            current_trend = 'uptrend'
+            trend_condition = lambda i: (df_daily['EMA_20'].iloc[i] > df_daily['EMA_50'].iloc[i] and 
+                                        df_daily['EMA_50'].iloc[i] > df_daily['EMA_100'].iloc[i])
+        elif df_daily['EMA_20'].iloc[-1] < df_daily['EMA_50'].iloc[-1] < df_daily['EMA_100'].iloc[-1]:
+            current_trend = 'downtrend'
+            trend_condition = lambda i: (df_daily['EMA_20'].iloc[i] < df_daily['EMA_50'].iloc[i] and 
+                                        df_daily['EMA_50'].iloc[i] < df_daily['EMA_100'].iloc[i])
+        else:
+            current_trend = 'ranging'
+            trend_condition = lambda i: True
+        
+        # Find when trend started by going backwards
+        if current_trend != 'ranging':
+            for i in range(len(df_daily) - 1, 19, -1):  # Start from end, need at least 20 bars for EMAs
+                if not trend_condition(i):
+                    trend_start_index = i + 1
+                    break
+            
+            if trend_start_index is None:
+                trend_start_index = 20  # Trend is older than our data
+        else:
+            trend_start_index = len(df_daily) - 30  # Default 30 days for ranging
+        
+        # Calculate trend duration in days
+        trend_duration_days = len(df_daily) - trend_start_index
+        trend_duration_days = max(15, min(trend_duration_days, 90))  # Clamp between 15-90 days
+        
+        print(f"[{symbol}] Trend: {current_trend}, Duration: {trend_duration_days} days")
+        
+        # Step 2: Download 1-hour data based on detected trend duration
+        # Convert days to hours for 1h timeframe (roughly 6.5 trading hours per day)
+        lookback_hours = int(trend_duration_days * 6.5)
+        lookback_hours = max(100, min(lookback_hours, 730))  # Between ~15-110 days in trading hours
+        
+        print(f"[{symbol}] Step 2: Downloading {lookback_hours} hours of 1h data...")
+        
+        # yfinance limits: for 1h we can get max 730 hours (about 30 days)
+        # So we calculate days needed
+        days_needed = int(lookback_hours / 6.5) + 10  # Add buffer
+        start_date_1h = end_date - timedelta(days=days_needed)
+        
+        df = ticker.history(start=start_date_1h, end=end_date, interval='1h')
+        
+        if df.empty:
+            return JsonResponse({
+                'success': False,
+                'error': f'No 1-hour data available for {symbol}'
+            })
+        
+        print(f"[{symbol}] Downloaded {len(df)} 1-hour candles")
+        
+        # Calculate indicators on 1h data
+        df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+        df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+        df['ATR'] = calculate_atr(df, period=14)
+        
+        # Step 3: Identify swing highs and lows on 1h timeframe
+        print(f"[{symbol}] Step 3: Identifying swings...")
         swing_highs = []
         swing_lows = []
         retracements_bullish = []
         retracements_bearish = []
         
-        # Find local peaks and troughs
-        for i in range(5, len(df) - 5):
-            # Swing high
-            if df['High'].iloc[i] == df['High'].iloc[i-5:i+6].max():
+        # Find local peaks and troughs (using 5-bar pattern on 1h)
+        for i in range(10, len(df) - 10):
+            # Swing high - highest high in 10-bar window
+            if df['High'].iloc[i] == df['High'].iloc[i-10:i+11].max():
                 swing_highs.append({
                     'index': i,
                     'price': df['High'].iloc[i],
                     'date': df.index[i]
                 })
             
-            # Swing low
-            if df['Low'].iloc[i] == df['Low'].iloc[i-5:i+6].min():
+            # Swing low - lowest low in 10-bar window
+            if df['Low'].iloc[i] == df['Low'].iloc[i-10:i+11].min():
                 swing_lows.append({
                     'index': i,
                     'price': df['Low'].iloc[i],
                     'date': df.index[i]
                 })
         
-        # Calculate retracements in bullish trends
+        print(f"[{symbol}] Found {len(swing_highs)} swing highs, {len(swing_lows)} swing lows")
+        
+        # Step 4: Calculate retracements in bullish trends
         for i in range(len(swing_lows) - 1):
             low = swing_lows[i]
             
@@ -29859,22 +29924,23 @@ def mss_quantum_retracement_fibonacci_entry_optimizer(request):
             swing_range = high['price'] - low['price']
             retracement_depth = high['price'] - retracement_low['price']
             
-            if swing_range > 0:
+            if swing_range > 0 and retracement_depth > 0:
                 retracement_pct = (retracement_depth / swing_range) * 100
                 
-                # Only count if trend continued (price went higher after retracement)
-                future_highs = [h for h in swing_highs if h['index'] > retracement_low['index']]
-                if future_highs and future_highs[0]['price'] > high['price']:
-                    retracements_bullish.append({
-                        'swing_low': low['price'],
-                        'swing_high': high['price'],
-                        'retracement_low': retracement_low['price'],
-                        'retracement_pct': retracement_pct,
-                        'continuation_high': future_highs[0]['price'],
-                        'date': retracement_low['date'].strftime('%Y-%m-%d')
-                    })
+                # Only count if retracement is reasonable (10-90%)
+                if 10 <= retracement_pct <= 90:
+                    # Check if trend continued (price went higher after retracement)
+                    future_highs = [h for h in swing_highs if h['index'] > retracement_low['index'] and h['index'] < retracement_low['index'] + 50]
+                    if future_highs and any(h['price'] > high['price'] * 1.001 for h in future_highs):  # At least 0.1% higher
+                        retracements_bullish.append({
+                            'swing_low': low['price'],
+                            'swing_high': high['price'],
+                            'retracement_low': retracement_low['price'],
+                            'retracement_pct': retracement_pct,
+                            'date': retracement_low['date'].strftime('%Y-%m-%d %H:%M')
+                        })
         
-        # Calculate retracements in bearish trends
+        # Step 5: Calculate retracements in bearish trends
         for i in range(len(swing_highs) - 1):
             high = swing_highs[i]
             
@@ -29896,36 +29962,47 @@ def mss_quantum_retracement_fibonacci_entry_optimizer(request):
             swing_range = high['price'] - low['price']
             retracement_depth = retracement_high['price'] - low['price']
             
-            if swing_range > 0:
+            if swing_range > 0 and retracement_depth > 0:
                 retracement_pct = (retracement_depth / swing_range) * 100
                 
-                # Only count if trend continued (price went lower after retracement)
-                future_lows = [l for l in swing_lows if l['index'] > retracement_high['index']]
-                if future_lows and future_lows[0]['price'] < low['price']:
-                    retracements_bearish.append({
-                        'swing_high': high['price'],
-                        'swing_low': low['price'],
-                        'retracement_high': retracement_high['price'],
-                        'retracement_pct': retracement_pct,
-                        'continuation_low': future_lows[0]['price'],
-                        'date': retracement_high['date'].strftime('%Y-%m-%d')
-                    })
+                # Only count if retracement is reasonable (10-90%)
+                if 10 <= retracement_pct <= 90:
+                    # Check if trend continued (price went lower after retracement)
+                    future_lows = [l for l in swing_lows if l['index'] > retracement_high['index'] and l['index'] < retracement_high['index'] + 50]
+                    if future_lows and any(l['price'] < low['price'] * 0.999 for l in future_lows):  # At least 0.1% lower
+                        retracements_bearish.append({
+                            'swing_high': high['price'],
+                            'swing_low': low['price'],
+                            'retracement_high': retracement_high['price'],
+                            'retracement_pct': retracement_pct,
+                            'date': retracement_high['date'].strftime('%Y-%m-%d %H:%M')
+                        })
         
-        # Statistical analysis of retracements
+        print(f"[{symbol}] Found {len(retracements_bullish)} bullish patterns, {len(retracements_bearish)} bearish patterns")
+        
+        # Statistical analysis
         bullish_pcts = [r['retracement_pct'] for r in retracements_bullish]
         bearish_pcts = [r['retracement_pct'] for r in retracements_bearish]
         
         # Current market state
         current_price = float(df['Close'].iloc[-1])
-        current_trend = 'uptrend' if df['SMA_20'].iloc[-1] > df['SMA_50'].iloc[-1] else 'downtrend'
         
-        # Calculate optimal entry zones
+        # Determine current 1h trend
+        if df['EMA_20'].iloc[-1] > df['EMA_50'].iloc[-1]:
+            current_1h_trend = 'uptrend'
+        elif df['EMA_20'].iloc[-1] < df['EMA_50'].iloc[-1]:
+            current_1h_trend = 'downtrend'
+        else:
+            current_1h_trend = 'ranging'
+        
         result = {
             'success': True,
             'symbol': symbol,
             'current_price': round(current_price, 2),
-            'current_trend': current_trend,
-            'analysis_period_days': lookback_period,
+            'current_trend': current_1h_trend,
+            'trend_duration_days': trend_duration_days,
+            'analysis_period_hours': lookback_hours,
+            'timeframe': '1h',
             'bullish_retracements': {
                 'count': len(retracements_bullish),
                 'mean_retracement_pct': round(np.mean(bullish_pcts), 2) if bullish_pcts else 0,
@@ -29935,7 +30012,7 @@ def mss_quantum_retracement_fibonacci_entry_optimizer(request):
                 'max': round(max(bullish_pcts), 2) if bullish_pcts else 0,
                 'percentile_25': round(np.percentile(bullish_pcts, 25), 2) if bullish_pcts else 0,
                 'percentile_75': round(np.percentile(bullish_pcts, 75), 2) if bullish_pcts else 0,
-                'historical_patterns': retracements_bullish[-5:]  # Last 5 patterns
+                'historical_patterns': retracements_bullish[-5:]
             },
             'bearish_retracements': {
                 'count': len(retracements_bearish),
@@ -29946,123 +30023,548 @@ def mss_quantum_retracement_fibonacci_entry_optimizer(request):
                 'max': round(max(bearish_pcts), 2) if bearish_pcts else 0,
                 'percentile_25': round(np.percentile(bearish_pcts, 25), 2) if bearish_pcts else 0,
                 'percentile_75': round(np.percentile(bearish_pcts, 75), 2) if bearish_pcts else 0,
-                'historical_patterns': retracements_bearish[-5:]  # Last 5 patterns
+                'historical_patterns': retracements_bearish[-5:]
             }
         }
         
-        # Calculate optimal entry zones based on current trend
-        if current_trend == 'uptrend' and bullish_pcts:
-            # Find recent swing low and high
-            recent_lows = [l for l in swing_lows if l['index'] >= len(df) - 30]
-            recent_highs = [h for h in swing_highs if h['index'] >= len(df) - 30]
+        # Step 6: Calculate optimal entry zones based on ACTUAL current trend
+        print(f"[{symbol}] Step 6: Calculating entry zones for {current_1h_trend}...")
+        
+        if current_1h_trend == 'uptrend' and len(bullish_pcts) >= 3:
+            # Find recent swing low and high for UPTREND
+            recent_lows = [l for l in swing_lows if l['index'] >= len(df) - 100]  # Last ~100 hours
+            recent_highs = [h for h in swing_highs if h['index'] >= len(df) - 100]
             
             if recent_lows and recent_highs:
                 recent_low = min([l['price'] for l in recent_lows])
                 recent_high = max([h['price'] for h in recent_highs])
                 swing_range = recent_high - recent_low
                 
-                # Calculate entry zones
+                # Use bullish retracement statistics
                 median_ret = result['bullish_retracements']['median_retracement_pct'] / 100
-                mean_ret = result['bullish_retracements']['mean_retracement_pct'] / 100
                 p25_ret = result['bullish_retracements']['percentile_25'] / 100
                 p75_ret = result['bullish_retracements']['percentile_75'] / 100
                 
+                # Calculate BUY entry zones (price should retrace DOWN from high)
                 result['entry_zones'] = {
                     'aggressive_entry': round(recent_high - (swing_range * p25_ret), 2),
                     'optimal_entry': round(recent_high - (swing_range * median_ret), 2),
                     'conservative_entry': round(recent_high - (swing_range * p75_ret), 2),
                     'recent_swing_low': round(recent_low, 2),
                     'recent_swing_high': round(recent_high, 2),
-                    'invalidation_level': round(recent_low * 0.98, 2),  # 2% below swing low
+                    'invalidation_level': round(recent_low * 0.98, 2),
                 }
                 
-                # Entry quality assessment
+                print(f"[{symbol}] UPTREND - Current: ${current_price}, Aggressive: ${result['entry_zones']['aggressive_entry']}, Optimal: ${result['entry_zones']['optimal_entry']}")
+                
+                # FIXED: Entry quality for UPTREND (looking for price to come DOWN to entry zones)
                 if current_price <= result['entry_zones']['aggressive_entry']:
-                    result['entry_signal'] = 'STRONG BUY - Within aggressive entry zone'
+                    result['entry_signal'] = f'STRONG BUY - Price has retraced to aggressive zone (${result["entry_zones"]["aggressive_entry"]})'
                     result['entry_quality'] = 'excellent'
                 elif current_price <= result['entry_zones']['optimal_entry']:
-                    result['entry_signal'] = 'BUY - Within optimal entry zone'
+                    result['entry_signal'] = f'BUY - Price in optimal entry zone (${result["entry_zones"]["optimal_entry"]})'
                     result['entry_quality'] = 'good'
                 elif current_price <= result['entry_zones']['conservative_entry']:
-                    result['entry_signal'] = 'CONSIDER BUY - Within conservative entry zone'
+                    result['entry_signal'] = f'CONSIDER BUY - Price in conservative zone (${result["entry_zones"]["conservative_entry"]})'
                     result['entry_quality'] = 'fair'
                 else:
-                    result['entry_signal'] = 'WAIT - Price above typical retracement zones'
+                    result['entry_signal'] = f'WAIT FOR PULLBACK - Price ${current_price} above entry zones. Wait for retracement.'
                     result['entry_quality'] = 'poor'
         
-        elif current_trend == 'downtrend' and bearish_pcts:
-            # Find recent swing high and low
-            recent_highs = [h for h in swing_highs if h['index'] >= len(df) - 30]
-            recent_lows = [l for l in swing_lows if l['index'] >= len(df) - 30]
+        elif current_1h_trend == 'downtrend' and len(bearish_pcts) >= 3:
+            # Find recent swing high and low for DOWNTREND
+            recent_highs = [h for h in swing_highs if h['index'] >= len(df) - 100]
+            recent_lows = [l for l in swing_lows if l['index'] >= len(df) - 100]
             
             if recent_highs and recent_lows:
                 recent_high = max([h['price'] for h in recent_highs])
                 recent_low = min([l['price'] for l in recent_lows])
                 swing_range = recent_high - recent_low
                 
-                # Calculate entry zones for short positions
+                # Use bearish retracement statistics
                 median_ret = result['bearish_retracements']['median_retracement_pct'] / 100
                 p25_ret = result['bearish_retracements']['percentile_25'] / 100
                 p75_ret = result['bearish_retracements']['percentile_75'] / 100
                 
+                # Calculate SELL entry zones (price should retrace UP from low)
                 result['entry_zones'] = {
                     'aggressive_entry': round(recent_low + (swing_range * p25_ret), 2),
                     'optimal_entry': round(recent_low + (swing_range * median_ret), 2),
                     'conservative_entry': round(recent_low + (swing_range * p75_ret), 2),
                     'recent_swing_high': round(recent_high, 2),
                     'recent_swing_low': round(recent_low, 2),
-                    'invalidation_level': round(recent_high * 1.02, 2),  # 2% above swing high
+                    'invalidation_level': round(recent_high * 1.02, 2),
                 }
                 
-                # Entry quality assessment
+                print(f"[{symbol}] DOWNTREND - Current: ${current_price}, Aggressive: ${result['entry_zones']['aggressive_entry']}, Optimal: ${result['entry_zones']['optimal_entry']}")
+                
+                # FIXED: Entry quality for DOWNTREND (looking for price to come UP to entry zones)
                 if current_price >= result['entry_zones']['aggressive_entry']:
-                    result['entry_signal'] = 'STRONG SELL - Within aggressive entry zone'
+                    result['entry_signal'] = f'STRONG SELL - Price has retraced to aggressive zone (${result["entry_zones"]["aggressive_entry"]})'
                     result['entry_quality'] = 'excellent'
                 elif current_price >= result['entry_zones']['optimal_entry']:
-                    result['entry_signal'] = 'SELL - Within optimal entry zone'
+                    result['entry_signal'] = f'SELL - Price in optimal entry zone (${result["entry_zones"]["optimal_entry"]})'
                     result['entry_quality'] = 'good'
                 elif current_price >= result['entry_zones']['conservative_entry']:
-                    result['entry_signal'] = 'CONSIDER SELL - Within conservative entry zone'
+                    result['entry_signal'] = f'CONSIDER SELL - Price in conservative zone (${result["entry_zones"]["conservative_entry"]})'
                     result['entry_quality'] = 'fair'
                 else:
-                    result['entry_signal'] = 'WAIT - Price below typical retracement zones'
+                    result['entry_signal'] = f'WAIT FOR BOUNCE - Price ${current_price} below entry zones. Wait for retracement up.'
                     result['entry_quality'] = 'poor'
         else:
+            min_patterns = 3
             result['entry_zones'] = None
-            result['entry_signal'] = 'INSUFFICIENT DATA - Need more historical patterns'
+            if current_1h_trend == 'uptrend':
+                result['entry_signal'] = f'INSUFFICIENT DATA - Need at least {min_patterns} bullish patterns (found {len(bullish_pcts)})'
+            elif current_1h_trend == 'downtrend':
+                result['entry_signal'] = f'INSUFFICIENT DATA - Need at least {min_patterns} bearish patterns (found {len(bearish_pcts)})'
+            else:
+                result['entry_signal'] = 'NO CLEAR TREND - Market is ranging'
             result['entry_quality'] = 'unknown'
         
-        # Add price chart data for visualization
+        # Add recent price action for chart
         chart_data = []
-        for i in range(len(df[-60:])):  # Last 60 days
+        chart_start = max(0, len(df) - 200)  # Last 200 hours
+        for i in range(chart_start, len(df)):
             chart_data.append({
-                'date': df.index[-60:][i].strftime('%Y-%m-%d'),
-                'price': round(float(df['Close'].iloc[-60:].iloc[i]), 2),
-                'sma_20': round(float(df['SMA_20'].iloc[-60:].iloc[i]), 2) if not pd.isna(df['SMA_20'].iloc[-60:].iloc[i]) else None,
-                'sma_50': round(float(df['SMA_50'].iloc[-60:].iloc[i]), 2) if not pd.isna(df['SMA_50'].iloc[-60:].iloc[i]) else None
+                'date': df.index[i].strftime('%Y-%m-%d %H:%M'),
+                'price': round(float(df['Close'].iloc[i]), 2),
+                'ema_20': round(float(df['EMA_20'].iloc[i]), 2) if not pd.isna(df['EMA_20'].iloc[i]) else None,
+                'ema_50': round(float(df['EMA_50'].iloc[i]), 2) if not pd.isna(df['EMA_50'].iloc[i]) else None
             })
         
         result['chart_data'] = chart_data
         
-        # Add swing points for visualization
+        # Add swing points
         result['swing_highs'] = [{
-            'date': h['date'].strftime('%Y-%m-%d'),
+            'date': h['date'].strftime('%Y-%m-%d %H:%M'),
             'price': round(h['price'], 2)
-        } for h in swing_highs[-10:]]
+        } for h in swing_highs[-20:]]
         
         result['swing_lows'] = [{
-            'date': l['date'].strftime('%Y-%m-%d'),
+            'date': l['date'].strftime('%Y-%m-%d %H:%M'),
             'price': round(l['price'], 2)
-        } for l in swing_lows[-10:]]
+        } for l in swing_lows[-20:]]
         
+        print(f"[{symbol}] ✅ Analysis complete!")
         return JsonResponse(result)
         
     except Exception as e:
+        import traceback
+        print(f"Error: {str(e)}")
+        print(traceback.format_exc())
         return JsonResponse({
             'success': False,
             'error': str(e)
         }, status=500)
 
+
+def calculate_atr(df, period=14):
+    """Calculate Average True Range"""
+    high_low = df['High'] - df['Low']
+    high_close = np.abs(df['High'] - df['Close'].shift())
+    low_close = np.abs(df['Low'] - df['Close'].shift())
+    
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = np.max(ranges, axis=1)
+    
+    return true_range.rolling(period).mean()
+
+
+def average_retracement(
+    data: Union[pd.DataFrame, np.ndarray],
+    min_patterns: int = 3,
+    sensitivity: str = 'medium',
+    max_lookback: int = 500  # Maximum bars to analyze
+) -> bool:
+    """
+    Checks if the current price is within the average retracement zone based on 
+    historical retracement patterns. Automatically detects the LATEST trend period
+    and only analyzes that period for efficiency.
+    
+    Optimized for large datasets by:
+    1. Detecting when the current trend started
+    2. Only analyzing data from that point forward
+    3. Capping maximum lookback to prevent performance issues
+    
+    Works for both uptrends and downtrends:
+    - In uptrend: Returns True when price has retraced DOWN to typical retracement levels
+    - In downtrend: Returns True when price has retraced UP to typical retracement levels
+    
+    Args:
+        data: DataFrame with OHLC data or numpy array of close prices
+        min_patterns: Minimum historical patterns required for valid signal (default 3)
+        sensitivity: 'aggressive', 'medium', or 'conservative' (default 'medium')
+        max_lookback: Maximum bars to look back (default 500)
+    
+    Returns:
+        bool: True if price is in average retracement zone, False otherwise
+    """
+    try:
+        # Extract OHLC data
+        if isinstance(data, pd.DataFrame):
+            if not all(col in data.columns for col in ['Open', 'High', 'Low', 'Close']):
+                print("[Average Retracement] Error: DataFrame missing OHLC columns")
+                return False
+            df = data.copy()
+        else:
+            print("[Average Retracement] Error: Requires DataFrame with OHLC data")
+            return False
+        
+        total_bars = len(df)
+        
+        if total_bars < 100:
+            print(f"[Average Retracement] Error: Insufficient data. Got {total_bars} bars, need at least 100")
+            return False
+        
+        # Step 1: Work with most recent data only (for large datasets)
+        # Use last max_lookback bars or entire dataset if smaller
+        analysis_length = min(max_lookback, total_bars)
+        df_recent = df.iloc[-analysis_length:].copy()
+        
+        print(f"[Average Retracement] Dataset size: {total_bars} bars, Analyzing last: {len(df_recent)} bars")
+        
+        # Step 2: Calculate EMAs to detect trend
+        df_recent['EMA_20'] = df_recent['Close'].ewm(span=20, adjust=False).mean()
+        df_recent['EMA_50'] = df_recent['Close'].ewm(span=50, adjust=False).mean()
+        df_recent['EMA_100'] = df_recent['Close'].ewm(span=100, adjust=False).mean()
+        
+        # Determine current trend
+        current_trend = None
+        if df_recent['EMA_20'].iloc[-1] > df_recent['EMA_50'].iloc[-1] > df_recent['EMA_100'].iloc[-1]:
+            current_trend = 'uptrend'
+            trend_condition = lambda i: (df_recent['EMA_20'].iloc[i] > df_recent['EMA_50'].iloc[i] and 
+                                        df_recent['EMA_50'].iloc[i] > df_recent['EMA_100'].iloc[i])
+        elif df_recent['EMA_20'].iloc[-1] < df_recent['EMA_50'].iloc[-1] < df_recent['EMA_100'].iloc[-1]:
+            current_trend = 'downtrend'
+            trend_condition = lambda i: (df_recent['EMA_20'].iloc[i] < df_recent['EMA_50'].iloc[i] and 
+                                        df_recent['EMA_50'].iloc[i] < df_recent['EMA_100'].iloc[i])
+        else:
+            print("[Average Retracement] No clear trend detected")
+            return False
+        
+        # Step 3: Find when CURRENT trend started by going backwards
+        trend_start_index = None
+        
+        # Need at least 100 bars for reliable EMAs
+        for i in range(len(df_recent) - 1, 99, -1):
+            if not trend_condition(i):
+                trend_start_index = i + 1
+                break
+        
+        # If trend is older than our lookback window, use the start of our data
+        if trend_start_index is None:
+            trend_start_index = 100
+        
+        # Extract only the trending period
+        df_trend = df_recent.iloc[trend_start_index:].copy()
+        trend_duration = len(df_trend)
+        
+        print(f"[Average Retracement] Trend: {current_trend}, Duration: {trend_duration} bars (started at index {trend_start_index})")
+        
+        if trend_duration < 50:
+            print(f"[Average Retracement] Error: Trend too short. Duration: {trend_duration} bars, need at least 50")
+            return False
+        
+        # Step 4: Find swing points ONLY within the trending period
+        swing_highs = []
+        swing_lows = []
+        
+        lookback_window = min(10, trend_duration // 10)  # Adaptive window based on trend duration
+        
+        for i in range(lookback_window, len(df_trend) - lookback_window):
+            # Swing high
+            window_high = df_trend['High'].iloc[i-lookback_window:i+lookback_window+1].max()
+            if df_trend['High'].iloc[i] == window_high:
+                swing_highs.append({
+                    'index': i,
+                    'price': df_trend['High'].iloc[i]
+                })
+            
+            # Swing low
+            window_low = df_trend['Low'].iloc[i-lookback_window:i+lookback_window+1].min()
+            if df_trend['Low'].iloc[i] == window_low:
+                swing_lows.append({
+                    'index': i,
+                    'price': df_trend['Low'].iloc[i]
+                })
+        
+        if len(swing_highs) < 3 or len(swing_lows) < 3:
+            print(f"[Average Retracement] Error: Insufficient swing points in trend period. Highs: {len(swing_highs)}, Lows: {len(swing_lows)}")
+            return False
+        
+        print(f"[Average Retracement] Found {len(swing_highs)} swing highs, {len(swing_lows)} swing lows in trend period")
+        
+        # Step 5: Calculate historical retracements ONLY within this trend
+        retracement_percentages = []
+        
+        if current_trend == 'uptrend':
+            # Find bullish retracements
+            for i in range(len(swing_lows) - 1):
+                low = swing_lows[i]
+                
+                # Find next swing high
+                next_highs = [h for h in swing_highs if h['index'] > low['index']]
+                if not next_highs:
+                    continue
+                high = next_highs[0]
+                
+                # Find retracement (next swing low) after the high
+                next_lows = [l for l in swing_lows if l['index'] > high['index']]
+                if not next_lows:
+                    continue
+                retracement_low = next_lows[0]
+                
+                # Calculate retracement percentage
+                swing_range = high['price'] - low['price']
+                retracement_depth = high['price'] - retracement_low['price']
+                
+                if swing_range > 0 and retracement_depth > 0:
+                    retracement_pct = (retracement_depth / swing_range) * 100
+                    
+                    # Only count reasonable retracements (10-90%)
+                    if 10 <= retracement_pct <= 90:
+                        # Verify trend continued after retracement
+                        future_highs = [h for h in swing_highs if h['index'] > retracement_low['index'] and h['index'] < retracement_low['index'] + 50]
+                        if future_highs and any(h['price'] > high['price'] * 1.001 for h in future_highs):
+                            retracement_percentages.append(retracement_pct)
+        
+        else:  # downtrend
+            # Find bearish retracements
+            for i in range(len(swing_highs) - 1):
+                high = swing_highs[i]
+                
+                # Find next swing low
+                next_lows = [l for l in swing_lows if l['index'] > high['index']]
+                if not next_lows:
+                    continue
+                low = next_lows[0]
+                
+                # Find retracement (next swing high) after the low
+                next_highs = [h for h in swing_highs if h['index'] > low['index']]
+                if not next_highs:
+                    continue
+                retracement_high = next_highs[0]
+                
+                # Calculate retracement percentage
+                swing_range = high['price'] - low['price']
+                retracement_depth = retracement_high['price'] - low['price']
+                
+                if swing_range > 0 and retracement_depth > 0:
+                    retracement_pct = (retracement_depth / swing_range) * 100
+                    
+                    # Only count reasonable retracements (10-90%)
+                    if 10 <= retracement_pct <= 90:
+                        # Verify trend continued after retracement
+                        future_lows = [l for l in swing_lows if l['index'] > retracement_high['index'] and l['index'] < retracement_high['index'] + 50]
+                        if future_lows and any(l['price'] < low['price'] * 0.999 for l in future_lows):
+                            retracement_percentages.append(retracement_pct)
+        
+        # Check if we have enough historical patterns
+        if len(retracement_percentages) < min_patterns:
+            print(f"[Average Retracement] Error: Insufficient patterns in trend. Found {len(retracement_percentages)}, need {min_patterns}")
+            return False
+        
+        print(f"[Average Retracement] Found {len(retracement_percentages)} valid retracement patterns")
+        
+        # Step 6: Calculate statistical thresholds
+        median_retracement = np.median(retracement_percentages)
+        percentile_25 = np.percentile(retracement_percentages, 25)
+        percentile_75 = np.percentile(retracement_percentages, 75)
+        
+        # Set thresholds based on sensitivity
+        if sensitivity == 'aggressive':
+            lower_threshold = percentile_25 - 5
+            upper_threshold = percentile_25 + 10
+        elif sensitivity == 'conservative':
+            lower_threshold = percentile_75 - 10
+            upper_threshold = percentile_75 + 5
+        else:  # medium
+            lower_threshold = median_retracement - 10
+            upper_threshold = median_retracement + 10
+        
+        # Ensure thresholds are reasonable
+        lower_threshold = max(10, lower_threshold)
+        upper_threshold = min(90, upper_threshold)
+        
+        print(f"[Average Retracement] Statistics - Median: {median_retracement:.1f}%, P25: {percentile_25:.1f}%, P75: {percentile_75:.1f}%")
+        print(f"[Average Retracement] Thresholds ({sensitivity}) - Lower: {lower_threshold:.1f}%, Upper: {upper_threshold:.1f}%")
+        
+        # Step 7: Find recent swing points within trend and calculate current retracement
+        recent_window = min(50, trend_duration // 3)  # Last portion of trend
+        
+        if current_trend == 'uptrend':
+            # Find recent low and high
+            recent_lows = [l for l in swing_lows if l['index'] >= len(df_trend) - recent_window]
+            recent_highs = [h for h in swing_highs if h['index'] >= len(df_trend) - recent_window]
+            
+            if not recent_lows or not recent_highs:
+                print("[Average Retracement] Error: No recent swing points found in trend")
+                return False
+            
+            recent_low = min([l['price'] for l in recent_lows])
+            recent_high = max([h['price'] for h in recent_highs])
+            current_price = df_trend['Close'].iloc[-1]
+            
+            # Calculate current retracement from recent high
+            swing_range = recent_high - recent_low
+            if swing_range <= 0:
+                print("[Average Retracement] Error: Invalid swing range")
+                return False
+            
+            current_retracement = ((recent_high - current_price) / swing_range) * 100
+            
+            # Check if current retracement is within average zone
+            in_zone = lower_threshold <= current_retracement <= upper_threshold
+            
+            print(f"[Average Retracement] UPTREND - Current: {current_retracement:.1f}%, Target Range: {lower_threshold:.1f}%-{upper_threshold:.1f}%, In Zone: {in_zone}")
+            print(f"[Average Retracement] Price: ${current_price:.2f}, Recent High: ${recent_high:.2f}, Recent Low: ${recent_low:.2f}")
+            
+            return in_zone
+        
+        else:  # downtrend
+            # Find recent high and low
+            recent_highs = [h for h in swing_highs if h['index'] >= len(df_trend) - recent_window]
+            recent_lows = [l for l in swing_lows if l['index'] >= len(df_trend) - recent_window]
+            
+            if not recent_highs or not recent_lows:
+                print("[Average Retracement] Error: No recent swing points found in trend")
+                return False
+            
+            recent_high = max([h['price'] for h in recent_highs])
+            recent_low = min([l['price'] for l in recent_lows])
+            current_price = df_trend['Close'].iloc[-1]
+            
+            # Calculate current retracement from recent low
+            swing_range = recent_high - recent_low
+            if swing_range <= 0:
+                print("[Average Retracement] Error: Invalid swing range")
+                return False
+            
+            current_retracement = ((current_price - recent_low) / swing_range) * 100
+            
+            # Check if current retracement is within average zone
+            in_zone = lower_threshold <= current_retracement <= upper_threshold
+            
+            print(f"[Average Retracement] DOWNTREND - Current: {current_retracement:.1f}%, Target Range: {lower_threshold:.1f}%-{upper_threshold:.1f}%, In Zone: {in_zone}")
+            print(f"[Average Retracement] Price: ${current_price:.2f}, Recent Low: ${recent_low:.2f}, Recent High: ${recent_high:.2f}")
+            
+            return in_zone
+    
+    except Exception as e:
+        print(f"[Average Retracement] Error: Unexpected exception - {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def get_retracement_stats(
+    data: Union[pd.DataFrame, np.ndarray]
+) -> dict:
+    """
+    Returns detailed statistics about retracement patterns for debugging/analysis.
+    
+    Args:
+        data: DataFrame with OHLC data
+    
+    Returns:
+        dict: Statistics including trend, average retracement %, and current position
+    """
+    try:
+        if isinstance(data, pd.DataFrame):
+            if not all(col in data.columns for col in ['Open', 'High', 'Low', 'Close']):
+                return {'error': 'DataFrame missing OHLC columns'}
+            df = data.copy()
+        else:
+            return {'error': 'Requires DataFrame with OHLC data'}
+        
+        if len(df) < 100:
+            return {'error': f'Insufficient data. Got {len(df)} bars'}
+        
+        # Detect trend
+        df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+        df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+        df['EMA_100'] = df['Close'].ewm(span=100, adjust=False).mean()
+        
+        if df['EMA_20'].iloc[-1] > df['EMA_50'].iloc[-1] > df['EMA_100'].iloc[-1]:
+            trend = 'uptrend'
+        elif df['EMA_20'].iloc[-1] < df['EMA_50'].iloc[-1] < df['EMA_100'].iloc[-1]:
+            trend = 'downtrend'
+        else:
+            trend = 'ranging'
+        
+        # Find swing points (simplified for stats)
+        swing_highs = []
+        swing_lows = []
+        
+        for i in range(10, len(df) - 10):
+            if df['High'].iloc[i] == df['High'].iloc[i-10:i+11].max():
+                swing_highs.append({'index': i, 'price': df['High'].iloc[i]})
+            if df['Low'].iloc[i] == df['Low'].iloc[i-10:i+11].min():
+                swing_lows.append({'index': i, 'price': df['Low'].iloc[i]})
+        
+        # Calculate retracements
+        retracements = []
+        
+        if trend == 'uptrend' and len(swing_lows) > 0 and len(swing_highs) > 0:
+            for i in range(len(swing_lows) - 1):
+                low = swing_lows[i]
+                next_highs = [h for h in swing_highs if h['index'] > low['index']]
+                if not next_highs:
+                    continue
+                high = next_highs[0]
+                next_lows = [l for l in swing_lows if l['index'] > high['index']]
+                if not next_lows:
+                    continue
+                ret_low = next_lows[0]
+                
+                swing_range = high['price'] - low['price']
+                ret_depth = high['price'] - ret_low['price']
+                if swing_range > 0:
+                    ret_pct = (ret_depth / swing_range) * 100
+                    if 10 <= ret_pct <= 90:
+                        retracements.append(ret_pct)
+        
+        elif trend == 'downtrend' and len(swing_highs) > 0 and len(swing_lows) > 0:
+            for i in range(len(swing_highs) - 1):
+                high = swing_highs[i]
+                next_lows = [l for l in swing_lows if l['index'] > high['index']]
+                if not next_lows:
+                    continue
+                low = next_lows[0]
+                next_highs = [h for h in swing_highs if h['index'] > low['index']]
+                if not next_highs:
+                    continue
+                ret_high = next_highs[0]
+                
+                swing_range = high['price'] - low['price']
+                ret_depth = ret_high['price'] - low['price']
+                if swing_range > 0:
+                    ret_pct = (ret_depth / swing_range) * 100
+                    if 10 <= ret_pct <= 90:
+                        retracements.append(ret_pct)
+        
+        if len(retracements) == 0:
+            return {
+                'trend': trend,
+                'error': 'No valid retracement patterns found'
+            }
+        
+        return {
+            'trend': trend,
+            'pattern_count': len(retracements),
+            'mean_retracement': round(np.mean(retracements), 2),
+            'median_retracement': round(np.median(retracements), 2),
+            'min_retracement': round(np.min(retracements), 2),
+            'max_retracement': round(np.max(retracements), 2),
+            'percentile_25': round(np.percentile(retracements, 25), 2),
+            'percentile_75': round(np.percentile(retracements, 75), 2),
+            'current_price': round(df['Close'].iloc[-1], 2)
+        }
+    
+    except Exception as e:
+        return {'error': f'{type(e).__name__}: {str(e)}'}
+        
         
 # LEGODI BACKEND CODE
 def send_simple_message():
