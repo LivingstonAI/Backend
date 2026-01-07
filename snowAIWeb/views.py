@@ -6476,6 +6476,7 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
             'arctic_delta_short': arctic_delta_short,
             'permafrost_theta_buy': permafrost_theta_buy,
             'permafrost_theta_short': permafrost_theta_short,
+            'average_retracement': average_retracement
         }
     
         exec(model_code, namespace)
@@ -27986,7 +27987,8 @@ def prepare_namespace(model, dataset):
         'permafrost_theta_buy': permafrost_theta_buy,
         'permafrost_theta_short': permafrost_theta_short,
         'is_bullish_market_retracement': is_bullish_market_retracement,
-        'is_bearish_market_retracement': is_bearish_market_retracement    
+        'is_bearish_market_retracement': is_bearish_market_retracement,
+        'average_retracement': average_retracement
     }
     
     return namespace
@@ -28546,7 +28548,7 @@ def get_trend_info(data, lookback_days=30):
         }
     except Exception as e:
         return {'error': str(e)}
-        
+
 
 # Your stock universe
 STOCK_UNIVERSE = [
