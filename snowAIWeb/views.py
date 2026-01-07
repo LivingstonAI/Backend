@@ -26216,4 +26216,4715 @@ def calculate_model_inputs(
     """
     try:
         if len(data) < 20:
+            return [0.0] * 7
         
+        current_price = data[-1]['close']
+        
+        # ================================================================
+        # RAW FEATURE EXTRACTORS
+        # ================================================================
+        
+        def get_price_percentile(lookback):
+            """Where is current price in recent range? (0-1)"""
+            recent = data[-lookback:]
+            prices = [d['close'] for d in recent]
+            min_p, max_p = min(prices), max(prices)
+            if max_p == min_p:
+                return 0.5
+            return (current_price - min_p) / (max_p - min_p)
+        
+        def get_momentum(lookback):
+            """Rate of change over period"""
+            if len(data) < lookback + 1:
+                return 0.0
+            old_price = data[-lookback]['close']
+            if old_price == 0:
+                return 0.0
+            return (current_price - old_price) / old_price
+        
+        def get_volatility_normalized(period):
+            """Volatility as % of price"""
+            vol = calculate_volatility(data, period)
+            return vol / current_price if current_price != 0 else 0
+        
+        def get_trend_alignment():
+            """Are short/medium/long trends aligned?"""
+            if len(data) < 50:
+                return 0.0
+            
+            avg_5 = sum(d['close'] for d in data[-5:]) / 5
+            avg_20 = sum(d['close'] for d in data[-20:]) / 20
+            avg_50 = sum(d['close'] for d in data[-50:]) / 50
+            
+            # All aligned up = 1.0, all aligned down = -1.0, mixed = 0.0
+            if avg_5 > avg_20 > avg_50:
+                return 1.0
+            elif avg_5 < avg_20 < avg_50:
+                return -1.0
+            else:
+                return 0.0
+        
+        def get_acceleration():
+            """Is momentum accelerating or decelerating?"""
+            if len(data) < 10:
+                return 0.0
+            
+            mom_recent = get_momentum(3)
+            mom_older = get_momentum(6)
+            
+            # Positive = accelerating, negative = decelerating
+            return mom_recent - mom_older
+        
+        def get_range_position():
+            """Where in recent high-low range?"""
+            if len(data) < 20:
+                return 0.5
+            
+            recent = data[-20:]
+            high = max(d['high'] for d in recent)
+            low = min(d['low'] for d in recent)
+            
+            if high == low:
+                return 0.5
+            
+            return (current_price - low) / (high - low)
+        
+        def get_body_ratio():
+            """Candle body size vs full range (strength of move)"""
+            last = data[-1]
+            body = abs(last['close'] - last['open'])
+            full_range = last['high'] - last['low']
+            
+            if full_range == 0:
+                return 0.5
+            
+            return body / full_range
+        
+        def get_higher_high_lower_low():
+            """Market structure: HH/HL (uptrend) or LH/LL (downtrend)"""
+            if len(data) < 10:
+                return 0.0
+            
+            recent_highs = [d['high'] for d in data[-10:]]
+            recent_lows = [d['low'] for d in data[-10:]]
+            
+            # Compare recent highs/lows to older ones
+            newer_high = max(recent_highs[-5:])
+            older_high = max(recent_highs[:5])
+            newer_low = min(recent_lows[-5:])
+            older_low = min(recent_lows[:5])
+            
+            if newer_high > older_high and newer_low > older_low:
+                return 1.0  # Higher highs and higher lows (uptrend)
+            elif newer_high < older_high and newer_low < older_low:
+                return -1.0  # Lower highs and lower lows (downtrend)
+            else:
+                return 0.0  # Mixed/ranging
+        
+        def get_volume_surge():
+            """Would detect volume spikes if volume data available"""
+            # Most CSV data doesn't have volume
+            return 0.0
+        
+        def get_distance_from_extremes():
+            """How far from recent high/low?"""
+            if len(data) < 20:
+                return 0.0
+            
+            recent = data[-20:]
+            high = max(d['high'] for d in recent)
+            low = min(d['low'] for d in recent)
+            
+            dist_from_high = (high - current_price) / current_price if current_price != 0 else 0
+            dist_from_low = (current_price - low) / current_price if current_price != 0 else 0
+            
+            # Net signal: negative = near high, positive = near low
+            return dist_from_low - dist_from_high
+        
+        # ================================================================
+        # AGENT-SPECIFIC FEATURE COMBINATIONS
+        # Each agent gets 7 COMPLETELY DIFFERENT features!
+        # ================================================================
+        
+        if state_features == 'standard':
+            # SNOW-ALPHA: Balanced - mix of everything
+            return [
+                get_price_percentile(20),
+                get_momentum(10),
+                get_volatility_normalized(10),
+                get_trend_alignment(),
+                float(position_size),
+                float(np.clip(unrealized_pnl * 10, -1, 1)),
+                get_acceleration()
+            ]
+        
+        elif state_features == 'short-term':
+            # ICE-BETA: Scalper - ultra-short-term signals
+            return [
+                get_price_percentile(3),           # Micro range
+                get_momentum(2),                   # 2-candle momentum
+                get_body_ratio(),                  # Candle strength
+                get_acceleration(),                # Momentum acceleration
+                float(position_size),
+                float(np.clip(unrealized_pnl * 20, -1, 1)),  # Hypersensitive to P&L
+                get_volatility_normalized(5)       # Very short vol
+            ]
+        
+        elif state_features == 'long-term':
+            # FROST-GAMMA: Trend follower - slow signals
+            return [
+                get_price_percentile(50),          # Long-term range
+                get_momentum(20),                  # Slow momentum
+                get_trend_alignment(),             # Trend confirmation
+                get_higher_high_lower_low(),       # Market structure
+                float(position_size),
+                float(np.clip(unrealized_pnl * 5, -1, 1)),  # Patient with P&L
+                get_volatility_normalized(20)      # Long-term vol
+            ]
+        
+        elif state_features == 'momentum':
+            # GLACIER-X, BLIZZARD-OMEGA: Momentum traders
+            return [
+                get_momentum(5),                   # Fast momentum
+                get_momentum(10),                  # Medium momentum
+                get_acceleration(),                # Momentum change
+                get_trend_alignment(),             # Trend strength
+                float(position_size),
+                float(np.clip(unrealized_pnl * 10, -1, 1)),
+                get_higher_high_lower_low()        # Momentum structure
+            ]
+        
+        elif state_features == 'mean-reversion':
+            # TUNDRA-SIGMA: Mean reversion
+            return [
+                get_range_position(),              # Where in range?
+                get_distance_from_extremes(),      # Near high/low?
+                -get_momentum(10),                 # INVERTED momentum
+                -get_acceleration(),               # INVERTED acceleration
+                float(position_size),
+                float(np.clip(unrealized_pnl * 10, -1, 1)),
+                get_volatility_normalized(15)      # Look for volatility compression
+            ]
+        
+        elif state_features == 'volatility':
+            # AVALANCHE-Z, ARCTIC-DELTA: Volatility hunters
+            return [
+                get_volatility_normalized(5),      # Short-term vol
+                get_volatility_normalized(10),     # Medium-term vol
+                get_volatility_normalized(20),     # Long-term vol (for comparison)
+                get_body_ratio(),                  # Strong candles
+                float(position_size),
+                float(np.clip(unrealized_pnl * 15, -1, 1)),
+                get_acceleration()                 # Explosive moves
+            ]
+        
+        elif state_features == 'contrarian':
+            # PERMAFROST-THETA: Contrarian
+            return [
+                1.0 - get_range_position(),        # INVERTED range position
+                -get_momentum(10),                 # INVERTED momentum
+                -get_trend_alignment(),            # INVERTED trend
+                get_distance_from_extremes(),      # Look for extremes
+                float(position_size),
+                float(np.clip(unrealized_pnl * 10, -1, 1)),
+                -get_acceleration()                # INVERTED acceleration
+            ]
+        
+        elif state_features == 'risk-aware':
+            # POLAR-PRIME: Conservative
+            return [
+                get_price_percentile(50),          # Long-term position
+                get_momentum(30),                  # Very slow momentum
+                get_trend_alignment(),             # Only trade with clear trend
+                get_volatility_normalized(20) * 0.5,  # Dampened volatility
+                float(position_size),
+                float(np.clip(unrealized_pnl * 3, -1, 1)),  # Very patient
+                get_higher_high_lower_low()        # Structural confirmation
+            ]
+        
+        else:
+            # Fallback
+            return [
+                get_price_percentile(20),
+                get_momentum(10),
+                get_volatility_normalized(10),
+                get_trend_alignment(),
+                float(position_size),
+                float(np.clip(unrealized_pnl * 10, -1, 1)),
+                get_acceleration()
+            ]
+        
+    except Exception as e:
+        logger.error(f"Error calculating model inputs: {e}")
+        return [0.0] * 7
+
+# ============================================================================
+# NEURAL NETWORK FORWARD PASS
+# ============================================================================
+
+def relu(x: np.ndarray) -> np.ndarray:
+    """ReLU activation function"""
+    return np.maximum(0, x)
+
+
+def forward_pass(inputs: List[float], weights: Dict) -> List[float]:
+    """
+    Perform forward pass through the neural network.
+    
+    Args:
+        inputs: List of 7 input features
+        weights: Dict containing w1, b1, w2, b2, w3, b3
+    
+    Returns:
+        List of Q-values for each action
+    """
+    try:
+        # Convert to numpy arrays
+        x = np.array(inputs, dtype=np.float32)  # Shape: (7,)
+        
+        # ================================================================
+        # Layer 1: Input -> Hidden1 (ReLU)
+        # ================================================================
+        w1 = np.array(weights['w1'], dtype=np.float32)  # Shape: (7, 32) - NO TRANSPOSE
+        b1 = np.array(weights['b1'], dtype=np.float32)  # Shape: (32,)
+        hidden1 = relu(np.dot(x, w1) + b1)  # (7,) @ (7, 32) = (32,)
+        
+        # ================================================================
+        # Layer 2: Hidden1 -> Hidden2 (ReLU)
+        # ================================================================
+        w2 = np.array(weights['w2'], dtype=np.float32)  # Shape: (32, 16) - NO TRANSPOSE
+        b2 = np.array(weights['b2'], dtype=np.float32)  # Shape: (16,)
+        hidden2 = relu(np.dot(hidden1, w2) + b2)  # (32,) @ (32, 16) = (16,)
+        
+        # ================================================================
+        # Layer 3: Hidden2 -> Output (Linear)
+        # ================================================================
+        w3 = np.array(weights['w3'], dtype=np.float32)  # Shape: (16, 5) - NO TRANSPOSE
+        b3 = np.array(weights['b3'], dtype=np.float32)  # Shape: (5,)
+        output = np.dot(hidden2, w3) + b3  # (16,) @ (16, 5) = (5,)
+        
+        return output.tolist()
+        
+    except Exception as e:
+        logger.error(f"Error in forward pass: {e}")
+        logger.error(f"Input shape: {np.array(inputs).shape}")
+        logger.error(f"w1 shape: {np.array(weights['w1']).shape}")
+        logger.error(f"w2 shape: {np.array(weights['w2']).shape}")
+        logger.error(f"w3 shape: {np.array(weights['w3']).shape}")
+        return [0.0, 0.0, 0.0, 0.0, 0.0]
+
+
+def get_best_action(
+    q_values: List[float], 
+    current_position: str = 'none',
+    agent_personality: str = 'balanced'
+) -> int:
+    """
+    Get the best action based on Q-values, position, and agent personality.
+    
+    THIS IS THE KEY FIX: Agent personalities create behavioral differences
+    even when Q-values are similar!
+    
+    Args:
+        q_values: List of Q-values for [BUY, HOLD, SELL, SHORT, COVER]
+        current_position: 'long', 'short', or 'none'
+        agent_personality: Trading style that biases action selection
+    
+    Returns:
+        Action index (0=BUY, 1=HOLD, 2=SELL, 3=SHORT, 4=COVER)
+    """
+    # Create mutable copy
+    q_copy = np.array(q_values, dtype=np.float32).copy()
+    
+    # ========================================================================
+    # APPLY PERSONALITY BIASES (BEFORE POSITION CONSTRAINTS)
+    # This is what makes agents behave differently!
+    # ========================================================================
+    
+    if agent_personality == 'aggressive':
+        # Boost action-taking, penalize holding
+        q_copy[0] += 0.15  # BUY boost
+        q_copy[3] += 0.15  # SHORT boost
+        q_copy[1] -= 0.2   # HOLD penalty
+        
+    elif agent_personality == 'scalper':
+        # Strong preference for quick entries/exits
+        q_copy[0] += 0.2   # Strong BUY boost
+        q_copy[3] += 0.2   # Strong SHORT boost
+        q_copy[1] -= 0.25  # Heavy HOLD penalty
+        q_copy[2] += 0.1   # Slight SELL boost (quick exits)
+        q_copy[4] += 0.1   # Slight COVER boost (quick exits)
+        
+    elif agent_personality == 'trend':
+        # Prefer holding positions longer
+        q_copy[1] += 0.1   # HOLD bonus
+        q_copy[2] -= 0.05  # Slight SELL penalty (resist early exits)
+        q_copy[4] -= 0.05  # Slight COVER penalty (resist early exits)
+        
+    elif agent_personality == 'momentum':
+        # Aggressive entries, hold for momentum
+        q_copy[0] += 0.12  # BUY boost
+        q_copy[3] += 0.12  # SHORT boost
+        q_copy[1] += 0.05  # Slight HOLD bonus
+        
+    elif agent_personality == 'conservative':
+        # Strong HOLD bias, reluctant to act
+        q_copy[1] += 0.15  # Strong HOLD bonus
+        q_copy[0] -= 0.1   # BUY penalty
+        q_copy[3] -= 0.1   # SHORT penalty
+        
+    elif agent_personality == 'contrarian':
+        # Invert BUY/SHORT preferences
+        # If model wants to BUY, contrarian wants to SHORT and vice versa
+        temp_buy = q_copy[0]
+        q_copy[0] = q_copy[3]  # BUY gets SHORT's Q-value
+        q_copy[3] = temp_buy   # SHORT gets BUY's Q-value
+        q_copy[1] -= 0.1       # Slight HOLD penalty
+    
+    elif agent_personality == 'balanced':
+        # No biases - pure Q-value selection
+        pass
+    
+    # ========================================================================
+    # APPLY POSITION CONSTRAINTS (PREVENT IMPOSSIBLE ACTIONS)
+    # ========================================================================
+    
+    if current_position == 'long':
+        q_copy[0] = -np.inf  # Can't BUY again
+        q_copy[3] = -np.inf  # Can't SHORT while long
+        q_copy[4] = -np.inf  # Can't COVER while long
+        
+    elif current_position == 'short':
+        q_copy[0] = -np.inf  # Can't BUY while short
+        q_copy[2] = -np.inf  # Can't SELL while short
+        q_copy[3] = -np.inf  # Can't SHORT again
+        
+    else:  # No position
+        q_copy[2] = -np.inf  # Can't SELL without long position
+        q_copy[4] = -np.inf  # Can't COVER without short position
+    
+    # ========================================================================
+    # SELECT BEST ACTION
+    # ========================================================================
+    
+    best_action = int(np.argmax(q_copy))
+    
+    return best_action
+
+
+# ============================================================================
+# FIX: Better error handling in prediction function
+# ============================================================================
+
+async def _load_and_predict_async(
+    agent_name: str,
+    data: List[Dict],
+    state_features: str,
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Tuple[bool, int, str]:
+    """
+    Async-safe internal function to load weights and make prediction.
+    
+    Returns:
+        (success, action, error_message)
+    """
+    try:
+        # ✅ LOG WHICH AGENT IS BEING LOADED
+        logger.info(f"🔮 Predicting for agent: {agent_name}")
+        
+        # Async-safe database fetch
+        weights = await _get_weights_from_db(agent_name)
+        
+        # ✅ FAIL LOUDLY IF WEIGHTS NOT FOUND
+        if weights is None:
+            error_msg = f"❌ NO WEIGHTS FOUND FOR {agent_name} - Cannot predict"
+            logger.error(error_msg)
+            return False, 1, error_msg  # Return HOLD as default
+        
+        # ✅ VALIDATE WEIGHTS STRUCTURE
+        required_keys = ['w1', 'b1', 'w2', 'b2', 'w3', 'b3']
+        if not all(key in weights for key in required_keys):
+            error_msg = f"❌ INVALID WEIGHTS FOR {agent_name} - Missing keys"
+            logger.error(error_msg)
+            return False, 1, error_msg
+        
+        # ✅ LOG SUCCESSFUL WEIGHT LOAD
+        logger.info(f"✅ Weights loaded for {agent_name}")
+        
+        # Calculate input features
+        inputs = calculate_model_inputs(
+            data, 
+            state_features=state_features,
+            position_size=position_size,
+            unrealized_pnl=unrealized_pnl
+        )
+        
+        # Forward pass
+        q_values = forward_pass(inputs, weights)
+        
+        # Get best action
+        action = get_best_action(q_values, current_position)
+        
+        # ✅ LOG THE PREDICTION
+        action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+        logger.info(f"🎯 {agent_name} predicts: {action_names[action]}")
+        
+        return True, action, ""
+        
+    except Exception as e:
+        error_msg = f"❌ Error in {agent_name} prediction: {str(e)}"
+        logger.error(error_msg)
+        return False, 1, error_msg
+
+
+# ============================================================================
+# DEBUG: Check if all agents have unique weights
+# ============================================================================
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_debug_weights(request):
+    """
+    DEBUG ENDPOINT: Show first 5 weights from each agent for comparison
+    GET /api/snowai-trading-weights/debug/
+    """
+    try:
+        all_agents = SnowAITradingWeights.objects.all()
+        
+        debug_info = []
+        for agent in all_agents:
+            weights = agent.snow_weights_data
+            
+            # Get first 5 weights from w1 for comparison
+            w1_sample = []
+            if 'w1' in weights and len(weights['w1']) > 0:
+                w1_sample = [weights['w1'][0][:5]]  # First 5 from first row
+            
+            debug_info.append({
+                'agent_name': agent.snow_agent_name,
+                'w1_sample': w1_sample,
+                'metadata': agent.snow_metadata,
+                'updated_at': agent.snow_updated_at.isoformat()
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'agents': debug_info,
+            'note': 'If w1_sample is identical across agents, they have the same weights!'
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+# ============================================================================
+# SNOW-ALPHA (Balanced DDQN)
+# ============================================================================
+
+async def snow_alpha_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """
+    Snow-Alpha: Balanced Deep Double Q-Network
+    
+    Args:
+        data: List of OHLCV dicts
+        current_position: 'long', 'short', or 'none'
+        position_size: Current position size as ratio (0-1)
+        unrealized_pnl: Unrealized P&L as percentage (-1 to 1)
+    
+    Returns:
+        {
+            'success': bool,
+            'action': int (0=BUY, 1=HOLD, 2=SELL, 3=SHORT, 4=COVER),
+            'action_name': str,
+            'error': str
+        }
+    """
+    success, action, error = await _load_and_predict_async(
+        'Snow-Alpha', data, 'standard', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+async def snow_alpha_buy(data: List[Dict]) -> bool:
+    """Returns True if Snow-Alpha recommends BUY"""
+    result = await snow_alpha_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+async def snow_alpha_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    """Returns True if Snow-Alpha recommends SELL"""
+    result = await snow_alpha_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+async def snow_alpha_short(data: List[Dict]) -> bool:
+    """Returns True if Snow-Alpha recommends SHORT"""
+    result = await snow_alpha_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+async def snow_alpha_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    """Returns True if Snow-Alpha recommends COVER"""
+    result = await snow_alpha_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
+
+
+# ============================================================================
+# ICE-BETA (Scalper)
+# ============================================================================
+
+async def ice_beta_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Ice-Beta: High-frequency scalper"""
+    success, action, error = await _load_and_predict_async(
+        'Ice-Beta', data, 'short-term', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+async def ice_beta_buy(data: List[Dict]) -> bool:
+    result = await ice_beta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+async def ice_beta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await ice_beta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+async def ice_beta_short(data: List[Dict]) -> bool:
+    result = await ice_beta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+async def ice_beta_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await ice_beta_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
+
+
+# ============================================================================
+# FROST-GAMMA (Trend Follower)
+# ============================================================================
+
+async def frost_gamma_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Frost-Gamma: Conservative trend-following"""
+    success, action, error = await _load_and_predict_async(
+        'Frost-Gamma', data, 'long-term', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+async def frost_gamma_buy(data: List[Dict]) -> bool:
+    result = await frost_gamma_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+async def frost_gamma_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await frost_gamma_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+async def frost_gamma_short(data: List[Dict]) -> bool:
+    result = await frost_gamma_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+async def frost_gamma_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await frost_gamma_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
+
+
+# ============================================================================
+# GLACIER-X (Deep-Hold / Momentum)
+# ============================================================================
+
+async def glacier_x_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Glacier-X: Position trader with momentum focus"""
+    success, action, error = await _load_and_predict_async(
+        'Glacier-X', data, 'momentum', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+async def glacier_x_buy(data: List[Dict]) -> bool:
+    result = await glacier_x_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+async def glacier_x_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await glacier_x_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+async def glacier_x_short(data: List[Dict]) -> bool:
+    result = await glacier_x_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+async def glacier_x_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await glacier_x_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
+
+
+# ============================================================================
+# AVALANCHE-Z (Aggressive)
+# ============================================================================
+
+async def avalanche_z_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Avalanche-Z: Ultra-aggressive high-risk trader"""
+    success, action, error = await _load_and_predict_async(
+        'Avalanche-Z', data, 'volatility', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+async def avalanche_z_buy(data: List[Dict]) -> bool:
+    result = await avalanche_z_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+async def avalanche_z_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await avalanche_z_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+async def avalanche_z_short(data: List[Dict]) -> bool:
+    result = await avalanche_z_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+async def avalanche_z_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await avalanche_z_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
+
+
+# ============================================================================
+# POLAR-PRIME (Conservative)
+# ============================================================================
+
+async def polar_prime_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Polar-Prime: Ultra-conservative capital preservation"""
+    success, action, error = await _load_and_predict_async(
+        'Polar-Prime', data, 'risk-aware', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+async def polar_prime_buy(data: List[Dict]) -> bool:
+    result = await polar_prime_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+async def polar_prime_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await polar_prime_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+async def polar_prime_short(data: List[Dict]) -> bool:
+    result = await polar_prime_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+async def polar_prime_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await polar_prime_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
+
+
+# ============================================================================
+# BLIZZARD-OMEGA (Momentum Specialist)
+# ============================================================================
+
+async def blizzard_omega_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Blizzard-Omega: Momentum specialist"""
+    success, action, error = await _load_and_predict_async(
+        'Blizzard-Omega', data, 'momentum', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+async def blizzard_omega_buy(data: List[Dict]) -> bool:
+    result = await blizzard_omega_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+async def blizzard_omega_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await blizzard_omega_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+async def blizzard_omega_short(data: List[Dict]) -> bool:
+    result = await blizzard_omega_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+async def blizzard_omega_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await blizzard_omega_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
+
+
+# ============================================================================
+# TUNDRA-SIGMA (Mean Reversion)
+# ============================================================================
+
+async def tundra_sigma_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Tundra-Sigma: Mean reversion specialist"""
+    success, action, error = await _load_and_predict_async(
+        'Tundra-Sigma', data, 'mean-reversion', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+async def tundra_sigma_buy(data: List[Dict]) -> bool:
+    result = await tundra_sigma_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+async def tundra_sigma_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await tundra_sigma_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+async def tundra_sigma_short(data: List[Dict]) -> bool:
+    result = await tundra_sigma_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+async def tundra_sigma_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await tundra_sigma_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
+
+
+# ============================================================================
+# ARCTIC-DELTA (Volatility Hunter)
+# ============================================================================
+
+async def arctic_delta_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+) -> Dict:
+    """Arctic-Delta: Volatility hunter"""
+    success, action, error = await _load_and_predict_async(
+        'Arctic-Delta', data, 'volatility', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+
+async def arctic_delta_buy(data: List[Dict]) -> bool:
+    result = await arctic_delta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+async def arctic_delta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await arctic_delta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+async def arctic_delta_short(data: List[Dict]) -> bool:
+    result = await arctic_delta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+async def arctic_delta_cover(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await arctic_delta_predict(data, current_position='short', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 4
+
+
+# ============================================================================
+# PERMAFROST-THETA (Contrarian)
+# ============================================================================
+
+async def permafrost_theta_predict(
+    data: List[Dict],
+    current_position: str = 'none',
+    position_size: float = 0.0,
+    unrealized_pnl: float = 0.0
+
+    ) -> Dict:
+    """Permafrost-Theta: Contrarian trader"""
+    success, action, error = await _load_and_predict_async(
+        'Permafrost-Theta', data, 'contrarian', current_position, position_size, unrealized_pnl
+    )
+    
+    action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+    return {
+        'success': success,
+        'action': action,
+        'action_name': action_names[action],
+        'error': error
+    }
+
+async def permafrost_theta_buy(data: List[Dict]) -> bool:
+    result = await permafrost_theta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 0
+
+
+async def permafrost_theta_sell(data: List[Dict], position_size: float = 0.5, unrealized_pnl: float = 0.0) -> bool:
+    result = await permafrost_theta_predict(data, current_position='long', position_size=position_size, unrealized_pnl=unrealized_pnl)
+    return result['success'] and result['action'] == 2
+
+
+async def permafrost_theta_short(data: List[Dict]) -> bool:
+    result = await permafrost_theta_predict(data, current_position='none')
+    return result['success'] and result['action'] == 3
+
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+import json
+from .models import SnowAIForwardTestingModel
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def save_snowai_forward_testing_model_endpoint(request):
+    """
+    Endpoint to save cleaned model code for forward testing.
+    Accepts: model_id, cleaned_code, notes (optional)
+    Returns: Success/error message with model details
+    """
+    try:
+        # Parse JSON data from request body
+        data = json.loads(request.body)
+        
+        # Extract required fields
+        model_id = data.get('model_id')
+        cleaned_code = data.get('cleaned_model_code')
+        notes = data.get('notes', '')
+        
+        # Validate required fields
+        if not model_id or not cleaned_code:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Missing required fields: model_id and cleaned_model_code are required'
+            }, status=400)
+        
+        # Check if model with this ID already exists
+        existing_model = SnowAIForwardTestingModel.objects.filter(model_id=model_id).first()
+        
+        if existing_model:
+            # Update existing model
+            existing_model.cleaned_model_code = cleaned_code
+            existing_model.notes = notes
+            existing_model.save()
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Model updated successfully',
+                'model_id': model_id,
+                'created_at': existing_model.created_at.isoformat(),
+                'last_updated': existing_model.last_updated.isoformat()
+            }, status=200)
+        else:
+            # Create new model
+            new_model = SnowAIForwardTestingModel.objects.create(
+                model_id=model_id,
+                cleaned_model_code=cleaned_code,
+                notes=notes
+            )
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Model saved successfully',
+                'model_id': new_model.model_id,
+                'created_at': new_model.created_at.isoformat(),
+                'last_updated': new_model.last_updated.isoformat()
+            }, status=201)
+            
+    except json.JSONDecodeError:
+        print(f'Error in save snowai forward testing model endpoint: Invalid JSON in request body')
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid JSON in request body'
+        }, status=400)
+    
+    except Exception as e:
+        print(f'Error in save snowai forward testing model endpoint: {e}')
+
+        return JsonResponse({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def retrieve_snowai_forward_testing_model_endpoint(request, model_id):
+    """
+    Endpoint to retrieve a saved model by its ID.
+    Returns: Model details including cleaned code
+    """
+    try:
+        model = SnowAIForwardTestingModel.objects.get(model_id=model_id)
+        
+        return JsonResponse({
+            'status': 'success',
+            'model': {
+                'model_id': model.model_id,
+                'cleaned_model_code': model.cleaned_model_code,
+                'created_at': model.created_at.isoformat(),
+                'last_updated': model.last_updated.isoformat(),
+                'notes': model.notes
+            }
+        }, status=200)
+        
+    except SnowAIForwardTestingModel.DoesNotExist:
+        print(f'Error in retrieve_snowai_forward_testing_model_endpoint: Model with ID {model_id} not found')
+
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Model with ID {model_id} not found'
+        }, status=404)
+    
+    except Exception as e:
+        print(f'Error in retrieve_snowai_forward_testing_model_endpoint: An error occurred: {str(e)}')
+
+        return JsonResponse({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def list_all_snowai_forward_testing_models_endpoint(request):
+    """
+    Endpoint to list all saved models (without full code content).
+    Returns: List of all models with basic metadata
+    """
+    try:
+        models = SnowAIForwardTestingModel.objects.all()
+        
+        models_list = [{
+            'model_id': model.model_id,
+            'created_at': model.created_at.isoformat(),
+            'last_updated': model.last_updated.isoformat(),
+            'code_length': len(model.cleaned_model_code),
+            'has_notes': bool(model.notes)
+        } for model in models]
+        
+        return JsonResponse({
+            'status': 'success',
+            'count': len(models_list),
+            'models': models_list
+        }, status=200)
+        
+    except Exception as e:
+        print(f'Error in list_all_snowai_forward_testing_models_endpoint: An error occurred: {str(e)}')
+
+        return JsonResponse({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def delete_snowai_forward_testing_model_endpoint(request, model_id):
+    """
+    Endpoint to delete a saved model by its ID.
+    Returns: Success/error message
+    """
+    try:
+        model = SnowAIForwardTestingModel.objects.get(model_id=model_id)
+        model.delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Model {model_id} deleted successfully'
+        }, status=200)
+        
+    except SnowAIForwardTestingModel.DoesNotExist:
+        
+        print(f'Error in delete_snowai_forward_testing_model_endpoint: Model with ID {model_id} not found')
+
+
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Model with ID {model_id} not found'
+        }, status=404)
+    
+    except Exception as e:
+        print(f'Error in delete_snowai_forward_testing_model_endpoint: An error occurred: {str(e)}')
+
+        return JsonResponse({
+            'status': 'error',
+            'message': f'An error occurred: {str(e)}'
+        }, status=500)
+    
+
+def execute_all_forward_tests():
+    """
+    Execute forward tests for all active models
+    Runs every minute via scheduler
+    """
+    try:
+        
+        active_models = ActiveForwardTestModel.objects.filter(is_active=True)
+        
+        # Check if NYSE is open for stock models
+        nyse_open = new_york_session()
+        
+        for model in active_models:
+            try:
+                # Skip US stock models if NYSE is closed
+                if not nyse_open and is_us_stock(model.asset):
+                    continue
+                
+                execute_forward_test(model.id)
+            except Exception as e:
+                print(f"Error executing model {model.id}: {e}")
+    
+    except Exception as e:
+        print(f"Error in execute_all_forward_tests: {e}")
+
+
+def is_us_stock(symbol):
+    """Check if symbol is a US stock"""
+    return not (symbol.endswith('=X') or symbol.endswith('=F') or symbol.startswith('^'))
+
+def execute_forward_test(model_id):
+    """
+    Execute forward test for a single model
+    """
+    try:
+        model = ActiveForwardTestModel.objects.get(id=model_id)
+        
+        if not model.is_active:
+            print(f"Model {model.name} is inactive, skipping")
+            return
+        
+        # Get market data using yfinance
+        dataset = get_market_data(model.asset, model.interval)
+        
+        if dataset is None or len(dataset) == 0:
+            print(f"No data available for {model.asset}")
+            return
+        
+        print(f"✅ Got {len(dataset)} candles for {model.name} ({model.asset})")
+        
+        # Check if we have open positions
+        open_positions = Position.objects.filter(model=model, is_open=True)
+        print(f"Open positions: {len(open_positions)}")
+        
+        # Always check TP/SL for existing positions first
+        if len(open_positions) > 0:
+            check_and_close_positions(model, open_positions)
+            # Refresh open positions after potential closes
+            open_positions = Position.objects.filter(model=model, is_open=True)
+        
+        # Prepare namespace for code execution
+        namespace = prepare_namespace(model, dataset)
+        
+        # Execute the model code
+        try:
+            exec(model.model_code, namespace)
+            
+            # Check if model code called position.close()
+            position_proxy = namespace.get('position')
+            if position_proxy and position_proxy.should_close_position():
+                # Close all open positions
+                current_price = dataset['Close'].iloc[-1]
+                for pos in open_positions:
+                    pos.close_position(current_price)
+                    print(f"Closed position via position.close() for {model.name} at {current_price}")
+                
+                # Refresh open positions after closes
+                open_positions = Position.objects.filter(model=model, is_open=True)
+            
+            # Now check if we should open a new position
+            return_statement = namespace.get('return_statement', None)
+            print(f"Return statement: {return_statement}")
+            
+            # In execute_forward_test function, find this section and fix the order:
+            
+            if return_statement in ['buy', 'sell'] and len(open_positions) < model.num_positions:
+                # Open new position
+                current_price = dataset['Close'].iloc[-1]
+                
+                # Get TP/SL from namespace (in case set_take_profit/set_stop_loss were called)
+                tp_value = namespace.get('_take_profit', model.take_profit)
+                tp_type = namespace.get('_take_profit_type', model.take_profit_type)
+                sl_value = namespace.get('_stop_loss', model.stop_loss)
+                sl_type = namespace.get('_stop_loss_type', model.stop_loss_type)
+                
+                # Calculate TP/SL prices FIRST
+                tp_price, sl_price = calculate_tp_sl(
+                    current_price,
+                    return_statement,
+                    tp_value,
+                    tp_type,
+                    sl_value,
+                    sl_type
+                )
+                
+                # NOW calculate position size based on stop loss distance
+                if return_statement == 'buy':
+                    sl_distance = current_price - sl_price
+                else:  # sell
+                    sl_distance = sl_price - current_price
+                
+                # Calculate position size based on risk
+                risk_per_trade = 0.02  # Risk 2% of equity per trade
+                risk_amount = model.current_equity * risk_per_trade
+                
+                if sl_distance > 0:
+                    position_size = risk_amount / sl_distance
+                else:
+                    # Fallback if SL distance is 0 or negative
+                    position_size = (model.current_equity * 0.1) / current_price
+                
+                position = Position.objects.create(
+                    model=model,
+                    position_type=return_statement.upper(),
+                    entry_price=current_price,
+                    size=position_size,
+                    take_profit_price=tp_price,
+                    stop_loss_price=sl_price,
+                )
+                
+                model.last_run = timezone.now()
+                model.save()
+                
+                print(f"✅ Opened {return_statement} position for {model.name} at {current_price}")
+            elif len(open_positions) >= model.num_positions:
+                print(f"Max positions reached for {model.name}")
+        
+        except Exception as e:
+            print(f"Error executing model code for {model.name}: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    except Exception as e:
+        print(f"Error in execute_forward_test: {e}")
+        import traceback
+        traceback.print_exc()
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def snowai_models_list(request):
+    """List all active forward test models or create new one"""
+    
+    if request.method == 'GET':
+        models = ActiveForwardTestModel.objects.all()
+        data = []
+        
+        for model in models:
+            # Get all positions for this model
+            all_positions = Position.objects.filter(model=model)
+            closed_positions = all_positions.filter(is_open=False)
+            
+            # Calculate real-time metrics
+            total_trades = closed_positions.count()
+            total_pnl = sum(pos.pnl for pos in closed_positions)
+            winning_trades = closed_positions.filter(pnl__gt=0).count()
+            losing_trades = closed_positions.filter(pnl__lt=0).count()
+            
+            # Calculate win rate
+            if total_trades > 0:
+                win_rate = (winning_trades / total_trades) * 100
+            else:
+                win_rate = 0.0
+            
+            # Calculate current equity
+            current_equity = model.initial_equity + total_pnl
+            
+            data.append({
+                'id': model.id,
+                'name': model.name,
+                'asset': model.asset,
+                'interval': model.interval,
+                'is_active': model.is_active,
+                'initial_equity': model.initial_equity,
+                'current_equity': current_equity,  # Calculated from positions
+                'total_trades': total_trades,  # Calculated from positions
+                'winning_trades': winning_trades,  # Calculated from positions
+                'losing_trades': losing_trades,  # Calculated from positions
+                'total_pnl': total_pnl,  # Calculated from positions
+                'win_rate': win_rate,  # Calculated from positions
+                'created_at': model.created_at.isoformat(),
+                'last_run': model.last_run.isoformat() if model.last_run else None,
+            })
+        
+        return JsonResponse(data, safe=False)
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            model = ActiveForwardTestModel.objects.create(
+                name=data['name'],
+                asset=data['asset'],
+                interval=data['interval'],
+                model_code=data['model_code'],
+                initial_equity=data.get('initial_equity', 10000),
+                current_equity=data.get('initial_equity', 10000),
+                num_positions=data.get('num_positions', 1),
+                take_profit=data.get('take_profit', 5),
+                take_profit_type=data.get('take_profit_type', 'PERCENTAGE'),
+                stop_loss=data.get('stop_loss', 3),
+                stop_loss_type=data.get('stop_loss_type', 'PERCENTAGE'),
+            )
+            
+            # Initialize equity curve
+            model.equity_curve = json.dumps([model.initial_equity])
+            model.save()
+            
+            # No need to add scheduler job - execute_all_forward_tests handles all models
+            print(f"Created model {model.id}, will be picked up by scheduler automatically")
+            
+            return JsonResponse({
+                'id': model.id,
+                'message': 'Model created successfully'
+            })
+        
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT", "DELETE"])
+def snowai_model_detail(request, model_id):
+    """Get model details, update model, or delete model"""
+    
+    try:
+        model = ActiveForwardTestModel.objects.get(id=model_id)
+    except ActiveForwardTestModel.DoesNotExist:
+        return JsonResponse({'error': 'Model not found'}, status=404)
+    
+    if request.method == 'GET':
+        positions = Position.objects.filter(model=model)
+        closed_positions = positions.filter(is_open=False)
+        
+        # Calculate real-time metrics from positions
+        total_trades = closed_positions.count()
+        total_pnl = sum(pos.pnl for pos in closed_positions)
+        winning_trades = closed_positions.filter(pnl__gt=0).count()
+        losing_trades = closed_positions.filter(pnl__lt=0).count()
+        
+        # Calculate win rate
+        if total_trades > 0:
+            win_rate = (winning_trades / total_trades) * 100
+        else:
+            win_rate = 0.0
+        
+        # Calculate current equity
+        current_equity = model.initial_equity + total_pnl
+        
+        positions_data = [{
+            'type': pos.position_type,
+            'entry_price': pos.entry_price,
+            'exit_price': pos.exit_price,
+            'entry_time': pos.entry_time.isoformat(),
+            'exit_time': pos.exit_time.isoformat() if pos.exit_time else None,
+            'pnl': pos.pnl,
+            'is_open': pos.is_open,
+            'take_profit_price': pos.take_profit_price,
+            'stop_loss_price': pos.stop_loss_price,
+        } for pos in positions]
+        
+        return JsonResponse({
+            'id': model.id,
+            'name': model.name,
+            'asset': model.asset,
+            'interval': model.interval,
+            'model_code': model.model_code,
+            'is_active': model.is_active,
+            'initial_equity': model.initial_equity,
+            'current_equity': current_equity,  # ← Calculated from positions
+            'num_positions': model.num_positions,
+            'take_profit': model.take_profit,
+            'take_profit_type': model.take_profit_type,
+            'stop_loss': model.stop_loss,
+            'stop_loss_type': model.stop_loss_type,
+            'total_trades': total_trades,  # ← Calculated
+            'winning_trades': winning_trades,  # ← Calculated
+            'losing_trades': losing_trades,  # ← Calculated
+            'total_pnl': total_pnl,  # ← Calculated
+            'win_rate': win_rate,  # ← Calculated
+            'equity_curve': json.loads(model.equity_curve),
+            'positions': positions_data,
+            'created_at': model.created_at.isoformat(),
+        })
+    
+    elif request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            
+            # Update model fields
+            model.name = data.get('name', model.name)
+            model.asset = data.get('asset', model.asset)
+            model.interval = data.get('interval', model.interval)
+            model.model_code = data.get('model_code', model.model_code)
+            model.initial_equity = data.get('initial_equity', model.initial_equity)
+            model.num_positions = data.get('num_positions', model.num_positions)
+            model.take_profit = data.get('take_profit', model.take_profit)
+            model.take_profit_type = data.get('take_profit_type', model.take_profit_type)
+            model.stop_loss = data.get('stop_loss', model.stop_loss)
+            model.stop_loss_type = data.get('stop_loss_type', model.stop_loss_type)
+            model.is_active = data.get('is_active', model.is_active)
+            
+            model.save()
+            
+            return JsonResponse({
+                'id': model.id,
+                'message': 'Model updated successfully'
+            })
+        
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    
+    elif request.method == 'DELETE':
+        # Stop scheduler job if exists
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            scheduler = BackgroundScheduler()
+            scheduler.remove_job(f'model_{model_id}')
+        except:
+            pass
+        
+        model.delete()
+        return JsonResponse({'message': 'Model deleted successfully'})
+
+
+@csrf_exempt
+def snowai_available_models(request):
+    """Get all available model codes from SnowAIForwardTestingModel"""
+    models = SnowAIForwardTestingModel.objects.all()
+    
+    data = [{
+        'model_id': model.model_id,
+        'cleaned_model_code': model.cleaned_model_code,
+        'created_at': model.created_at.isoformat(),
+        'notes': model.notes,
+    } for model in models]
+    
+    return JsonResponse(data, safe=False)
+
+
+@csrf_exempt
+def snowai_fetch_chart_data_with_positions_endpoint(request, model_id):
+    """
+    Fetch yfinance price data and overlay positions for charting
+    This has a unique name to avoid conflicts with other yfinance fetching functions
+    """
+    try:
+        model = ActiveForwardTestModel.objects.get(id=model_id)
+        positions = Position.objects.filter(model=model).order_by('entry_time')
+        
+        # Fetch price data from yfinance
+        ticker = yf.Ticker(model.asset)
+        
+        # Determine period based on interval
+        if model.interval in ['5m', '15m']:
+            period = '7d'
+        elif model.interval in ['1h', '4h']:
+            period = '1mo'
+        elif model.interval in ['1d']:
+            period = '3mo'
+        elif model.interval in ['1wk']:
+            period = '1y'
+        else:
+            period = '3mo'
+        
+        df = ticker.history(period=period, interval=model.interval)
+        
+        if len(df) == 0:
+            return JsonResponse({'error': 'No price data available'}, status=404)
+        
+        # Prepare chart data with OHLC
+        chart_data = []
+        for idx, row in df.iterrows():
+            data_point = {
+                'time': idx.strftime('%Y-%m-%d %H:%M') if model.interval in ['5m', '15m', '1h', '4h'] else idx.strftime('%Y-%m-%d'),
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close']),
+                'volume': float(row['Volume']),
+            }
+            
+            # Check if any positions were entered at this time
+            for pos in positions:
+                entry_time_str = pos.entry_time.strftime('%Y-%m-%d %H:%M') if model.interval in ['5m', '15m', '1h', '4h'] else pos.entry_time.strftime('%Y-%m-%d')
+                
+                if entry_time_str == data_point['time']:
+                    if pos.position_type == 'BUY':
+                        data_point['buy_entry'] = pos.entry_price
+                    else:
+                        data_point['sell_entry'] = pos.entry_price
+                
+                # Check if position was exited at this time
+                if pos.exit_time:
+                    exit_time_str = pos.exit_time.strftime('%Y-%m-%d %H:%M') if model.interval in ['5m', '15m', '1h', '4h'] else pos.exit_time.strftime('%Y-%m-%d')
+                    
+                    if exit_time_str == data_point['time']:
+                        if pos.position_type == 'BUY':
+                            data_point['buy_exit'] = pos.exit_price
+                        else:
+                            data_point['sell_exit'] = pos.exit_price
+            
+            chart_data.append(data_point)
+        
+        return JsonResponse(chart_data, safe=False)
+    
+    except ActiveForwardTestModel.DoesNotExist:
+        return JsonResponse({'error': 'Model not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def check_and_close_positions(model, open_positions):
+    """Check if TP or SL has been hit and close positions"""
+    dataset = get_market_data(model.asset, model.interval)
+    
+    if dataset is None:
+        return
+    
+    current_price = dataset['Close'].iloc[-1]
+    
+    for position in open_positions:
+        should_close = False
+        
+        if position.position_type == 'BUY':
+            if current_price >= position.take_profit_price:
+                should_close = True
+                print(f"TP hit for {model.name} at {current_price}")
+            elif current_price <= position.stop_loss_price:
+                should_close = True
+                print(f"SL hit for {model.name} at {current_price}")
+        
+        else:  # SELL (short)
+            if current_price <= position.take_profit_price:
+                should_close = True
+                print(f"TP hit for {model.name} at {current_price}")
+            elif current_price >= position.stop_loss_price:
+                should_close = True
+                print(f"SL hit for {model.name} at {current_price}")
+        
+        if should_close:
+            position.close_position(current_price)
+
+
+def get_market_data(asset, interval):
+    """Fetch market data using yfinance"""
+    try:
+        ticker = yf.Ticker(asset)
+        
+        # Determine period based on interval
+        if interval in ['5m', '15m']:
+            period = '7d'
+        elif interval in ['1h', '4h']:
+            period = '1mo'
+        elif interval in ['1d']:
+            period = '1y'
+        elif interval in ['1wk']:
+            period = '5y'
+        else:
+            period = '1y'
+        
+        df = ticker.history(period=period, interval=interval)
+        
+        if len(df) == 0:
+            return None
+        
+        return df
+    
+    except Exception as e:
+        print(f"Error fetching data for {asset}: {e}")
+        return None
+
+
+def calculate_tp_sl(entry_price, position_type, tp_value, tp_type, sl_value, sl_type):
+    """Calculate take profit and stop loss prices"""
+    
+    if position_type == 'buy':
+        if tp_type == 'PERCENTAGE':
+            tp_price = entry_price * (1 + tp_value / 100)
+        else:
+            tp_price = entry_price + tp_value
+        
+        if sl_type == 'PERCENTAGE':
+            sl_price = entry_price * (1 - sl_value / 100)
+        else:
+            sl_price = entry_price - sl_value
+    
+    else:  # sell (short)
+        if tp_type == 'PERCENTAGE':
+            tp_price = entry_price * (1 - tp_value / 100)
+        else:
+            tp_price = entry_price - tp_value
+        
+        if sl_type == 'PERCENTAGE':
+            sl_price = entry_price * (1 + sl_value / 100)
+        else:
+            sl_price = entry_price + sl_value
+    
+    return tp_price, sl_price
+    
+
+def prepare_namespace(model, dataset):
+    """Prepare namespace with all trading functions"""
+    
+    # Create a position proxy object that can be called from model code
+    class PositionProxy:
+        def __init__(self, model):
+            self.model = model
+            self._should_close = False
+        
+        def close(self):
+            """Mark that position should be closed"""
+            self._should_close = True
+        
+        def should_close_position(self):
+            return self._should_close
+    
+    position_proxy = PositionProxy(model)
+    
+    # TP/SL functions that can be called from model code
+    def set_take_profit(number, type_of_setting='PERCENTAGE'):
+        """Set take profit - stores in namespace for position creation"""
+        namespace['_take_profit'] = number
+        namespace['_take_profit_type'] = type_of_setting.upper()
+    
+    def set_stop_loss(number, type_of_setting='PERCENTAGE'):
+        """Set stop loss - stores in namespace for position creation"""
+        namespace['_stop_loss'] = number
+        namespace['_stop_loss_type'] = type_of_setting.upper()
+
+    current_open_positions = Position.objects.filter(model=model, is_open=True).count()
+
+    
+    namespace = {
+        'interval': model.interval,
+        'num_positions': current_open_positions,
+        'dataset': dataset,
+        'asset': model.asset,
+        'position': position_proxy,
+        'set_take_profit': set_take_profit,
+        'set_stop_loss': set_stop_loss,
+        '_take_profit': model.take_profit,
+        '_take_profit_type': model.take_profit_type,
+        '_stop_loss': model.stop_loss,
+        '_stop_loss_type': model.stop_loss_type,
+        # All your trading functions
+        'is_support_level': is_support_level,
+        'is_resistance_level': is_resistance_level,
+        'is_uptrend': is_uptrend,
+        'is_downtrend': is_downtrend,
+        'is_ranging_market': is_ranging_market,
+        'is_bullish_candle': is_bullish_candle,
+        'is_bearish_candle': is_bearish_candle,
+        'is_bullish_engulfing': is_bullish_engulfing,
+        'is_bearish_engulfing': is_bearish_engulfing,
+        'is_morning_star': is_morning_star,
+        'is_evening_star': is_evening_star,
+        'is_three_white_soldiers': is_three_white_soldiers,
+        'is_three_black_crows': is_three_black_crows,
+        'is_morning_doji_star': is_morning_doji_star,
+        'is_evening_doji_star': is_evening_doji_star,
+        'is_rising_three_methods': is_rising_three_methods,
+        'is_falling_three_methods': is_falling_three_methods,
+        'is_hammer': is_hammer,
+        'is_hanging_man': is_hanging_man,
+        'is_inverted_hammer': is_inverted_hammer,
+        'is_shooting_star': is_shooting_star,
+        'is_bullish_kicker': is_bullish_kicker,
+        'is_bearish_kicker': is_bearish_kicker,
+        'is_bullish_harami': is_bullish_harami,
+        'is_bearish_harami': is_bearish_harami,
+        'is_bullish_three_line_strike': is_bullish_three_line_strike,
+        'is_bearish_three_line_strike': is_bearish_three_line_strike,
+        'moving_average': moving_average,
+        'bbands': bbands,
+        'momentum': momentum,
+        'rsi': rsi,
+        'is_asian_range_buy': is_asian_range_buy,
+        'is_asian_range_sell': is_asian_range_sell,
+        'is_fibonacci_level': is_fibonacci_level,
+        'is_ote_buy': is_ote_buy,
+        'is_ote_sell': is_ote_sell,
+        'is_bullish_orderblock': is_bullish_orderblock,
+        'is_bearish_orderblock': is_bearish_orderblock,
+        'is_bullish_weekly_profile': is_bullish_weekly_profile,
+        'is_bearish_weekly_profile': is_bearish_weekly_profile,
+        'buy_hold': buy_hold,
+        'sell_hold': sell_hold,
+        'buy_hold_regime': buy_hold_regime,
+        'is_bullish_bias': is_bullish_bias,
+        'is_bearish_bias': is_bearish_bias,
+        'is_high_volume': is_high_volume,
+        'is_low_volume': is_low_volume,
+        'is_stable_market': is_stable_market,
+        'is_choppy_market': is_choppy_market,
+        'is_volatile_market': is_volatile_market,
+        'new_york_session': new_york_session,
+        'london_session': london_session,
+        'asian_session': asian_session,
+        'snow_alpha_buy': snow_alpha_buy,
+        'snow_alpha_short': snow_alpha_short,
+        'ice_beta_buy': ice_beta_buy,
+        'ice_beta_short': ice_beta_short,
+        'frost_gamma_buy': frost_gamma_buy,
+        'frost_gamma_short': frost_gamma_short,
+        'glacier_x_buy': glacier_x_buy,
+        'glacier_x_short': glacier_x_short,
+        'avalanche_z_buy': avalanche_z_buy,
+        'avalanche_z_short': avalanche_z_short,
+        'polar_prime_buy': polar_prime_buy,
+        'polar_prime_short': polar_prime_short,
+        'blizzard_omega_buy': blizzard_omega_buy,
+        'blizzard_omega_short': blizzard_omega_short,
+        'tundra_sigma_buy': tundra_sigma_buy,
+        'tundra_sigma_short': tundra_sigma_short,
+        'arctic_delta_buy': arctic_delta_buy,
+        'arctic_delta_short': arctic_delta_short,
+        'permafrost_theta_buy': permafrost_theta_buy,
+        'permafrost_theta_short': permafrost_theta_short,
+        'is_bullish_market_retracement': is_bullish_market_retracement,
+        'is_bearish_market_retracement': is_bearish_market_retracement,
+        'average_retracement': average_retracement,
+        'is_monte_carlo_bullish_prediction': is_monte_carlo_bullish_prediction,
+        'is_monte_carlo_bearish_prediction': is_monte_carlo_bearish_prediction
+    }
+    
+    return namespace
+    
+
+scheduler.add_job(
+    execute_all_forward_tests,
+    trigger=IntervalTrigger(minutes=1),
+    id='snowai_forward_test_job',
+    name='Execute all SnowAI forward tests every minute',
+    replace_existing=True
+)
+
+
+# ============================================================================
+# DEBUG ENDPOINT: Browser-Friendly GET Request
+# ============================================================================
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_debug_predictions_simple(request):
+    """
+    DEBUG: Test all agents on sample data (no request body needed)
+    GET /api/snowai-trading-weights/debug-predictions-simple/
+    
+    Just open this URL in your browser!
+    """
+    try:
+        # Sample uptrending data (like a stock going up)
+        sample_data = [
+            {"close": 150.0, "open": 149.5, "high": 151.0, "low": 149.0, "timestamp": 1},
+            {"close": 151.0, "open": 150.0, "high": 152.0, "low": 149.5, "timestamp": 2},
+            {"close": 150.5, "open": 151.0, "high": 151.5, "low": 150.0, "timestamp": 3},
+            {"close": 152.0, "open": 150.5, "high": 153.0, "low": 150.0, "timestamp": 4},
+            {"close": 151.5, "open": 152.0, "high": 152.5, "low": 151.0, "timestamp": 5},
+            {"close": 153.0, "open": 151.5, "high": 154.0, "low": 151.0, "timestamp": 6},
+            {"close": 152.5, "open": 153.0, "high": 153.5, "low": 152.0, "timestamp": 7},
+            {"close": 154.0, "open": 152.5, "high": 155.0, "low": 152.0, "timestamp": 8},
+            {"close": 153.5, "open": 154.0, "high": 154.5, "low": 153.0, "timestamp": 9},
+            {"close": 155.0, "open": 153.5, "high": 156.0, "low": 153.0, "timestamp": 10},
+            {"close": 154.5, "open": 155.0, "high": 155.5, "low": 154.0, "timestamp": 11},
+            {"close": 156.0, "open": 154.5, "high": 157.0, "low": 154.0, "timestamp": 12},
+            {"close": 155.5, "open": 156.0, "high": 156.5, "low": 155.0, "timestamp": 13},
+            {"close": 157.0, "open": 155.5, "high": 158.0, "low": 155.0, "timestamp": 14},
+            {"close": 156.5, "open": 157.0, "high": 157.5, "low": 156.0, "timestamp": 15},
+            {"close": 158.0, "open": 156.5, "high": 159.0, "low": 156.0, "timestamp": 16},
+            {"close": 157.5, "open": 158.0, "high": 158.5, "low": 157.0, "timestamp": 17},
+            {"close": 159.0, "open": 157.5, "high": 160.0, "low": 157.0, "timestamp": 18},
+            {"close": 158.5, "open": 159.0, "high": 159.5, "low": 158.0, "timestamp": 19},
+            {"close": 160.0, "open": 158.5, "high": 161.0, "low": 158.0, "timestamp": 20},
+            {"close": 161.5, "open": 160.0, "high": 162.0, "low": 159.5, "timestamp": 21},
+            {"close": 162.0, "open": 161.5, "high": 163.0, "low": 161.0, "timestamp": 22},
+            {"close": 163.5, "open": 162.0, "high": 164.0, "low": 161.5, "timestamp": 23},
+            {"close": 164.0, "open": 163.5, "high": 165.0, "low": 163.0, "timestamp": 24},
+            {"close": 165.5, "open": 164.0, "high": 166.0, "low": 163.5, "timestamp": 25},
+            {"close": 166.0, "open": 165.5, "high": 167.0, "low": 165.0, "timestamp": 26},
+            {"close": 167.5, "open": 166.0, "high": 168.0, "low": 165.5, "timestamp": 27},
+            {"close": 168.0, "open": 167.5, "high": 169.0, "low": 167.0, "timestamp": 28},
+            {"close": 169.5, "open": 168.0, "high": 170.0, "low": 167.5, "timestamp": 29},
+            {"close": 170.0, "open": 169.5, "high": 171.0, "low": 169.0, "timestamp": 30},
+            {"close": 171.5, "open": 170.0, "high": 172.0, "low": 169.5, "timestamp": 31},
+            {"close": 172.0, "open": 171.5, "high": 173.0, "low": 171.0, "timestamp": 32},
+            {"close": 173.5, "open": 172.0, "high": 174.0, "low": 171.5, "timestamp": 33},
+            {"close": 174.0, "open": 173.5, "high": 175.0, "low": 173.0, "timestamp": 34},
+            {"close": 175.5, "open": 174.0, "high": 176.0, "low": 173.5, "timestamp": 35},
+            {"close": 176.0, "open": 175.5, "high": 177.0, "low": 175.0, "timestamp": 36},
+            {"close": 177.5, "open": 176.0, "high": 178.0, "low": 175.5, "timestamp": 37},
+            {"close": 178.0, "open": 177.5, "high": 179.0, "low": 177.0, "timestamp": 38},
+            {"close": 179.5, "open": 178.0, "high": 180.0, "low": 177.5, "timestamp": 39},
+            {"close": 180.0, "open": 179.5, "high": 181.0, "low": 179.0, "timestamp": 40},
+            {"close": 181.5, "open": 180.0, "high": 182.0, "low": 179.5, "timestamp": 41},
+            {"close": 182.0, "open": 181.5, "high": 183.0, "low": 181.0, "timestamp": 42},
+            {"close": 183.5, "open": 182.0, "high": 184.0, "low": 181.5, "timestamp": 43},
+            {"close": 184.0, "open": 183.5, "high": 185.0, "low": 183.0, "timestamp": 44},
+            {"close": 185.5, "open": 184.0, "high": 186.0, "low": 183.5, "timestamp": 45},
+            {"close": 186.0, "open": 185.5, "high": 187.0, "low": 185.0, "timestamp": 46},
+            {"close": 187.5, "open": 186.0, "high": 188.0, "low": 185.5, "timestamp": 47},
+            {"close": 188.0, "open": 187.5, "high": 189.0, "low": 187.0, "timestamp": 48},
+            {"close": 189.5, "open": 188.0, "high": 190.0, "low": 187.5, "timestamp": 49},
+            {"close": 190.0, "open": 189.5, "high": 191.0, "low": 189.0, "timestamp": 50},
+        ]
+        
+        current_position = 'none'
+        position_size = 0.0
+        unrealized_pnl = 0.0
+        
+        # Test all agents
+        agents_to_test = [
+            ('Snow-Alpha', 'standard', 'balanced'),
+            ('Ice-Beta', 'short-term', 'scalper'),
+            ('Frost-Gamma', 'long-term', 'trend'),
+            ('Glacier-X', 'momentum', 'momentum'),
+            ('Avalanche-Z', 'volatility', 'aggressive'),
+            ('Polar-Prime', 'risk-aware', 'conservative'),
+            ('Blizzard-Omega', 'momentum', 'aggressive'),
+            ('Tundra-Sigma', 'mean-reversion', 'balanced'),
+            ('Arctic-Delta', 'volatility', 'aggressive'),
+            ('Permafrost-Theta', 'contrarian', 'contrarian')
+        ]
+        
+        results = []
+        
+        for agent_name, state_features, personality in agents_to_test:
+            # Load weights
+            from asgiref.sync import sync_to_async
+            
+            def get_weights(name):
+                try:
+                    from .models import SnowAITradingWeights
+                    obj = SnowAITradingWeights.objects.get(snow_agent_name=name)
+                    return obj.snow_weights_data
+                except Exception as e:
+                    logger.error(f"Error loading weights for {name}: {e}")
+                    return None
+            
+            weights = get_weights(agent_name)
+            
+            if not weights:
+                results.append({
+                    'agent': agent_name,
+                    'error': 'No weights found in database'
+                })
+                continue
+            
+            # Calculate features
+            inputs = calculate_model_inputs(
+                sample_data,
+                state_features=state_features,
+                position_size=position_size,
+                unrealized_pnl=unrealized_pnl
+            )
+            
+            # Get Q-values
+            q_values = forward_pass(inputs, weights)
+            
+            # Get action (no personality bias)
+            action_no_bias = get_best_action(q_values, current_position, 'balanced')
+            
+            # Get action (with personality bias)
+            action_with_bias = get_best_action(q_values, current_position, personality)
+            
+            action_names = ['BUY', 'HOLD', 'SELL', 'SHORT', 'COVER']
+            
+            # Find which Q-value is highest
+            max_q = max(q_values)
+            max_q_index = q_values.index(max_q)
+            
+            results.append({
+                'agent': agent_name,
+                'state_features': state_features,
+                'personality': personality,
+                'inputs': [round(x, 4) for x in inputs],
+                'q_values': [round(q, 4) for q in q_values],
+                'q_values_labeled': {
+                    action_names[i]: round(q, 4) 
+                    for i, q in enumerate(q_values)
+                },
+                'highest_q_action': action_names[max_q_index],
+                'highest_q_value': round(max_q, 4),
+                'action_no_bias': action_names[action_no_bias],
+                'action_with_bias': action_names[action_with_bias],
+                'weights_sample': {
+                    'w1_first_row_first_5': [round(x, 4) for x in weights['w1'][0][:5]],
+                    'b3_output_biases': [round(x, 4) for x in weights['b3']]
+                }
+            })
+        
+        # Summary statistics
+        unique_inputs = len(set(str(r['inputs']) for r in results if 'inputs' in r))
+        unique_q_values = len(set(str(r['q_values']) for r in results if 'q_values' in r))
+        unique_actions_no_bias = len(set(r['action_no_bias'] for r in results if 'action_no_bias' in r))
+        unique_actions_with_bias = len(set(r['action_with_bias'] for r in results if 'action_with_bias' in r))
+        
+        return JsonResponse({
+            'success': True,
+            'scenario': 'Strong uptrend (150 -> 190 over 50 candles)',
+            'current_price': sample_data[-1]['close'],
+            'price_change': f"+{((sample_data[-1]['close'] - sample_data[0]['close']) / sample_data[0]['close'] * 100):.2f}%",
+            'summary': {
+                'agents_tested': len(agents_to_test),
+                'agents_with_weights': len([r for r in results if 'error' not in r]),
+                'unique_input_combinations': unique_inputs,
+                'unique_q_value_combinations': unique_q_values,
+                'unique_actions_without_bias': unique_actions_no_bias,
+                'unique_actions_with_bias': unique_actions_with_bias,
+                'diagnosis': {
+                    'inputs_different': unique_inputs > 1,
+                    'q_values_different': unique_q_values > 1,
+                    'actions_different_without_bias': unique_actions_no_bias > 1,
+                    'actions_different_with_bias': unique_actions_with_bias > 1
+                }
+            },
+            'results': results
+        }, json_dumps_params={'indent': 2})
+        
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status=500, json_dumps_params={'indent': 2})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_debug_weight_shapes(request):
+    """
+    DEBUG: Check the shapes of stored weights
+    GET /api/snowai-trading-weights/debug-weight-shapes/
+    """
+    try:
+        from .models import SnowAITradingWeights
+        import numpy as np
+        
+        # Get one agent's weights
+        obj = SnowAITradingWeights.objects.first()
+        
+        if not obj:
+            return JsonResponse({
+                'success': False,
+                'error': 'No weights found in database'
+            })
+        
+        weights = obj.snow_weights_data
+        
+        # Get actual shapes
+        w1_shape = np.array(weights['w1']).shape
+        b1_shape = np.array(weights['b1']).shape
+        w2_shape = np.array(weights['w2']).shape
+        b2_shape = np.array(weights['b2']).shape
+        w3_shape = np.array(weights['w3']).shape
+        b3_shape = np.array(weights['b3']).shape
+        
+        # Sample values
+        w1_sample = np.array(weights['w1'])
+        
+        return JsonResponse({
+            'success': True,
+            'agent': obj.snow_agent_name,
+            'actual_shapes': {
+                'w1': list(w1_shape),
+                'b1': list(b1_shape),
+                'w2': list(w2_shape),
+                'b2': list(b2_shape),
+                'w3': list(w3_shape),
+                'b3': list(b3_shape),
+            },
+            'w1_is_2d': len(w1_shape) == 2,
+            'w1_first_dimension': int(w1_shape[0]),
+            'w1_second_dimension': int(w1_shape[1]) if len(w1_shape) > 1 else None,
+            'w1_first_row_first_5': [float(x) for x in w1_sample[0][:5]] if len(w1_shape) == 2 else None,
+            'expected_shapes_if_input_first': {
+                'w1': '[7, 32] means [input_size, hidden1_size]',
+                'w2': '[32, 16] means [hidden1_size, hidden2_size]',
+                'w3': '[16, 5] means [hidden2_size, output_size]'
+            },
+            'expected_shapes_if_hidden_first': {
+                'w1': '[32, 7] means [hidden1_size, input_size] - needs transpose',
+                'w2': '[16, 32] means [hidden2_size, hidden1_size] - needs transpose',
+                'w3': '[5, 16] means [output_size, hidden2_size] - needs transpose'
+            }
+        }, json_dumps_params={'indent': 2})
+        
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status=500)
+        
+    
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from datetime import datetime, timedelta
+
+
+def _get_lookback_data(data, lookback_days=30):
+    """
+    Get the last N days of data, handling both CSV and yfinance formats
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_days (int): Number of days to look back
+        
+    Returns:
+        pd.DataFrame: Subset of data for analysis
+    """
+    try:
+        if len(data) == 0:
+            return data
+        
+        # Check if index is datetime
+        if isinstance(data.index, pd.DatetimeIndex):
+            # Index is already datetime (yfinance format)
+            cutoff_date = data.index[-1] - timedelta(days=lookback_days)
+            lookback_data = data[data.index >= cutoff_date]
+        elif 'Time' in data.columns:
+            # CSV format with 'Time' column
+            data_copy = data.copy()
+            
+            # Try to parse the Time column
+            try:
+                data_copy['Time'] = pd.to_datetime(data_copy['Time'])
+                data_copy = data_copy.set_index('Time')
+                
+                # Now filter by date
+                cutoff_date = data_copy.index[-1] - timedelta(days=lookback_days)
+                lookback_data = data_copy[data_copy.index >= cutoff_date]
+            except:
+                # If parsing fails, just take last N rows (estimate ~24 rows per day for hourly data)
+                estimated_rows = lookback_days * 24
+                lookback_data = data_copy.iloc[-estimated_rows:]
+        else:
+            # Fallback: No time info, estimate based on typical trading hours
+            # Assume 1h timeframe: ~6.5 trading hours per day = ~7 candles/day for stocks
+            # For 24/7 assets (crypto/forex): 24 candles/day
+            
+            # Try to detect market type from data frequency
+            if len(data) > 50:
+                # Calculate average time between candles if possible
+                # For now, use conservative estimate
+                estimated_rows = lookback_days * 24  # Assume 24h market
+                lookback_data = data.iloc[-estimated_rows:]
+            else:
+                # Not enough data, use what we have
+                lookback_data = data
+        
+        # Ensure we have at least 20 rows for meaningful analysis
+        if len(lookback_data) < 20:
+            # If filtered data is too small, use more data
+            min_rows = 20
+            lookback_data = data.iloc[-min_rows:]
+        
+        return lookback_data
+        
+    except Exception as e:
+        print(f"[Lookback Data] Error: {e}, using last 100 rows as fallback")
+        # Fallback: just use last 100 rows
+        return data.iloc[-100:] if len(data) >= 100 else data
+
+
+def _calculate_trend_metrics(data, lookback_days=30):
+    """
+    Internal function to calculate trend characteristics using recent data only
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' column
+        lookback_days (int): Number of days to analyze (default 30)
+        
+    Returns:
+        dict: Trend metrics or None if calculation fails
+    """
+    try:
+        # Get only recent data
+        recent_data = _get_lookback_data(data, lookback_days)
+        
+        if len(recent_data) < 20:
+            print(f"[Trend Metrics] Insufficient data after lookback: {len(recent_data)} rows")
+            return None
+        
+        print(f"[Trend Metrics] Analyzing {len(recent_data)} rows from last {lookback_days} days")
+        
+        # Calculate returns
+        data_copy = recent_data.copy()
+        data_copy['returns'] = data_copy['Close'].pct_change()
+        
+        # Linear regression for trend
+        prices = data_copy['Close'].values
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
+        
+        model = LinearRegression()
+        model.fit(X, y)
+        
+        slope = model.coef_[0][0]
+        r_squared = model.score(X, y)
+        
+        # Calculate trend strength (normalized slope)
+        avg_price = np.mean(prices)
+        trend_strength = (slope * len(prices)) / avg_price if avg_price != 0 else 0
+        
+        # Calculate directional consistency
+        returns = data_copy['returns'].dropna()
+        if len(returns) > 0:
+            positive_ratio = (returns > 0).sum() / len(returns)
+        else:
+            positive_ratio = 0.5
+        
+        # Price momentum (current vs start)
+        price_change_pct = (prices[-1] - prices[0]) / prices[0] if prices[0] != 0 else 0
+        
+        # Calculate moving average position
+        if len(data_copy) >= 20:
+            ma_20 = data_copy['Close'].rolling(window=20).mean().iloc[-1]
+            current_price = data_copy['Close'].iloc[-1]
+            ma_position = (current_price - ma_20) / ma_20 if ma_20 != 0 else 0
+        else:
+            ma_position = 0
+        
+        metrics = {
+            'slope': slope,
+            'r_squared': r_squared,
+            'trend_strength': trend_strength,
+            'positive_ratio': positive_ratio,
+            'price_change_pct': price_change_pct,
+            'ma_position': ma_position,
+            'periods_analyzed': len(prices)
+        }
+        
+        print(f"[Trend Metrics] Slope: {slope:.6f}, R²: {r_squared:.3f}, Change: {price_change_pct*100:.2f}%, Positive Ratio: {positive_ratio:.2f}")
+        
+        return metrics
+        
+    except Exception as e:
+        print(f"[Trend Metrics] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def is_uptrend(data, lookback_days=30):
+    """
+    Check if asset is in an uptrend using recent data
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_days (int): Number of days to analyze (default 30)
+        
+    Returns:
+        bool: True if in uptrend
+    """
+    try:
+        metrics = _calculate_trend_metrics(data, lookback_days)
+        if metrics is None:
+            return False
+        
+        is_up = (
+            metrics['slope'] > 0 and
+            metrics['price_change_pct'] > 0.01 and  # At least 1% up
+            metrics['r_squared'] > 0.5  # Trend is clear, not choppy
+        )
+        
+        if is_up:
+            print(f"[Uptrend] ✅ Confirmed - {metrics['price_change_pct']*100:.2f}% move over {metrics['periods_analyzed']} periods")
+        
+        return is_up
+    except Exception as e:
+        print(f"[Uptrend] Error: {e}")
+        return False
+
+
+def is_downtrend(data, lookback_days=30):
+    """
+    Check if asset is in a downtrend using recent data
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_days (int): Number of days to analyze (default 30)
+        
+    Returns:
+        bool: True if in downtrend
+    """
+    try:
+        metrics = _calculate_trend_metrics(data, lookback_days)
+        if metrics is None:
+            return False
+        
+        is_down = (
+            metrics['slope'] < 0 and
+            metrics['price_change_pct'] < -0.01 and  # At least 1% down
+            metrics['r_squared'] > 0.5  # Trend is clear, not choppy
+        )
+        
+        if is_down:
+            print(f"[Downtrend] ✅ Confirmed - {metrics['price_change_pct']*100:.2f}% move over {metrics['periods_analyzed']} periods")
+        
+        return is_down
+    except Exception as e:
+        print(f"[Downtrend] Error: {e}")
+        return False
+
+
+def is_ranging_market(data, lookback_days=30):
+    """
+    Check if market is ranging/consolidating using recent data
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_days (int): Number of days to analyze (default 30)
+        
+    Returns:
+        bool: True if ranging
+    """
+    try:
+        metrics = _calculate_trend_metrics(data, lookback_days)
+        if metrics is None:
+            return False
+        
+        is_range = (
+            abs(metrics['price_change_pct']) <= 0.01 or  # Less than 1% total move
+            (0.45 <= metrics['positive_ratio'] <= 0.55) or  # Equal up/down days
+            metrics['r_squared'] < 0.3  # No clear directional trend
+        )
+        
+        if is_range:
+            print(f"[Ranging] ✅ Confirmed - {abs(metrics['price_change_pct'])*100:.2f}% total move, R²: {metrics['r_squared']:.3f}")
+        
+        return is_range
+    except Exception as e:
+        print(f"[Ranging] Error: {e}")
+        return False
+
+
+def get_trend_info(data, lookback_days=30):
+    """
+    Get detailed trend information for debugging/analysis
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_days (int): Number of days to analyze
+        
+    Returns:
+        dict: Comprehensive trend information
+    """
+    try:
+        metrics = _calculate_trend_metrics(data, lookback_days)
+        if metrics is None:
+            return {'error': 'Failed to calculate metrics'}
+        
+        # Determine trend
+        if is_uptrend(data, lookback_days):
+            trend = 'uptrend'
+        elif is_downtrend(data, lookback_days):
+            trend = 'downtrend'
+        elif is_ranging_market(data, lookback_days):
+            trend = 'ranging'
+        else:
+            trend = 'unclear'
+        
+        recent_data = _get_lookback_data(data, lookback_days)
+        
+        return {
+            'trend': trend,
+            'slope': round(metrics['slope'], 6),
+            'r_squared': round(metrics['r_squared'], 3),
+            'trend_strength': round(metrics['trend_strength'], 4),
+            'price_change_pct': round(metrics['price_change_pct'] * 100, 2),
+            'positive_ratio': round(metrics['positive_ratio'], 3),
+            'ma_position': round(metrics['ma_position'] * 100, 2),
+            'periods_analyzed': metrics['periods_analyzed'],
+            'lookback_days': lookback_days,
+            'current_price': round(recent_data['Close'].iloc[-1], 2),
+            'period_high': round(recent_data['High'].max(), 2),
+            'period_low': round(recent_data['Low'].min(), 2)
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+# Your stock universe
+STOCK_UNIVERSE = [
+    # Tech Giants
+    'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 
+    'TSLA', 'META', 'AMD', 'INTC', 'ORCL', 'CSCO',
+    'ADBE', 'CRM', 'AVGO', 'QCOM', 'TXN', 'AMAT',
+    'LRCX', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'NXPI',
+    
+    # Financial Services
+    'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'BLK',
+    'SCHW', 'AXP', 'SPGI', 'CME', 'ICE', 'MCO',
+    'BK', 'USB', 'PNC', 'TFC', 'COF',
+    
+    # Healthcare & Pharma
+    'JNJ', 'LLY', 'UNH', 'PFE', 'ABBV', 'MRK', 'TMO',
+    'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS',
+    'CI', 'ELV', 'HUM', 'VRTX', 'REGN', 'ISRG',
+    
+    # Consumer Discretionary
+    'HD', 'MCD', 'NKE', 'SBUX', 'TJX',
+    'LOW', 'BKNG', 'MAR', 'CMG', 'F', 'GM', 'ABNB',
+    
+    # Consumer Staples
+    'WMT', 'PG', 'KO', 'PEP', 'COST', 'PM', 'MO',
+    'MDLZ', 'CL', 'KMB', 'GIS', 'KHC', 'STZ',
+    
+    # Energy
+    'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX',
+    'VLO', 'OXY', 'HAL', 'DVN', 'HES', 'BKR',
+    
+    # Industrials
+    'BA', 'HON', 'UNP', 'CAT', 'GE', 'RTX', 'LMT',
+    'UPS', 'DE', 'MMM', 'GD', 'NOC', 'FDX', 'CSX',
+    
+    # Telecom & Media
+    'T', 'VZ', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR',
+    
+    # Payment Processors
+    'V', 'MA', 'PYPL', 'ADP', 'FISV', 'FIS',
+    
+    # E-commerce & Retail
+    'SHOP', 'MELI', 'EBAY', 'ETSY', 'TGT', 'ROST',
+    
+    # Software & Cloud
+    'NOW', 'INTU', 'WDAY', 'PANW', 'CRWD', 'ZS',
+    'DDOG', 'NET', 'SNOW', 'PLTR', 'TEAM',
+    
+    # Biotech
+    'BIIB', 'MRNA', 'BNTX', 'SGEN', 'ALNY', 'BGNE',
+    
+    # Chinese ADRs
+    'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV', 'LI',
+    
+    # EVs & Battery
+    'RIVN', 'LCID', 'ALB', 'SQM',
+]
+
+# Model code templates
+UPTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
+set_stop_loss(number=2, type_of_setting='PERCENTAGE')
+if num_positions == 0:
+    if is_stable_market(data=dataset, lookback_period=25):
+        if buy_hold(dataset=dataset):
+            if is_uptrend(data=dataset):
+                return_statement = 'buy'"""
+
+DOWNTREND_MODEL_CODE = """set_take_profit(number=4, type_of_setting='PERCENTAGE')
+set_stop_loss(number=2, type_of_setting='PERCENTAGE')
+if num_positions == 0:
+    if is_stable_market(data=dataset, lookback_period=25):
+        if sell_hold(dataset=dataset):
+            if is_downtrend(data=dataset):
+                return_statement = 'sell'"""
+
+
+def scan_and_deploy_stocks():
+    """
+    Scan all stocks in universe for stability and trends
+    Auto-create/remove forward testing models based on conditions
+    """
+    
+    # Check if NYSE is open using existing function
+    if not new_york_session():
+        print(f"⏰ NYSE is closed - skipping stock scan at {datetime.now()}")
+        return
+    
+    print(f"\n{'='*60}")
+    print(f"🔍 STOCK SCANNER STARTING - {datetime.now()}")
+    print(f"{'='*60}")
+    
+    deployed_count = 0
+    removed_count = 0
+    scanned_count = 0
+    error_count = 0
+    
+    for symbol in STOCK_UNIVERSE:
+        scanned_count += 1
+        
+        try:
+            print(f"\n[{scanned_count}/{len(STOCK_UNIVERSE)}] Checking {symbol}...", end=" ")
+            
+            # Fetch 1H data (20 days for short-term moves)
+            ticker = yf.Ticker(symbol)
+            data = ticker.history(period='20d', interval='1h')
+            
+            if len(data) < 30:
+                print(f"❌ Insufficient data ({len(data)} candles)")
+                error_count += 1
+                continue
+            
+            print(f"✅ Got {len(data)} candles", end=" | ")
+            
+            # Check if stock is stable using 1H data
+            is_stable = is_stable_market(data=data, lookback_period=25)
+            
+            if not is_stable:
+                print(f"📊 Not stable")
+                # Check if we have an auto-deployed model for this stock and remove it
+                if remove_auto_model_if_exists(symbol, reason="no longer stable"):
+                    removed_count += 1
+                continue
+            
+            print(f"✅ Stable", end=" | ")
+            
+            # Stock is stable - check trend on 1H data
+            is_up = is_uptrend(data=data)
+            is_down = is_downtrend(data=data)
+            
+            if is_up:
+                print(f"📈 UPTREND", end=" | ")
+                # Deploy uptrend model
+                result = deploy_or_update_model(
+                    symbol=symbol,
+                    trend='uptrend',
+                    model_code=UPTREND_MODEL_CODE
+                )
+                if result == 'deployed':
+                    deployed_count += 1
+                    print(f"🚀 DEPLOYED")
+                elif result == 'reactivated':
+                    deployed_count += 1
+                    print(f"▶️ REACTIVATED")
+                elif result == 'updated':
+                    print(f"🔄 UPDATED to UPTREND")
+                else:
+                    print(f"✔️ Already active")
+                    
+            elif is_down:
+                print(f"📉 DOWNTREND", end=" | ")
+                # Deploy downtrend model
+                result = deploy_or_update_model(
+                    symbol=symbol,
+                    trend='downtrend',
+                    model_code=DOWNTREND_MODEL_CODE
+                )
+                if result == 'deployed':
+                    deployed_count += 1
+                    print(f"🚀 DEPLOYED")
+                elif result == 'reactivated':
+                    deployed_count += 1
+                    print(f"▶️ REACTIVATED")
+                elif result == 'updated':
+                    print(f"🔄 UPDATED to DOWNTREND")
+                else:
+                    print(f"✔️ Already active")
+            else:
+                print(f"⚪ No clear trend")
+                # Stable but no clear trend - remove if exists
+                if remove_auto_model_if_exists(symbol, reason="no clear trend"):
+                    removed_count += 1
+                
+        except Exception as e:
+            error_count += 1
+            error_msg = str(e)
+            
+            # Filter out noisy yfinance errors
+            if "possibly delisted" in error_msg or "No data found" in error_msg:
+                print(f"⚠️ Delisted/No data")
+            elif "timed out" in error_msg or "curl" in error_msg:
+                print(f"⚠️ Network timeout")
+            else:
+                print(f"❌ Error: {error_msg[:50]}")
+            continue
+    
+    print(f"\n{'='*60}")
+    print(f"📊 SCAN COMPLETE")
+    print(f"   • Scanned: {scanned_count} stocks")
+    print(f"   • Deployed/Reactivated: {deployed_count}")
+    print(f"   • Removed/Paused: {removed_count}")
+    print(f"   • Errors: {error_count}")
+    print(f"{'='*60}\n")
+
+
+def deploy_or_update_model(symbol, trend, model_code):
+    """
+    Deploy a new model or update existing one if trend changed
+    Reactivates paused models if conditions are met again
+    
+    Returns:
+        str: 'deployed', 'updated', 'reactivated', or 'exists'
+    """
+    
+    # Check if auto-deployed model already exists (active or paused)
+    existing = ActiveForwardTestModel.objects.filter(
+        asset=symbol,
+        name__startswith='[AUTO'
+    ).first()
+    
+    if existing:
+        # Reactivate if it was paused
+        if not existing.is_active:
+            existing.is_active = True
+            existing.model_code = model_code
+            existing.name = f"[AUTO] {symbol} - {trend.upper()}"
+            existing.save()
+            return 'reactivated'
+        
+        # Check if trend changed
+        current_trend = 'uptrend' if 'is_uptrend' in existing.model_code else 'downtrend'
+        
+        if current_trend != trend:
+            # Trend changed - update model code
+            existing.model_code = model_code
+            existing.name = f"[AUTO] {symbol} - {trend.upper()}"
+            existing.save()
+            return 'updated'
+        else:
+            # Same trend, model already exists
+            return 'exists'
+    else:
+        # Create new model
+        model = ActiveForwardTestModel.objects.create(
+            name=f"[AUTO] {symbol} - {trend.upper()}",
+            asset=symbol,
+            interval='1h',
+            model_code=model_code,
+            initial_equity=10000.0,
+            current_equity=10000.0,
+            num_positions=1,
+            take_profit=4.0,
+            take_profit_type='PERCENTAGE',
+            stop_loss=2.0,
+            stop_loss_type='PERCENTAGE',
+            is_active=True
+        )
+        
+        # Initialize equity curve
+        model.equity_curve = json.dumps([model.initial_equity])
+        model.save()
+        
+        return 'deployed'
+
+
+def remove_auto_model_if_exists(symbol, reason="conditions not met"):
+    """
+    Deactivate auto-deployed model if it exists (preserves trading history)
+    """
+    
+    existing = ActiveForwardTestModel.objects.filter(
+        asset=symbol,
+        name__startswith='[AUTO]'
+    ).first()
+    
+    if existing and existing.is_active:
+        # Close any open positions first
+        open_positions = Position.objects.filter(model=existing, is_open=True)
+        
+        if len(open_positions) > 0:
+            # Get current price to close positions
+            try:
+                ticker = yf.Ticker(symbol)
+                data = ticker.history(period='1d', interval='1h')
+                if len(data) > 0:
+                    current_price = data['Close'].iloc[-1]
+                    
+                    for pos in open_positions:
+                        pos.close_position(current_price)
+            except:
+                pass
+        
+        # Deactivate the model instead of deleting
+        existing.is_active = False
+        existing.name = f"[AUTO-PAUSED] {symbol} - {reason}"
+        existing.save()
+        return True
+    
+    return False
+
+
+def manual_trigger_stock_scan():
+    """
+    Manually trigger a stock scan (can be called via admin or API)
+    """
+    scan_and_deploy_stocks()
+    return "Stock scan completed"
+
+
+
+# Schedule the stock scanner to run every 10 minutes
+scheduler.add_job(
+    scan_and_deploy_stocks,
+    trigger=IntervalTrigger(minutes=10),
+    id='auto_stock_scanner_job',
+    name='Scan stocks and auto-deploy trading models',
+    replace_existing=True
+)
+
+@csrf_exempt
+def detect_trend_endpoint(request):
+    """
+    Detect trend for a given symbol
+    """
+    symbol = None
+    try:
+        symbol = request.GET.get('symbol')
+        period = int(request.GET.get('period', 20))
+        
+        print(f"\n{'='*60}")
+        print(f"🔍 TREND DETECTION REQUEST")
+        print(f"   Symbol: {symbol}")
+        print(f"   Period: {period} days")
+        print(f"{'='*60}")
+        
+        if not symbol:
+            print("❌ No symbol provided")
+            return JsonResponse({'error': 'Symbol required'}, status=400)
+        
+        # Fetch data
+        print(f"📊 Fetching data for {symbol}...", end=" ")
+        ticker = yf.Ticker(symbol)
+        data = ticker.history(period=f'{period}d', interval='1h')
+        
+        print(f"✅ Got {len(data)} candles")
+        
+        if len(data) < 30:
+            print(f"⚠️ Insufficient data: {len(data)} candles")
+            return JsonResponse({
+                'symbol': symbol,
+                'trend': 'unknown',
+                'error': 'Insufficient data'
+            })
+        
+        # Import your trend detection functions
+        print(f"🔬 Analyzing trends...", end=" ")
+        
+        # Check trends and convert to Python bool
+        is_up = bool(is_uptrend(data=data))
+        is_down = bool(is_downtrend(data=data))
+        is_ranging = bool(is_ranging_market(data=data))
+        
+        print(f"Up: {is_up}, Down: {is_down}, Ranging: {is_ranging}")
+        
+        if is_up:
+            trend = 'uptrend'
+        elif is_down:
+            trend = 'downtrend'
+        elif is_ranging:
+            trend = 'ranging'
+        else:
+            trend = 'unknown'
+        
+        print(f"✅ Final trend: {trend.upper()}")
+        print(f"{'='*60}\n")
+        
+        return JsonResponse({
+            'symbol': symbol,
+            'trend': trend,
+            'is_uptrend': is_up,
+            'is_downtrend': is_down,
+            'is_ranging': is_ranging
+        })
+    
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        print(f"   Make sure trading_functions module exists and has the required functions")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'symbol': symbol or 'unknown',
+            'trend': 'unknown',
+            'error': f'Import error: {str(e)}'
+        }, status=500)
+    
+    except Exception as e:
+        print(f"❌ ERROR for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'symbol': symbol or 'unknown',
+            'trend': 'unknown',
+            'error': str(e)
+        }, status=500)
+
+
+from django.utils.decorators import method_decorator
+from django.views import View
+
+
+# --- UTILS (To be placed in a utils file or kept here) ---
+def _verify_sovereign_neural_signature(fidelity_score):
+    """
+    Mock verification of the neural signature.
+    In prod, this would check against a stored biometric hash.
+    """
+    if fidelity_score > 0.90:
+        return True
+    return False
+
+# --- VIEWS ---
+
+@csrf_exempt
+def receive_sovereign_neuro_command_v1(request):
+    """
+    The Primary endpoint for SnowAI Neuro-Link.
+    Receives JSON payload from the React BCI component.
+    PATH: /snow-ai/neuro-command/receive/
+    """
+    if request.method == 'POST':
+        try:
+            # 1. Parse Data
+            data = json.loads(request.body)
+            command = data.get('command_signature', 'UNKNOWN')
+            fidelity = data.get('neural_fidelity', 0.0)
+            
+            # 2. Security Check (Sovereign User Only)
+            if not _verify_sovereign_neural_signature(fidelity):
+                return JsonResponse({
+                    "status": "DENIED",
+                    "message": "Neural fidelity too low. Verification failed."
+                }, status=403)
+
+            # 3. Execute SnowAI Logic (Mocked for now)
+            execution_log = f"Processed {command} at {time.time()}"
+            
+            # Logic router based on unique command strings
+            response_message = ""
+            if command == "EXECUTE_HEDGE_STRATEGY":
+                response_message = "Hedge initialized. Shorting Volatility Index."
+            elif command == "SCAN_MARKET_VOLATILITY":
+                response_message = "Scan complete. VIX: 18.4 (Stable)."
+            elif command == "OPTIMIZE_LATENCY":
+                response_message = "Rerouting to Seoul-AWS-South-1. Latency: 4ms."
+            elif command == "DEPLOY_SMART_CONTRACT":
+                response_message = "Contract 0x7F... deployed to Mainnet."
+            else:
+                response_message = f"Command {command} acknowledged."
+
+            # 4. Return Success
+            return JsonResponse({
+                "status": "SUCCESS",
+                "message": response_message,
+                "execution_id": f"SNOW-{int(time.time())}"
+            })
+
+        except json.JSONDecodeError:
+            return JsonResponse({"status": "ERROR", "message": "Invalid JSON"}, status=400)
+        except Exception as e:
+            return JsonResponse({"status": "ERROR", "message": str(e)}, status=500)
+
+    return JsonResponse({"status": "METHOD_NOT_ALLOWED"}, status=405)
+
+
+
+import random
+import json
+import pandas as pd
+from django.core.files.storage import default_storage
+from django.core.cache import cache
+import uuid
+import time
+import pickle
+import os
+
+# Training session storage (in production, use Redis or database)
+TRAINING_SESSIONS = {}
+
+@csrf_exempt
+def snowai_sandbox_train(request):
+    """
+    Start AI training session with uploaded CSV files
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    
+    try:
+        files = request.FILES.getlist('files')
+        config = json.loads(request.POST.get('config', '{}'))
+        checkpoint_id = request.POST.get('checkpoint_id', None)
+        
+        if not files and not checkpoint_id:
+            return JsonResponse({'error': 'No files uploaded or checkpoint provided'}, status=400)
+        
+        # Generate session ID
+        session_id = str(uuid.uuid4())
+        
+        # Save files temporarily
+        file_paths = []
+        for file in files:
+            file_path = default_storage.save(f'sandbox/{session_id}/{file.name}', file)
+            file_paths.append(file_path)
+        
+        # Load checkpoint if provided
+        checkpoint_data = None
+        if checkpoint_id:
+            checkpoint_path = f'sandbox/checkpoints/{checkpoint_id}.pkl'
+            if default_storage.exists(checkpoint_path):
+                with default_storage.open(checkpoint_path, 'rb') as f:
+                    checkpoint_data = pickle.load(f)
+        
+        # Initialize training session
+        TRAINING_SESSIONS[session_id] = {
+            'status': 'starting',
+            'progress': 0,
+            'files': file_paths,
+            'config': config,
+            'logs': [],
+            'completed': False,
+            'results': None,
+            'paused': False,
+            'current_iteration': 0,
+            'checkpoint_id': checkpoint_id,
+            'checkpoint_data': checkpoint_data
+        }
+        
+        # Start training in background
+        import threading
+        thread = threading.Thread(target=run_ai_training, args=(session_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return JsonResponse({'session_id': session_id, 'message': 'Training started'})
+    
+    except Exception as e:
+        print(f"Error starting training: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowai_sandbox_status(request, session_id):
+    """
+    Get training status and progress
+    """
+    session = TRAINING_SESSIONS.get(session_id)
+    
+    if not session:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    
+    # Get only NEW logs since last check
+    last_log_count = session.get('last_log_count', 0)
+    new_logs = session['logs'][last_log_count:] if session['logs'] else []
+    session['last_log_count'] = len(session['logs'])
+    
+    return JsonResponse({
+        'session_id': session_id,
+        'status': session['status'],
+        'progress': session['progress'],
+        'completed': session['completed'],
+        'results': session['results'],
+        'logs': new_logs,  # Only new logs
+        'error': session.get('error'),
+        'paused': session.get('paused', False),
+        'current_iteration': session.get('current_iteration', 0),
+        'can_checkpoint': session.get('current_iteration', 0) > 0
+    })
+
+
+@csrf_exempt
+def snowai_sandbox_pause(request, session_id):
+    """
+    Pause training session
+    """
+    session = TRAINING_SESSIONS.get(session_id)
+    
+    if not session:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    
+    if not session.get('paused', False):
+        session['paused'] = True
+        session['status'] = 'Paused'
+        session['logs'].append('⏸️ Training paused by user')
+    
+    return JsonResponse({'message': 'Training paused', 'session_id': session_id})
+
+
+@csrf_exempt
+def snowai_sandbox_resume(request, session_id):
+    """
+    Resume training session
+    """
+    session = TRAINING_SESSIONS.get(session_id)
+    
+    if not session:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    
+    if session.get('paused', False):
+        session['paused'] = False
+        session['just_resumed'] = True
+        session['status'] = f'Generation {session.get("current_iteration", 0) + 1}/{session["config"]["max_iterations"]}'
+        session['logs'].append('▶️ Training resumed')
+    
+    return JsonResponse({'message': 'Training resumed', 'session_id': session_id})
+
+
+@csrf_exempt
+def snowai_sandbox_save_checkpoint(request, session_id):
+    """
+    Save current training state as checkpoint
+    """
+    session = TRAINING_SESSIONS.get(session_id)
+    
+    if not session:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    
+    try:
+        checkpoint_id = str(uuid.uuid4())
+        checkpoint_data = {
+            'population': session.get('population', []),
+            'iteration': session.get('current_iteration', 0),
+            'config': session['config'],
+            'best_fitness_history': session.get('best_fitness_history', [])
+        }
+        
+        # Save checkpoint to storage
+        checkpoint_path = f'sandbox/checkpoints/{checkpoint_id}.pkl'
+        os.makedirs(os.path.dirname(default_storage.path(checkpoint_path)), exist_ok=True)
+        
+        with default_storage.open(checkpoint_path, 'wb') as f:
+            pickle.dump(checkpoint_data, f)
+        
+        session['logs'].append(f'💾 Checkpoint saved: {checkpoint_id[:8]}...')
+        
+        return JsonResponse({
+            'message': 'Checkpoint saved',
+            'checkpoint_id': checkpoint_id,
+            'iteration': checkpoint_data['iteration']
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowai_sandbox_list_checkpoints(request):
+    """
+    List all available checkpoints
+    """
+    try:
+        checkpoint_dir = 'sandbox/checkpoints/'
+        checkpoints = []
+        
+        if default_storage.exists(checkpoint_dir):
+            dirs, files = default_storage.listdir(checkpoint_dir)
+            for file in files:
+                if file.endswith('.pkl'):
+                    checkpoint_path = os.path.join(checkpoint_dir, file)
+                    with default_storage.open(checkpoint_path, 'rb') as f:
+                        data = pickle.load(f)
+                        checkpoints.append({
+                            'id': file.replace('.pkl', ''),
+                            'iteration': data.get('iteration', 0),
+                            'config': data.get('config', {}),
+                            'population_size': len(data.get('population', []))
+                        })
+        
+        return JsonResponse({'checkpoints': checkpoints})
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def run_ai_training(session_id):
+    """
+    Main AI training loop with checkpoint support
+    """
+    session = TRAINING_SESSIONS[session_id]
+    
+    try:
+        config = session['config']
+        file_paths = session['files']
+        checkpoint_data = session.get('checkpoint_data')
+        
+        session['logs'].append('📊 Loading training data...')
+        session['status'] = 'Loading data'
+        
+        # Load all CSV files
+        datasets = []
+        for file_path in file_paths:
+            try:
+                df = pd.read_csv(default_storage.path(file_path))
+                if all(col in df.columns for col in ['Open', 'High', 'Low', 'Close']):
+                    datasets.append(df)
+                    session['logs'].append(f'✅ Loaded {file_path.split("/")[-1]}')
+            except Exception as e:
+                session['logs'].append(f'⚠️ Error loading {file_path}: {str(e)}')
+        
+        if not datasets:
+            session['error'] = 'No valid datasets loaded'
+            session['completed'] = True
+            return
+
+        session['logs'].append(f'⚡ Optimization: Sampling datasets for faster training')
+        
+        # Available trading functions
+        available_functions = [
+            'is_uptrend', 'is_downtrend', 'is_ranging_market',
+            'is_bullish_market_retracement', 'is_bearish_market_retracement',
+            'is_resistance_level', 'is_support_level',
+            'buy_hold', 'sell_hold', 'is_stable_market'
+        ]
+        
+        # Initialize or load population
+        if checkpoint_data:
+            population = checkpoint_data['population']
+            start_iteration = checkpoint_data['iteration']
+            session['logs'].append(f'🔄 Resuming from iteration {start_iteration}')
+            session['best_fitness_history'] = checkpoint_data.get('best_fitness_history', [])
+        else:
+            population = []
+            used_combinations = set()
+            
+            attempts = 0
+            max_attempts = config['population_size'] * 10
+            
+            while len(population) < config['population_size'] and attempts < max_attempts:
+                attempts += 1
+                num_functions = random.randint(2, 4)
+                functions = tuple(sorted(random.sample(available_functions, num_functions)))
+                
+                if functions not in used_combinations:
+                    used_combinations.add(functions)
+                    population.append({
+                        'functions': list(functions),
+                        'fitness': 0,
+                        'trades': 0,
+                        'wins': 0,
+                        'pnl': 0
+                    })
+            
+            start_iteration = 0
+            session['logs'].append(f'✅ Training initialized with {len(population)} strategies')
+            session['best_fitness_history'] = []
+        
+        # Store population in session
+        session['population'] = population
+        
+        # Evolution loop
+        max_iterations = config['max_iterations']
+        
+        for iteration in range(start_iteration, max_iterations):
+            # Check for pause - proper blocking loop
+            while session.get('paused', False):
+                time.sleep(0.5)
+                if session.get('completed', False):
+                    return
+            
+            # Check if we just resumed (to avoid duplicate logs)
+            if iteration > start_iteration and session.get('just_resumed', False):
+                session['just_resumed'] = False
+            
+            session['current_iteration'] = iteration
+            session['progress'] = int((iteration / max_iterations) * 100)
+            session['status'] = f'Generation {iteration + 1}/{max_iterations}'
+            
+            # Log start of generation
+            session['logs'].append(f'🔬 Generation {iteration + 1}: Testing strategies...')
+            
+            # Evaluate each strategy
+            for idx, strategy in enumerate(population):
+                if strategy['fitness'] == 0:
+                    strategy['fitness'], strategy['trades'], strategy['wins'], strategy['pnl'] = evaluate_strategy(
+                        strategy['functions'],
+                        datasets,
+                        config
+                    )
+                    # Log progress every 5 strategies
+                    if (idx + 1) % 5 == 0:
+                        session['logs'].append(f'   📈 Evaluated {idx + 1}/{len(population)} strategies...')
+            
+            # Sort by fitness
+            population.sort(key=lambda x: x['fitness'], reverse=True)
+            
+            # Track best fitness
+            session['best_fitness_history'].append(population[0]['fitness'])
+            
+            # Log top 3 strategies every iteration
+            session['logs'].append(f'🏆 Top 3 this generation:')
+            for i in range(min(3, len(population))):
+                s = population[i]
+                session['logs'].append(
+                    f'   #{i+1}: {" + ".join(s["functions"][:2])}{"..." if len(s["functions"]) > 2 else ""} | '
+                    f'Fitness: {s["fitness"]:.2f} | Trades: {s["trades"]}'
+                )
+            
+            # Auto-checkpoint every 10 iterations
+            if (iteration + 1) % 10 == 0 and not session.get('paused', False):
+                session['logs'].append(f'💾 Auto-save at iteration {iteration + 1}')
+            
+            # Selection and evolution
+            elite_count = max(3, config['population_size'] // 3)
+            elites = population[:elite_count]
+            next_gen = elites.copy()
+            
+            # Create offspring
+            while len(next_gen) < config['population_size']:
+                tournament = random.sample(elites, min(3, len(elites)))
+                parent1 = max(tournament, key=lambda x: x['fitness'])
+                
+                tournament = random.sample(elites, min(3, len(elites)))
+                parent2 = max(tournament, key=lambda x: x['fitness'])
+                
+                all_parent_functions = list(set(parent1['functions'] + parent2['functions']))
+                child_size = random.randint(2, min(4, len(all_parent_functions)))
+                child_functions = random.sample(all_parent_functions, child_size)
+                
+                # Mutation
+                if random.random() < 0.2:
+                    mutation_type = random.choice(['add', 'remove', 'replace'])
+                    
+                    if mutation_type == 'add' and len(child_functions) < 4:
+                        available = [f for f in available_functions if f not in child_functions]
+                        if available:
+                            child_functions.append(random.choice(available))
+                    
+                    elif mutation_type == 'remove' and len(child_functions) > 2:
+                        child_functions.pop(random.randint(0, len(child_functions) - 1))
+                    
+                    elif mutation_type == 'replace':
+                        idx = random.randint(0, len(child_functions) - 1)
+                        available = [f for f in available_functions if f not in child_functions]
+                        if available:
+                            child_functions[idx] = random.choice(available)
+                
+                next_gen.append({
+                    'functions': child_functions,
+                    'fitness': 0,
+                    'trades': 0,
+                    'wins': 0,
+                    'pnl': 0
+                })
+            
+            population = next_gen
+            session['population'] = population
+            time.sleep(0.05)
+        
+        # Final evaluation
+        session['logs'].append('🔬 Final evaluation...')
+        for strategy in population:
+            if strategy['fitness'] == 0:
+                strategy['fitness'], strategy['trades'], strategy['wins'], strategy['pnl'] = evaluate_strategy(
+                    strategy['functions'],
+                    datasets,
+                    config
+                )
+        
+        # Final results
+        population.sort(key=lambda x: x['fitness'], reverse=True)
+        
+        seen_combinations = set()
+        unique_strategies = []
+        
+        for strategy in population:
+            func_tuple = tuple(sorted(strategy['functions']))
+            if func_tuple not in seen_combinations:
+                seen_combinations.add(func_tuple)
+                unique_strategies.append(strategy)
+            
+            if len(unique_strategies) >= 5:
+                break
+        
+        top_5 = unique_strategies[:5]
+        insights = generate_insights(top_5, available_functions)
+        
+        session['results'] = {
+            'top_strategies': [
+                {
+                    'functions': s['functions'],
+                    'fitness': s['fitness'],
+                    'total_trades': s['trades'],
+                    'win_rate': (s['wins'] / max(s['trades'], 1)) * 100,
+                    'total_pnl': s['pnl']
+                }
+                for s in top_5
+            ],
+            'insights': insights,
+            'best_fitness_history': session['best_fitness_history']
+        }
+        
+        session['status'] = 'Completed'
+        session['progress'] = 100
+        session['completed'] = True
+        session['logs'].append('🎉 Training completed successfully!')
+        
+    except Exception as e:
+        session['error'] = str(e)
+        session['completed'] = True
+        session['logs'].append(f'❌ Error: {str(e)}')
+        print(f"Training error: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def evaluate_strategy(functions, datasets, config):
+    """Optimized backtest evaluation"""
+    func_map = {
+        'is_uptrend': is_uptrend,
+        'is_downtrend': is_downtrend,
+        'is_ranging_market': is_ranging_market,
+        'is_bullish_market_retracement': is_bullish_market_retracement,
+        'is_bearish_market_retracement': is_bearish_market_retracement,
+        'is_resistance_level': is_resistance_level,
+        'is_support_level': is_support_level,
+        'buy_hold': buy_hold,
+        'sell_hold': sell_hold,
+        'is_stable_market': is_stable_market
+    }
+    
+    total_pnl = 0
+    total_trades = 0
+    winning_trades = 0
+    
+    for dataset in datasets:
+        equity = config['initial_equity']
+        in_position = False
+        entry_price = 0
+        
+        sample_rate = max(1, len(dataset) // 10000)
+        sampled_indices = range(50, len(dataset), sample_rate)
+        
+        for i in sampled_indices:
+            window = dataset.iloc[i-20:i]
+            
+            if len(window) < 20:
+                continue
+            
+            try:
+                all_signals = True
+                for func_name in functions:
+                    if func_name in func_map:
+                        if not func_map[func_name](window):
+                            all_signals = False
+                            break
+                
+                current_price = dataset.iloc[i]['Close']
+                
+                if not in_position and all_signals:
+                    in_position = True
+                    entry_price = current_price
+                    total_trades += 1
+                
+                elif in_position:
+                    price_change = ((current_price - entry_price) / entry_price) * 100
+                    
+                    if price_change >= config['take_profit']:
+                        pnl = equity * (config['take_profit'] / 100)
+                        total_pnl += pnl
+                        equity += pnl
+                        winning_trades += 1
+                        in_position = False
+                    elif price_change <= -config['stop_loss']:
+                        pnl = -equity * (config['stop_loss'] / 100)
+                        total_pnl += pnl
+                        equity += pnl
+                        in_position = False
+                        
+            except Exception:
+                continue
+    
+    if total_trades == 0:
+        return 0, 0, 0, 0
+    
+    win_rate = (winning_trades / total_trades) * 100
+    fitness = (win_rate * 0.5) + (total_pnl / config['initial_equity'] * 50)
+    
+    return fitness, total_trades, winning_trades, total_pnl
+
+
+def generate_insights(top_strategies, all_functions):
+    """Generate insights from results"""
+    insights = []
+    
+    function_counts = {}
+    for strategy in top_strategies:
+        for func in strategy['functions']:
+            function_counts[func] = function_counts.get(func, 0) + 1
+    
+    most_common = sorted(function_counts.items(), key=lambda x: x[1], reverse=True)
+    
+    if most_common:
+        insights.append(
+            f"🔥 Most effective function: '{most_common[0][0]}' appeared in {most_common[0][1]}/{len(top_strategies)} top strategies"
+        )
+    
+    best = top_strategies[0]
+    insights.append(
+        f"🏆 Best strategy combines: {', '.join(best['functions'])} with {best['fitness']:.1f} fitness score"
+    )
+    
+    avg_win_rate = sum((s['wins'] / max(s['trades'], 1)) * 100 for s in top_strategies) / len(top_strategies)
+    insights.append(
+        f"📊 Top strategies average {avg_win_rate:.1f}% win rate across all test data"
+    )
+    
+    if len(best['functions']) > 2:
+        insights.append(
+            f"💡 Combining {len(best['functions'])} functions yields better results than single indicators"
+        )
+    
+    return insights
+
+
+    
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_hyper_volumetric_relativistic_analyzer(request):
+    """
+    Ultra-specific named endpoint for relative volume analysis across asset classes.
+    Calculates relative volume compared to historical averages (high/average/low).
+    """
+    try:
+        data = json.loads(request.body)
+        symbols = data.get('symbols', [])
+        
+        if not symbols:
+            return JsonResponse({
+                'success': False,
+                'error': 'No symbols provided'
+            })
+        
+        volume_data = []
+        
+        for symbol in symbols:
+            try:
+                # Fetch 60 days of data for volume analysis
+                ticker = yf.Ticker(symbol)
+                hist = ticker.history(period='60d', interval='1d')
+                
+                if hist.empty or 'Volume' not in hist.columns:
+                    continue
+                
+                volumes = hist['Volume'].values
+                current_volume = volumes[-1]  # Most recent volume
+                
+                # Calculate statistics
+                avg_volume = np.mean(volumes[:-1])  # Exclude current day
+                high_volume = np.percentile(volumes[:-1], 75)  # 75th percentile
+                low_volume = np.percentile(volumes[:-1], 25)   # 25th percentile
+                
+                # Calculate relative volume
+                if avg_volume > 0:
+                    relative_volume = round(current_volume / avg_volume, 2)
+                else:
+                    relative_volume = 0
+                
+                # Categorize volume
+                if relative_volume >= 1.5:
+                    category = 'high'
+                elif relative_volume <= 0.7:
+                    category = 'low'
+                else:
+                    category = 'average'
+                
+                volume_data.append({
+                    'symbol': symbol,
+                    'current_volume': int(current_volume),
+                    'avg_volume': int(avg_volume),
+                    'high_volume': int(high_volume),
+                    'low_volume': int(low_volume),
+                    'relative_volume': relative_volume,
+                    'category': category
+                })
+                
+            except Exception as e:
+                print(f"Error processing {symbol}: {str(e)}")
+                continue
+        
+        return JsonResponse({
+            'success': True,
+            'volume_data': volume_data,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+    
+@csrf_exempt
+def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
+    """
+    Ultra-unique Monte Carlo simulation endpoint for MSS component.
+    Runs probabilistic forecasting based on historical price movements.
+    
+    POST /api/monte-carlo-prediction/
+    Body: {
+        "symbol": "AAPL",
+        "lookback_days": 85,  # Updated default
+        "forecast_days": 5,
+        "num_simulations": 10000,
+        "threshold": 0.60
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({
+            'success': False,
+            'error': 'Only POST method is allowed'
+        }, status=405)
+    
+    try:
+        # Parse request body
+        body = json.loads(request.body)
+        symbol = body.get('symbol')
+        lookback_days = body.get('lookback_days', 85)  # Changed default from 120 to 85
+        forecast_days = body.get('forecast_days', 5)
+        num_simulations = body.get('num_simulations', 10000)
+        threshold = body.get('threshold', 0.60)
+        
+        # Validate inputs
+        if not symbol:
+            return JsonResponse({
+                'success': False,
+                'error': 'Symbol is required'
+            }, status=400)
+        
+        # Validate numeric parameters
+        try:
+            lookback_days = int(lookback_days)
+            forecast_days = int(forecast_days)
+            num_simulations = int(num_simulations)
+            threshold = float(threshold)
+        except (ValueError, TypeError):
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid numeric parameters'
+            }, status=400)
+        
+        # FIX 4: Update sanity checks for lookback_days
+        if lookback_days < 30 or lookback_days > 365:
+            return JsonResponse({
+                'success': False,
+                'error': 'lookback_days must be between 30 and 365'
+            }, status=400)
+        
+        if forecast_days < 1 or forecast_days > 30:
+            return JsonResponse({
+                'success': False,
+                'error': 'forecast_days must be between 1 and 30'
+            }, status=400)
+        
+        if num_simulations < 1000 or num_simulations > 50000:
+            return JsonResponse({
+                'success': False,
+                'error': 'num_simulations must be between 1,000 and 50,000'
+            }, status=400)
+        
+        if threshold < 0.5 or threshold > 1.0:
+            return JsonResponse({
+                'success': False,
+                'error': 'threshold must be between 0.5 and 1.0'
+            }, status=400)
+        
+        # FIX 5: Increase buffer significantly to account for weekends, holidays, and market closures
+        # For 85 trading days, we need ~120 calendar days (85 * 1.4)
+        print(f"[Monte Carlo API] Fetching data for {symbol} with {lookback_days} day lookback...")
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=lookback_days * 2)  # Double the lookback for safety
+        
+        try:
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(start=start_date, end=end_date, interval='1d')
+        except Exception as e:
+            print(f"[Monte Carlo API] Error fetching data: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Failed to fetch data for {symbol}: {str(e)}'
+            }, status=500)
+        
+        # FIX 6: Check if we have enough data, if not use what we have (minimum 60 days)
+        if df.empty:
+            return JsonResponse({
+                'success': False,
+                'error': f'No data available for {symbol}'
+            }, status=400)
+        
+        actual_data_points = len(df)
+        
+        if actual_data_points < 60:
+            return JsonResponse({
+                'success': False,
+                'error': f'Insufficient data for {symbol}. Got {actual_data_points} days, need at least 60'
+            }, status=400)
+        
+        # Use available data up to lookback_days, but at least 60 days
+        effective_lookback = min(lookback_days, actual_data_points)
+        
+        print(f"[Monte Carlo API] Available data: {actual_data_points} days")
+        print(f"[Monte Carlo API] Using lookback: {effective_lookback} days")
+        
+        # Prepare data for Monte Carlo
+        df_clean = df[['Close']].copy()
+        df_clean.columns = ['close']
+        df_clean = df_clean.tail(effective_lookback)  # Use effective lookback period
+        
+        current_price = float(df_clean['close'].iloc[-1])
+        
+        print(f"[Monte Carlo API] Running simulations for {symbol}...")
+        print(f"[Monte Carlo API] Current price: ${current_price:.2f}")
+        print(f"[Monte Carlo API] Data points: {len(df_clean)}")
+        
+        # FIX 7: Run Monte Carlo predictions with effective lookback
+        is_bullish = is_monte_carlo_bullish_prediction(
+            data=df_clean,
+            lookback_days=effective_lookback,  # Use effective lookback
+            forecast_days=forecast_days,
+            num_simulations=num_simulations,
+            threshold=threshold
+        )
+        
+        is_bearish = is_monte_carlo_bearish_prediction(
+            data=df_clean,
+            lookback_days=effective_lookback,  # Use effective lookback
+            forecast_days=forecast_days,
+            num_simulations=num_simulations,
+            threshold=threshold
+        )
+        
+        # Calculate actual probabilities for display
+        close_prices = df_clean['close'].values
+        recent_prices = close_prices[-effective_lookback:]
+        log_returns = np.log(recent_prices[1:] / recent_prices[:-1])
+        mu = np.mean(log_returns)
+        sigma = np.std(log_returns)
+        
+        # Run simulation to get probabilities
+        final_prices = _run_monte_carlo(current_price, mu, sigma, forecast_days, num_simulations)
+        bullish_prob = float(np.mean(final_prices > current_price))
+        bearish_prob = float(np.mean(final_prices < current_price))
+        
+        print(f"[Monte Carlo API] Results for {symbol}:")
+        print(f"  - Bullish Probability: {bullish_prob*100:.2f}%")
+        print(f"  - Bearish Probability: {bearish_prob*100:.2f}%")
+        print(f"  - Is Bullish (≥{threshold*100}%): {is_bullish}")
+        print(f"  - Is Bearish (≥{threshold*100}%): {is_bearish}")
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'current_price': current_price,
+            'bullish_probability': bullish_prob,
+            'bearish_probability': bearish_prob,
+            'is_bullish': is_bullish,
+            'is_bearish': is_bearish,
+            'parameters': {
+                'lookback_days': effective_lookback,  # Return actual days used
+                'forecast_days': forecast_days,
+                'num_simulations': num_simulations,
+                'threshold': threshold
+            },
+            'statistics': {
+                'mean_return': float(mu),
+                'volatility': float(sigma),
+                'data_points': len(df_clean)
+            },
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON in request body'
+        }, status=400)
+    
+    except Exception as e:
+        print(f"[Monte Carlo API] Unexpected error: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }, status=500)
+
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.core.exceptions import ObjectDoesNotExist
+import json
+import base64
+from .models import SnowAIPersonOfInterestUniqueV1
+
+
+@csrf_exempt
+def snowai_poi_create_person_unique_v1(request):
+    """Create a new person of interest profile"""
+    if request.method == 'POST':
+        try:
+            # Handle multipart form data
+            name = request.POST.get('name', '')
+            accomplishments = request.POST.get('accomplishments', '')
+            bio = request.POST.get('bio', '')
+            works = request.POST.get('works', '')
+            estimated_iq = request.POST.get('estimated_iq', '')
+            additional_notes = request.POST.get('additional_notes', '')
+            youtube_urls_str = request.POST.get('youtube_urls', '[]')
+            
+            # Parse youtube URLs
+            try:
+                youtube_urls = json.loads(youtube_urls_str)
+            except:
+                youtube_urls = []
+            
+            # Generate unique person_id
+            last_person = SnowAIPersonOfInterestUniqueV1.objects.order_by('-person_id').first()
+            if last_person:
+                try:
+                    last_num = int(last_person.person_id.split('_')[1])
+                    person_id = f"poi_{last_num + 1}"
+                except:
+                    person_id = "poi_1"
+            else:
+                person_id = "poi_1"
+            
+            # Create new person
+            person = SnowAIPersonOfInterestUniqueV1(
+                person_id=person_id,
+                name=name,
+                accomplishments=accomplishments,
+                bio=bio,
+                works=works,
+                estimated_iq=estimated_iq,
+                additional_notes=additional_notes
+            )
+            
+            # Handle image upload - convert to base64
+            if 'image' in request.FILES:
+                image_file = request.FILES['image']
+                image_data = image_file.read()
+                base64_image = base64.b64encode(image_data).decode('utf-8')
+                
+                # Store with data URI format
+                person.image = f"data:{image_file.content_type};base64,{base64_image}"
+            
+            # Handle youtube URLs
+            person.set_youtube_urls(youtube_urls)
+            
+            person.save()
+            
+            return JsonResponse({
+                'success': True,
+                'person_id': person_id,
+                'data': person.to_dict(request)
+            })
+            
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    
+    return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
+
+
+@csrf_exempt
+def snowai_poi_get_all_people_unique_v1(request):
+    """Get all people of interest"""
+    if request.method == 'GET':
+        try:
+            people = SnowAIPersonOfInterestUniqueV1.objects.all()
+            people_list = [person.to_dict(request) for person in people]
+            
+            return JsonResponse({
+                'success': True,
+                'people': people_list
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    
+    return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
+
+
+@csrf_exempt
+def snowai_poi_get_person_unique_v1(request, person_id):
+    """Get a specific person of interest"""
+    if request.method == 'GET':
+        try:
+            person = SnowAIPersonOfInterestUniqueV1.objects.get(person_id=person_id)
+            
+            return JsonResponse({
+                'success': True,
+                'person': person.to_dict(request)
+            })
+        except ObjectDoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Person not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    
+    return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
+
+
+@csrf_exempt
+def snowai_poi_update_person_unique_v1(request, person_id):
+    """Update a person of interest profile"""
+    if request.method == 'PUT' or request.method == 'POST':
+        try:
+            person = SnowAIPersonOfInterestUniqueV1.objects.get(person_id=person_id)
+            
+            # Handle form data
+            if request.POST:
+                if 'name' in request.POST:
+                    person.name = request.POST['name']
+                if 'accomplishments' in request.POST:
+                    person.accomplishments = request.POST['accomplishments']
+                if 'bio' in request.POST:
+                    person.bio = request.POST['bio']
+                if 'works' in request.POST:
+                    person.works = request.POST['works']
+                if 'estimated_iq' in request.POST:
+                    person.estimated_iq = request.POST['estimated_iq']
+                if 'additional_notes' in request.POST:
+                    person.additional_notes = request.POST['additional_notes']
+                if 'youtube_urls' in request.POST:
+                    try:
+                        youtube_urls = json.loads(request.POST['youtube_urls'])
+                        person.set_youtube_urls(youtube_urls)
+                    except:
+                        pass
+                
+                # Handle image upload - convert to base64
+                if 'image' in request.FILES:
+                    image_file = request.FILES['image']
+                    image_data = image_file.read()
+                    base64_image = base64.b64encode(image_data).decode('utf-8')
+                    
+                    # Store with data URI format
+                    person.image = f"data:{image_file.content_type};base64,{base64_image}"
+            
+            person.save()
+            
+            return JsonResponse({
+                'success': True,
+                'person': person.to_dict(request)
+            })
+            
+        except ObjectDoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Person not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    
+    return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
+
+
+@csrf_exempt
+def snowai_poi_delete_person_unique_v1(request, person_id):
+    """Delete a person of interest"""
+    if request.method == 'DELETE':
+        try:
+            person = SnowAIPersonOfInterestUniqueV1.objects.get(person_id=person_id)
+            person.delete()
+            
+            return JsonResponse({'success': True})
+            
+        except ObjectDoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Person not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    
+    return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
+    
+
+from scipy import stats
+
+@csrf_exempt
+def mss_quantum_retracement_fibonacci_entry_optimizer(request):
+    """
+    Calculates optimal entry points based on historical retracement patterns.
+    Automatically detects trend duration and uses appropriate lookback period.
+    Uses 1-hour timeframe for precise entry calculations.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        
+        if not symbol:
+            return JsonResponse({'error': 'Symbol is required'}, status=400)
+        
+        # Step 1: Detect trend duration using daily data first
+        print(f"[{symbol}] Step 1: Detecting trend duration...")
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=180)  # 6 months for trend detection
+        
+        ticker = yf.Ticker(symbol)
+        df_daily = ticker.history(start=start_date, end=end_date, interval='1d')
+        
+        if df_daily.empty:
+            return JsonResponse({
+                'success': False,
+                'error': f'No data available for {symbol}'
+            })
+        
+        # Calculate EMAs for trend detection
+        df_daily['EMA_20'] = df_daily['Close'].ewm(span=20, adjust=False).mean()
+        df_daily['EMA_50'] = df_daily['Close'].ewm(span=50, adjust=False).mean()
+        df_daily['EMA_100'] = df_daily['Close'].ewm(span=100, adjust=False).mean()
+        
+        # Detect current trend and its duration
+        trend_start_index = None
+        current_trend = None
+        
+        # Determine current trend
+        if df_daily['EMA_20'].iloc[-1] > df_daily['EMA_50'].iloc[-1] > df_daily['EMA_100'].iloc[-1]:
+            current_trend = 'uptrend'
+            trend_condition = lambda i: (df_daily['EMA_20'].iloc[i] > df_daily['EMA_50'].iloc[i] and 
+                                        df_daily['EMA_50'].iloc[i] > df_daily['EMA_100'].iloc[i])
+        elif df_daily['EMA_20'].iloc[-1] < df_daily['EMA_50'].iloc[-1] < df_daily['EMA_100'].iloc[-1]:
+            current_trend = 'downtrend'
+            trend_condition = lambda i: (df_daily['EMA_20'].iloc[i] < df_daily['EMA_50'].iloc[i] and 
+                                        df_daily['EMA_50'].iloc[i] < df_daily['EMA_100'].iloc[i])
+        else:
+            current_trend = 'ranging'
+            trend_condition = lambda i: True
+        
+        # Find when trend started by going backwards
+        if current_trend != 'ranging':
+            for i in range(len(df_daily) - 1, 19, -1):  # Start from end, need at least 20 bars for EMAs
+                if not trend_condition(i):
+                    trend_start_index = i + 1
+                    break
+            
+            if trend_start_index is None:
+                trend_start_index = 20  # Trend is older than our data
+        else:
+            trend_start_index = len(df_daily) - 30  # Default 30 days for ranging
+        
+        # Calculate trend duration in days
+        trend_duration_days = len(df_daily) - trend_start_index
+        trend_duration_days = max(15, min(trend_duration_days, 90))  # Clamp between 15-90 days
+        
+        print(f"[{symbol}] Trend: {current_trend}, Duration: {trend_duration_days} days")
+        
+        # Step 2: Download 1-hour data based on detected trend duration
+        # Convert days to hours for 1h timeframe (roughly 6.5 trading hours per day)
+        lookback_hours = int(trend_duration_days * 6.5)
+        lookback_hours = max(100, min(lookback_hours, 730))  # Between ~15-110 days in trading hours
+        
+        print(f"[{symbol}] Step 2: Downloading {lookback_hours} hours of 1h data...")
+        
+        # yfinance limits: for 1h we can get max 730 hours (about 30 days)
+        # So we calculate days needed
+        days_needed = int(lookback_hours / 6.5) + 10  # Add buffer
+        start_date_1h = end_date - timedelta(days=days_needed)
+        
+        df = ticker.history(start=start_date_1h, end=end_date, interval='1h')
+        
+        if df.empty:
+            return JsonResponse({
+                'success': False,
+                'error': f'No 1-hour data available for {symbol}'
+            })
+        
+        print(f"[{symbol}] Downloaded {len(df)} 1-hour candles")
+        
+        # Calculate indicators on 1h data
+        df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+        df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+        df['ATR'] = calculate_atr(df, period=14)
+        
+        # Step 3: Identify swing highs and lows on 1h timeframe
+        print(f"[{symbol}] Step 3: Identifying swings...")
+        swing_highs = []
+        swing_lows = []
+        retracements_bullish = []
+        retracements_bearish = []
+        
+        # Find local peaks and troughs (using 5-bar pattern on 1h)
+        for i in range(10, len(df) - 10):
+            # Swing high - highest high in 10-bar window
+            if df['High'].iloc[i] == df['High'].iloc[i-10:i+11].max():
+                swing_highs.append({
+                    'index': i,
+                    'price': df['High'].iloc[i],
+                    'date': df.index[i]
+                })
+            
+            # Swing low - lowest low in 10-bar window
+            if df['Low'].iloc[i] == df['Low'].iloc[i-10:i+11].min():
+                swing_lows.append({
+                    'index': i,
+                    'price': df['Low'].iloc[i],
+                    'date': df.index[i]
+                })
+        
+        print(f"[{symbol}] Found {len(swing_highs)} swing highs, {len(swing_lows)} swing lows")
+        
+        # Step 4: Calculate retracements in bullish trends
+        for i in range(len(swing_lows) - 1):
+            low = swing_lows[i]
+            
+            # Find next swing high
+            next_highs = [h for h in swing_highs if h['index'] > low['index']]
+            if not next_highs:
+                continue
+            
+            high = next_highs[0]
+            
+            # Find retracement (next swing low) after the high
+            next_lows = [l for l in swing_lows if l['index'] > high['index']]
+            if not next_lows:
+                continue
+            
+            retracement_low = next_lows[0]
+            
+            # Calculate retracement percentage
+            swing_range = high['price'] - low['price']
+            retracement_depth = high['price'] - retracement_low['price']
+            
+            if swing_range > 0 and retracement_depth > 0:
+                retracement_pct = (retracement_depth / swing_range) * 100
+                
+                # Only count if retracement is reasonable (10-90%)
+                if 10 <= retracement_pct <= 90:
+                    # Check if trend continued (price went higher after retracement)
+                    future_highs = [h for h in swing_highs if h['index'] > retracement_low['index'] and h['index'] < retracement_low['index'] + 50]
+                    if future_highs and any(h['price'] > high['price'] * 1.001 for h in future_highs):  # At least 0.1% higher
+                        retracements_bullish.append({
+                            'swing_low': low['price'],
+                            'swing_high': high['price'],
+                            'retracement_low': retracement_low['price'],
+                            'retracement_pct': retracement_pct,
+                            'date': retracement_low['date'].strftime('%Y-%m-%d %H:%M')
+                        })
+        
+        # Step 5: Calculate retracements in bearish trends
+        for i in range(len(swing_highs) - 1):
+            high = swing_highs[i]
+            
+            # Find next swing low
+            next_lows = [l for l in swing_lows if l['index'] > high['index']]
+            if not next_lows:
+                continue
+            
+            low = next_lows[0]
+            
+            # Find retracement (next swing high) after the low
+            next_highs = [h for h in swing_highs if h['index'] > low['index']]
+            if not next_highs:
+                continue
+            
+            retracement_high = next_highs[0]
+            
+            # Calculate retracement percentage
+            swing_range = high['price'] - low['price']
+            retracement_depth = retracement_high['price'] - low['price']
+            
+            if swing_range > 0 and retracement_depth > 0:
+                retracement_pct = (retracement_depth / swing_range) * 100
+                
+                # Only count if retracement is reasonable (10-90%)
+                if 10 <= retracement_pct <= 90:
+                    # Check if trend continued (price went lower after retracement)
+                    future_lows = [l for l in swing_lows if l['index'] > retracement_high['index'] and l['index'] < retracement_high['index'] + 50]
+                    if future_lows and any(l['price'] < low['price'] * 0.999 for l in future_lows):  # At least 0.1% lower
+                        retracements_bearish.append({
+                            'swing_high': high['price'],
+                            'swing_low': low['price'],
+                            'retracement_high': retracement_high['price'],
+                            'retracement_pct': retracement_pct,
+                            'date': retracement_high['date'].strftime('%Y-%m-%d %H:%M')
+                        })
+        
+        print(f"[{symbol}] Found {len(retracements_bullish)} bullish patterns, {len(retracements_bearish)} bearish patterns")
+        
+        # Statistical analysis
+        bullish_pcts = [r['retracement_pct'] for r in retracements_bullish]
+        bearish_pcts = [r['retracement_pct'] for r in retracements_bearish]
+        
+        # Current market state
+        current_price = float(df['Close'].iloc[-1])
+        
+        # Determine current 1h trend
+        if df['EMA_20'].iloc[-1] > df['EMA_50'].iloc[-1]:
+            current_1h_trend = 'uptrend'
+        elif df['EMA_20'].iloc[-1] < df['EMA_50'].iloc[-1]:
+            current_1h_trend = 'downtrend'
+        else:
+            current_1h_trend = 'ranging'
+        
+        result = {
+            'success': True,
+            'symbol': symbol,
+            'current_price': round(current_price, 2),
+            'current_trend': current_1h_trend,
+            'trend_duration_days': trend_duration_days,
+            'analysis_period_hours': lookback_hours,
+            'timeframe': '1h',
+            'bullish_retracements': {
+                'count': len(retracements_bullish),
+                'mean_retracement_pct': round(np.mean(bullish_pcts), 2) if bullish_pcts else 0,
+                'median_retracement_pct': round(np.median(bullish_pcts), 2) if bullish_pcts else 0,
+                'std_dev': round(np.std(bullish_pcts), 2) if bullish_pcts else 0,
+                'min': round(min(bullish_pcts), 2) if bullish_pcts else 0,
+                'max': round(max(bullish_pcts), 2) if bullish_pcts else 0,
+                'percentile_25': round(np.percentile(bullish_pcts, 25), 2) if bullish_pcts else 0,
+                'percentile_75': round(np.percentile(bullish_pcts, 75), 2) if bullish_pcts else 0,
+                'historical_patterns': retracements_bullish[-5:]
+            },
+            'bearish_retracements': {
+                'count': len(retracements_bearish),
+                'mean_retracement_pct': round(np.mean(bearish_pcts), 2) if bearish_pcts else 0,
+                'median_retracement_pct': round(np.median(bearish_pcts), 2) if bearish_pcts else 0,
+                'std_dev': round(np.std(bearish_pcts), 2) if bearish_pcts else 0,
+                'min': round(min(bearish_pcts), 2) if bearish_pcts else 0,
+                'max': round(max(bearish_pcts), 2) if bearish_pcts else 0,
+                'percentile_25': round(np.percentile(bearish_pcts, 25), 2) if bearish_pcts else 0,
+                'percentile_75': round(np.percentile(bearish_pcts, 75), 2) if bearish_pcts else 0,
+                'historical_patterns': retracements_bearish[-5:]
+            }
+        }
+        
+        # Step 6: Calculate optimal entry zones based on ACTUAL current trend
+        print(f"[{symbol}] Step 6: Calculating entry zones for {current_1h_trend}...")
+        
+        if current_1h_trend == 'uptrend' and len(bullish_pcts) >= 3:
+            # Find recent swing low and high for UPTREND
+            recent_lows = [l for l in swing_lows if l['index'] >= len(df) - 100]  # Last ~100 hours
+            recent_highs = [h for h in swing_highs if h['index'] >= len(df) - 100]
+            
+            if recent_lows and recent_highs:
+                recent_low = min([l['price'] for l in recent_lows])
+                recent_high = max([h['price'] for h in recent_highs])
+                swing_range = recent_high - recent_low
+                
+                # Use bullish retracement statistics
+                median_ret = result['bullish_retracements']['median_retracement_pct'] / 100
+                p25_ret = result['bullish_retracements']['percentile_25'] / 100
+                p75_ret = result['bullish_retracements']['percentile_75'] / 100
+                
+                # Calculate BUY entry zones (price should retrace DOWN from high)
+                result['entry_zones'] = {
+                    'aggressive_entry': round(recent_high - (swing_range * p25_ret), 2),
+                    'optimal_entry': round(recent_high - (swing_range * median_ret), 2),
+                    'conservative_entry': round(recent_high - (swing_range * p75_ret), 2),
+                    'recent_swing_low': round(recent_low, 2),
+                    'recent_swing_high': round(recent_high, 2),
+                    'invalidation_level': round(recent_low * 0.98, 2),
+                }
+                
+                print(f"[{symbol}] UPTREND - Current: ${current_price}, Aggressive: ${result['entry_zones']['aggressive_entry']}, Optimal: ${result['entry_zones']['optimal_entry']}")
+                
+                # FIXED: Entry quality for UPTREND (looking for price to come DOWN to entry zones)
+                if current_price <= result['entry_zones']['aggressive_entry']:
+                    result['entry_signal'] = f'STRONG BUY - Price has retraced to aggressive zone (${result["entry_zones"]["aggressive_entry"]})'
+                    result['entry_quality'] = 'excellent'
+                elif current_price <= result['entry_zones']['optimal_entry']:
+                    result['entry_signal'] = f'BUY - Price in optimal entry zone (${result["entry_zones"]["optimal_entry"]})'
+                    result['entry_quality'] = 'good'
+                elif current_price <= result['entry_zones']['conservative_entry']:
+                    result['entry_signal'] = f'CONSIDER BUY - Price in conservative zone (${result["entry_zones"]["conservative_entry"]})'
+                    result['entry_quality'] = 'fair'
+                else:
+                    result['entry_signal'] = f'WAIT FOR PULLBACK - Price ${current_price} above entry zones. Wait for retracement.'
+                    result['entry_quality'] = 'poor'
+        
+        elif current_1h_trend == 'downtrend' and len(bearish_pcts) >= 3:
+            # Find recent swing high and low for DOWNTREND
+            recent_highs = [h for h in swing_highs if h['index'] >= len(df) - 100]
+            recent_lows = [l for l in swing_lows if l['index'] >= len(df) - 100]
+            
+            if recent_highs and recent_lows:
+                recent_high = max([h['price'] for h in recent_highs])
+                recent_low = min([l['price'] for l in recent_lows])
+                swing_range = recent_high - recent_low
+                
+                # Use bearish retracement statistics
+                median_ret = result['bearish_retracements']['median_retracement_pct'] / 100
+                p25_ret = result['bearish_retracements']['percentile_25'] / 100
+                p75_ret = result['bearish_retracements']['percentile_75'] / 100
+                
+                # Calculate SELL entry zones (price should retrace UP from low)
+                result['entry_zones'] = {
+                    'aggressive_entry': round(recent_low + (swing_range * p25_ret), 2),
+                    'optimal_entry': round(recent_low + (swing_range * median_ret), 2),
+                    'conservative_entry': round(recent_low + (swing_range * p75_ret), 2),
+                    'recent_swing_high': round(recent_high, 2),
+                    'recent_swing_low': round(recent_low, 2),
+                    'invalidation_level': round(recent_high * 1.02, 2),
+                }
+                
+                print(f"[{symbol}] DOWNTREND - Current: ${current_price}, Aggressive: ${result['entry_zones']['aggressive_entry']}, Optimal: ${result['entry_zones']['optimal_entry']}")
+                
+                # FIXED: Entry quality for DOWNTREND (looking for price to come UP to entry zones)
+                if current_price >= result['entry_zones']['aggressive_entry']:
+                    result['entry_signal'] = f'STRONG SELL - Price has retraced to aggressive zone (${result["entry_zones"]["aggressive_entry"]})'
+                    result['entry_quality'] = 'excellent'
+                elif current_price >= result['entry_zones']['optimal_entry']:
+                    result['entry_signal'] = f'SELL - Price in optimal entry zone (${result["entry_zones"]["optimal_entry"]})'
+                    result['entry_quality'] = 'good'
+                elif current_price >= result['entry_zones']['conservative_entry']:
+                    result['entry_signal'] = f'CONSIDER SELL - Price in conservative zone (${result["entry_zones"]["conservative_entry"]})'
+                    result['entry_quality'] = 'fair'
+                else:
+                    result['entry_signal'] = f'WAIT FOR BOUNCE - Price ${current_price} below entry zones. Wait for retracement up.'
+                    result['entry_quality'] = 'poor'
+        else:
+            min_patterns = 3
+            result['entry_zones'] = None
+            if current_1h_trend == 'uptrend':
+                result['entry_signal'] = f'INSUFFICIENT DATA - Need at least {min_patterns} bullish patterns (found {len(bullish_pcts)})'
+            elif current_1h_trend == 'downtrend':
+                result['entry_signal'] = f'INSUFFICIENT DATA - Need at least {min_patterns} bearish patterns (found {len(bearish_pcts)})'
+            else:
+                result['entry_signal'] = 'NO CLEAR TREND - Market is ranging'
+            result['entry_quality'] = 'unknown'
+        
+        # Add recent price action for chart
+        chart_data = []
+        chart_start = max(0, len(df) - 200)  # Last 200 hours
+        for i in range(chart_start, len(df)):
+            chart_data.append({
+                'date': df.index[i].strftime('%Y-%m-%d %H:%M'),
+                'price': round(float(df['Close'].iloc[i]), 2),
+                'ema_20': round(float(df['EMA_20'].iloc[i]), 2) if not pd.isna(df['EMA_20'].iloc[i]) else None,
+                'ema_50': round(float(df['EMA_50'].iloc[i]), 2) if not pd.isna(df['EMA_50'].iloc[i]) else None
+            })
+        
+        result['chart_data'] = chart_data
+        
+        # Add swing points
+        result['swing_highs'] = [{
+            'date': h['date'].strftime('%Y-%m-%d %H:%M'),
+            'price': round(h['price'], 2)
+        } for h in swing_highs[-20:]]
+        
+        result['swing_lows'] = [{
+            'date': l['date'].strftime('%Y-%m-%d %H:%M'),
+            'price': round(l['price'], 2)
+        } for l in swing_lows[-20:]]
+        
+        print(f"[{symbol}] ✅ Analysis complete!")
+        return JsonResponse(result)
+        
+    except Exception as e:
+        import traceback
+        print(f"Error: {str(e)}")
+        print(traceback.format_exc())
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+def calculate_atr(df, period=14):
+    """Calculate Average True Range"""
+    high_low = df['High'] - df['Low']
+    high_close = np.abs(df['High'] - df['Close'].shift())
+    low_close = np.abs(df['Low'] - df['Close'].shift())
+    
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = np.max(ranges, axis=1)
+    
+    return true_range.rolling(period).mean()
+
+
+def average_retracement(
+    data: Union[pd.DataFrame, np.ndarray],
+    min_patterns: int = 3,
+    sensitivity: str = 'medium',
+    max_lookback: int = 500  # Maximum bars to analyze
+) -> bool:
+    """
+    Checks if the current price is within the average retracement zone based on 
+    historical retracement patterns. Automatically detects the LATEST trend period
+    and only analyzes that period for efficiency.
+    
+    Optimized for large datasets by:
+    1. Detecting when the current trend started
+    2. Only analyzing data from that point forward
+    3. Capping maximum lookback to prevent performance issues
+    
+    Works for both uptrends and downtrends:
+    - In uptrend: Returns True when price has retraced DOWN to typical retracement levels
+    - In downtrend: Returns True when price has retraced UP to typical retracement levels
+    
+    Args:
+        data: DataFrame with OHLC data or numpy array of close prices
+        min_patterns: Minimum historical patterns required for valid signal (default 3)
+        sensitivity: 'aggressive', 'medium', or 'conservative' (default 'medium')
+        max_lookback: Maximum bars to look back (default 500)
+    
+    Returns:
+        bool: True if price is in average retracement zone, False otherwise
+    """
+    try:
+        # Extract OHLC data
+        if isinstance(data, pd.DataFrame):
+            if not all(col in data.columns for col in ['Open', 'High', 'Low', 'Close']):
+                print("[Average Retracement] Error: DataFrame missing OHLC columns")
+                return False
+            df = data.copy()
+        else:
+            print("[Average Retracement] Error: Requires DataFrame with OHLC data")
+            return False
+        
+        total_bars = len(df)
+        
+        if total_bars < 100:
+            print(f"[Average Retracement] Error: Insufficient data. Got {total_bars} bars, need at least 100")
+            return False
+        
+        # Step 1: Work with most recent data only (for large datasets)
+        # Use last max_lookback bars or entire dataset if smaller
+        analysis_length = min(max_lookback, total_bars)
+        df_recent = df.iloc[-analysis_length:].copy()
+        
+        print(f"[Average Retracement] Dataset size: {total_bars} bars, Analyzing last: {len(df_recent)} bars")
+        
+        # Step 2: Calculate EMAs to detect trend
+        df_recent['EMA_20'] = df_recent['Close'].ewm(span=20, adjust=False).mean()
+        df_recent['EMA_50'] = df_recent['Close'].ewm(span=50, adjust=False).mean()
+        df_recent['EMA_100'] = df_recent['Close'].ewm(span=100, adjust=False).mean()
+        
+        # Determine current trend
+        current_trend = None
+        if df_recent['EMA_20'].iloc[-1] > df_recent['EMA_50'].iloc[-1] > df_recent['EMA_100'].iloc[-1]:
+            current_trend = 'uptrend'
+            trend_condition = lambda i: (df_recent['EMA_20'].iloc[i] > df_recent['EMA_50'].iloc[i] and 
+                                        df_recent['EMA_50'].iloc[i] > df_recent['EMA_100'].iloc[i])
+        elif df_recent['EMA_20'].iloc[-1] < df_recent['EMA_50'].iloc[-1] < df_recent['EMA_100'].iloc[-1]:
+            current_trend = 'downtrend'
+            trend_condition = lambda i: (df_recent['EMA_20'].iloc[i] < df_recent['EMA_50'].iloc[i] and 
+                                        df_recent['EMA_50'].iloc[i] < df_recent['EMA_100'].iloc[i])
+        else:
+            print("[Average Retracement] No clear trend detected")
+            return False
+        
+        # Step 3: Find when CURRENT trend started by going backwards
+        trend_start_index = None
+        
+        # Need at least 100 bars for reliable EMAs
+        for i in range(len(df_recent) - 1, 99, -1):
+            if not trend_condition(i):
+                trend_start_index = i + 1
+                break
+        
+        # If trend is older than our lookback window, use the start of our data
+        if trend_start_index is None:
+            trend_start_index = 100
+        
+        # Extract only the trending period
+        df_trend = df_recent.iloc[trend_start_index:].copy()
+        trend_duration = len(df_trend)
+        
+        print(f"[Average Retracement] Trend: {current_trend}, Duration: {trend_duration} bars (started at index {trend_start_index})")
+        
+        if trend_duration < 50:
+            print(f"[Average Retracement] Error: Trend too short. Duration: {trend_duration} bars, need at least 50")
+            return False
+        
+        # Step 4: Find swing points ONLY within the trending period
+        swing_highs = []
+        swing_lows = []
+        
+        lookback_window = min(10, trend_duration // 10)  # Adaptive window based on trend duration
+        
+        for i in range(lookback_window, len(df_trend) - lookback_window):
+            # Swing high
+            window_high = df_trend['High'].iloc[i-lookback_window:i+lookback_window+1].max()
+            if df_trend['High'].iloc[i] == window_high:
+                swing_highs.append({
+                    'index': i,
+                    'price': df_trend['High'].iloc[i]
+                })
+            
+            # Swing low
+            window_low = df_trend['Low'].iloc[i-lookback_window:i+lookback_window+1].min()
+            if df_trend['Low'].iloc[i] == window_low:
+                swing_lows.append({
+                    'index': i,
+                    'price': df_trend['Low'].iloc[i]
+                })
+        
+        if len(swing_highs) < 3 or len(swing_lows) < 3:
+            print(f"[Average Retracement] Error: Insufficient swing points in trend period. Highs: {len(swing_highs)}, Lows: {len(swing_lows)}")
+            return False
+        
+        print(f"[Average Retracement] Found {len(swing_highs)} swing highs, {len(swing_lows)} swing lows in trend period")
+        
+        # Step 5: Calculate historical retracements ONLY within this trend
+        retracement_percentages = []
+        
+        if current_trend == 'uptrend':
+            # Find bullish retracements
+            for i in range(len(swing_lows) - 1):
+                low = swing_lows[i]
+                
+                # Find next swing high
+                next_highs = [h for h in swing_highs if h['index'] > low['index']]
+                if not next_highs:
+                    continue
+                high = next_highs[0]
+                
+                # Find retracement (next swing low) after the high
+                next_lows = [l for l in swing_lows if l['index'] > high['index']]
+                if not next_lows:
+                    continue
+                retracement_low = next_lows[0]
+                
+                # Calculate retracement percentage
+                swing_range = high['price'] - low['price']
+                retracement_depth = high['price'] - retracement_low['price']
+                
+                if swing_range > 0 and retracement_depth > 0:
+                    retracement_pct = (retracement_depth / swing_range) * 100
+                    
+                    # Only count reasonable retracements (10-90%)
+                    if 10 <= retracement_pct <= 90:
+                        # Verify trend continued after retracement
+                        future_highs = [h for h in swing_highs if h['index'] > retracement_low['index'] and h['index'] < retracement_low['index'] + 50]
+                        if future_highs and any(h['price'] > high['price'] * 1.001 for h in future_highs):
+                            retracement_percentages.append(retracement_pct)
+        
+        else:  # downtrend
+            # Find bearish retracements
+            for i in range(len(swing_highs) - 1):
+                high = swing_highs[i]
+                
+                # Find next swing low
+                next_lows = [l for l in swing_lows if l['index'] > high['index']]
+                if not next_lows:
+                    continue
+                low = next_lows[0]
+                
+                # Find retracement (next swing high) after the low
+                next_highs = [h for h in swing_highs if h['index'] > low['index']]
+                if not next_highs:
+                    continue
+                retracement_high = next_highs[0]
+                
+                # Calculate retracement percentage
+                swing_range = high['price'] - low['price']
+                retracement_depth = retracement_high['price'] - low['price']
+                
+                if swing_range > 0 and retracement_depth > 0:
+                    retracement_pct = (retracement_depth / swing_range) * 100
+                    
+                    # Only count reasonable retracements (10-90%)
+                    if 10 <= retracement_pct <= 90:
+                        # Verify trend continued after retracement
+                        future_lows = [l for l in swing_lows if l['index'] > retracement_high['index'] and l['index'] < retracement_high['index'] + 50]
+                        if future_lows and any(l['price'] < low['price'] * 0.999 for l in future_lows):
+                            retracement_percentages.append(retracement_pct)
+        
+        # Check if we have enough historical patterns
+        if len(retracement_percentages) < min_patterns:
+            print(f"[Average Retracement] Error: Insufficient patterns in trend. Found {len(retracement_percentages)}, need {min_patterns}")
+            return False
+        
+        print(f"[Average Retracement] Found {len(retracement_percentages)} valid retracement patterns")
+        
+        # Step 6: Calculate statistical thresholds
+        median_retracement = np.median(retracement_percentages)
+        percentile_25 = np.percentile(retracement_percentages, 25)
+        percentile_75 = np.percentile(retracement_percentages, 75)
+        
+        # Set thresholds based on sensitivity
+        if sensitivity == 'aggressive':
+            lower_threshold = percentile_25 - 5
+            upper_threshold = percentile_25 + 10
+        elif sensitivity == 'conservative':
+            lower_threshold = percentile_75 - 10
+            upper_threshold = percentile_75 + 5
+        else:  # medium
+            lower_threshold = median_retracement - 10
+            upper_threshold = median_retracement + 10
+        
+        # Ensure thresholds are reasonable
+        lower_threshold = max(10, lower_threshold)
+        upper_threshold = min(90, upper_threshold)
+        
+        print(f"[Average Retracement] Statistics - Median: {median_retracement:.1f}%, P25: {percentile_25:.1f}%, P75: {percentile_75:.1f}%")
+        print(f"[Average Retracement] Thresholds ({sensitivity}) - Lower: {lower_threshold:.1f}%, Upper: {upper_threshold:.1f}%")
+        
+        # Step 7: Find recent swing points within trend and calculate current retracement
+        recent_window = min(50, trend_duration // 3)  # Last portion of trend
+        
+        if current_trend == 'uptrend':
+            # Find recent low and high
+            recent_lows = [l for l in swing_lows if l['index'] >= len(df_trend) - recent_window]
+            recent_highs = [h for h in swing_highs if h['index'] >= len(df_trend) - recent_window]
+            
+            if not recent_lows or not recent_highs:
+                print("[Average Retracement] Error: No recent swing points found in trend")
+                return False
+            
+            recent_low = min([l['price'] for l in recent_lows])
+            recent_high = max([h['price'] for h in recent_highs])
+            current_price = df_trend['Close'].iloc[-1]
+            
+            # Calculate current retracement from recent high
+            swing_range = recent_high - recent_low
+            if swing_range <= 0:
+                print("[Average Retracement] Error: Invalid swing range")
+                return False
+            
+            current_retracement = ((recent_high - current_price) / swing_range) * 100
+            
+            # Check if current retracement is within average zone
+            in_zone = lower_threshold <= current_retracement <= upper_threshold
+            
+            print(f"[Average Retracement] UPTREND - Current: {current_retracement:.1f}%, Target Range: {lower_threshold:.1f}%-{upper_threshold:.1f}%, In Zone: {in_zone}")
+            print(f"[Average Retracement] Price: ${current_price:.2f}, Recent High: ${recent_high:.2f}, Recent Low: ${recent_low:.2f}")
+            
+            return in_zone
+        
+        else:  # downtrend
+            # Find recent high and low
+            recent_highs = [h for h in swing_highs if h['index'] >= len(df_trend) - recent_window]
+            recent_lows = [l for l in swing_lows if l['index'] >= len(df_trend) - recent_window]
+            
+            if not recent_highs or not recent_lows:
+                print("[Average Retracement] Error: No recent swing points found in trend")
+                return False
+            
+            recent_high = max([h['price'] for h in recent_highs])
+            recent_low = min([l['price'] for l in recent_lows])
+            current_price = df_trend['Close'].iloc[-1]
+            
+            # Calculate current retracement from recent low
+            swing_range = recent_high - recent_low
+            if swing_range <= 0:
+                print("[Average Retracement] Error: Invalid swing range")
+                return False
+            
+            current_retracement = ((current_price - recent_low) / swing_range) * 100
+            
+            # Check if current retracement is within average zone
+            in_zone = lower_threshold <= current_retracement <= upper_threshold
+            
+            print(f"[Average Retracement] DOWNTREND - Current: {current_retracement:.1f}%, Target Range: {lower_threshold:.1f}%-{upper_threshold:.1f}%, In Zone: {in_zone}")
+            print(f"[Average Retracement] Price: ${current_price:.2f}, Recent Low: ${recent_low:.2f}, Recent High: ${recent_high:.2f}")
+            
+            return in_zone
+    
+    except Exception as e:
+        print(f"[Average Retracement] Error: Unexpected exception - {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def get_retracement_stats(
+    data: Union[pd.DataFrame, np.ndarray]
+) -> dict:
+    """
+    Returns detailed statistics about retracement patterns for debugging/analysis.
+    
+    Args:
+        data: DataFrame with OHLC data
+    
+    Returns:
+        dict: Statistics including trend, average retracement %, and current position
+    """
+    try:
+        if isinstance(data, pd.DataFrame):
+            if not all(col in data.columns for col in ['Open', 'High', 'Low', 'Close']):
+                return {'error': 'DataFrame missing OHLC columns'}
+            df = data.copy()
+        else:
+            return {'error': 'Requires DataFrame with OHLC data'}
+        
+        if len(df) < 100:
+            return {'error': f'Insufficient data. Got {len(df)} bars'}
+        
+        # Detect trend
+        df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+        df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+        df['EMA_100'] = df['Close'].ewm(span=100, adjust=False).mean()
+        
+        if df['EMA_20'].iloc[-1] > df['EMA_50'].iloc[-1] > df['EMA_100'].iloc[-1]:
+            trend = 'uptrend'
+        elif df['EMA_20'].iloc[-1] < df['EMA_50'].iloc[-1] < df['EMA_100'].iloc[-1]:
+            trend = 'downtrend'
+        else:
+            trend = 'ranging'
+        
+        # Find swing points (simplified for stats)
+        swing_highs = []
+        swing_lows = []
+        
+        for i in range(10, len(df) - 10):
+            if df['High'].iloc[i] == df['High'].iloc[i-10:i+11].max():
+                swing_highs.append({'index': i, 'price': df['High'].iloc[i]})
+            if df['Low'].iloc[i] == df['Low'].iloc[i-10:i+11].min():
+                swing_lows.append({'index': i, 'price': df['Low'].iloc[i]})
+        
+        # Calculate retracements
+        retracements = []
+        
+        if trend == 'uptrend' and len(swing_lows) > 0 and len(swing_highs) > 0:
+            for i in range(len(swing_lows) - 1):
+                low = swing_lows[i]
+                next_highs = [h for h in swing_highs if h['index'] > low['index']]
+                if not next_highs:
+                    continue
+                high = next_highs[0]
+                next_lows = [l for l in swing_lows if l['index'] > high['index']]
+                if not next_lows:
+                    continue
+                ret_low = next_lows[0]
+                
+                swing_range = high['price'] - low['price']
+                ret_depth = high['price'] - ret_low['price']
+                if swing_range > 0:
+                    ret_pct = (ret_depth / swing_range) * 100
+                    if 10 <= ret_pct <= 90:
+                        retracements.append(ret_pct)
+        
+        elif trend == 'downtrend' and len(swing_highs) > 0 and len(swing_lows) > 0:
+            for i in range(len(swing_highs) - 1):
+                high = swing_highs[i]
+                next_lows = [l for l in swing_lows if l['index'] > high['index']]
+                if not next_lows:
+                    continue
+                low = next_lows[0]
+                next_highs = [h for h in swing_highs if h['index'] > low['index']]
+                if not next_highs:
+                    continue
+                ret_high = next_highs[0]
+                
+                swing_range = high['price'] - low['price']
+                ret_depth = ret_high['price'] - low['price']
+                if swing_range > 0:
+                    ret_pct = (ret_depth / swing_range) * 100
+                    if 10 <= ret_pct <= 90:
+                        retracements.append(ret_pct)
+        
+        if len(retracements) == 0:
+            return {
+                'trend': trend,
+                'error': 'No valid retracement patterns found'
+            }
+        
+        return {
+            'trend': trend,
+            'pattern_count': len(retracements),
+            'mean_retracement': round(np.mean(retracements), 2),
+            'median_retracement': round(np.median(retracements), 2),
+            'min_retracement': round(np.min(retracements), 2),
+            'max_retracement': round(np.max(retracements), 2),
+            'percentile_25': round(np.percentile(retracements, 25), 2),
+            'percentile_75': round(np.percentile(retracements, 75), 2),
+            'current_price': round(df['Close'].iloc[-1], 2)
+        }
+    
+    except Exception as e:
+        return {'error': f'{type(e).__name__}: {str(e)}'}
+        
+        
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
