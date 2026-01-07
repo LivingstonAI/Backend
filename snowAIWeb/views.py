@@ -28262,24 +28262,97 @@ def snowai_debug_weight_shapes(request):
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
+from datetime import datetime, timedelta
 
 
-def _calculate_trend_metrics(data):
+def _get_lookback_data(data, lookback_days=30):
     """
-    Internal function to calculate trend characteristics
+    Get the last N days of data, handling both CSV and yfinance formats
     
     Args:
-        data (pd.DataFrame): DataFrame with 'Close' column and datetime index
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_days (int): Number of days to look back
+        
+    Returns:
+        pd.DataFrame: Subset of data for analysis
+    """
+    try:
+        if len(data) == 0:
+            return data
+        
+        # Check if index is datetime
+        if isinstance(data.index, pd.DatetimeIndex):
+            # Index is already datetime (yfinance format)
+            cutoff_date = data.index[-1] - timedelta(days=lookback_days)
+            lookback_data = data[data.index >= cutoff_date]
+        elif 'Time' in data.columns:
+            # CSV format with 'Time' column
+            data_copy = data.copy()
+            
+            # Try to parse the Time column
+            try:
+                data_copy['Time'] = pd.to_datetime(data_copy['Time'])
+                data_copy = data_copy.set_index('Time')
+                
+                # Now filter by date
+                cutoff_date = data_copy.index[-1] - timedelta(days=lookback_days)
+                lookback_data = data_copy[data_copy.index >= cutoff_date]
+            except:
+                # If parsing fails, just take last N rows (estimate ~24 rows per day for hourly data)
+                estimated_rows = lookback_days * 24
+                lookback_data = data_copy.iloc[-estimated_rows:]
+        else:
+            # Fallback: No time info, estimate based on typical trading hours
+            # Assume 1h timeframe: ~6.5 trading hours per day = ~7 candles/day for stocks
+            # For 24/7 assets (crypto/forex): 24 candles/day
+            
+            # Try to detect market type from data frequency
+            if len(data) > 50:
+                # Calculate average time between candles if possible
+                # For now, use conservative estimate
+                estimated_rows = lookback_days * 24  # Assume 24h market
+                lookback_data = data.iloc[-estimated_rows:]
+            else:
+                # Not enough data, use what we have
+                lookback_data = data
+        
+        # Ensure we have at least 20 rows for meaningful analysis
+        if len(lookback_data) < 20:
+            # If filtered data is too small, use more data
+            min_rows = 20
+            lookback_data = data.iloc[-min_rows:]
+        
+        return lookback_data
+        
+    except Exception as e:
+        print(f"[Lookback Data] Error: {e}, using last 100 rows as fallback")
+        # Fallback: just use last 100 rows
+        return data.iloc[-100:] if len(data) >= 100 else data
+
+
+def _calculate_trend_metrics(data, lookback_days=30):
+    """
+    Internal function to calculate trend characteristics using recent data only
+    
+    Args:
+        data (pd.DataFrame): DataFrame with 'Close' column
+        lookback_days (int): Number of days to analyze (default 30)
         
     Returns:
         dict: Trend metrics or None if calculation fails
     """
     try:
-        if len(data) < 20:
+        # Get only recent data
+        recent_data = _get_lookback_data(data, lookback_days)
+        
+        if len(recent_data) < 20:
+            print(f"[Trend Metrics] Insufficient data after lookback: {len(recent_data)} rows")
             return None
         
+        print(f"[Trend Metrics] Analyzing {len(recent_data)} rows from last {lookback_days} days")
+        
         # Calculate returns
-        data_copy = data.copy()
+        data_copy = recent_data.copy()
         data_copy['returns'] = data_copy['Close'].pct_change()
         
         # Linear regression for trend
@@ -28315,60 +28388,165 @@ def _calculate_trend_metrics(data):
         else:
             ma_position = 0
         
-        return {
+        metrics = {
             'slope': slope,
             'r_squared': r_squared,
             'trend_strength': trend_strength,
             'positive_ratio': positive_ratio,
             'price_change_pct': price_change_pct,
-            'ma_position': ma_position
+            'ma_position': ma_position,
+            'periods_analyzed': len(prices)
         }
         
+        print(f"[Trend Metrics] Slope: {slope:.6f}, R²: {r_squared:.3f}, Change: {price_change_pct*100:.2f}%, Positive Ratio: {positive_ratio:.2f}")
+        
+        return metrics
+        
     except Exception as e:
+        print(f"[Trend Metrics] Error: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
-def is_uptrend(data):
+def is_uptrend(data, lookback_days=30):
+    """
+    Check if asset is in an uptrend using recent data
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_days (int): Number of days to analyze (default 30)
+        
+    Returns:
+        bool: True if in uptrend
+    """
     try:
-        metrics = _calculate_trend_metrics(data)
+        metrics = _calculate_trend_metrics(data, lookback_days)
         if metrics is None:
             return False
         
-        return (
+        is_up = (
             metrics['slope'] > 0 and
-            metrics['price_change_pct'] > 0.01
+            metrics['price_change_pct'] > 0.01 and  # At least 1% up
+            metrics['r_squared'] > 0.5  # Trend is clear, not choppy
         )
-    except Exception:
+        
+        if is_up:
+            print(f"[Uptrend] ✅ Confirmed - {metrics['price_change_pct']*100:.2f}% move over {metrics['periods_analyzed']} periods")
+        
+        return is_up
+    except Exception as e:
+        print(f"[Uptrend] Error: {e}")
         return False
 
 
-def is_downtrend(data):
+def is_downtrend(data, lookback_days=30):
+    """
+    Check if asset is in a downtrend using recent data
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_days (int): Number of days to analyze (default 30)
+        
+    Returns:
+        bool: True if in downtrend
+    """
     try:
-        metrics = _calculate_trend_metrics(data)
+        metrics = _calculate_trend_metrics(data, lookback_days)
         if metrics is None:
             return False
         
-        return (
+        is_down = (
             metrics['slope'] < 0 and
-            metrics['price_change_pct'] < -0.01
+            metrics['price_change_pct'] < -0.01 and  # At least 1% down
+            metrics['r_squared'] > 0.5  # Trend is clear, not choppy
         )
-    except Exception:
+        
+        if is_down:
+            print(f"[Downtrend] ✅ Confirmed - {metrics['price_change_pct']*100:.2f}% move over {metrics['periods_analyzed']} periods")
+        
+        return is_down
+    except Exception as e:
+        print(f"[Downtrend] Error: {e}")
         return False
 
 
-def is_ranging_market(data):
+def is_ranging_market(data, lookback_days=30):
+    """
+    Check if market is ranging/consolidating using recent data
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_days (int): Number of days to analyze (default 30)
+        
+    Returns:
+        bool: True if ranging
+    """
     try:
-        metrics = _calculate_trend_metrics(data)
+        metrics = _calculate_trend_metrics(data, lookback_days)
         if metrics is None:
             return False
         
-        return (
-            abs(metrics['price_change_pct']) <= 0.01 or
-            (0.45 <= metrics['positive_ratio'] <= 0.55)
+        is_range = (
+            abs(metrics['price_change_pct']) <= 0.01 or  # Less than 1% total move
+            (0.45 <= metrics['positive_ratio'] <= 0.55) or  # Equal up/down days
+            metrics['r_squared'] < 0.3  # No clear directional trend
         )
-    except Exception:
+        
+        if is_range:
+            print(f"[Ranging] ✅ Confirmed - {abs(metrics['price_change_pct'])*100:.2f}% total move, R²: {metrics['r_squared']:.3f}")
+        
+        return is_range
+    except Exception as e:
+        print(f"[Ranging] Error: {e}")
         return False
 
+
+def get_trend_info(data, lookback_days=30):
+    """
+    Get detailed trend information for debugging/analysis
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_days (int): Number of days to analyze
+        
+    Returns:
+        dict: Comprehensive trend information
+    """
+    try:
+        metrics = _calculate_trend_metrics(data, lookback_days)
+        if metrics is None:
+            return {'error': 'Failed to calculate metrics'}
+        
+        # Determine trend
+        if is_uptrend(data, lookback_days):
+            trend = 'uptrend'
+        elif is_downtrend(data, lookback_days):
+            trend = 'downtrend'
+        elif is_ranging_market(data, lookback_days):
+            trend = 'ranging'
+        else:
+            trend = 'unclear'
+        
+        recent_data = _get_lookback_data(data, lookback_days)
+        
+        return {
+            'trend': trend,
+            'slope': round(metrics['slope'], 6),
+            'r_squared': round(metrics['r_squared'], 3),
+            'trend_strength': round(metrics['trend_strength'], 4),
+            'price_change_pct': round(metrics['price_change_pct'] * 100, 2),
+            'positive_ratio': round(metrics['positive_ratio'], 3),
+            'ma_position': round(metrics['ma_position'] * 100, 2),
+            'periods_analyzed': metrics['periods_analyzed'],
+            'lookback_days': lookback_days,
+            'current_price': round(recent_data['Close'].iloc[-1], 2),
+            'period_high': round(recent_data['High'].max(), 2),
+            'period_low': round(recent_data['Low'].min(), 2)
+        }
+    except Exception as e:
+        return {'error': str(e)}
+        
 
 # Your stock universe
 STOCK_UNIVERSE = [
