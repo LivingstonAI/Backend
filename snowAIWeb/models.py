@@ -1765,12 +1765,16 @@ class Position(models.Model):
         return self.pnl
 
 
+from django.db import models
+import json
+
+
 class SnowAIPersonOfInterestUniqueV1(models.Model):
     """Model to store People of Interest data"""
     
     person_id = models.CharField(max_length=100, unique=True, primary_key=True)
     name = models.CharField(max_length=255)
-    image = models.ImageField(upload_to='people_of_interest/', blank=True, null=True)
+    image = models.TextField(blank=True, null=True)  # For base64 encoded image
     accomplishments = models.TextField(blank=True, null=True)
     bio = models.TextField(blank=True, null=True)
     works = models.TextField(blank=True, null=True)
@@ -1802,17 +1806,10 @@ class SnowAIPersonOfInterestUniqueV1(models.Model):
     
     def to_dict(self, request=None):
         """Convert model instance to dictionary"""
-        image_url = ''
-        if self.image:
-            if request:
-                image_url = request.build_absolute_uri(self.image.url)
-            else:
-                image_url = self.image.url
-        
         return {
             'id': self.person_id,
             'name': self.name,
-            'image_url': image_url,
+            'image_url': self.image or '',  # Return base64 string directly
             'accomplishments': self.accomplishments or '',
             'bio': self.bio or '',
             'works': self.works or '',
@@ -1822,7 +1819,6 @@ class SnowAIPersonOfInterestUniqueV1(models.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
-
 
 
 
