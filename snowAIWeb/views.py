@@ -29840,12 +29840,8 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
         }, status=500)
 
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.core.exceptions import ObjectDoesNotExist
-import json
 import base64
-from .models import SnowAIPersonOfInterestUniqueV1
 
 
 @csrf_exempt
@@ -29865,19 +29861,27 @@ def snowai_poi_create_person_unique_v1(request):
             # Parse youtube URLs
             try:
                 youtube_urls = json.loads(youtube_urls_str)
-            except:
+            except Exception as e:
+                print(f"Error parsing youtube URLs: {e}")
                 youtube_urls = []
             
             # Generate unique person_id
-            last_person = SnowAIPersonOfInterestUniqueV1.objects.order_by('-person_id').first()
-            if last_person:
-                try:
-                    last_num = int(last_person.person_id.split('_')[1])
-                    person_id = f"poi_{last_num + 1}"
-                except:
+            try:
+                last_person = SnowAIPersonOfInterestUniqueV1.objects.order_by('-person_id').first()
+                if last_person:
+                    try:
+                        last_num = int(last_person.person_id.split('_')[1])
+                        person_id = f"poi_{last_num + 1}"
+                    except Exception as e:
+                        print(f"Error parsing last person_id: {e}")
+                        import random
+                        person_id = f"poi_{random.randint(1000, 9999)}"
+                else:
                     person_id = "poi_1"
-            else:
-                person_id = "poi_1"
+            except Exception as e:
+                print(f"Error getting last person: {e}")
+                import random
+                person_id = f"poi_{random.randint(1000, 9999)}"
             
             # Create new person
             person = SnowAIPersonOfInterestUniqueV1(
@@ -29892,15 +29896,22 @@ def snowai_poi_create_person_unique_v1(request):
             
             # Handle image upload - convert to base64
             if 'image' in request.FILES:
-                image_file = request.FILES['image']
-                image_data = image_file.read()
-                base64_image = base64.b64encode(image_data).decode('utf-8')
-                
-                # Store with data URI format
-                person.image = f"data:{image_file.content_type};base64,{base64_image}"
+                try:
+                    image_file = request.FILES['image']
+                    image_data = image_file.read()
+                    base64_image = base64.b64encode(image_data).decode('utf-8')
+                    
+                    # Store with data URI format
+                    person.image = f"data:{image_file.content_type};base64,{base64_image}"
+                except Exception as e:
+                    print(f"Error processing image: {e}")
+                    # Continue without image
             
             # Handle youtube URLs
-            person.set_youtube_urls(youtube_urls)
+            try:
+                person.set_youtube_urls(youtube_urls)
+            except Exception as e:
+                print(f"Error setting youtube URLs: {e}")
             
             person.save()
             
@@ -29911,7 +29922,15 @@ def snowai_poi_create_person_unique_v1(request):
             })
             
         except Exception as e:
-            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Error creating person: {e}")
+            print(error_details)
+            return JsonResponse({
+                'success': False, 
+                'error': str(e),
+                'details': error_details
+            }, status=400)
     
     return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
 
@@ -30021,7 +30040,7 @@ def snowai_poi_delete_person_unique_v1(request, person_id):
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
     
     return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
-    
+
 
 from scipy import stats
 
