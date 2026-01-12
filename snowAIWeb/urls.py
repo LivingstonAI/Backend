@@ -470,6 +470,10 @@ urlpatterns = [
          views.mss_quantum_retracement_fibonacci_entry_optimizer, 
          name='mss_retracement_optimizer'),
 
+     path('api/mss-sector-trend-elasticity-momentum-analyzer/', 
+     veiws.mss_sector_trend_elasticity_momentum_analyzer, 
+     name='sector_elasticity'),
+
 
 
 

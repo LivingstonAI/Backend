@@ -25769,25 +25769,28 @@ def trigger_bulk_analysis_view(request):
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
+from datetime import datetime, timedelta
 
 
-def _calculate_mss(data, lookback_period):
+def _calculate_mss(data, lookback_period=30):
     """
     Internal function to calculate Market Stability Score
     
     Args:
-        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
+        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns
         lookback_period (int): Number of days to analyze
         
     Returns:
         float: MSS value or None if calculation fails
     """
     try:
-        # Filter data to lookback period
-        hist = data.tail(lookback_period).copy()
+        # Get recent data using lookback
+        recent = _get_lookback_data(data, lookback_period)
         
-        if len(hist) < 20:
+        if len(recent) < 20:
             return None
+        
+        hist = recent.copy()
         
         # Calculate returns
         hist['returns'] = hist['Close'].pct_change()
@@ -25822,20 +25825,22 @@ def _calculate_mss(data, lookback_period):
             trend_strength = 0
         
         # Calculate liquidity factor
-        avg_volume = hist['Volume'].mean()
-        
-        if avg_volume > 10000000:
-            liquidity_factor = 1.2
-        elif avg_volume > 1000000:
-            liquidity_factor = 1.0
-        elif avg_volume > 100000:
-            liquidity_factor = 0.9
+        if 'Volume' in hist.columns:
+            avg_volume = hist['Volume'].mean()
+            
+            if avg_volume > 10000000:
+                liquidity_factor = 1.2
+            elif avg_volume > 1000000:
+                liquidity_factor = 1.0
+            elif avg_volume > 100000:
+                liquidity_factor = 0.9
+            else:
+                liquidity_factor = 0.8
         else:
-            liquidity_factor = 0.8
+            liquidity_factor = 1.0
         
-        # Normalize volatility (simple normalization)
-        # In single-asset case, we use a fixed reference
-        normalized_volatility = min(volatility / 0.05, 1.0)  # 0.05 as reference volatility
+        # Normalize volatility
+        normalized_volatility = min(volatility / 0.05, 1.0)
         
         # Calculate trend score
         trend_score = (
@@ -25854,16 +25859,17 @@ def _calculate_mss(data, lookback_period):
         return mss
         
     except Exception as e:
+        print(f"[MSS] Error: {e}")
         return None
 
 
-def is_stable_market(data, lookback_period):
+def is_stable_market(data, lookback_period=30):
     """
     Check if market is stable (MSS >= 47)
     
     Args:
-        data (pd.DataFrame): DataFrame with 'Close' and 'Volume' columns and datetime index
-        lookback_period (int): Number of days to analyze
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_period (int): Number of days to analyze (default 30)
         
     Returns:
         bool: True if stable (MSS >= 47), False otherwise
@@ -25872,7 +25878,156 @@ def is_stable_market(data, lookback_period):
         mss = _calculate_mss(data, lookback_period)
         if mss is None:
             return False
-        return mss >= 47
+        
+        is_stable = mss >= 47
+        
+        if is_stable:
+            print(f"[Stable Market] ✅ MSS: {mss:.1f} (Stable)")
+        else:
+            print(f"[Stable Market] ❌ MSS: {mss:.1f} (Unstable)")
+        
+        return is_stable
+    except Exception as e:
+        print(f"[Stable Market] Error: {e}")
+        return False
+
+
+def get_mss_value(data, lookback_period=30):
+    """
+    Get the actual MSS value
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        float: MSS value between 0-100, or None if error
+    """
+    return _calculate_mss(data, lookback_period)
+
+
+def calculate_trend_elasticity(data, lookback_period=30):
+    """
+    Calculate Trend Elasticity - measures how responsive price is to time (trend momentum)
+    
+    Trend Elasticity = (% Price Change / % Time Elapsed) * Consistency Factor
+    
+    High elasticity (>1.5) = Strong, accelerating trend
+    Medium elasticity (0.5-1.5) = Steady trend
+    Low elasticity (<0.5) = Weak/ranging trend
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_period (int): Number of days to analyze
+        
+    Returns:
+        dict: Elasticity metrics or None
+    """
+    try:
+        recent = _get_lookback_data(data, lookback_period)
+        
+        if len(recent) < 20:
+            return None
+        
+        prices = recent['Close'].values
+        
+        # Calculate price change percentage
+        price_start = prices[0]
+        price_end = prices[-1]
+        price_change_pct = abs((price_end - price_start) / price_start) * 100
+        
+        # Time elapsed (normalized to 0-100 scale based on lookback)
+        time_elapsed_pct = 100  # Full period
+        
+        # Calculate linear regression slope
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
+        model = LinearRegression()
+        model.fit(X, y)
+        
+        slope = model.coef_[0][0]
+        r_squared = model.score(X, y)
+        
+        # Calculate returns for consistency
+        returns = pd.Series(prices).pct_change().dropna()
+        
+        # Direction consistency (how often price moves in trend direction)
+        if slope > 0:
+            consistency = (returns > 0).sum() / len(returns)
+        else:
+            consistency = (returns < 0).sum() / len(returns)
+        
+        # Acceleration factor (are moves getting bigger?)
+        first_half = prices[:len(prices)//2]
+        second_half = prices[len(prices)//2:]
+        
+        first_half_volatility = pd.Series(first_half).pct_change().std()
+        second_half_volatility = pd.Series(second_half).pct_change().std()
+        
+        acceleration = second_half_volatility / first_half_volatility if first_half_volatility > 0 else 1.0
+        acceleration = min(acceleration, 2.0)  # Cap at 2x
+        
+        # Calculate Trend Elasticity
+        # Base elasticity: price change relative to time
+        base_elasticity = price_change_pct / time_elapsed_pct if time_elapsed_pct > 0 else 0
+        
+        # Adjust by trend quality factors
+        consistency_factor = consistency * 1.5  # Weight consistency
+        trend_quality = r_squared * consistency_factor
+        
+        # Final elasticity
+        trend_elasticity = base_elasticity * trend_quality * acceleration
+        
+        # Categorize
+        if trend_elasticity >= 1.5:
+            category = 'high'
+            description = 'Strong, accelerating trend'
+        elif trend_elasticity >= 0.5:
+            category = 'medium'
+            description = 'Steady trend'
+        else:
+            category = 'low'
+            description = 'Weak/ranging trend'
+        
+        return {
+            'elasticity': round(trend_elasticity, 3),
+            'category': category,
+            'description': description,
+            'price_change_pct': round(price_change_pct, 2),
+            'r_squared': round(r_squared, 3),
+            'consistency': round(consistency, 3),
+            'acceleration': round(acceleration, 3),
+            'slope_direction': 'up' if slope > 0 else 'down'
+        }
+        
+    except Exception as e:
+        print(f"[Trend Elasticity] Error: {e}")
+        return None
+
+
+def is_high_elasticity_trend(data, lookback_period=30, threshold=1.0):
+    """
+    Check if asset has high trend elasticity (strong momentum)
+    
+    Args:
+        data (pd.DataFrame): DataFrame with OHLC data
+        lookback_period (int): Days to analyze
+        threshold (float): Minimum elasticity for "high" (default 1.0)
+        
+    Returns:
+        bool: True if elasticity >= threshold
+    """
+    try:
+        elasticity_data = calculate_trend_elasticity(data, lookback_period)
+        if elasticity_data is None:
+            return False
+        
+        is_high = elasticity_data['elasticity'] >= threshold
+        
+        if is_high:
+            print(f"[High Elasticity] ✅ {elasticity_data['elasticity']:.3f} - {elasticity_data['description']}")
+        
+        return is_high
     except Exception:
         return False
 
@@ -25915,6 +26070,202 @@ def is_volatile_market(data, lookback_period):
         return mss < 30
     except Exception:
         return False
+
+
+# Add this to your Django views.py
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_sector_trend_elasticity_momentum_analyzer(request):
+    """
+    Analyzes trend elasticity for entire sectors to identify hot/trending sectors.
+    Calculates both sector-level and individual stock elasticity.
+    """
+    try:
+        data = json.loads(request.body)
+        symbols = data.get('symbols', [])
+        lookback_period = data.get('lookback_period', 30)
+        
+        if not symbols:
+            return JsonResponse({
+                'success': False,
+                'error': 'No symbols provided'
+            })
+        
+        # Organize by sector
+        sector_stocks = defaultdict(list)
+        
+        for symbol in symbols:
+            sector = SECTOR_MAPPINGS.get(symbol)
+            if sector:
+                sector_stocks[sector].append(symbol)
+        
+        sector_elasticity_data = []
+        all_stock_elasticity = []
+        
+        for sector, sector_symbols in sector_stocks.items():
+            sector_elasticities = []
+            sector_mss_scores = []
+            sector_stock_details = []
+            
+            total_market_cap = 0
+            weighted_elasticity_sum = 0
+            
+            for symbol in sector_symbols:
+                try:
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period=f'{lookback_period + 10}d')
+                    info = ticker.info
+                    
+                    if hist.empty or len(hist) < 20:
+                        continue
+                    
+                    # Get market cap
+                    market_cap = info.get('marketCap', None)
+                    if not market_cap or market_cap == 0:
+                        market_cap = hist['Volume'].mean() * hist['Close'].mean()
+                    
+                    # Calculate trend elasticity
+                    prices = hist['Close'].values[-lookback_period:]
+                    
+                    if len(prices) < 20:
+                        continue
+                    
+                    # Price change
+                    price_change_pct = abs((prices[-1] - prices[0]) / prices[0]) * 100
+                    
+                    # Linear regression
+                    X = np.arange(len(prices)).reshape(-1, 1)
+                    y = prices.reshape(-1, 1)
+                    model = LinearRegression()
+                    model.fit(X, y)
+                    
+                    slope = model.coef_[0][0]
+                    r_squared = model.score(X, y)
+                    
+                    # Consistency
+                    returns = pd.Series(prices).pct_change().dropna()
+                    if slope > 0:
+                        consistency = (returns > 0).sum() / len(returns) if len(returns) > 0 else 0
+                    else:
+                        consistency = (returns < 0).sum() / len(returns) if len(returns) > 0 else 0
+                    
+                    # Calculate elasticity
+                    base_elasticity = price_change_pct / 100
+                    trend_quality = r_squared * consistency * 1.5
+                    elasticity = base_elasticity * trend_quality
+                    
+                    # Calculate MSS
+                    hist_df = hist.tail(lookback_period).copy()
+                    hist_df['returns'] = hist_df['Close'].pct_change()
+                    volatility = hist_df['returns'].std()
+                    normalized_volatility = min(volatility / 0.05, 1.0)
+                    
+                    avg_volume = hist_df['Volume'].mean()
+                    if avg_volume > 10000000:
+                        liquidity_factor = 1.2
+                    elif avg_volume > 1000000:
+                        liquidity_factor = 1.0
+                    elif avg_volume > 100000:
+                        liquidity_factor = 0.9
+                    else:
+                        liquidity_factor = 0.8
+                    
+                    trend_score = (r_squared * 0.5 + consistency * 0.5) * 100
+                    stability_factor = (1 - normalized_volatility) ** 0.6
+                    mss = trend_score * stability_factor * liquidity_factor
+                    mss = min(max(mss, 0), 100)
+                    
+                    sector_elasticities.append(elasticity)
+                    sector_mss_scores.append(mss)
+                    
+                    # Weighted elasticity
+                    weighted_elasticity_sum += elasticity * market_cap
+                    total_market_cap += market_cap
+                    
+                    sector_stock_details.append({
+                        'symbol': symbol,
+                        'elasticity': round(elasticity, 3),
+                        'mss': round(mss, 1),
+                        'price_change_pct': round(price_change_pct, 2),
+                        'r_squared': round(r_squared, 3),
+                        'consistency': round(consistency, 3),
+                        'trend_direction': 'up' if slope > 0 else 'down',
+                        'market_cap': market_cap
+                    })
+                    
+                    all_stock_elasticity.append({
+                        'symbol': symbol,
+                        'sector': sector,
+                        'elasticity': round(elasticity, 3),
+                        'mss': round(mss, 1),
+                        'price_change_pct': round(price_change_pct, 2)
+                    })
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    continue
+            
+            if not sector_elasticities:
+                continue
+            
+            # Calculate sector-level metrics
+            avg_elasticity = np.mean(sector_elasticities)
+            weighted_elasticity = weighted_elasticity_sum / total_market_cap if total_market_cap > 0 else avg_elasticity
+            avg_mss = np.mean(sector_mss_scores)
+            
+            # Categorize sector
+            if weighted_elasticity >= 1.5:
+                category = 'hot'
+                emoji = '🔥'
+            elif weighted_elasticity >= 0.8:
+                category = 'trending'
+                emoji = '📈'
+            elif weighted_elasticity >= 0.4:
+                category = 'steady'
+                emoji = '➡️'
+            else:
+                category = 'weak'
+                emoji = '📉'
+            
+            sector_elasticity_data.append({
+                'sector': sector,
+                'weighted_elasticity': round(weighted_elasticity, 3),
+                'avg_elasticity': round(avg_elasticity, 3),
+                'avg_mss': round(avg_mss, 1),
+                'num_stocks': len(sector_elasticities),
+                'category': category,
+                'emoji': emoji,
+                'total_market_cap': total_market_cap,
+                'top_stocks': sorted(sector_stock_details, key=lambda x: x['elasticity'], reverse=True)[:5]
+            })
+        
+        # Sort sectors by weighted elasticity
+        sector_elasticity_data.sort(key=lambda x: x['weighted_elasticity'], reverse=True)
+        
+        # Sort all stocks by elasticity
+        all_stock_elasticity.sort(key=lambda x: x['elasticity'], reverse=True)
+        
+        # Identify hottest stocks overall
+        hottest_stocks = all_stock_elasticity[:10]
+        
+        return JsonResponse({
+            'success': True,
+            'sector_elasticity': sector_elasticity_data,
+            'hottest_stocks': hottest_stocks,
+            'total_sectors_analyzed': len(sector_elasticity_data),
+            'total_stocks_analyzed': len(all_stock_elasticity),
+            'lookback_period': lookback_period,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
 
 
