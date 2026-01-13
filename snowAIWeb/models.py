@@ -4,6 +4,7 @@ import datetime
 from django.contrib.auth.models import AbstractUser
 from django.db.models import JSONField
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+import json
 
 
 class CustomUserManager(BaseUserManager):
@@ -1765,15 +1766,25 @@ class Position(models.Model):
         return self.pnl
 
 
-from django.db import models
-import json
-
-
 class SnowAIPersonOfInterestUniqueV1(models.Model):
     """Model to store People of Interest data"""
     
+    FIELD_CHOICES = [
+        ('mathematics', 'Mathematics'),
+        ('physics', 'Physics'),
+        ('computer_science', 'Computer Science'),
+        ('economics', 'Economics'),
+        ('biology', 'Biology'),
+        ('chemistry', 'Chemistry'),
+        ('engineering', 'Engineering'),
+        ('philosophy', 'Philosophy'),
+        ('neuroscience', 'Neuroscience'),
+        ('other', 'Other'),
+    ]
+    
     person_id = models.CharField(max_length=100, unique=True, primary_key=True)
     name = models.CharField(max_length=255)
+    field = models.CharField(max_length=50, choices=FIELD_CHOICES, default='other')
     image = models.TextField(blank=True, null=True)  # For base64 encoded image
     accomplishments = models.TextField(blank=True, null=True)
     bio = models.TextField(blank=True, null=True)
@@ -1809,6 +1820,8 @@ class SnowAIPersonOfInterestUniqueV1(models.Model):
         return {
             'id': self.person_id,
             'name': self.name,
+            'field': self.field,
+            'field_display': self.get_field_display(),
             'image_url': self.image or '',  # Return base64 string directly
             'accomplishments': self.accomplishments or '',
             'bio': self.bio or '',
@@ -1819,7 +1832,6 @@ class SnowAIPersonOfInterestUniqueV1(models.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
-
 
 
 class ContactUs(models.Model):

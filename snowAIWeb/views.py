@@ -30252,14 +30252,8 @@ def mss_quantum_probabilistic_monte_carlo_forecaster_api(request):
         }, status=500)
 
 
-
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.core.exceptions import ObjectDoesNotExist
-import json
 import base64
-from .models import SnowAIPersonOfInterestUniqueV1
-
 
 @csrf_exempt
 def snowai_poi_create_person_unique_v1(request):
@@ -30268,6 +30262,7 @@ def snowai_poi_create_person_unique_v1(request):
         try:
             # Handle multipart form data
             name = request.POST.get('name', '')
+            field = request.POST.get('field', 'other')
             accomplishments = request.POST.get('accomplishments', '')
             bio = request.POST.get('bio', '')
             works = request.POST.get('works', '')
@@ -30316,6 +30311,7 @@ def snowai_poi_create_person_unique_v1(request):
             person = SnowAIPersonOfInterestUniqueV1(
                 person_id=person_id,
                 name=name,
+                field=field,
                 accomplishments=accomplishments,
                 bio=bio,
                 works=works,
@@ -30412,6 +30408,8 @@ def snowai_poi_update_person_unique_v1(request, person_id):
             if request.POST:
                 if 'name' in request.POST:
                     person.name = request.POST['name']
+                if 'field' in request.POST:
+                    person.field = request.POST['field']
                 if 'accomplishments' in request.POST:
                     person.accomplishments = request.POST['accomplishments']
                 if 'bio' in request.POST:
