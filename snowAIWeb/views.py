@@ -30406,11 +30406,21 @@ def snowai_poi_update_person_unique_v1(request, person_id):
         try:
             person = SnowAIPersonOfInterestUniqueV1.objects.get(person_id=person_id)
             
+            # Debug logging
+            print(f"Updating person {person_id}")
+            print(f"POST data: {dict(request.POST)}")
+            print(f"Field value in POST: {request.POST.get('field', 'NOT FOUND')}")
+            
             # Handle form data - update all fields explicitly
             if 'name' in request.POST and request.POST['name']:
                 person.name = request.POST['name']
+                print(f"Updated name to: {person.name}")
+                
             if 'field' in request.POST:
+                old_field = person.field
                 person.field = request.POST['field']
+                print(f"Updated field from '{old_field}' to '{person.field}'")
+                
             if 'accomplishments' in request.POST:
                 person.accomplishments = request.POST['accomplishments']
             if 'bio' in request.POST:
@@ -30437,14 +30447,19 @@ def snowai_poi_update_person_unique_v1(request, person_id):
                     
                     # Store with data URI format
                     person.image = f"data:{image_file.content_type};base64,{base64_image}"
+                    print(f"Updated image")
                 except Exception as e:
                     print(f"Error processing image: {e}")
             
             person.save()
+            print(f"Person saved with field: {person.field}")
+            
+            response_data = person.to_dict(request)
+            print(f"Returning field: {response_data.get('field')}")
             
             return JsonResponse({
                 'success': True,
-                'person': person.to_dict(request)
+                'person': response_data
             })
             
         except ObjectDoesNotExist:
