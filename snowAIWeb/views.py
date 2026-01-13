@@ -6538,7 +6538,8 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
             'average_retracement': average_retracement,
             'is_monte_carlo_bullish_prediction': is_monte_carlo_bullish_prediction,
             'is_monte_carlo_bearish_prediction': is_monte_carlo_bearish_prediction,
-            'is_high_elasticity_trend': is_high_elasticity_trend
+            'is_high_elasticity_trend': is_high_elasticity_trend,
+            'is_high_r_squared': is_high_r_squared
         }
     
         exec(model_code, namespace)
@@ -28404,7 +28405,8 @@ def prepare_namespace(model, dataset):
         'average_retracement': average_retracement,
         'is_monte_carlo_bullish_prediction': is_monte_carlo_bullish_prediction,
         'is_monte_carlo_bearish_prediction': is_monte_carlo_bearish_prediction,
-        'is_high_elasticity_trend': is_high_elasticity_trend
+        'is_high_elasticity_trend': is_high_elasticity_trend,
+        'is_high_r_squared': is_high_r_squared
     }
     
     return namespace
