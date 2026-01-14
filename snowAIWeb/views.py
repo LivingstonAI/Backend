@@ -6538,7 +6538,7 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
             'average_retracement': average_retracement,
             'is_monte_carlo_bullish_prediction': is_monte_carlo_bullish_prediction,
             'is_monte_carlo_bearish_prediction': is_monte_carlo_bearish_prediction,
-            'is_high_elasticity_trend': is_high_elasticity_trend,
+            # 'is_high_elasticity_trend': is_high_elasticity_trend,
             'is_high_r_squared': is_high_r_squared
         }
     
@@ -26066,16 +26066,15 @@ def calculate_trend_elasticity(data, lookback_period=30):
         return None
 
 
-def is_high_trend_elasticity(data, lookback_period=20, threshold=0.65):
+def is_high_trend_elasticity(data, lookback_period=30, threshold=0.50):
     """
-    Check if the asset has high trend elasticity by analyzing retracement depth vs trend moves.
-    High elasticity = small retracements relative to trend moves (clean, strong trends)
-    Low elasticity = large retracements relative to trend moves (choppy, weak trends)
+    Check if asset has high trend elasticity using 30-day lookback.
+    High elasticity = retracements average <50% of trend moves
     
     Args:
         data: OHLC dataset (pandas DataFrame or similar)
-        lookback_period: Number of periods to analyze (default: 20)
-        threshold: Elasticity threshold (default: 0.65 = avg retracement <35%)
+        lookback_period: Number of periods to analyze (default: 30)
+        threshold: Elasticity threshold (default: 0.50 = 50% avg retracement)
     
     Returns:
         bool: True if elasticity >= threshold, False otherwise
@@ -26090,7 +26089,6 @@ def is_high_trend_elasticity(data, lookback_period=20, threshold=0.65):
         low_prices = None
         
         if hasattr(data, 'columns'):
-            # DataFrame with column names
             possible_close = ['Close', 'close', 'CLOSE', 'adj_close', 'Adj Close']
             possible_high = ['High', 'high', 'HIGH']
             possible_low = ['Low', 'low', 'LOW']
@@ -26110,7 +26108,7 @@ def is_high_trend_elasticity(data, lookback_period=20, threshold=0.65):
                     low_prices = data[col].values
                     break
         
-        # Fallback for CSV format (Time,Open,High,Low,Close,Timeframe)
+        # Fallback for CSV format
         if close_prices is None:
             if hasattr(data, 'values'):
                 if len(data.values.shape) > 1 and data.values.shape[1] >= 5:
@@ -26133,29 +26131,26 @@ def is_high_trend_elasticity(data, lookback_period=20, threshold=0.65):
         if high_prices is None or low_prices is None:
             return False
         
-        # Need enough data
-        if len(close_prices) < lookback_period + 20:
+        # Need enough data (30 + buffer)
+        if len(close_prices) < lookback_period + 30:
             return False
         
         # Analyze recent data
         recent_high = high_prices[-lookback_period:]
         recent_low = low_prices[-lookback_period:]
-        recent_close = close_prices[-lookback_period:]
         
-        # Find swing points (10-bar window like retracement optimizer)
+        # Find swing points
         swing_highs = []
         swing_lows = []
         
-        window = min(10, len(recent_high) // 10)  # Adaptive window
+        window = min(10, len(recent_high) // 10)
         if window < 3:
             return False
         
         for i in range(window, len(recent_high) - window):
-            # Swing high
             if recent_high[i] == max(recent_high[i-window:i+window+1]):
                 swing_highs.append({'index': i, 'price': recent_high[i]})
             
-            # Swing low
             if recent_low[i] == min(recent_low[i-window:i+window+1]):
                 swing_lows.append({'index': i, 'price': recent_low[i]})
         
@@ -26165,7 +26160,7 @@ def is_high_trend_elasticity(data, lookback_period=20, threshold=0.65):
         # Calculate elasticity scores
         elasticity_scores = []
         
-        # BULLISH patterns: Low -> High -> Retracement Low -> Continuation
+        # BULLISH patterns
         for i in range(len(swing_lows) - 1):
             low = swing_lows[i]
             
@@ -26185,7 +26180,6 @@ def is_high_trend_elasticity(data, lookback_period=20, threshold=0.65):
             if trend_move <= 0:
                 continue
             
-            # Check if trend continued
             future_highs = [h for h in swing_highs if h['index'] > retracement_low['index']]
             if not future_highs or not any(h['price'] > high['price'] for h in future_highs):
                 continue
@@ -26193,11 +26187,10 @@ def is_high_trend_elasticity(data, lookback_period=20, threshold=0.65):
             retracement_pct = (retracement_depth / trend_move) * 100
             
             if 10 <= retracement_pct <= 90:
-                # Elasticity = 100% - retracement%
                 elasticity = (100 - retracement_pct) / 100
                 elasticity_scores.append(elasticity)
         
-        # BEARISH patterns: High -> Low -> Retracement High -> Continuation
+        # BEARISH patterns
         for i in range(len(swing_highs) - 1):
             high = swing_highs[i]
             
@@ -26217,7 +26210,6 @@ def is_high_trend_elasticity(data, lookback_period=20, threshold=0.65):
             if trend_move <= 0:
                 continue
             
-            # Check if trend continued
             future_lows = [l for l in swing_lows if l['index'] > retracement_high['index']]
             if not future_lows or not any(l['price'] < low['price'] for l in future_lows):
                 continue
@@ -26225,23 +26217,19 @@ def is_high_trend_elasticity(data, lookback_period=20, threshold=0.65):
             retracement_pct = (retracement_depth / trend_move) * 100
             
             if 10 <= retracement_pct <= 90:
-                # Elasticity = 100% - retracement%
                 elasticity = (100 - retracement_pct) / 100
                 elasticity_scores.append(elasticity)
         
         if len(elasticity_scores) == 0:
             return False
         
-        # Average elasticity
         avg_elasticity = np.mean(elasticity_scores)
         
-        # Return True if elasticity meets threshold
         return avg_elasticity >= threshold
         
     except Exception as e:
         print(f"Error in is_high_trend_elasticity: {str(e)}")
         return False
-
 
 
 def is_choppy_market(data, lookback_period):
@@ -28556,7 +28544,7 @@ def prepare_namespace(model, dataset):
         'average_retracement': average_retracement,
         'is_monte_carlo_bullish_prediction': is_monte_carlo_bullish_prediction,
         'is_monte_carlo_bearish_prediction': is_monte_carlo_bearish_prediction,
-        'is_high_elasticity_trend': is_high_elasticity_trend,
+        # 'is_high_elasticity_trend': is_high_elasticity_trend,
         'is_high_r_squared': is_high_r_squared
     }
     
@@ -31442,8 +31430,7 @@ def get_retracement_stats(
 def mss_trend_elasticity_analyzer(request):
     """
     Analyze trend elasticity by comparing retracement depth to actual trend movement.
-    High elasticity = small retracements relative to trend moves (clean trends)
-    Low elasticity = large retracements relative to trend moves (choppy trends)
+    Uses 30-day lookback for more comprehensive analysis.
     """
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
@@ -31451,25 +31438,25 @@ def mss_trend_elasticity_analyzer(request):
     try:
         data = json.loads(request.body)
         symbol = data.get('symbol')
-        lookback_days = data.get('lookback_period', 20)
+        lookback_days = data.get('lookback_period', 30)  # Changed default to 30
         
         if not symbol:
             return JsonResponse({'success': False, 'error': 'Symbol required'}, status=400)
         
-        # Fetch 1h data
+        # Fetch 1h data - need more days for 30-day analysis
         end_date = datetime.now()
-        days_needed = lookback_days + 10
+        days_needed = lookback_days + 15  # Extra buffer
         start_date = end_date - timedelta(days=days_needed)
         
         ticker = yf.Ticker(symbol)
         df = ticker.history(start=start_date, end=end_date, interval='1h')
         
-        if df.empty or len(df) < 100:
+        if df.empty or len(df) < 150:
             return JsonResponse({'success': False, 'error': 'Insufficient data'}, status=400)
         
-        print(f"[{symbol}] Analyzing {len(df)} 1-hour candles for elasticity...")
+        print(f"[{symbol}] Analyzing {len(df)} 1-hour candles (30-day lookback) for elasticity...")
         
-        # Find swing highs and lows (same logic as retracement optimizer)
+        # Find swing highs and lows
         swing_highs = []
         swing_lows = []
         
@@ -31496,49 +31483,39 @@ def mss_trend_elasticity_analyzer(request):
                 'error': f'Not enough swing points ({len(swing_highs)} highs, {len(swing_lows)} lows)'
             }, status=400)
         
-        # Analyze BULLISH patterns (Low -> High -> Retracement Low -> Continuation High)
+        # Analyze BULLISH patterns
         bullish_elasticities = []
         
         for i in range(len(swing_lows) - 1):
             low = swing_lows[i]
             
-            # Find next swing high after this low
             next_highs = [h for h in swing_highs if h['index'] > low['index']]
             if not next_highs:
                 continue
             high = next_highs[0]
             
-            # Find retracement (next swing low) after the high
             next_lows = [l for l in swing_lows if l['index'] > high['index']]
             if not next_lows:
                 continue
             retracement_low = next_lows[0]
             
-            # Calculate the TREND MOVE (low to high)
             trend_move = high['price'] - low['price']
-            
-            # Calculate the RETRACEMENT (high back down to retracement low)
             retracement_depth = high['price'] - retracement_low['price']
             
             if trend_move <= 0:
                 continue
             
-            # Check if trend continued after retracement (validates it was a real trend)
+            # Check if trend continued
             future_highs = [h for h in swing_highs if h['index'] > retracement_low['index'] and h['index'] < retracement_low['index'] + 50]
             if not future_highs:
                 continue
             
-            # Only count if price actually went higher (trend continued)
             if not any(h['price'] > high['price'] * 1.001 for h in future_highs):
                 continue
             
-            # Calculate retracement as percentage of trend move
             retracement_pct = (retracement_depth / trend_move) * 100
             
-            # Only count reasonable retracements (10-90%)
             if 10 <= retracement_pct <= 90:
-                # ELASTICITY = How much of the trend was KEPT (not retraced)
-                # If retracement is 30%, elasticity is 70%
                 elasticity_score = 100 - retracement_pct
                 
                 bullish_elasticities.append({
@@ -31547,48 +31524,38 @@ def mss_trend_elasticity_analyzer(request):
                     'elasticity_score': elasticity_score
                 })
         
-        # Analyze BEARISH patterns (High -> Low -> Retracement High -> Continuation Low)
+        # Analyze BEARISH patterns
         bearish_elasticities = []
         
         for i in range(len(swing_highs) - 1):
             high = swing_highs[i]
             
-            # Find next swing low after this high
             next_lows = [l for l in swing_lows if l['index'] > high['index']]
             if not next_lows:
                 continue
             low = next_lows[0]
             
-            # Find retracement (next swing high) after the low
             next_highs = [h for h in swing_highs if h['index'] > low['index']]
             if not next_highs:
                 continue
             retracement_high = next_highs[0]
             
-            # Calculate the TREND MOVE (high to low - downward)
             trend_move = high['price'] - low['price']
-            
-            # Calculate the RETRACEMENT (low back up to retracement high)
             retracement_depth = retracement_high['price'] - low['price']
             
             if trend_move <= 0:
                 continue
             
-            # Check if trend continued after retracement
             future_lows = [l for l in swing_lows if l['index'] > retracement_high['index'] and l['index'] < retracement_high['index'] + 50]
             if not future_lows:
                 continue
             
-            # Only count if price actually went lower (trend continued)
             if not any(l['price'] < low['price'] * 0.999 for l in future_lows):
                 continue
             
-            # Calculate retracement as percentage of trend move
             retracement_pct = (retracement_depth / trend_move) * 100
             
-            # Only count reasonable retracements (10-90%)
             if 10 <= retracement_pct <= 90:
-                # ELASTICITY = How much of the trend was KEPT (not retraced)
                 elasticity_score = 100 - retracement_pct
                 
                 bearish_elasticities.append({
@@ -31597,7 +31564,7 @@ def mss_trend_elasticity_analyzer(request):
                     'elasticity_score': elasticity_score
                 })
         
-        print(f"[{symbol}] Found {len(bullish_elasticities)} bullish patterns, {len(bearish_elasticities)} bearish patterns")
+        print(f"[{symbol}] Found {len(bullish_elasticities)} bullish, {len(bearish_elasticities)} bearish patterns")
         
         if len(bullish_elasticities) == 0 and len(bearish_elasticities) == 0:
             return JsonResponse({
@@ -31612,7 +31579,7 @@ def mss_trend_elasticity_analyzer(request):
             bullish_retracements = [e['retracement_pct'] for e in bullish_elasticities]
             
             bullish_result = {
-                'elasticity_score': float(np.mean(bullish_scores)) / 100,  # Normalize to 0-1
+                'elasticity_score': float(np.mean(bullish_scores)) / 100,
                 'avg_retracement_pct': float(np.mean(bullish_retracements)),
                 'median_retracement_pct': float(np.median(bullish_retracements)),
                 'pattern_count': len(bullish_elasticities),
@@ -31626,7 +31593,7 @@ def mss_trend_elasticity_analyzer(request):
             bearish_retracements = [e['retracement_pct'] for e in bearish_elasticities]
             
             bearish_result = {
-                'elasticity_score': float(np.mean(bearish_scores)) / 100,  # Normalize to 0-1
+                'elasticity_score': float(np.mean(bearish_scores)) / 100,
                 'avg_retracement_pct': float(np.mean(bearish_retracements)),
                 'median_retracement_pct': float(np.median(bearish_retracements)),
                 'pattern_count': len(bearish_elasticities),
@@ -31634,7 +31601,7 @@ def mss_trend_elasticity_analyzer(request):
                 'max_retracement': float(max(bearish_retracements))
             }
         
-        # Overall elasticity (average of both directions)
+        # Overall elasticity
         all_scores = []
         if bullish_result:
             all_scores.append(bullish_result['elasticity_score'])
@@ -31643,14 +31610,12 @@ def mss_trend_elasticity_analyzer(request):
         
         overall_elasticity = float(np.mean(all_scores))
         
-        # Categorize based on elasticity
-        # High elasticity = low retracements (clean trends)
-        # Low elasticity = high retracements (choppy trends)
-        if overall_elasticity >= 0.65:  # Avg retracement < 35%
+        # ADJUSTED THRESHOLDS - More realistic based on real market behavior
+        if overall_elasticity >= 0.50:  # Avg retracement < 50% (very rare, super clean)
             category = 'strong'
-        elif overall_elasticity >= 0.45:  # Avg retracement 35-55%
+        elif overall_elasticity >= 0.35:  # Avg retracement 50-65% (most good trends)
             category = 'moderate'
-        else:  # Avg retracement > 55%
+        else:  # Avg retracement > 65%
             category = 'weak'
         
         return JsonResponse({
@@ -31665,9 +31630,9 @@ def mss_trend_elasticity_analyzer(request):
             'analysis_period': f'{lookback_days} days',
             'total_patterns': len(bullish_elasticities) + len(bearish_elasticities),
             'interpretation': {
-                'strong': 'Trends are clean and powerful. Retracements are small (typically <35% of trend moves). Excellent for trend following.',
-                'moderate': 'Balanced retracements (35-55% of trend moves). Good for swing trading with medium stops.',
-                'weak': 'Deep retracements (>55% of trend moves). Choppy, unstable trends. Use wider stops or wait for clarity.'
+                'strong': 'Excellent trend quality! Retracements are shallow (<50% on average). Price moves decisively with minimal pullback. Ideal for tight stops and trend following.',
+                'moderate': 'Good trend quality. Retracements are reasonable (50-65% on average). Suitable for swing trading with normal stop placement.',
+                'weak': 'Choppy trend quality. Deep retracements (>65% on average). Price gives back most gains/losses. Use wider stops or wait for better setups.'
             }[category]
         })
         
