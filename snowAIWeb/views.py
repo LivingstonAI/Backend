@@ -26066,31 +26066,133 @@ def calculate_trend_elasticity(data, lookback_period=30):
         return None
 
 
-def is_high_elasticity_trend(data, lookback_period=30, threshold=1.0):
+def is_high_trend_elasticity(data, lookback_period=30, threshold=0.7):
     """
-    Check if asset has high trend elasticity (strong momentum)
+    Check if the asset has high trend elasticity (strong, consistent trends with minimal retracements).
     
     Args:
-        data (pd.DataFrame): DataFrame with OHLC data
-        lookback_period (int): Days to analyze
-        threshold (float): Minimum elasticity for "high" (default 1.0)
-        
+        data: OHLC dataset (pandas DataFrame or similar)
+        lookback_period: Number of periods to analyze (default: 30)
+        threshold: Elasticity threshold to consider as "high" (default: 0.7)
+    
     Returns:
-        bool: True if elasticity >= threshold
+        bool: True if elasticity >= threshold, False otherwise
     """
     try:
-        elasticity_data = calculate_trend_elasticity(data, lookback_period)
-        if elasticity_data is None:
+        import numpy as np
+        import pandas as pd
+        
+        # Extract close prices from various data structures
+        close_prices = None
+        high_prices = None
+        low_prices = None
+        
+        if hasattr(data, 'columns'):
+            # Handle DataFrame with different column name formats
+            possible_close = ['Close', 'close', 'CLOSE', 'adj_close', 'Adj Close']
+            possible_high = ['High', 'high', 'HIGH']
+            possible_low = ['Low', 'low', 'LOW']
+            
+            for col in possible_close:
+                if col in data.columns:
+                    close_prices = data[col].values
+                    break
+            
+            for col in possible_high:
+                if col in data.columns:
+                    high_prices = data[col].values
+                    break
+                    
+            for col in possible_low:
+                if col in data.columns:
+                    low_prices = data[col].values
+                    break
+        
+        # Fallback to array handling
+        if close_prices is None:
+            if hasattr(data, 'values'):
+                # Assume OHLC format: Open, High, Low, Close
+                if len(data.values.shape) > 1 and data.values.shape[1] >= 4:
+                    high_prices = data.values[:, 1]
+                    low_prices = data.values[:, 2]
+                    close_prices = data.values[:, 3]
+                else:
+                    close_prices = data.values
+            elif isinstance(data, (list, np.ndarray)):
+                close_prices = np.array(data)
+            else:
+                return False  # Can't extract data
+        
+        # Need at least lookback_period + 20 for proper analysis
+        if len(close_prices) < lookback_period + 20:
             return False
         
-        is_high = elasticity_data['elasticity'] >= threshold
+        # Get recent data
+        recent_close = close_prices[-lookback_period:]
+        recent_high = high_prices[-lookback_period:] if high_prices is not None else recent_close
+        recent_low = low_prices[-lookback_period:] if low_prices is not None else recent_close
         
-        if is_high:
-            print(f"[High Elasticity] ✅ {elasticity_data['elasticity']:.3f} - {elasticity_data['description']}")
+        # Identify swing highs and lows
+        def find_swings(prices, window=3):
+            """Find swing points in price data"""
+            swings = []
+            for i in range(window, len(prices) - window):
+                # Swing high
+                if all(prices[i] >= prices[i-j] for j in range(1, window+1)) and \
+                   all(prices[i] >= prices[i+j] for j in range(1, window+1)):
+                    swings.append(('high', i, prices[i]))
+                # Swing low
+                elif all(prices[i] <= prices[i-j] for j in range(1, window+1)) and \
+                     all(prices[i] <= prices[i+j] for j in range(1, window+1)):
+                    swings.append(('low', i, prices[i]))
+            return swings
         
-        return is_high
-    except Exception:
+        swings = find_swings(recent_close)
+        
+        if len(swings) < 4:  # Need at least 2 complete swing patterns
+            return False
+        
+        # Calculate retracement percentages for trends
+        retracements = []
+        
+        for i in range(len(swings) - 2):
+            current_type, current_idx, current_price = swings[i]
+            next_type, next_idx, next_price = swings[i + 1]
+            after_type, after_idx, after_price = swings[i + 2]
+            
+            # Bullish pattern: low -> high -> low (retracement) -> higher high
+            if current_type == 'low' and next_type == 'high' and after_type == 'low':
+                trend_move = next_price - current_price
+                retracement_move = next_price - after_price
+                if trend_move > 0:
+                    retracement_pct = (retracement_move / trend_move) * 100
+                    # Elasticity = 1 - (retracement%)
+                    elasticity = max(0, 1 - (retracement_pct / 100))
+                    retracements.append(elasticity)
+            
+            # Bearish pattern: high -> low -> high (retracement) -> lower low
+            elif current_type == 'high' and next_type == 'low' and after_type == 'high':
+                trend_move = current_price - next_price
+                retracement_move = after_price - next_price
+                if trend_move > 0:
+                    retracement_pct = (retracement_move / trend_move) * 100
+                    elasticity = max(0, 1 - (retracement_pct / 100))
+                    retracements.append(elasticity)
+        
+        if len(retracements) == 0:
+            return False
+        
+        # Calculate average elasticity
+        avg_elasticity = np.mean(retracements)
+        
+        # Return True if elasticity meets or exceeds threshold
+        return avg_elasticity >= threshold
+        
+    except Exception as e:
+        # Error handling - return False for any errors
+        print(f"Error in is_high_trend_elasticity: {str(e)}")
         return False
+
 
 
 def is_choppy_market(data, lookback_period):
@@ -31285,6 +31387,126 @@ def get_retracement_stats(
     
     except Exception as e:
         return {'error': f'{type(e).__name__}: {str(e)}'}
+
+
+@csrf_exempt
+def mss_trend_elasticity_analyzer(request):
+    """
+    Analyze trend elasticity for a given symbol.
+    Returns elasticity scores and interpretation.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        lookback_period = data.get('lookback_period', 90)
+        
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'}, status=400)
+        
+        # Fetch data
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period=f'{lookback_period + 30}d')
+        
+        if df.empty or len(df) < 30:
+            return JsonResponse({'success': False, 'error': 'Insufficient data'}, status=400)
+        
+        # Helper function to find swings
+        def find_swings(prices, window=3):
+            swings = []
+            for i in range(window, len(prices) - window):
+                if all(prices[i] >= prices[i-j] for j in range(1, window+1)) and \
+                   all(prices[i] >= prices[i+j] for j in range(1, window+1)):
+                    swings.append(('high', i, prices[i]))
+                elif all(prices[i] <= prices[i-j] for j in range(1, window+1)) and \
+                     all(prices[i] <= prices[i+j] for j in range(1, window+1)):
+                    swings.append(('low', i, prices[i]))
+            return swings
+        
+        close_prices = df['Close'].values
+        swings = find_swings(close_prices)
+        
+        # Calculate bullish and bearish elasticity
+        bullish_retracements = []
+        bearish_retracements = []
+        
+        for i in range(len(swings) - 2):
+            current_type, current_idx, current_price = swings[i]
+            next_type, next_idx, next_price = swings[i + 1]
+            after_type, after_idx, after_price = swings[i + 2]
+            
+            # Bullish pattern
+            if current_type == 'low' and next_type == 'high' and after_type == 'low':
+                trend_move = next_price - current_price
+                retracement_move = next_price - after_price
+                if trend_move > 0:
+                    retracement_pct = (retracement_move / trend_move) * 100
+                    elasticity = max(0, 1 - (retracement_pct / 100))
+                    bullish_retracements.append({
+                        'elasticity': elasticity,
+                        'retracement_pct': retracement_pct
+                    })
+            
+            # Bearish pattern
+            elif current_type == 'high' and next_type == 'low' and after_type == 'high':
+                trend_move = current_price - next_price
+                retracement_move = after_price - next_price
+                if trend_move > 0:
+                    retracement_pct = (retracement_move / trend_move) * 100
+                    elasticity = max(0, 1 - (retracement_pct / 100))
+                    bearish_retracements.append({
+                        'elasticity': elasticity,
+                        'retracement_pct': retracement_pct
+                    })
+        
+        # Calculate averages
+        bullish_elasticity = None
+        if bullish_retracements:
+            bullish_elasticity = {
+                'elasticity_score': np.mean([r['elasticity'] for r in bullish_retracements]),
+                'avg_retracement_pct': np.mean([r['retracement_pct'] for r in bullish_retracements]),
+                'pattern_count': len(bullish_retracements)
+            }
+        
+        bearish_elasticity = None
+        if bearish_retracements:
+            bearish_elasticity = {
+                'elasticity_score': np.mean([r['elasticity'] for r in bearish_retracements]),
+                'avg_retracement_pct': np.mean([r['retracement_pct'] for r in bearish_retracements]),
+                'pattern_count': len(bearish_retracements)
+            }
+        
+        # Overall elasticity
+        all_elasticities = []
+        if bullish_elasticity:
+            all_elasticities.append(bullish_elasticity['elasticity_score'])
+        if bearish_elasticity:
+            all_elasticities.append(bearish_elasticity['elasticity_score'])
+        
+        overall_elasticity = np.mean(all_elasticities) if all_elasticities else 0
+        
+        # Categorize
+        if overall_elasticity >= 0.7:
+            category = 'strong'
+        elif overall_elasticity >= 0.4:
+            category = 'moderate'
+        else:
+            category = 'weak'
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'overall_elasticity': float(overall_elasticity),
+            'elasticity_category': category,
+            'bullish_elasticity': bullish_elasticity,
+            'bearish_elasticity': bearish_elasticity,
+            'current_price': float(df['Close'].iloc[-1])
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
         
         
 # LEGODI BACKEND CODE

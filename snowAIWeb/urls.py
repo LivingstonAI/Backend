@@ -474,6 +474,8 @@ urlpatterns = [
      views.mss_sector_trend_elasticity_momentum_analyzer, 
      name='sector_elasticity'),
 
+     path('api/mss-trend-elasticity-analyzer/', views.mss_trend_elasticity_analyzer, name='mss_trend_elasticity_analyzer'),
+
 
 
 
