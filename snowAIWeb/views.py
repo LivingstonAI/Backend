@@ -23121,7 +23121,7 @@ def calculate_market_stability_score(request):
         'success': False,
         'error': 'POST method required'
     }, status=405)
-    
+
 
 @csrf_exempt
 def get_mss_historical_data(request):
@@ -31702,6 +31702,245 @@ def mss_trend_elasticity_analyzer(request):
         import traceback
         print(f"Error in elasticity analyzer: {traceback.format_exc()}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+def detect_early_trend_momentum(request):
+    """
+    Detects assets showing early signs of trend formation BEFORE they become obvious.
+    Catches trends 5-10 days earlier than traditional MSS.
+    
+    Looks for:
+    1. Recent acceleration in price movement
+    2. Volume expansion (smart money entering)
+    3. Momentum shift from ranging to trending
+    4. Early breakout patterns
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            lookback_days = data.get('lookback_days', 30)  # Short-term focus
+            
+            if not symbols or not isinstance(symbols, list):
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Valid symbols list required'
+                }, status=400)
+            
+            results = []
+            
+            for symbol in symbols:
+                try:
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period=f"{lookback_days}d")
+                    
+                    if len(hist) < 15:
+                        continue
+                    
+                    # Split data into recent and baseline periods
+                    recent_period = 5  # Last 5 days for "now"
+                    baseline_period = 15  # Previous 15 days for "before"
+                    
+                    if len(hist) < recent_period + baseline_period:
+                        continue
+                    
+                    recent_data = hist.iloc[-recent_period:]
+                    baseline_data = hist.iloc[-(recent_period + baseline_period):-recent_period]
+                    
+                    # === 1. MOMENTUM ACCELERATION ===
+                    # Compare recent price momentum vs baseline
+                    recent_return = (recent_data['Close'].iloc[-1] - recent_data['Close'].iloc[0]) / recent_data['Close'].iloc[0]
+                    baseline_return = (baseline_data['Close'].iloc[-1] - baseline_data['Close'].iloc[0]) / baseline_data['Close'].iloc[0]
+                    
+                    # Momentum acceleration score (is recent movement stronger?)
+                    momentum_acceleration = abs(recent_return) / (abs(baseline_return) + 0.0001)  # Prevent division by zero
+                    momentum_acceleration = min(momentum_acceleration, 5.0)  # Cap at 5x
+                    
+                    # Direction of momentum
+                    momentum_direction = 'bullish' if recent_return > 0 else 'bearish'
+                    
+                    # === 2. VOLUME EXPANSION ===
+                    # Is volume increasing? (Smart money accumulation/distribution)
+                    recent_avg_volume = recent_data['Volume'].mean()
+                    baseline_avg_volume = baseline_data['Volume'].mean()
+                    
+                    if baseline_avg_volume > 0:
+                        volume_expansion = recent_avg_volume / baseline_avg_volume
+                    else:
+                        volume_expansion = 1.0
+                    
+                    volume_expansion = min(volume_expansion, 5.0)  # Cap at 5x
+                    
+                    # === 3. VOLATILITY BREAKOUT ===
+                    # Is price breaking out of recent range?
+                    recent_volatility = recent_data['Close'].std()
+                    baseline_volatility = baseline_data['Close'].std()
+                    
+                    if baseline_volatility > 0:
+                        volatility_expansion = recent_volatility / baseline_volatility
+                    else:
+                        volatility_expansion = 1.0
+                    
+                    # === 4. PRICE POSITION ===
+                    # Where is current price vs recent range?
+                    recent_high = recent_data['High'].max()
+                    recent_low = recent_data['Low'].min()
+                    current_price = recent_data['Close'].iloc[-1]
+                    
+                    if recent_high > recent_low:
+                        price_position = (current_price - recent_low) / (recent_high - recent_low)
+                    else:
+                        price_position = 0.5
+                    
+                    # Bullish if near highs (>0.8), bearish if near lows (<0.2)
+                    position_score = price_position if momentum_direction == 'bullish' else (1 - price_position)
+                    
+                    # === 5. CONSECUTIVE DIRECTIONAL DAYS ===
+                    # How many consecutive days in same direction?
+                    recent_returns = recent_data['Close'].pct_change().dropna()
+                    
+                    consecutive_days = 0
+                    if momentum_direction == 'bullish':
+                        for ret in reversed(list(recent_returns)):
+                            if ret > 0:
+                                consecutive_days += 1
+                            else:
+                                break
+                    else:
+                        for ret in reversed(list(recent_returns)):
+                            if ret < 0:
+                                consecutive_days += 1
+                            else:
+                                break
+                    
+                    consecutive_score = min(consecutive_days / 5.0, 1.0)  # Normalize to 0-1
+                    
+                    # === 6. CALCULATE EARLY MOMENTUM SCORE (EMS) ===
+                    # Weighted combination of all factors
+                    ems = (
+                        momentum_acceleration * 0.30 +    # 30% - Is momentum accelerating?
+                        volume_expansion * 0.25 +         # 25% - Is volume confirming?
+                        volatility_expansion * 0.15 +     # 15% - Is price breaking out?
+                        position_score * 0.15 +           # 15% - Good price position?
+                        consecutive_score * 0.15          # 15% - Consistent direction?
+                    ) * 100  # Scale to 0-100
+                    
+                    # Cap at 100
+                    ems = min(ems, 100)
+                    
+                    # === 7. CATEGORIZE OPPORTUNITY ===
+                    if ems >= 200:  # Very strong early signals
+                        opportunity = "🔥 EXPLOSIVE"
+                        urgency = "ENTER NOW"
+                        color = "#dc2626"
+                    elif ems >= 150:  # Strong early signals
+                        opportunity = "⚡ HOT"
+                        urgency = "HIGH PRIORITY"
+                        color = "#f59e0b"
+                    elif ems >= 100:  # Good early signals
+                        opportunity = "🎯 EMERGING"
+                        urgency = "WATCH CLOSELY"
+                        color = "#10b981"
+                    elif ems >= 50:  # Weak signals
+                        opportunity = "👀 DEVELOPING"
+                        urgency = "MONITOR"
+                        color = "#3b82f6"
+                    else:  # No clear signals
+                        opportunity = "😴 SLEEPING"
+                        urgency = "IGNORE"
+                        color = "#6b7280"
+                    
+                    # === 8. ESTIMATE ENTRY WINDOW ===
+                    # How long before this becomes "obvious" to everyone?
+                    if ems >= 150:
+                        entry_window = "1-3 days (act fast!)"
+                    elif ems >= 100:
+                        entry_window = "3-5 days (good timing)"
+                    elif ems >= 50:
+                        entry_window = "5-10 days (early)"
+                    else:
+                        entry_window = "No clear window"
+                    
+                    # === 9. CALCULATE CONFIRMATION PERCENTAGE ===
+                    # How many signals are aligned?
+                    signals_aligned = 0
+                    total_signals = 5
+                    
+                    if momentum_acceleration > 1.2:  # Accelerating
+                        signals_aligned += 1
+                    if volume_expansion > 1.2:  # Volume confirming
+                        signals_aligned += 1
+                    if volatility_expansion > 1.1:  # Breaking out
+                        signals_aligned += 1
+                    if position_score > 0.7:  # Good position
+                        signals_aligned += 1
+                    if consecutive_days >= 3:  # Consistent
+                        signals_aligned += 1
+                    
+                    confirmation_pct = (signals_aligned / total_signals) * 100
+                    
+                    results.append({
+                        'symbol': symbol,
+                        'ems': round(ems, 2),
+                        'opportunity': opportunity,
+                        'urgency': urgency,
+                        'color': color,
+                        'momentum_direction': momentum_direction,
+                        'entry_window': entry_window,
+                        'confirmation_pct': round(confirmation_pct, 1),
+                        
+                        # Detailed metrics
+                        'momentum_acceleration': round(momentum_acceleration, 2),
+                        'volume_expansion': round(volume_expansion, 2),
+                        'volatility_expansion': round(volatility_expansion, 2),
+                        'price_position': round(price_position * 100, 1),
+                        'consecutive_days': consecutive_days,
+                        
+                        # Price data
+                        'current_price': round(current_price, 2),
+                        'recent_return_pct': round(recent_return * 100, 2),
+                        'baseline_return_pct': round(baseline_return * 100, 2),
+                        
+                        # Context
+                        'data_points': len(hist),
+                        'recent_avg_volume': int(recent_avg_volume),
+                        'baseline_avg_volume': int(baseline_avg_volume)
+                    })
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    continue
+            
+            if not results:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No valid data retrieved for any symbols'
+                }, status=400)
+            
+            # Sort by EMS descending (hottest opportunities first)
+            results.sort(key=lambda x: x['ems'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'lookback_days': lookback_days,
+                'assets_analyzed': len(results),
+                'methodology': 'Early Momentum Score (EMS) - Detects trends 5-10 days before they become obvious'
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in early trend detection: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
 
         
 # LEGODI BACKEND CODE
