@@ -478,6 +478,8 @@ urlpatterns = [
 
      path('api/detect-early-trend-momentum/', views.detect_early_trend_momentum, name='detect_early_trend_momentum'),
 
+     path('api/detect-trend-emergence/', views.detect_trend_emergence, name='detect_trend_emergence'),
+
 
 
 

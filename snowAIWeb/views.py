@@ -31942,6 +31942,387 @@ def detect_early_trend_momentum(request):
         'error': 'POST method required'
     }, status=405)
 
+
+@csrf_exempt
+def detect_trend_emergence(request):
+    """
+    Detects assets transitioning from choppy/ranging markets to trending markets.
+    Catches trends at the EXACT inflection point when they start.
+    
+    Strategy:
+    1. Calculate MSS for recent period (user-defined lookback)
+    2. Calculate MSS for earlier baseline period
+    3. Find assets where MSS is significantly improving (choppy → trending)
+    4. Prioritize assets showing the strongest transition
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            current_period = data.get('period', 20)  # Your selected lookback
+            
+            if not symbols or not isinstance(symbols, list):
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Valid symbols list required'
+                }, status=400)
+            
+            # We need to look at TWO periods:
+            # 1. Baseline period (the "before" - was it choppy?)
+            # 2. Current period (the "now" - is it trending?)
+            baseline_period = current_period * 2  # Look back 2x as far for context
+            total_days_needed = baseline_period + current_period
+            
+            results = []
+            
+            for symbol in symbols:
+                try:
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period=f"{total_days_needed}d")
+                    
+                    if len(hist) < total_days_needed * 0.7:  # Need at least 70% of requested data
+                        continue
+                    
+                    # Split into baseline and current periods
+                    split_point = len(hist) - current_period
+                    if split_point < 10:  # Need sufficient baseline data
+                        continue
+                    
+                    baseline_data = hist.iloc[:split_point]
+                    current_data = hist.iloc[split_point:]
+                    
+                    if len(baseline_data) < 10 or len(current_data) < 5:
+                        continue
+                    
+                    # === CALCULATE MSS FOR BASELINE PERIOD (WAS IT CHOPPY?) ===
+                    baseline_mss_data = calculate_mss_for_dataframe(baseline_data)
+                    
+                    # === CALCULATE MSS FOR CURRENT PERIOD (IS IT TRENDING NOW?) ===
+                    current_mss_data = calculate_mss_for_dataframe(current_data)
+                    
+                    if baseline_mss_data is None or current_mss_data is None:
+                        continue
+                    
+                    # === ANALYZE THE TRANSITION ===
+                    
+                    # 1. MSS Improvement (how much better is current vs baseline?)
+                    mss_change = current_mss_data['mss'] - baseline_mss_data['mss']
+                    mss_improvement_pct = (mss_change / (baseline_mss_data['mss'] + 1)) * 100  # +1 to avoid div by zero
+                    
+                    # 2. R² Improvement (trend clarity emerging?)
+                    r_squared_change = current_mss_data['r_squared'] - baseline_mss_data['r_squared']
+                    
+                    # 3. Volatility Change (stabilizing or destabilizing?)
+                    volatility_change = current_mss_data['volatility'] - baseline_mss_data['volatility']
+                    volatility_ratio = current_mss_data['volatility'] / (baseline_mss_data['volatility'] + 0.0001)
+                    
+                    # 4. Trend Strength Change (momentum building?)
+                    trend_strength_change = current_mss_data['trend_strength'] - baseline_mss_data['trend_strength']
+                    
+                    # 5. Category Transition (the key signal!)
+                    baseline_category = baseline_mss_data['category']
+                    current_category = current_mss_data['category']
+                    
+                    # === CALCULATE EMERGENCE SCORE ===
+                    # This measures how dramatic the transition is
+                    
+                    emergence_score = 0
+                    transition_type = "none"
+                    
+                    # Best case: Was choppy/volatile, now stable/trending
+                    if baseline_category in ['choppy', 'volatile'] and current_category == 'stable':
+                        transition_type = "choppy_to_trending"
+                        emergence_score = 100  # Strong signal!
+                        
+                        # Bonus points for strong improvement
+                        if mss_change > 20:
+                            emergence_score += 30
+                        elif mss_change > 10:
+                            emergence_score += 15
+                        
+                        # Bonus for R² improvement (trend clarity)
+                        if r_squared_change > 0.2:
+                            emergence_score += 20
+                        elif r_squared_change > 0.1:
+                            emergence_score += 10
+                    
+                    # Good case: Was choppy, now choppy but improving significantly
+                    elif baseline_category == 'choppy' and current_category == 'choppy':
+                        if mss_change > 10:  # But MSS is rising
+                            transition_type = "choppy_improving"
+                            emergence_score = 60 + (mss_change * 2)  # Scale with improvement
+                    
+                    # Watch case: Was volatile, now choppy (settling down)
+                    elif baseline_category == 'volatile' and current_category == 'choppy':
+                        transition_type = "volatile_to_choppy"
+                        emergence_score = 40 + (mss_change * 2)
+                    
+                    # Early signal: Stable but R² jumped significantly
+                    elif current_category == 'stable' and r_squared_change > 0.15:
+                        transition_type = "trend_strengthening"
+                        emergence_score = 50 + (r_squared_change * 100)
+                    
+                    # Negative signal: Was trending, now choppy (trend dying)
+                    elif baseline_category == 'stable' and current_category in ['choppy', 'volatile']:
+                        transition_type = "trend_dying"
+                        emergence_score = -50  # Negative score = avoid!
+                    
+                    # Cap at 200
+                    emergence_score = min(emergence_score, 200)
+                    
+                    # === CATEGORIZE OPPORTUNITY ===
+                    if emergence_score >= 130:
+                        opportunity = "🚀 EXPLOSIVE ENTRY"
+                        urgency = "ENTER IMMEDIATELY"
+                        color = "#dc2626"
+                    elif emergence_score >= 100:
+                        opportunity = "🔥 HOT ENTRY"
+                        urgency = "HIGH PRIORITY"
+                        color = "#f59e0b"
+                    elif emergence_score >= 70:
+                        opportunity = "⚡ EMERGING TREND"
+                        urgency = "STRONG WATCH"
+                        color = "#10b981"
+                    elif emergence_score >= 40:
+                        opportunity = "👀 EARLY SIGNAL"
+                        urgency = "MONITOR"
+                        color = "#3b82f6"
+                    elif emergence_score >= 0:
+                        opportunity = "😴 NO SIGNAL"
+                        urgency = "IGNORE"
+                        color = "#6b7280"
+                    else:
+                        opportunity = "❌ TREND DYING"
+                        urgency = "AVOID/EXIT"
+                        color = "#7f1d1d"
+                    
+                    # === DETERMINE TREND DIRECTION ===
+                    current_price = current_data['Close'].iloc[-1]
+                    period_start_price = current_data['Close'].iloc[0]
+                    
+                    if current_price > period_start_price * 1.01:
+                        trend_direction = "bullish"
+                        direction_emoji = "📈"
+                    elif current_price < period_start_price * 0.99:
+                        trend_direction = "bearish"
+                        direction_emoji = "📉"
+                    else:
+                        trend_direction = "neutral"
+                        direction_emoji = "➡️"
+                    
+                    # === CALCULATE TIMING ESTIMATE ===
+                    # How far into the trend are we?
+                    if emergence_score >= 130:
+                        timing = "Just started (Day 1-3)"
+                    elif emergence_score >= 100:
+                        timing = "Very early (Day 3-5)"
+                    elif emergence_score >= 70:
+                        timing = "Early (Day 5-10)"
+                    elif emergence_score >= 40:
+                        timing = "Forming (Day 10-15)"
+                    else:
+                        timing = "Unknown or late"
+                    
+                    # === CALCULATE CONFIDENCE ===
+                    # How confident are we in this signal?
+                    confidence_factors = 0
+                    total_factors = 5
+                    
+                    if mss_change > 15:  # Strong MSS improvement
+                        confidence_factors += 1
+                    if r_squared_change > 0.15:  # Trend clarity emerging
+                        confidence_factors += 1
+                    if current_mss_data['mss'] > 40:  # Current MSS decent
+                        confidence_factors += 1
+                    if baseline_mss_data['mss'] < 40:  # Was actually choppy before
+                        confidence_factors += 1
+                    if current_mss_data['trend_strength'] > 0.3:  # Has momentum
+                        confidence_factors += 1
+                    
+                    confidence_pct = (confidence_factors / total_factors) * 100
+                    
+                    results.append({
+                        'symbol': symbol,
+                        'emergence_score': round(emergence_score, 2),
+                        'opportunity': opportunity,
+                        'urgency': urgency,
+                        'color': color,
+                        'transition_type': transition_type,
+                        'trend_direction': trend_direction,
+                        'direction_emoji': direction_emoji,
+                        'timing': timing,
+                        'confidence_pct': round(confidence_pct, 1),
+                        
+                        # MSS Comparison
+                        'baseline_mss': round(baseline_mss_data['mss'], 2),
+                        'current_mss': round(current_mss_data['mss'], 2),
+                        'mss_change': round(mss_change, 2),
+                        'mss_improvement_pct': round(mss_improvement_pct, 1),
+                        
+                        # Category Transition
+                        'baseline_category': baseline_category,
+                        'current_category': current_category,
+                        
+                        # Detailed Metrics
+                        'baseline_r_squared': round(baseline_mss_data['r_squared'], 4),
+                        'current_r_squared': round(current_mss_data['r_squared'], 4),
+                        'r_squared_change': round(r_squared_change, 4),
+                        
+                        'baseline_volatility': round(baseline_mss_data['volatility'], 4),
+                        'current_volatility': round(current_mss_data['volatility'], 4),
+                        'volatility_change': round(volatility_change, 4),
+                        
+                        'baseline_trend_strength': round(baseline_mss_data['trend_strength'], 4),
+                        'current_trend_strength': round(current_mss_data['trend_strength'], 4),
+                        
+                        # Price Data
+                        'current_price': round(current_price, 2),
+                        'baseline_avg_price': round(baseline_data['Close'].mean(), 2),
+                        'current_avg_price': round(current_data['Close'].mean(), 2),
+                        
+                        # Context
+                        'baseline_days': len(baseline_data),
+                        'current_days': len(current_data),
+                        'total_days_analyzed': len(hist)
+                    })
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    import traceback
+                    print(traceback.format_exc())
+                    continue
+            
+            if not results:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No valid transitions detected'
+                }, status=400)
+            
+            # Sort by emergence score (best opportunities first)
+            results.sort(key=lambda x: x['emergence_score'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'current_period': current_period,
+                'baseline_period': baseline_period,
+                'assets_analyzed': len(results),
+                'methodology': 'Detects choppy → trending transitions at inflection points'
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in trend emergence detection: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+
+def calculate_mss_for_dataframe(df):
+    """
+    Helper function to calculate MSS metrics for a given DataFrame.
+    Returns dict with MSS, R², volatility, trend metrics, and category.
+    """
+    try:
+        if len(df) < 5:
+            return None
+        
+        # Calculate returns
+        returns = df['Close'].pct_change().dropna()
+        
+        if len(returns) < 2:
+            return None
+        
+        # Volatility
+        volatility = returns.std()
+        
+        # R² (trend clarity)
+        prices = df['Close'].values
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
+        
+        from sklearn.linear_model import LinearRegression
+        model = LinearRegression()
+        model.fit(X, y)
+        r_squared = max(0, min(model.score(X, y), 1.0))
+        
+        # Trend consistency
+        if len(returns) > 0:
+            positive_days = (returns > 0).sum()
+            trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
+        else:
+            trend_consistency = 0
+        
+        # Trend strength
+        if len(prices) > 1 and prices[0] != 0:
+            slope_per_day = model.coef_[0][0]
+            avg_price = np.mean(prices)
+            if avg_price > 0:
+                trend_strength = abs(slope_per_day * len(prices)) / avg_price
+                trend_strength = min(trend_strength, 1.0)
+            else:
+                trend_strength = 0
+        else:
+            trend_strength = 0
+        
+        # Liquidity factor (simplified for helper)
+        avg_volume = df['Volume'].mean()
+        if avg_volume > 10000000:
+            liquidity_factor = 1.2
+        elif avg_volume > 1000000:
+            liquidity_factor = 1.0
+        elif avg_volume > 100000:
+            liquidity_factor = 0.9
+        else:
+            liquidity_factor = 0.8
+        
+        # Calculate trend score
+        trend_score = (
+            r_squared * 0.5 +
+            trend_consistency * 0.3 +
+            trend_strength * 0.2
+        ) * 100
+        
+        # Normalized volatility (simplified - using local max)
+        normalized_volatility = min(volatility / 0.1, 1.0)  # Assume 0.1 as high volatility threshold
+        
+        # Stability factor
+        stability_factor = (1 - normalized_volatility) ** 0.6
+        
+        # Calculate MSS
+        mss = trend_score * stability_factor * liquidity_factor
+        mss = min(max(mss, 0), 100)
+        
+        # Determine category
+        if mss >= 47:
+            category = "stable"
+        elif mss >= 30:
+            category = "choppy"
+        else:
+            category = "volatile"
+        
+        return {
+            'mss': mss,
+            'volatility': volatility,
+            'normalized_volatility': normalized_volatility,
+            'r_squared': r_squared,
+            'trend_consistency': trend_consistency,
+            'trend_strength': trend_strength,
+            'liquidity_factor': liquidity_factor,
+            'category': category
+        }
+        
+    except Exception as e:
+        print(f"Error in calculate_mss_for_dataframe: {str(e)}")
+        return None
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
