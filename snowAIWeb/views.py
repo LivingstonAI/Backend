@@ -22893,13 +22893,25 @@ from sklearn.linear_model import LinearRegression
 @csrf_exempt
 def calculate_market_stability_score(request):
     """
-    Calculate Market Stability Score for given assets using improved formula
+    Calculate Market Stability Score for given assets using improved formula.
+    Now supports flexible period lengths with dynamic minimum data requirements.
     """
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             symbols = data.get('symbols', [])
             period_days = data.get('period', 60)
+            
+            # Validate inputs
+            if not symbols or not isinstance(symbols, list):
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Valid symbols list required'
+                }, status=400)
+            
+            # Dynamic minimum data requirement based on period
+            # Shorter periods need fewer bars, but never less than 5
+            min_required_bars = max(min(period_days, 15), 5)
             
             results = []
             all_volatilities = []
@@ -22908,20 +22920,26 @@ def calculate_market_stability_score(request):
             # First pass: collect all data and volatilities for normalization
             for symbol in symbols:
                 try:
-                    # Download data
+                    # Download data with error handling
                     ticker = yf.Ticker(symbol)
                     hist = ticker.history(period=f"{period_days}d")
                     
-                    if len(hist) < 20:
+                    # Check if we have sufficient data
+                    if hist.empty or len(hist) < min_required_bars:
+                        print(f"Skipping {symbol}: insufficient data ({len(hist)} bars, need {min_required_bars})")
                         continue
                     
                     # Calculate returns
                     hist['returns'] = hist['Close'].pct_change()
                     
-                    # Calculate volatility (σ)
-                    volatility = hist['returns'].std()
+                    # Calculate volatility (σ) - annualized for consistency
+                    returns = hist['returns'].dropna()
+                    if len(returns) < 2:
+                        continue
                     
-                    # Calculate R² (trend clarity)
+                    volatility = returns.std()
+                    
+                    # Calculate R² (trend clarity) using linear regression
                     prices = hist['Close'].values
                     X = np.arange(len(prices)).reshape(-1, 1)
                     y = prices.reshape(-1, 1)
@@ -22930,31 +22948,43 @@ def calculate_market_stability_score(request):
                     model.fit(X, y)
                     r_squared = model.score(X, y)
                     
+                    # Ensure R² is valid (sometimes can be negative for terrible fits)
+                    r_squared = max(0, min(r_squared, 1.0))
+                    
                     # Calculate trend consistency (directional strength)
-                    returns = hist['returns'].dropna()
                     if len(returns) > 0:
                         positive_days = (returns > 0).sum()
-                        trend_consistency = abs(positive_days / len(returns) - 0.5) * 2  # 0-1 scale
+                        # Scale to 0-1 where 0.5 = random, 1 = all same direction
+                        trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
                     else:
                         trend_consistency = 0
                     
                     # Calculate trend strength (magnitude of slope relative to price)
-                    if len(prices) > 0 and prices[0] != 0:
+                    if len(prices) > 1 and prices[0] != 0:
                         slope_per_day = model.coef_[0][0]
                         avg_price = np.mean(prices)
-                        trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
-                        trend_strength = min(trend_strength, 1.0)  # Cap at 1.0
+                        
+                        if avg_price > 0:
+                            # Normalize by average price and period length
+                            trend_strength = abs(slope_per_day * len(prices)) / avg_price
+                            trend_strength = min(trend_strength, 1.0)  # Cap at 1.0
+                        else:
+                            trend_strength = 0
                     else:
                         trend_strength = 0
                     
                     # Calculate liquidity factor (0.8 to 1.2 based on volume)
                     avg_volume = hist['Volume'].mean()
                     
-                    # Normalize volume to liquidity factor
-                    if avg_volume > 10000000:  # High volume
+                    # More granular volume-based liquidity scoring
+                    if avg_volume > 10000000:  # Very high volume
                         liquidity_factor = 1.2
-                    elif avg_volume > 1000000:  # Medium volume
+                    elif avg_volume > 5000000:  # High volume
+                        liquidity_factor = 1.1
+                    elif avg_volume > 1000000:  # Medium-high volume
                         liquidity_factor = 1.0
+                    elif avg_volume > 500000:  # Medium volume
+                        liquidity_factor = 0.95
                     elif avg_volume > 100000:  # Low volume
                         liquidity_factor = 0.9
                     else:  # Very low volume
@@ -22962,7 +22992,12 @@ def calculate_market_stability_score(request):
                     
                     # Get current price and change
                     current_price = hist['Close'].iloc[-1]
-                    price_change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
+                    start_price = hist['Close'].iloc[0]
+                    
+                    if start_price != 0:
+                        price_change = ((current_price - start_price) / start_price) * 100
+                    else:
+                        price_change = 0
                     
                     temp_results.append({
                         'symbol': symbol,
@@ -22983,35 +23018,49 @@ def calculate_market_stability_score(request):
                     print(f"Error processing {symbol}: {str(e)}")
                     continue
             
+            # Check if we got any results
+            if not temp_results:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No valid data retrieved for any symbols'
+                }, status=400)
+            
             # Calculate max volatility for normalization
             max_volatility = max(all_volatilities) if all_volatilities else 1.0
+            
+            # Prevent division by zero
+            if max_volatility == 0:
+                max_volatility = 1.0
             
             # Second pass: calculate MSS with normalized volatility
             for temp in temp_results:
                 # Normalize volatility (0 to 1, where 1 is highest volatility)
-                normalized_volatility = temp['volatility'] / max_volatility if max_volatility > 0 else 0
+                normalized_volatility = temp['volatility'] / max_volatility
                 
                 # Improved MSS Formula:
                 # Combines R², trend consistency, and trend strength with softened volatility penalty
                 
                 # 1. Enhanced trend score (0-100)
+                # Weighted combination of trend quality metrics
                 trend_score = (
-                    temp['r_squared'] * 0.5 +           # R² contribution (50%)
-                    temp['trend_consistency'] * 0.3 +   # Directional consistency (30%)
-                    temp['trend_strength'] * 0.2        # Magnitude of trend (20%)
+                    temp['r_squared'] * 0.5 +           # R² contribution (50%) - trend clarity
+                    temp['trend_consistency'] * 0.3 +   # Directional consistency (30%) - how consistent
+                    temp['trend_strength'] * 0.2        # Magnitude of trend (20%) - how strong
                 ) * 100
                 
-                # 2. Soften volatility penalty using square root
-                # This makes moderate volatility less punishing
+                # 2. Soften volatility penalty using power function
+                # Square root makes moderate volatility less punishing
+                # High volatility still heavily penalized
                 stability_factor = (1 - normalized_volatility) ** 0.6
                 
-                # 3. Calculate base MSS
+                # 3. Calculate base MSS with liquidity adjustment
                 mss = trend_score * stability_factor * temp['liquidity_factor']
                 
-                # 4. Ensure 0-100 range
+                # 4. Ensure 0-100 range (safety bounds)
                 mss = min(max(mss, 0), 100)
                 
                 # Determine category with improved thresholds
+                # Thresholds calibrated for the improved formula
                 if mss >= 47:
                     category = "stable"
                     status = "Trending - Good Conditions"
@@ -23043,23 +23092,36 @@ def calculate_market_stability_score(request):
                     'avg_volume': int(temp['avg_volume'])
                 })
             
-            # Sort by MSS descending
+            # Sort by MSS descending (best scores first)
             results.sort(key=lambda x: x['mss'], reverse=True)
             
             return JsonResponse({
                 'success': True,
                 'data': results,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'period_days': period_days,
+                'min_bars_required': min_required_bars,
+                'assets_analyzed': len(results)
             })
             
-        except Exception as e:
+        except json.JSONDecodeError:
             return JsonResponse({
                 'success': False,
-                'error': str(e)
+                'error': 'Invalid JSON in request body'
             }, status=400)
+        except Exception as e:
+            import traceback
+            print(f"Error in MSS calculation: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
     
-    return JsonResponse({'error': 'Method not allowed'}, status=405)
-
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+    
 
 @csrf_exempt
 def get_mss_historical_data(request):
