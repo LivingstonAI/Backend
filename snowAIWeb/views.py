@@ -32323,10 +32323,11 @@ def calculate_mss_for_dataframe(df):
         print(f"Error in calculate_mss_for_dataframe: {str(e)}")
         return None
 
+
 @csrf_exempt
 def mss_analyze_trend_duration_timeline(request):
     """
-    Analyzes how long the current trend has been active for given symbols.
+    Analyzes how long the current trend has been active using 1h timeframe for precision.
     Works backwards from current data to find when the trend started using EMA crossovers.
     """
     if request.method == 'POST':
@@ -32348,14 +32349,20 @@ def mss_analyze_trend_duration_timeline(request):
             
             for symbol in symbols:
                 try:
-                    # Download extended history to detect trend start
+                    # Download 1h data for precise trend detection
+                    # 60 days of 1h data = ~1440 hours (60 days * 24 hours, adjusted for trading hours)
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=60)
+                    
                     ticker = yf.Ticker(symbol)
-                    hist = ticker.history(period="180d")  # 6 months lookback
+                    hist = ticker.history(start=start_date, end=end_date, interval='1h')
                     
                     if len(hist) < 100:
+                        print(f"Skipping {symbol}: insufficient 1h data ({len(hist)} bars)")
                         continue
                     
-                    # Calculate EMAs for trend detection
+                    # Calculate EMAs on 1h timeframe for trend detection
+                    # Using shorter EMAs for 1h data (20h, 50h, 100h instead of days)
                     hist['EMA_20'] = hist['Close'].ewm(span=20, adjust=False).mean()
                     hist['EMA_50'] = hist['Close'].ewm(span=50, adjust=False).mean()
                     hist['EMA_100'] = hist['Close'].ewm(span=100, adjust=False).mean()
@@ -32363,10 +32370,11 @@ def mss_analyze_trend_duration_timeline(request):
                     # Drop NaN values from EMA calculations
                     hist = hist.dropna()
                     
-                    if len(hist) < 50:
+                    if len(hist) < 100:
+                        print(f"Skipping {symbol}: insufficient data after EMA calculation")
                         continue
                     
-                    # Determine current trend
+                    # Determine current trend using 1h EMAs
                     current_trend = None
                     ema_20_current = hist['EMA_20'].iloc[-1]
                     ema_50_current = hist['EMA_50'].iloc[-1]
@@ -32385,12 +32393,13 @@ def mss_analyze_trend_duration_timeline(request):
                         trend_emoji = '➡️'
                         trend_color = '#6b7280'
                     
-                    # Find when trend started by going backwards
+                    # Find when trend started by going backwards through 1h bars
                     trend_start_index = None
+                    trend_duration_hours = 0
                     trend_duration_days = 0
                     
                     if current_trend != 'ranging':
-                        for i in range(len(hist) - 1, 99, -1):  # Start from end, need at least 100 bars for EMAs
+                        for i in range(len(hist) - 1, 99, -1):  # Need at least 100 bars for EMAs
                             ema_20 = hist['EMA_20'].iloc[i]
                             ema_50 = hist['EMA_50'].iloc[i]
                             ema_100 = hist['EMA_100'].iloc[i]
@@ -32406,45 +32415,67 @@ def mss_analyze_trend_duration_timeline(request):
                                     break
                         
                         if trend_start_index is None:
-                            # Trend is older than our data
+                            # Trend is older than our 1h data
                             trend_start_index = 100
-                            trend_duration_days = len(hist) - trend_start_index
-                            duration_status = "100+ days (trend older than analysis period)"
+                            trend_duration_hours = len(hist) - trend_start_index
+                            
+                            # Convert hours to days (approximate - accounting for trading hours)
+                            # Forex: ~24h/day, Stocks: ~6.5h trading day
+                            # Use 24h for simplicity (will be close enough for forex/crypto, conservative for stocks)
+                            trend_duration_days = trend_duration_hours / 24
+                            
+                            duration_status = f"60+ days (trend older than analysis period)"
                         else:
-                            trend_duration_days = len(hist) - trend_start_index
-                            duration_status = f"{trend_duration_days} days"
+                            trend_duration_hours = len(hist) - trend_start_index
+                            
+                            # Convert to days (24h for forex/crypto, conservative for stocks)
+                            trend_duration_days = trend_duration_hours / 24
+                            
+                            # Get actual timestamp of trend start for precise duration
+                            trend_start_time = hist.index[trend_start_index]
+                            current_time = hist.index[-1]
+                            actual_duration = current_time - trend_start_time
+                            actual_days = actual_duration.total_seconds() / (24 * 3600)
+                            
+                            duration_status = f"{actual_days:.1f} days ({trend_duration_hours} hours)"
+                            trend_duration_days = actual_days  # Use actual calculated days
                     else:
                         # Ranging market - find how long it's been ranging
+                        trend_duration_hours = 0
                         trend_duration_days = 0
                         duration_status = "Ranging (no clear trend)"
                     
-                    # Categorize trend age
+                    # Categorize trend age based on DAYS (more precise with 1h data)
                     if current_trend == 'ranging':
                         age_category = 'ranging'
                         age_label = '😴 Ranging'
                         freshness_score = 0
-                    elif trend_duration_days <= 10:
+                    elif trend_duration_days <= 3:  # 0-3 days = VERY fresh (just started!)
                         age_category = 'very_fresh'
                         age_label = '🔥 Brand New'
                         freshness_score = 100
-                    elif trend_duration_days <= 20:
+                    elif trend_duration_days <= 7:  # 3-7 days = Fresh
                         age_category = 'fresh'
                         age_label = '⚡ Fresh'
-                        freshness_score = 80
-                    elif trend_duration_days <= 40:
+                        freshness_score = 85
+                    elif trend_duration_days <= 14:  # 1-2 weeks = Early
+                        age_category = 'early'
+                        age_label = '✨ Early'
+                        freshness_score = 70
+                    elif trend_duration_days <= 30:  # 2-4 weeks = Established
                         age_category = 'established'
                         age_label = '✅ Established'
-                        freshness_score = 60
-                    elif trend_duration_days <= 60:
+                        freshness_score = 50
+                    elif trend_duration_days <= 45:  # 1-1.5 months = Mature
                         age_category = 'mature'
                         age_label = '📊 Mature'
-                        freshness_score = 40
-                    else:
+                        freshness_score = 30
+                    else:  # 1.5+ months = Aging
                         age_category = 'aging'
                         age_label = '⏳ Aging'
-                        freshness_score = 20
+                        freshness_score = 10
                     
-                    # Calculate trend strength over duration
+                    # Calculate trend strength over duration using 1h precision
                     if trend_start_index is not None and current_trend != 'ranging':
                         trend_period_data = hist.iloc[trend_start_index:]
                         start_price = trend_period_data['Close'].iloc[0]
@@ -32452,6 +32483,7 @@ def mss_analyze_trend_duration_timeline(request):
                         
                         if start_price > 0:
                             total_move_pct = ((current_price - start_price) / start_price) * 100
+                            # Average move per day (more meaningful than per hour)
                             avg_move_per_day = total_move_pct / trend_duration_days if trend_duration_days > 0 else 0
                         else:
                             total_move_pct = 0
@@ -32465,19 +32497,22 @@ def mss_analyze_trend_duration_timeline(request):
                         entry_recommendation = "⏸️ Wait for trend to form"
                         entry_priority = "low"
                     elif age_category == 'very_fresh':
-                        entry_recommendation = "🚀 EXCELLENT ENTRY - Trend just started!"
+                        entry_recommendation = "🚀 EXCELLENT ENTRY - Trend just started (0-3 days)!"
                         entry_priority = "highest"
                     elif age_category == 'fresh':
-                        entry_recommendation = "✅ GOOD ENTRY - Still early"
+                        entry_recommendation = "🔥 GREAT ENTRY - Very early (3-7 days)"
+                        entry_priority = "very_high"
+                    elif age_category == 'early':
+                        entry_recommendation = "✅ GOOD ENTRY - Still early (1-2 weeks)"
                         entry_priority = "high"
                     elif age_category == 'established':
-                        entry_recommendation = "⚠️ MODERATE - Trend is established"
+                        entry_recommendation = "⚠️ MODERATE - Trend established (2-4 weeks)"
                         entry_priority = "medium"
                     elif age_category == 'mature':
-                        entry_recommendation = "🤔 LATE - Consider waiting for pullback"
+                        entry_recommendation = "🤔 LATE - Consider waiting for pullback (1+ month)"
                         entry_priority = "low"
                     else:
-                        entry_recommendation = "❌ TOO LATE - Trend may be exhausting"
+                        entry_recommendation = "❌ TOO LATE - Trend may be exhausting (1.5+ months)"
                         entry_priority = "very_low"
                     
                     results.append({
@@ -32485,7 +32520,8 @@ def mss_analyze_trend_duration_timeline(request):
                         'current_trend': current_trend,
                         'trend_emoji': trend_emoji,
                         'trend_color': trend_color,
-                        'trend_duration_days': trend_duration_days,
+                        'trend_duration_days': round(trend_duration_days, 1),
+                        'trend_duration_hours': trend_duration_hours,
                         'duration_status': duration_status,
                         'age_category': age_category,
                         'age_label': age_label,
@@ -32496,7 +32532,10 @@ def mss_analyze_trend_duration_timeline(request):
                         'avg_move_per_day': round(avg_move_per_day, 3),
                         'current_price': round(hist['Close'].iloc[-1], 2),
                         'trend_start_price': round(hist['Close'].iloc[trend_start_index], 2) if trend_start_index else None,
-                        'analysis_period_days': len(hist)
+                        'trend_start_time': hist.index[trend_start_index].strftime('%Y-%m-%d %H:%M') if trend_start_index else None,
+                        'analysis_period_days': 60,
+                        'timeframe': '1h',
+                        'total_bars_analyzed': len(hist)
                     })
                     
                 except Exception as e:
@@ -32518,7 +32557,9 @@ def mss_analyze_trend_duration_timeline(request):
                 'success': True,
                 'data': results,
                 'timestamp': datetime.now().isoformat(),
-                'assets_analyzed': len(results)
+                'assets_analyzed': len(results),
+                'timeframe': '1h',
+                'lookback_period': '60 days'
             })
             
         except Exception as e:
@@ -32534,7 +32575,7 @@ def mss_analyze_trend_duration_timeline(request):
         'error': 'POST method required'
     }, status=405)
 
-        
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
