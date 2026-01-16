@@ -32323,6 +32323,217 @@ def calculate_mss_for_dataframe(df):
         print(f"Error in calculate_mss_for_dataframe: {str(e)}")
         return None
 
+@csrf_exempt
+def mss_analyze_trend_duration_timeline(request):
+    """
+    Analyzes how long the current trend has been active for given symbols.
+    Works backwards from current data to find when the trend started using EMA crossovers.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            
+            if not symbols:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbols required'
+                }, status=400)
+            
+            # Handle single symbol or list
+            if isinstance(symbols, str):
+                symbols = [symbols]
+            
+            results = []
+            
+            for symbol in symbols:
+                try:
+                    # Download extended history to detect trend start
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period="180d")  # 6 months lookback
+                    
+                    if len(hist) < 100:
+                        continue
+                    
+                    # Calculate EMAs for trend detection
+                    hist['EMA_20'] = hist['Close'].ewm(span=20, adjust=False).mean()
+                    hist['EMA_50'] = hist['Close'].ewm(span=50, adjust=False).mean()
+                    hist['EMA_100'] = hist['Close'].ewm(span=100, adjust=False).mean()
+                    
+                    # Drop NaN values from EMA calculations
+                    hist = hist.dropna()
+                    
+                    if len(hist) < 50:
+                        continue
+                    
+                    # Determine current trend
+                    current_trend = None
+                    ema_20_current = hist['EMA_20'].iloc[-1]
+                    ema_50_current = hist['EMA_50'].iloc[-1]
+                    ema_100_current = hist['EMA_100'].iloc[-1]
+                    
+                    if ema_20_current > ema_50_current > ema_100_current:
+                        current_trend = 'uptrend'
+                        trend_emoji = '📈'
+                        trend_color = '#10b981'
+                    elif ema_20_current < ema_50_current < ema_100_current:
+                        current_trend = 'downtrend'
+                        trend_emoji = '📉'
+                        trend_color = '#ef4444'
+                    else:
+                        current_trend = 'ranging'
+                        trend_emoji = '➡️'
+                        trend_color = '#6b7280'
+                    
+                    # Find when trend started by going backwards
+                    trend_start_index = None
+                    trend_duration_days = 0
+                    
+                    if current_trend != 'ranging':
+                        for i in range(len(hist) - 1, 99, -1):  # Start from end, need at least 100 bars for EMAs
+                            ema_20 = hist['EMA_20'].iloc[i]
+                            ema_50 = hist['EMA_50'].iloc[i]
+                            ema_100 = hist['EMA_100'].iloc[i]
+                            
+                            # Check if trend condition is still valid
+                            if current_trend == 'uptrend':
+                                if not (ema_20 > ema_50 > ema_100):
+                                    trend_start_index = i + 1
+                                    break
+                            elif current_trend == 'downtrend':
+                                if not (ema_20 < ema_50 < ema_100):
+                                    trend_start_index = i + 1
+                                    break
+                        
+                        if trend_start_index is None:
+                            # Trend is older than our data
+                            trend_start_index = 100
+                            trend_duration_days = len(hist) - trend_start_index
+                            duration_status = "100+ days (trend older than analysis period)"
+                        else:
+                            trend_duration_days = len(hist) - trend_start_index
+                            duration_status = f"{trend_duration_days} days"
+                    else:
+                        # Ranging market - find how long it's been ranging
+                        trend_duration_days = 0
+                        duration_status = "Ranging (no clear trend)"
+                    
+                    # Categorize trend age
+                    if current_trend == 'ranging':
+                        age_category = 'ranging'
+                        age_label = '😴 Ranging'
+                        freshness_score = 0
+                    elif trend_duration_days <= 10:
+                        age_category = 'very_fresh'
+                        age_label = '🔥 Brand New'
+                        freshness_score = 100
+                    elif trend_duration_days <= 20:
+                        age_category = 'fresh'
+                        age_label = '⚡ Fresh'
+                        freshness_score = 80
+                    elif trend_duration_days <= 40:
+                        age_category = 'established'
+                        age_label = '✅ Established'
+                        freshness_score = 60
+                    elif trend_duration_days <= 60:
+                        age_category = 'mature'
+                        age_label = '📊 Mature'
+                        freshness_score = 40
+                    else:
+                        age_category = 'aging'
+                        age_label = '⏳ Aging'
+                        freshness_score = 20
+                    
+                    # Calculate trend strength over duration
+                    if trend_start_index is not None and current_trend != 'ranging':
+                        trend_period_data = hist.iloc[trend_start_index:]
+                        start_price = trend_period_data['Close'].iloc[0]
+                        current_price = trend_period_data['Close'].iloc[-1]
+                        
+                        if start_price > 0:
+                            total_move_pct = ((current_price - start_price) / start_price) * 100
+                            avg_move_per_day = total_move_pct / trend_duration_days if trend_duration_days > 0 else 0
+                        else:
+                            total_move_pct = 0
+                            avg_move_per_day = 0
+                    else:
+                        total_move_pct = 0
+                        avg_move_per_day = 0
+                    
+                    # Determine entry recommendation based on trend age
+                    if current_trend == 'ranging':
+                        entry_recommendation = "⏸️ Wait for trend to form"
+                        entry_priority = "low"
+                    elif age_category == 'very_fresh':
+                        entry_recommendation = "🚀 EXCELLENT ENTRY - Trend just started!"
+                        entry_priority = "highest"
+                    elif age_category == 'fresh':
+                        entry_recommendation = "✅ GOOD ENTRY - Still early"
+                        entry_priority = "high"
+                    elif age_category == 'established':
+                        entry_recommendation = "⚠️ MODERATE - Trend is established"
+                        entry_priority = "medium"
+                    elif age_category == 'mature':
+                        entry_recommendation = "🤔 LATE - Consider waiting for pullback"
+                        entry_priority = "low"
+                    else:
+                        entry_recommendation = "❌ TOO LATE - Trend may be exhausting"
+                        entry_priority = "very_low"
+                    
+                    results.append({
+                        'symbol': symbol,
+                        'current_trend': current_trend,
+                        'trend_emoji': trend_emoji,
+                        'trend_color': trend_color,
+                        'trend_duration_days': trend_duration_days,
+                        'duration_status': duration_status,
+                        'age_category': age_category,
+                        'age_label': age_label,
+                        'freshness_score': freshness_score,
+                        'entry_recommendation': entry_recommendation,
+                        'entry_priority': entry_priority,
+                        'total_move_pct': round(total_move_pct, 2),
+                        'avg_move_per_day': round(avg_move_per_day, 3),
+                        'current_price': round(hist['Close'].iloc[-1], 2),
+                        'trend_start_price': round(hist['Close'].iloc[trend_start_index], 2) if trend_start_index else None,
+                        'analysis_period_days': len(hist)
+                    })
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    import traceback
+                    print(traceback.format_exc())
+                    continue
+            
+            if not results:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No valid trend duration data retrieved'
+                }, status=400)
+            
+            # Sort by freshness score (newest trends first by default)
+            results.sort(key=lambda x: x['freshness_score'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'assets_analyzed': len(results)
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in trend duration analysis: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():

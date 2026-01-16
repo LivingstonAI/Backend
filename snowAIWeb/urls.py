@@ -480,6 +480,8 @@ urlpatterns = [
 
      path('api/detect-trend-emergence/', views.detect_trend_emergence, name='detect_trend_emergence'),
 
+     path('api/mss-analyze-trend-duration-timeline/', views.mss_analyze_trend_duration_timeline, name='mss_trend_duration'),
+
 
 
 
