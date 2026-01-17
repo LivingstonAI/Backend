@@ -32546,4 +32546,734 @@ def mss_analyze_trend_duration_timeline(request):
             
             if not results:
                 return JsonResponse({
-                    'success'
+                    'success': False,
+                    'error': 'No valid trend duration data retrieved'
+                }, status=400)
+            
+            # Sort by freshness score (newest trends first by default)
+            results.sort(key=lambda x: x['freshness_score'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'assets_analyzed': len(results),
+                'timeframe': '1h',
+                'lookback_period': '60 days'
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in trend duration analysis: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+
+
+@csrf_exempt
+def mss_calculate_average_daily_range_projections(request):
+    """
+    Calculates Average Daily Range (ADR) for assets and projects potential end-of-day prices.
+    Uses High-Low range to capture full intraday movement.
+    Provides both bullish and bearish projections for current trading day.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            lookback_days = data.get('lookback_days', 20)  # Default 20 trading days
+            
+            if not symbols:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbols required'
+                }, status=400)
+            
+            # Handle single symbol or list
+            if isinstance(symbols, str):
+                symbols = [symbols]
+            
+            results = []
+            
+            for symbol in symbols:
+                try:
+                    # Download daily data for ADR calculation
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period=f"{lookback_days + 10}d", interval='1d')
+                    
+                    if len(hist) < 10:
+                        print(f"Skipping {symbol}: insufficient daily data")
+                        continue
+                    
+                    # Use last N days for ADR calculation
+                    analysis_data = hist.tail(lookback_days)
+                    
+                    # Calculate daily ranges (High - Low)
+                    analysis_data['daily_range'] = analysis_data['High'] - analysis_data['Low']
+                    analysis_data['daily_range_pct'] = (analysis_data['daily_range'] / analysis_data['Open']) * 100
+                    
+                    # Calculate upward movement (Close - Open) for trending days
+                    analysis_data['daily_move'] = analysis_data['Close'] - analysis_data['Open']
+                    analysis_data['daily_move_pct'] = (analysis_data['daily_move'] / analysis_data['Open']) * 100
+                    
+                    # Separate bullish and bearish days
+                    bullish_days = analysis_data[analysis_data['daily_move'] > 0]
+                    bearish_days = analysis_data[analysis_data['daily_move'] < 0]
+                    
+                    # === CALCULATE AVERAGE DAILY RANGE ===
+                    adr_dollars = analysis_data['daily_range'].mean()
+                    adr_pct = analysis_data['daily_range_pct'].mean()
+                    
+                    # Calculate median (less affected by outliers)
+                    median_range_dollars = analysis_data['daily_range'].median()
+                    median_range_pct = analysis_data['daily_range_pct'].median()
+                    
+                    # Calculate standard deviation (volatility of the range)
+                    std_range_dollars = analysis_data['daily_range'].std()
+                    std_range_pct = analysis_data['daily_range_pct'].std()
+                    
+                    # Min and Max ranges observed
+                    min_range = analysis_data['daily_range'].min()
+                    max_range = analysis_data['daily_range'].max()
+                    
+                    # === CALCULATE DIRECTIONAL BIAS ===
+                    # Average movement on bullish days
+                    if len(bullish_days) > 0:
+                        avg_bullish_move_dollars = bullish_days['daily_move'].mean()
+                        avg_bullish_move_pct = bullish_days['daily_move_pct'].mean()
+                        avg_bullish_range = bullish_days['daily_range'].mean()
+                    else:
+                        avg_bullish_move_dollars = 0
+                        avg_bullish_move_pct = 0
+                        avg_bullish_range = 0
+                    
+                    # Average movement on bearish days
+                    if len(bearish_days) > 0:
+                        avg_bearish_move_dollars = bearish_days['daily_move'].mean()
+                        avg_bearish_move_pct = bearish_days['daily_move_pct'].mean()
+                        avg_bearish_range = bearish_days['daily_range'].mean()
+                    else:
+                        avg_bearish_move_dollars = 0
+                        avg_bearish_move_pct = 0
+                        avg_bearish_range = 0
+                    
+                    # === GET CURRENT DAY DATA ===
+                    current_price = hist['Close'].iloc[-1]
+                    today_open = hist['Open'].iloc[-1]
+                    today_high = hist['High'].iloc[-1]
+                    today_low = hist['Low'].iloc[-1]
+                    
+                    # Current day's range so far
+                    current_range = today_high - today_low
+                    current_range_pct = (current_range / today_open) * 100 if today_open > 0 else 0
+                    
+                    # How much of average range has been used today?
+                    range_completion_pct = (current_range / adr_dollars) * 100 if adr_dollars > 0 else 0
+                    
+                    # === PROJECT END-OF-DAY SCENARIOS ===
+                    
+                    # Bullish scenario: Price moves up by average bullish move
+                    bullish_eod_projection = current_price + avg_bullish_move_dollars
+                    bullish_potential_high = current_price + (avg_bullish_range * 0.7)  # 70% of avg range up
+                    bullish_potential_low = current_price - (avg_bullish_range * 0.3)  # 30% of avg range down
+                    
+                    # Bearish scenario: Price moves down by average bearish move
+                    bearish_eod_projection = current_price + avg_bearish_move_dollars  # Already negative
+                    bearish_potential_high = current_price + (avg_bearish_range * 0.3)  # 30% of avg range up
+                    bearish_potential_low = current_price - (avg_bearish_range * 0.7)  # 70% of avg range down
+                    
+                    # Conservative projection: Use median instead of mean
+                    conservative_high = current_price + (median_range_dollars / 2)
+                    conservative_low = current_price - (median_range_dollars / 2)
+                    
+                    # Aggressive projection: Current price +/- full ADR
+                    aggressive_high = current_price + adr_dollars
+                    aggressive_low = current_price - adr_dollars
+                    
+                    # === PROBABILITY ESTIMATES ===
+                    # Based on historical data
+                    total_days = len(analysis_data)
+                    bullish_probability = (len(bullish_days) / total_days * 100) if total_days > 0 else 50
+                    bearish_probability = (len(bearish_days) / total_days * 100) if total_days > 0 else 50
+                    
+                    # === VOLATILITY CATEGORY ===
+                    if adr_pct >= 5.0:
+                        volatility_category = "extreme"
+                        volatility_label = "🔥 Extreme Mover"
+                        volatility_color = "#dc2626"
+                    elif adr_pct >= 3.0:
+                        volatility_category = "high"
+                        volatility_label = "⚡ High Volatility"
+                        volatility_color = "#f59e0b"
+                    elif adr_pct >= 1.5:
+                        volatility_category = "moderate"
+                        volatility_label = "📊 Moderate Range"
+                        volatility_color = "#10b981"
+                    elif adr_pct >= 0.5:
+                        volatility_category = "low"
+                        volatility_label = "😴 Low Volatility"
+                        volatility_color = "#3b82f6"
+                    else:
+                        volatility_category = "very_low"
+                        volatility_label = "💤 Very Quiet"
+                        volatility_color = "#6b7280"
+                    
+                    # === RANGE REMAINING ===
+                    # How much potential movement is left today?
+                    remaining_range_dollars = max(0, adr_dollars - current_range)
+                    remaining_range_pct = (remaining_range_dollars / current_price) * 100 if current_price > 0 else 0
+                    
+                    # === TRADING RECOMMENDATION ===
+                    if range_completion_pct >= 90:
+                        range_status = "⚠️ Near Daily Limit - Low potential remaining"
+                    elif range_completion_pct >= 70:
+                        range_status = "🤔 Significant Move Done - Be cautious"
+                    elif range_completion_pct >= 50:
+                        range_status = "📊 Mid-Range - Moderate potential"
+                    elif range_completion_pct >= 30:
+                        range_status = "✅ Early in Range - Good potential"
+                    else:
+                        range_status = "🚀 Fresh Day - High potential remaining"
+                    
+                    results.append({
+                        'symbol': symbol,
+                        
+                        # Average Daily Range Stats
+                        'adr_dollars': round(adr_dollars, 2),
+                        'adr_pct': round(adr_pct, 2),
+                        'median_range_dollars': round(median_range_dollars, 2),
+                        'median_range_pct': round(median_range_pct, 2),
+                        'std_range_dollars': round(std_range_dollars, 2),
+                        'min_range': round(min_range, 2),
+                        'max_range': round(max_range, 2),
+                        
+                        # Volatility Classification
+                        'volatility_category': volatility_category,
+                        'volatility_label': volatility_label,
+                        'volatility_color': volatility_color,
+                        
+                        # Current Day Status
+                        'current_price': round(current_price, 2),
+                        'today_open': round(today_open, 2),
+                        'today_high': round(today_high, 2),
+                        'today_low': round(today_low, 2),
+                        'current_range': round(current_range, 2),
+                        'current_range_pct': round(current_range_pct, 2),
+                        'range_completion_pct': round(range_completion_pct, 1),
+                        'range_status': range_status,
+                        'remaining_range_dollars': round(remaining_range_dollars, 2),
+                        'remaining_range_pct': round(remaining_range_pct, 2),
+                        
+                        # Bullish Scenario Projections
+                        'bullish_eod_projection': round(bullish_eod_projection, 2),
+                        'bullish_potential_high': round(bullish_potential_high, 2),
+                        'bullish_potential_low': round(bullish_potential_low, 2),
+                        'avg_bullish_move_dollars': round(avg_bullish_move_dollars, 2),
+                        'avg_bullish_move_pct': round(avg_bullish_move_pct, 2),
+                        'bullish_probability': round(bullish_probability, 1),
+                        
+                        # Bearish Scenario Projections
+                        'bearish_eod_projection': round(bearish_eod_projection, 2),
+                        'bearish_potential_high': round(bearish_potential_high, 2),
+                        'bearish_potential_low': round(bearish_potential_low, 2),
+                        'avg_bearish_move_dollars': round(avg_bearish_move_dollars, 2),
+                        'avg_bearish_move_pct': round(avg_bearish_move_pct, 2),
+                        'bearish_probability': round(bearish_probability, 1),
+                        
+                        # Conservative/Aggressive Ranges
+                        'conservative_high': round(conservative_high, 2),
+                        'conservative_low': round(conservative_low, 2),
+                        'aggressive_high': round(aggressive_high, 2),
+                        'aggressive_low': round(aggressive_low, 2),
+                        
+                        # Historical Context
+                        'bullish_days_count': len(bullish_days),
+                        'bearish_days_count': len(bearish_days),
+                        'total_days_analyzed': total_days,
+                        'lookback_period': lookback_days
+                    })
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    import traceback
+                    print(traceback.format_exc())
+                    continue
+            
+            if not results:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No valid ADR data calculated'
+                }, status=400)
+            
+            # Sort by ADR percentage (highest volatility first)
+            results.sort(key=lambda x: x['adr_pct'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'assets_analyzed': len(results),
+                'methodology': 'Average Daily Range calculated using High-Low spread over specified lookback period'
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in ADR calculation: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+
+@csrf_exempt
+def mss_estimate_price_target_timeline(request):
+    """
+    Estimates how many days it will take for an asset to reach a target price.
+    Uses historical daily movement data, current trend, and statistical analysis.
+    
+    Provides:
+    - Estimated days to target
+    - Probability of reaching target
+    - Best/worst case scenarios
+    - Trend compatibility analysis
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            target_price = data.get('target_price')
+            lookback_days = data.get('lookback_days', 60)  # Historical data for analysis
+            
+            if not symbol or target_price is None:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbol and target_price required'
+                }, status=400)
+            
+            target_price = float(target_price)
+            
+            # Download daily data for historical analysis
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period=f"{lookback_days + 10}d", interval='1d')
+            
+            if len(hist) < 20:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Insufficient data for {symbol}'
+                }, status=400)
+            
+            # Current price
+            current_price = hist['Close'].iloc[-1]
+            
+            # Calculate distance to target
+            price_distance = target_price - current_price
+            price_distance_pct = (price_distance / current_price) * 100
+            
+            # Determine direction needed
+            direction_needed = 'bullish' if price_distance > 0 else 'bearish' if price_distance < 0 else 'none'
+            
+            if direction_needed == 'none':
+                return JsonResponse({
+                    'success': True,
+                    'symbol': symbol,
+                    'current_price': round(current_price, 2),
+                    'target_price': round(target_price, 2),
+                    'estimated_days': 0,
+                    'probability': 100.0,
+                    'analysis': "Target price equals current price - already there!",
+                    'recommendation': "✅ Target already reached"
+                })
+            
+            # === ANALYZE HISTORICAL TREND ===
+            # Calculate EMAs for trend detection
+            hist['EMA_20'] = hist['Close'].ewm(span=20, adjust=False).mean()
+            hist['EMA_50'] = hist['Close'].ewm(span=50, adjust=False).mean()
+            
+            hist = hist.dropna()
+            
+            # Determine current trend
+            current_trend = None
+            if hist['EMA_20'].iloc[-1] > hist['EMA_50'].iloc[-1]:
+                current_trend = 'uptrend'
+                trend_emoji = '📈'
+            elif hist['EMA_20'].iloc[-1] < hist['EMA_50'].iloc[-1]:
+                current_trend = 'downtrend'
+                trend_emoji = '📉'
+            else:
+                current_trend = 'ranging'
+                trend_emoji = '➡️'
+            
+            # === CALCULATE HISTORICAL VELOCITY ===
+            # How fast does this asset typically move?
+            
+            # Daily returns
+            hist['daily_return'] = hist['Close'].pct_change()
+            hist['daily_return_abs'] = hist['daily_return'].abs()
+            
+            # Separate bullish and bearish days
+            bullish_days = hist[hist['daily_return'] > 0]
+            bearish_days = hist[hist['daily_return'] < 0]
+            
+            # Average daily movement
+            avg_daily_move_pct = hist['daily_return'].mean()
+            avg_daily_move_dollars = current_price * avg_daily_move_pct
+            
+            # Average bullish day movement
+            if len(bullish_days) > 0:
+                avg_bullish_move_pct = bullish_days['daily_return'].mean()
+                avg_bullish_move_dollars = current_price * avg_bullish_move_pct
+            else:
+                avg_bullish_move_pct = 0
+                avg_bullish_move_dollars = 0
+            
+            # Average bearish day movement
+            if len(bearish_days) > 0:
+                avg_bearish_move_pct = bearish_days['daily_return'].mean()
+                avg_bearish_move_dollars = current_price * avg_bearish_move_pct
+            else:
+                avg_bearish_move_pct = 0
+                avg_bearish_move_dollars = 0
+            
+            # === CHECK TREND COMPATIBILITY ===
+            # Is the target compatible with current trend?
+            trend_compatible = False
+            trend_conflict_penalty = 1.0
+            
+            if direction_needed == 'bullish' and current_trend == 'uptrend':
+                trend_compatible = True
+                analysis_trend = "✅ Target aligns with current uptrend"
+            elif direction_needed == 'bearish' and current_trend == 'downtrend':
+                trend_compatible = True
+                analysis_trend = "✅ Target aligns with current downtrend"
+            elif direction_needed == 'bullish' and current_trend == 'downtrend':
+                trend_compatible = False
+                trend_conflict_penalty = 3.0  # 3x longer if fighting trend
+                analysis_trend = "⚠️ Target requires reversing downtrend - DIFFICULT"
+            elif direction_needed == 'bearish' and current_trend == 'uptrend':
+                trend_compatible = False
+                trend_conflict_penalty = 3.0
+                analysis_trend = "⚠️ Target requires reversing uptrend - DIFFICULT"
+            else:  # ranging
+                trend_compatible = True
+                trend_conflict_penalty = 1.5  # Slightly harder in ranging market
+                analysis_trend = "⚠️ Currently ranging - direction uncertain"
+            
+            # === ESTIMATE TIMELINE ===
+            
+            if direction_needed == 'bullish':
+                # Need upward movement
+                if avg_bullish_move_dollars > 0:
+                    # Base estimate: distance / average bullish day move
+                    estimated_days_base = abs(price_distance) / avg_bullish_move_dollars
+                else:
+                    # No bullish movement historically - very unlikely
+                    estimated_days_base = 999999
+                
+                relevant_avg_move = avg_bullish_move_pct
+                
+            else:  # bearish
+                # Need downward movement
+                if avg_bearish_move_dollars < 0:
+                    # Base estimate: distance / average bearish day move
+                    estimated_days_base = abs(price_distance) / abs(avg_bearish_move_dollars)
+                else:
+                    # No bearish movement historically - very unlikely
+                    estimated_days_base = 999999
+                
+                relevant_avg_move = avg_bearish_move_pct
+            
+            # Apply trend conflict penalty
+            estimated_days = estimated_days_base * trend_conflict_penalty
+            
+            # === CALCULATE PROBABILITY ===
+            # Based on:
+            # 1. Trend compatibility
+            # 2. Historical movement patterns
+            # 3. Distance to target
+            
+            probability = 100.0
+            
+            # Penalty for trend conflict
+            if not trend_compatible:
+                probability *= 0.3  # 70% reduction if fighting trend
+            
+            # Penalty for extreme distance
+            if abs(price_distance_pct) > 50:
+                probability *= 0.2  # Very large move
+            elif abs(price_distance_pct) > 30:
+                probability *= 0.4
+            elif abs(price_distance_pct) > 15:
+                probability *= 0.7
+            elif abs(price_distance_pct) > 5:
+                probability *= 0.9
+            
+            # Bonus if recent momentum supports target
+            recent_returns = hist['daily_return'].tail(5).mean()
+            if (direction_needed == 'bullish' and recent_returns > 0) or \
+               (direction_needed == 'bearish' and recent_returns < 0):
+                probability *= 1.2  # Recent momentum helps
+            
+            # Cap probability
+            probability = min(max(probability, 0), 100)
+            
+            # === BEST/WORST CASE SCENARIOS ===
+            # Best case: Consistent strong days in right direction
+            if direction_needed == 'bullish':
+                best_case_move = bullish_days['daily_return'].quantile(0.75) if len(bullish_days) > 0 else 0
+                worst_case_move = bullish_days['daily_return'].quantile(0.25) if len(bullish_days) > 0 else 0
+            else:
+                best_case_move = bearish_days['daily_return'].quantile(0.25) if len(bearish_days) > 0 else 0  # More negative = better
+                worst_case_move = bearish_days['daily_return'].quantile(0.75) if len(bearish_days) > 0 else 0
+            
+            if best_case_move != 0:
+                best_case_days = abs(price_distance_pct / (best_case_move * 100))
+            else:
+                best_case_days = 999999
+            
+            if worst_case_move != 0:
+                worst_case_days = abs(price_distance_pct / (worst_case_move * 100))
+            else:
+                worst_case_days = 999999
+            
+            # === CATEGORIZE TIMELINE ===
+            if estimated_days < 0 or estimated_days > 999:
+                timeline_category = 'unlikely'
+                timeline_label = '❌ HIGHLY UNLIKELY'
+                timeline_color = '#7f1d1d'
+                recommendation = f"Target of ${target_price} is unlikely to be reached given current trend and historical patterns"
+                estimated_days = 0
+                
+            elif estimated_days <= 7:
+                timeline_category = 'immediate'
+                timeline_label = '🚀 VERY SOON'
+                timeline_color = '#10b981'
+                recommendation = f"Target could be reached within a week if current momentum continues"
+                
+            elif estimated_days <= 30:
+                timeline_category = 'short_term'
+                timeline_label = '⚡ SHORT TERM'
+                timeline_color = '#3b82f6'
+                recommendation = f"Target achievable within a month at current pace"
+                
+            elif estimated_days <= 90:
+                timeline_category = 'medium_term'
+                timeline_label = '📊 MEDIUM TERM'
+                timeline_color = '#f59e0b'
+                recommendation = f"Target is a 1-3 month objective at historical velocity"
+                
+            elif estimated_days <= 180:
+                timeline_category = 'long_term'
+                timeline_label = '⏳ LONG TERM'
+                timeline_color = '#ef4444'
+                recommendation = f"Target is 3-6 months away - requires sustained trend"
+                
+            else:
+                timeline_category = 'very_long_term'
+                timeline_label = '🐌 VERY LONG TERM'
+                timeline_color = '#991b1b'
+                recommendation = f"Target requires {int(estimated_days)} days - consider more realistic targets"
+            
+            # === PROVIDE CONTEXT ===
+            # What needs to happen for target to be reached?
+            if direction_needed == 'bullish':
+                required_daily_move_pct = price_distance_pct / max(estimated_days, 1)
+                context = f"Requires average daily gain of {abs(required_daily_move_pct):.2f}% " \
+                         f"(historical avg bullish day: {avg_bullish_move_pct * 100:.2f}%)"
+            else:
+                required_daily_move_pct = price_distance_pct / max(estimated_days, 1)
+                context = f"Requires average daily loss of {abs(required_daily_move_pct):.2f}% " \
+                         f"(historical avg bearish day: {avg_bearish_move_pct * 100:.2f}%)"
+            
+            # === RISK ASSESSMENT ===
+            if probability < 20:
+                risk_assessment = "🔴 VERY HIGH RISK - Target conflicts with trend/historical patterns"
+            elif probability < 40:
+                risk_assessment = "🟠 HIGH RISK - Challenging target requiring favorable conditions"
+            elif probability < 60:
+                risk_assessment = "🟡 MODERATE RISK - Achievable but not guaranteed"
+            elif probability < 80:
+                risk_assessment = "🟢 LOW RISK - Realistic target aligned with trends"
+            else:
+                risk_assessment = "🟢 VERY LOW RISK - Highly probable target"
+            
+            return JsonResponse({
+                'success': True,
+                'symbol': symbol,
+                'current_price': round(current_price, 2),
+                'target_price': round(target_price, 2),
+                'price_distance': round(price_distance, 2),
+                'price_distance_pct': round(price_distance_pct, 2),
+                'direction_needed': direction_needed,
+                
+                # Timeline Estimate
+                'estimated_days': round(estimated_days, 1) if estimated_days < 999 else 0,
+                'best_case_days': round(best_case_days, 1) if best_case_days < 999 else 0,
+                'worst_case_days': round(worst_case_days, 1) if worst_case_days < 999 else 0,
+                'timeline_category': timeline_category,
+                'timeline_label': timeline_label,
+                'timeline_color': timeline_color,
+                
+                # Probability & Risk
+                'probability': round(probability, 1),
+                'risk_assessment': risk_assessment,
+                
+                # Trend Analysis
+                'current_trend': current_trend,
+                'trend_emoji': trend_emoji,
+                'trend_compatible': trend_compatible,
+                'analysis_trend': analysis_trend,
+                
+                # Historical Context
+                'avg_daily_move_pct': round(avg_daily_move_pct * 100, 3),
+                'avg_bullish_move_pct': round(avg_bullish_move_pct * 100, 3),
+                'avg_bearish_move_pct': round(avg_bearish_move_pct * 100, 3),
+                'bullish_days_count': len(bullish_days),
+                'bearish_days_count': len(bearish_days),
+                
+                # Recommendations
+                'recommendation': recommendation,
+                'context': context,
+                'lookback_days': lookback_days
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in price target estimation: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+
+
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
