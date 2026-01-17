@@ -484,6 +484,8 @@ urlpatterns = [
 
      path('api/mss-calculate-average-daily-range-projections/', views.mss_calculate_average_daily_range_projections, name='mss_adr_projections'),
 
+     path('api/mss-estimate-price-target-timeline/', views.mss_estimate_price_target_timeline, name='mss_price_target_timeline'),
+
 
 
 
