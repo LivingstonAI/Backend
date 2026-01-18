@@ -486,6 +486,18 @@ urlpatterns = [
 
      path('api/mss-estimate-price-target-timeline/', views.mss_estimate_price_target_timeline, name='mss_price_target_timeline'),
 
+     # Run new backtest
+     path('api/snowai-backtest/run/', views.snowai_backtest_run, name='snowai_backtest_run'),
+     
+     # Check backtest status
+     path('api/snowai-backtest/status/<uuid:session_id>/', views.snowai_backtest_status, name='snowai_backtest_status'),
+     
+     # List all results
+     path('api/snowai-backtest/results/', views.snowai_backtest_results_list, name='snowai_backtest_results_list'),
+     
+     # Get specific result detail
+     path('api/snowai-backtest/result/<uuid:result_id>/', views.snowai_backtest_result_detail, name='snowai_backtest_result_detail'),
+
 
 
 

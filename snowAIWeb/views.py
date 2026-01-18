@@ -33162,6 +33162,410 @@ def mss_estimate_price_target_timeline(request):
     }, status=405)
 
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+import json
+import threading
+import pandas as pd
+import yfinance as yf
+from backtesting import Backtest, Strategy
+from bokeh.plotting import figure
+from bokeh.embed import json_item
+from datetime import datetime
+from .models import SnowAIBacktestResult, SnowAIBacktestSession
+
+# Import your trading functions (adjust path as needed)
+# from .trading_functions import (
+#     is_uptrend, is_downtrend, is_ranging_market, etc.
+# )
+
+# For demonstration, placeholder function map
+FUNCTION_MAP = {}
+
+def register_trading_function(name, func):
+    """Register a trading function to be used in backtests"""
+    FUNCTION_MAP[name] = func
+
+
+@csrf_exempt
+def snowai_backtest_run(request):
+    """
+    Start a new backtest with selected functions
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    
+    try:
+        data = json.loads(request.body)
+        
+        # Validate configuration
+        required_fields = ['asset_symbol', 'timeframe', 'start_year', 'end_year', 
+                          'initial_capital', 'take_profit', 'stop_loss', 'selected_functions']
+        
+        for field in required_fields:
+            if field not in data:
+                return JsonResponse({'error': f'Missing field: {field}'}, status=400)
+        
+        if not data['selected_functions']:
+            return JsonResponse({'error': 'At least one function must be selected'}, status=400)
+        
+        # Create session
+        session = SnowAIBacktestSession.objects.create(
+            config=data,
+            status='Initializing backtest...',
+            progress=0
+        )
+        
+        # Start backtest in background thread
+        thread = threading.Thread(
+            target=run_backtest_worker,
+            args=(str(session.id), data)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return JsonResponse({
+            'session_id': str(session.id),
+            'message': 'Backtest started'
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowai_backtest_status(request, session_id):
+    """
+    Get status of running backtest
+    """
+    try:
+        session = SnowAIBacktestSession.objects.get(id=session_id)
+        
+        response_data = {
+            'session_id': str(session.id),
+            'status': session.status,
+            'progress': session.progress,
+            'completed': session.completed_at is not None,
+            'error': session.error_message
+        }
+        
+        # If completed, include result
+        if session.result:
+            response_data['result'] = format_result_for_api(session.result)
+        
+        return JsonResponse(response_data)
+    
+    except SnowAIBacktestSession.DoesNotExist:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowai_backtest_results_list(request):
+    """
+    List all saved backtest results with optional filtering
+    """
+    try:
+        results = SnowAIBacktestResult.objects.all()
+        
+        # Apply filters if provided
+        asset_symbol = request.GET.get('asset_symbol')
+        timeframe = request.GET.get('timeframe')
+        
+        if asset_symbol:
+            results = results.filter(asset_symbol=asset_symbol)
+        if timeframe:
+            results = results.filter(timeframe=timeframe)
+        
+        # Limit results
+        limit = int(request.GET.get('limit', 100))
+        results = results[:limit]
+        
+        results_data = [format_result_for_api(r) for r in results]
+        
+        return JsonResponse({'results': results_data})
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowai_backtest_result_detail(request, result_id):
+    """
+    Get detailed result including plot
+    """
+    try:
+        result = SnowAIBacktestResult.objects.get(id=result_id)
+        return JsonResponse(format_result_for_api(result, include_plot=True))
+    
+    except SnowAIBacktestResult.DoesNotExist:
+        return JsonResponse({'error': 'Result not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def format_result_for_api(result, include_plot=False):
+    """
+    Format SnowAIBacktestResult for API response
+    """
+    data = {
+        'id': str(result.id),
+        'asset_symbol': result.asset_symbol,
+        'timeframe': result.timeframe,
+        'start_year': result.start_year,
+        'end_year': result.end_year,
+        'initial_capital': str(result.initial_capital),
+        'take_profit': str(result.take_profit),
+        'stop_loss': str(result.stop_loss),
+        'selected_functions': json.dumps(result.selected_functions),
+        'start_date': str(result.start_date),
+        'end_date': str(result.end_date),
+        'duration': result.duration,
+        'exposure_time': str(result.exposure_time),
+        'equity_final': str(result.equity_final),
+        'equity_peak': str(result.equity_peak),
+        'return_percent': str(result.return_percent),
+        'buy_hold_return': str(result.buy_hold_return),
+        'annual_return': str(result.annual_return),
+        'volatility_annual': str(result.volatility_annual),
+        'sharpe_ratio': str(result.sharpe_ratio),
+        'sortino_ratio': str(result.sortino_ratio),
+        'calmar_ratio': str(result.calmar_ratio),
+        'max_drawdown': str(result.max_drawdown),
+        'avg_drawdown': str(result.avg_drawdown),
+        'max_drawdown_duration': result.max_drawdown_duration,
+        'avg_drawdown_duration': result.avg_drawdown_duration,
+        'num_trades': result.num_trades,
+        'win_rate': str(result.win_rate),
+        'best_trade': str(result.best_trade),
+        'worst_trade': str(result.worst_trade),
+        'avg_trade': str(result.avg_trade),
+        'max_trade_duration': result.max_trade_duration,
+        'avg_trade_duration': result.avg_trade_duration,
+        'profit_factor': str(result.profit_factor),
+        'expectancy': str(result.expectancy),
+        'created_at': result.created_at.isoformat()
+    }
+    
+    if include_plot:
+        data['plot_json'] = result.plot_json
+    
+    return data
+
+
+def run_backtest_worker(session_id, config):
+    """
+    Background worker that runs the actual backtest
+    """
+    session = SnowAIBacktestSession.objects.get(id=session_id)
+    
+    try:
+        # Update status
+        session.status = 'Downloading market data...'
+        session.progress = 10
+        session.save()
+        
+        # Download data using yfinance
+        ticker = yf.Ticker(config['asset_symbol'])
+        
+        start_date = f"{config['start_year']}-01-01"
+        end_date = f"{config['end_year']}-12-31"
+        
+        df = ticker.history(
+            start=start_date,
+            end=end_date,
+            interval=config['timeframe']
+        )
+        
+        if df.empty:
+            raise ValueError(f"No data available for {config['asset_symbol']}")
+        
+        # Prepare data for Backtesting.py (needs OHLC columns)
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        df = df.dropna()
+        
+        session.status = 'Running backtest...'
+        session.progress = 30
+        session.save()
+        
+        # Create dynamic strategy class
+        class SnowAIStrategy(Strategy):
+            def init(self):
+                self.take_profit_pct = float(config['take_profit'])
+                self.stop_loss_pct = float(config['stop_loss'])
+                self.entry_price = None
+            
+            def next(self):
+                # Get current window for function evaluation
+                current_idx = len(self.data) - 1
+                window_start = max(0, current_idx - 50)
+                window_data = pd.DataFrame({
+                    'Open': self.data.Open[window_start:current_idx+1],
+                    'High': self.data.High[window_start:current_idx+1],
+                    'Low': self.data.Low[window_start:current_idx+1],
+                    'Close': self.data.Close[window_start:current_idx+1],
+                    'Volume': self.data.Volume[window_start:current_idx+1]
+                })
+                
+                # Check if all selected functions return True (buy signal)
+                all_signals_true = True
+                for func_name in config['selected_functions']:
+                    if func_name in FUNCTION_MAP:
+                        if not FUNCTION_MAP[func_name](window_data):
+                            all_signals_true = False
+                            break
+                
+                # Entry logic
+                if not self.position and all_signals_true:
+                    self.buy()
+                    self.entry_price = self.data.Close[-1]
+                
+                # Exit logic (take profit / stop loss)
+                elif self.position and self.entry_price:
+                    current_price = self.data.Close[-1]
+                    pnl_pct = ((current_price - self.entry_price) / self.entry_price) * 100
+                    
+                    if pnl_pct >= self.take_profit_pct:
+                        self.position.close()
+                        self.entry_price = None
+                    elif pnl_pct <= -self.stop_loss_pct:
+                        self.position.close()
+                        self.entry_price = None
+        
+        # Run backtest
+        bt = Backtest(
+            df,
+            SnowAIStrategy,
+            cash=float(config['initial_capital']),
+            commission=0.002,
+            exclusive_orders=True
+        )
+        
+        session.status = 'Analyzing results...'
+        session.progress = 70
+        session.save()
+        
+        output = bt.run()
+        
+        # Generate Bokeh plot
+        session.status = 'Generating visualization...'
+        session.progress = 85
+        session.save()
+        
+        try:
+            plot = bt.plot()
+            plot_json = json_item(plot, "backtest_plot")
+        except:
+            plot_json = None
+        
+        # Save result to database
+        session.status = 'Saving results...'
+        session.progress = 95
+        session.save()
+        
+        result = SnowAIBacktestResult.objects.create(
+            asset_symbol=config['asset_symbol'],
+            timeframe=config['timeframe'],
+            start_year=config['start_year'],
+            end_year=config['end_year'],
+            initial_capital=config['initial_capital'],
+            take_profit=config['take_profit'],
+            stop_loss=config['stop_loss'],
+            selected_functions=config['selected_functions'],
+            
+            start_date=datetime.strptime(str(output['Start']), '%Y-%m-%d %H:%M:%S').date(),
+            end_date=datetime.strptime(str(output['End']), '%Y-%m-%d %H:%M:%S').date(),
+            duration=str(output['Duration']),
+            exposure_time=float(output['Exposure Time [%]']),
+            
+            equity_final=float(output['Equity Final [$]']),
+            equity_peak=float(output['Equity Peak [$]']),
+            
+            return_percent=float(output['Return [%]']),
+            buy_hold_return=float(output['Buy & Hold Return [%]']),
+            annual_return=float(output['Return (Ann.) [%]']),
+            
+            volatility_annual=float(output['Volatility (Ann.) [%]']),
+            sharpe_ratio=float(output['Sharpe Ratio']),
+            sortino_ratio=float(output['Sortino Ratio']),
+            calmar_ratio=float(output['Calmar Ratio']),
+            
+            max_drawdown=float(output['Max. Drawdown [%]']),
+            avg_drawdown=float(output['Avg. Drawdown [%]']),
+            max_drawdown_duration=str(output['Max. Drawdown Duration']),
+            avg_drawdown_duration=str(output['Avg. Drawdown Duration']),
+            
+            num_trades=int(output['# Trades']),
+            win_rate=float(output['Win Rate [%]']),
+            best_trade=float(output['Best Trade [%]']),
+            worst_trade=float(output['Worst Trade [%]']),
+            avg_trade=float(output['Avg. Trade [%]']),
+            max_trade_duration=str(output['Max. Trade Duration']),
+            avg_trade_duration=str(output['Avg. Trade Duration']),
+            
+            profit_factor=float(output['Profit Factor']),
+            expectancy=float(output['Expectancy [%]']),
+            
+            plot_json=plot_json
+        )
+        
+        # Update session
+        session.result = result
+        session.status = 'Completed'
+        session.progress = 100
+        session.completed_at = timezone.now()
+        session.save()
+    
+    except Exception as e:
+        session.status = 'Error'
+        session.error_message = str(e)
+        session.progress = 0
+        session.save()
+        print(f"Backtest error: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+# Scheduler function to run backtests periodically
+def run_scheduled_backtests():
+    """
+    Run backtests on a schedule (to be called by Django scheduler)
+    This can test multiple assets automatically
+    """
+    from django.conf import settings
+    
+    # Example: Test top stocks daily
+    test_configs = [
+        {
+            'asset_symbol': 'AAPL',
+            'timeframe': '1d',
+            'start_year': 2020,
+            'end_year': 2024,
+            'initial_capital': 10000,
+            'take_profit': 4.0,
+            'stop_loss': 2.0,
+            'selected_functions': ['is_uptrend', 'is_support_level', 'buy_hold']
+        },
+        # Add more configurations as needed
+    ]
+    
+    for config in test_configs:
+        session = SnowAIBacktestSession.objects.create(
+            config=config,
+            status='Scheduled backtest initializing...',
+            progress=0
+        )
+        
+        thread = threading.Thread(
+            target=run_backtest_worker,
+            args=(str(session.id), config)
+        )
+        thread.daemon = True
+        thread.start()
+
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():

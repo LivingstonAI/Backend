@@ -1834,6 +1834,118 @@ class SnowAIPersonOfInterestUniqueV1(models.Model):
         }
 
 
+from django.db import models
+import uuid
+
+class SnowAIBacktestResult(models.Model):
+    """
+    Stores complete backtest results from Backtesting.py
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Configuration
+    asset_symbol = models.CharField(max_length=20, db_index=True)
+    timeframe = models.CharField(max_length=10, db_index=True)
+    start_year = models.IntegerField()
+    end_year = models.IntegerField()
+    initial_capital = models.DecimalField(max_digits=15, decimal_places=2)
+    take_profit = models.DecimalField(max_digits=8, decimal_places=2)
+    stop_loss = models.DecimalField(max_digits=8, decimal_places=2)
+    selected_functions = models.JSONField()  # List of function names
+    
+    # Performance Metrics
+    start_date = models.DateField()
+    end_date = models.DateField()
+    duration = models.CharField(max_length=100)
+    exposure_time = models.DecimalField(max_digits=8, decimal_places=2)
+    
+    # Equity Metrics
+    equity_final = models.DecimalField(max_digits=15, decimal_places=2)
+    equity_peak = models.DecimalField(max_digits=15, decimal_places=2)
+    
+    # Returns
+    return_percent = models.DecimalField(max_digits=10, decimal_places=2)
+    buy_hold_return = models.DecimalField(max_digits=10, decimal_places=2)
+    annual_return = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    # Risk Metrics
+    volatility_annual = models.DecimalField(max_digits=10, decimal_places=2)
+    sharpe_ratio = models.DecimalField(max_digits=8, decimal_places=2)
+    sortino_ratio = models.DecimalField(max_digits=8, decimal_places=2)
+    calmar_ratio = models.DecimalField(max_digits=8, decimal_places=2)
+    
+    # Drawdown Metrics
+    max_drawdown = models.DecimalField(max_digits=10, decimal_places=2)
+    avg_drawdown = models.DecimalField(max_digits=10, decimal_places=2)
+    max_drawdown_duration = models.CharField(max_length=100)
+    avg_drawdown_duration = models.CharField(max_length=100)
+    
+    # Trade Metrics
+    num_trades = models.IntegerField()
+    win_rate = models.DecimalField(max_digits=8, decimal_places=2)
+    best_trade = models.DecimalField(max_digits=10, decimal_places=2)
+    worst_trade = models.DecimalField(max_digits=10, decimal_places=2)
+    avg_trade = models.DecimalField(max_digits=10, decimal_places=2)
+    max_trade_duration = models.CharField(max_length=100)
+    avg_trade_duration = models.CharField(max_length=100)
+    
+    # Additional Metrics
+    profit_factor = models.DecimalField(max_digits=10, decimal_places=2)
+    expectancy = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    # Bokeh Plot
+    plot_json = models.JSONField(null=True, blank=True)
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['-created_at', 'asset_symbol']),
+            models.Index(fields=['asset_symbol', 'timeframe']),
+        ]
+    
+    def __str__(self):
+        return f"{self.asset_symbol} ({self.timeframe}) - {self.return_percent}%"
+
+
+class SnowAIBacktestSession(models.Model):
+    """
+    Tracks active backtest sessions for status polling
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Configuration (stored as JSON for flexibility)
+    config = models.JSONField()
+    
+    # Status tracking
+    status = models.CharField(max_length=100, default='initializing')
+    progress = models.IntegerField(default=0)
+    error_message = models.TextField(null=True, blank=True)
+    
+    # Result reference
+    result = models.ForeignKey(
+        SnowAIBacktestResult, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='session'
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Session {str(self.id)[:8]} - {self.status}"
+
+
+
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
