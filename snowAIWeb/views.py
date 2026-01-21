@@ -33665,6 +33665,96 @@ def run_scheduled_backtests():
 #     )
 
 
+@csrf_exempt
+def mss_fetch_chart_data_for_visualization(request):
+    """
+    Fetches 1h OHLCV data for the past 45 days for chart visualization.
+    Returns data in format compatible with TradingView Lightweight Charts.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            
+            if not symbols:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbols required'
+                }, status=400)
+            
+            # Handle single symbol or list
+            if isinstance(symbols, str):
+                symbols = [symbols]
+            
+            results = {}
+            
+            for symbol in symbols:
+                try:
+                    # Fetch 45 days of 1h data
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=50)  # Extra buffer
+                    
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(start=start_date, end=end_date, interval='1h')
+                    
+                    if hist.empty:
+                        continue
+                    
+                    # Get last 45 days worth of 1h bars
+                    # ~45 days * 6.5 trading hours = ~290 bars for stocks
+                    # ~45 days * 24 hours = ~1080 bars for forex/crypto
+                    chart_data = []
+                    
+                    for index, row in hist.iterrows():
+                        chart_data.append({
+                            'time': int(index.timestamp()),  # Unix timestamp
+                            'open': round(float(row['Open']), 2),
+                            'high': round(float(row['High']), 2),
+                            'low': round(float(row['Low']), 2),
+                            'close': round(float(row['Close']), 2),
+                            'volume': int(row['Volume']) if row['Volume'] > 0 else 0
+                        })
+                    
+                    # Sort by time (just in case)
+                    chart_data.sort(key=lambda x: x['time'])
+                    
+                    results[symbol] = {
+                        'success': True,
+                        'data': chart_data,
+                        'symbol': symbol,
+                        'bars_count': len(chart_data),
+                        'timeframe': '1h',
+                        'period': '45 days'
+                    }
+                    
+                except Exception as e:
+                    print(f"Error fetching chart data for {symbol}: {str(e)}")
+                    results[symbol] = {
+                        'success': False,
+                        'error': str(e)
+                    }
+                    continue
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'symbols_processed': len(results)
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in chart data fetch: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
