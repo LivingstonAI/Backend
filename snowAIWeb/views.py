@@ -33170,22 +33170,41 @@ import threading
 import pandas as pd
 import yfinance as yf
 from backtesting import Backtest, Strategy
-from bokeh.plotting import figure
 from bokeh.embed import json_item
 from datetime import datetime
 from .models import SnowAIBacktestResult, SnowAIBacktestSession
+import warnings
 
-# Import your trading functions (adjust path as needed)
-# from .trading_functions import (
-#     is_uptrend, is_downtrend, is_ranging_market, etc.
-# )
+# Suppress Bokeh warnings
+warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 
-# For demonstration, placeholder function map
-FUNCTION_MAP = {}
-
-def register_trading_function(name, func):
-    """Register a trading function to be used in backtests"""
-    FUNCTION_MAP[name] = func
+# Import your existing trading functions
+# Adjust the import path based on your project structure
+try:
+    from .trading_functions import (
+        is_uptrend, is_downtrend, is_ranging_market,
+        is_bullish_market_retracement, is_bearish_market_retracement,
+        is_resistance_level, is_support_level,
+        buy_hold, sell_hold, is_stable_market
+    )
+    
+    FUNCTION_MAP = {
+        'is_uptrend': is_uptrend,
+        'is_downtrend': is_downtrend,
+        'is_ranging_market': is_ranging_market,
+        'is_bullish_market_retracement': is_bullish_market_retracement,
+        'is_bearish_market_retracement': is_bearish_market_retracement,
+        'is_resistance_level': is_resistance_level,
+        'is_support_level': is_support_level,
+        'buy_hold': buy_hold,
+        'sell_hold': sell_hold,
+        'is_stable_market': is_stable_market
+    }
+except ImportError:
+    # Fallback if functions don't exist yet
+    FUNCTION_MAP = {}
+    print("Warning: Trading functions not found. Please ensure they are imported correctly.")
 
 
 @csrf_exempt
@@ -33231,6 +33250,8 @@ def snowai_backtest_run(request):
         })
     
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -33252,13 +33273,15 @@ def snowai_backtest_status(request, session_id):
         
         # If completed, include result
         if session.result:
-            response_data['result'] = format_result_for_api(session.result)
+            response_data['result'] = format_result_for_api(session.result, include_plot=True)
         
         return JsonResponse(response_data)
     
     except SnowAIBacktestSession.DoesNotExist:
         return JsonResponse({'error': 'Session not found'}, status=404)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -33283,11 +33306,13 @@ def snowai_backtest_results_list(request):
         limit = int(request.GET.get('limit', 100))
         results = results[:limit]
         
-        results_data = [format_result_for_api(r) for r in results]
+        results_data = [format_result_for_api(r, include_plot=False) for r in results]
         
         return JsonResponse({'results': results_data})
     
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -33303,6 +33328,8 @@ def snowai_backtest_result_detail(request, result_id):
     except SnowAIBacktestResult.DoesNotExist:
         return JsonResponse({'error': 'Result not found'}, status=404)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -33355,6 +33382,38 @@ def format_result_for_api(result, include_plot=False):
     return data
 
 
+def parse_datetime_safe(datetime_str):
+    """
+    Safely parse datetime string, handling timezone information
+    """
+    try:
+        # Remove timezone info if present
+        datetime_str = str(datetime_str)
+        if '+' in datetime_str or datetime_str.endswith('Z'):
+            # Split on + or Z to remove timezone
+            datetime_str = datetime_str.split('+')[0].split('Z')[0].split('-05:00')[0].strip()
+        
+        # Try different formats
+        formats = [
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%d',
+            '%Y-%m-%d %H:%M:%S.%f',
+        ]
+        
+        for fmt in formats:
+            try:
+                return datetime.strptime(datetime_str, fmt).date()
+            except ValueError:
+                continue
+        
+        # If all formats fail, try pandas
+        return pd.to_datetime(datetime_str).date()
+    
+    except Exception as e:
+        print(f"Error parsing datetime '{datetime_str}': {e}")
+        return None
+
+
 def run_backtest_worker(session_id, config):
     """
     Background worker that runs the actual backtest
@@ -33386,6 +33445,9 @@ def run_backtest_worker(session_id, config):
         df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
         df = df.dropna()
         
+        if len(df) < 50:
+            raise ValueError(f"Insufficient data: only {len(df)} bars available")
+        
         session.status = 'Running backtest...'
         session.progress = 30
         session.save()
@@ -33399,23 +33461,26 @@ def run_backtest_worker(session_id, config):
             
             def next(self):
                 # Get current window for function evaluation
-                current_idx = len(self.data) - 1
+                current_idx = len(self.data.df) - 1
                 window_start = max(0, current_idx - 50)
-                window_data = pd.DataFrame({
-                    'Open': self.data.Open[window_start:current_idx+1],
-                    'High': self.data.High[window_start:current_idx+1],
-                    'Low': self.data.Low[window_start:current_idx+1],
-                    'Close': self.data.Close[window_start:current_idx+1],
-                    'Volume': self.data.Volume[window_start:current_idx+1]
-                })
+                window_data = self.data.df.iloc[window_start:current_idx+1].copy()
                 
                 # Check if all selected functions return True (buy signal)
                 all_signals_true = True
                 for func_name in config['selected_functions']:
                     if func_name in FUNCTION_MAP:
-                        if not FUNCTION_MAP[func_name](window_data):
+                        try:
+                            if not FUNCTION_MAP[func_name](window_data):
+                                all_signals_true = False
+                                break
+                        except Exception as e:
+                            print(f"Error in {func_name}: {e}")
                             all_signals_true = False
                             break
+                    else:
+                        print(f"Warning: Function '{func_name}' not found in FUNCTION_MAP")
+                        all_signals_true = False
+                        break
                 
                 # Entry logic
                 if not self.position and all_signals_true:
@@ -33454,16 +33519,27 @@ def run_backtest_worker(session_id, config):
         session.progress = 85
         session.save()
         
+        plot_json = None
         try:
-            plot = bt.plot()
-            plot_json = json_item(plot, "backtest_plot")
-        except:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                plot = bt.plot()
+                plot_json = json_item(plot, "backtest_plot")
+        except Exception as e:
+            print(f"Error generating plot: {e}")
             plot_json = None
         
         # Save result to database
         session.status = 'Saving results...'
         session.progress = 95
         session.save()
+        
+        # Parse dates safely
+        start_date_parsed = parse_datetime_safe(output['Start'])
+        end_date_parsed = parse_datetime_safe(output['End'])
+        
+        if not start_date_parsed or not end_date_parsed:
+            raise ValueError("Failed to parse start/end dates from backtest output")
         
         result = SnowAIBacktestResult.objects.create(
             asset_symbol=config['asset_symbol'],
@@ -33475,8 +33551,8 @@ def run_backtest_worker(session_id, config):
             stop_loss=config['stop_loss'],
             selected_functions=config['selected_functions'],
             
-            start_date=datetime.strptime(str(output['Start']), '%Y-%m-%d %H:%M:%S').date(),
-            end_date=datetime.strptime(str(output['End']), '%Y-%m-%d %H:%M:%S').date(),
+            start_date=start_date_parsed,
+            end_date=end_date_parsed,
             duration=str(output['Duration']),
             exposure_time=float(output['Exposure Time [%]']),
             
@@ -33528,15 +33604,12 @@ def run_backtest_worker(session_id, config):
         traceback.print_exc()
 
 
-# Scheduler function to run backtests periodically
 def run_scheduled_backtests():
     """
-    Run backtests on a schedule (to be called by Django scheduler)
-    This can test multiple assets automatically
+    Run backtests on a schedule (called by Django scheduler)
+    Configure the assets and functions you want to test automatically
     """
-    from django.conf import settings
-    
-    # Example: Test top stocks daily
+    # Define your scheduled backtest configurations
     test_configs = [
         {
             'asset_symbol': 'AAPL',
@@ -33546,25 +33619,50 @@ def run_scheduled_backtests():
             'initial_capital': 10000,
             'take_profit': 4.0,
             'stop_loss': 2.0,
-            'selected_functions': ['is_uptrend', 'is_support_level', 'buy_hold']
+            'selected_functions': ['is_uptrend', 'is_support_level']
+        },
+        {
+            'asset_symbol': 'TSLA',
+            'timeframe': '1d',
+            'start_year': 2020,
+            'end_year': 2024,
+            'initial_capital': 10000,
+            'take_profit': 5.0,
+            'stop_loss': 2.5,
+            'selected_functions': ['is_bullish_market_retracement', 'buy_hold']
         },
         # Add more configurations as needed
     ]
     
     for config in test_configs:
-        session = SnowAIBacktestSession.objects.create(
-            config=config,
-            status='Scheduled backtest initializing...',
-            progress=0
-        )
-        
-        thread = threading.Thread(
-            target=run_backtest_worker,
-            args=(str(session.id), config)
-        )
-        thread.daemon = True
-        thread.start()
+        try:
+            session = SnowAIBacktestSession.objects.create(
+                config=config,
+                status='Scheduled backtest initializing...',
+                progress=0
+            )
+            
+            thread = threading.Thread(
+                target=run_backtest_worker,
+                args=(str(session.id), config)
+            )
+            thread.daemon = True
+            thread.start()
+            
+            print(f"Started scheduled backtest for {config['asset_symbol']}")
+        except Exception as e:
+            print(f"Error starting scheduled backtest: {e}")
 
+from django.apps import AppConfig
+from apscheduler.triggers.cron import CronTrigger
+
+scheduler = BackgroundScheduler()
+        scheduler.add_job(
+            run_scheduled_backtests,
+            trigger=CronTrigger(hour=2, minute=0),  # 2 AM daily
+            id='snowai_daily',
+            replace_existing=True
+        )
 
 
 # LEGODI BACKEND CODE
