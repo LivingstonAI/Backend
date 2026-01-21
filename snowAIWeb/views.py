@@ -33665,6 +33665,7 @@ def run_scheduled_backtests():
 #     )
 
 
+
 @csrf_exempt
 def mss_fetch_chart_data_for_visualization(request):
     """
@@ -33700,9 +33701,7 @@ def mss_fetch_chart_data_for_visualization(request):
                     if hist.empty:
                         continue
                     
-                    # Get last 45 days worth of 1h bars
-                    # ~45 days * 6.5 trading hours = ~290 bars for stocks
-                    # ~45 days * 24 hours = ~1080 bars for forex/crypto
+                    # Convert to TradingView format
                     chart_data = []
                     
                     for index, row in hist.iterrows():
@@ -33715,7 +33714,7 @@ def mss_fetch_chart_data_for_visualization(request):
                             'volume': int(row['Volume']) if row['Volume'] > 0 else 0
                         })
                     
-                    # Sort by time (just in case)
+                    # Sort by time
                     chart_data.sort(key=lambda x: x['time'])
                     
                     results[symbol] = {
@@ -33754,6 +33753,8 @@ def mss_fetch_chart_data_for_visualization(request):
         'success': False,
         'error': 'POST method required'
     }, status=405)
+
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
