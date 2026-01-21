@@ -33657,12 +33657,12 @@ from django.apps import AppConfig
 from apscheduler.triggers.cron import CronTrigger
 
 scheduler = BackgroundScheduler()
-        scheduler.add_job(
-            run_scheduled_backtests,
-            trigger=CronTrigger(hour=2, minute=0),  # 2 AM daily
-            id='snowai_daily',
-            replace_existing=True
-        )
+    scheduler.add_job(
+        run_scheduled_backtests,
+        trigger=CronTrigger(hour=2, minute=0),  # 2 AM daily
+        id='snowai_daily',
+        replace_existing=True
+    )
 
 
 # LEGODI BACKEND CODE
