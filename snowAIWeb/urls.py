@@ -498,6 +498,8 @@ urlpatterns = [
      # Get specific result detail
      path('api/snowai-backtest/result/<uuid:result_id>/', views.snowai_backtest_result_detail, name='snowai_backtest_result_detail'),
 
+     path('api/mss-fetch-chart-data-for-visualization/', views.mss_fetch_chart_data_for_visualization, name='mss_chart_data'),
+
 
 
 
