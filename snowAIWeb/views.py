@@ -33669,13 +33669,15 @@ def run_scheduled_backtests():
 @csrf_exempt
 def mss_fetch_chart_data_for_visualization(request):
     """
-    Fetches 1h OHLCV data for the past 45 days for chart visualization.
+    Fetches OHLCV data for chart visualization with flexible timeframes.
     Returns data in format compatible with TradingView Lightweight Charts.
     """
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             symbols = data.get('symbols', [])
+            timeframe = data.get('timeframe', '1h')  # 1h, 4h, 1d, 1w
+            lookback_days = data.get('lookback_days', 60)
             
             if not symbols:
                 return JsonResponse({
@@ -33687,26 +33689,46 @@ def mss_fetch_chart_data_for_visualization(request):
             if isinstance(symbols, str):
                 symbols = [symbols]
             
+            # Map timeframe to yfinance interval
+            interval_map = {
+                '1h': '1h',
+                '4h': '1h',  # We'll aggregate
+                '1d': '1d',
+                '1w': '1wk'
+            }
+            
+            interval = interval_map.get(timeframe, '1h')
+            
             results = {}
             
             for symbol in symbols:
                 try:
-                    # Fetch 45 days of 1h data
+                    # Fetch data with buffer
                     end_date = datetime.now()
-                    start_date = end_date - timedelta(days=50)  # Extra buffer
+                    start_date = end_date - timedelta(days=lookback_days + 10)
                     
                     ticker = yf.Ticker(symbol)
-                    hist = ticker.history(start=start_date, end=end_date, interval='1h')
+                    hist = ticker.history(start=start_date, end=end_date, interval=interval)
                     
                     if hist.empty:
                         continue
+                    
+                    # If 4h requested, aggregate 1h data
+                    if timeframe == '4h' and interval == '1h':
+                        hist = hist.resample('4H').agg({
+                            'Open': 'first',
+                            'High': 'max',
+                            'Low': 'min',
+                            'Close': 'last',
+                            'Volume': 'sum'
+                        }).dropna()
                     
                     # Convert to TradingView format
                     chart_data = []
                     
                     for index, row in hist.iterrows():
                         chart_data.append({
-                            'time': int(index.timestamp()),  # Unix timestamp
+                            'time': int(index.timestamp()),
                             'open': round(float(row['Open']), 2),
                             'high': round(float(row['High']), 2),
                             'low': round(float(row['Low']), 2),
@@ -33722,8 +33744,8 @@ def mss_fetch_chart_data_for_visualization(request):
                         'data': chart_data,
                         'symbol': symbol,
                         'bars_count': len(chart_data),
-                        'timeframe': '1h',
-                        'period': '45 days'
+                        'timeframe': timeframe,
+                        'period': f'{lookback_days} days'
                     }
                     
                 except Exception as e:
@@ -33753,8 +33775,6 @@ def mss_fetch_chart_data_for_visualization(request):
         'success': False,
         'error': 'POST method required'
     }, status=405)
-
-
 
 # LEGODI BACKEND CODE
 def send_simple_message():
