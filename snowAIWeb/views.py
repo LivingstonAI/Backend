@@ -33776,6 +33776,494 @@ def mss_fetch_chart_data_for_visualization(request):
         'error': 'POST method required'
     }, status=405)
 
+
+# ================================
+# MEAN REVERSION ANALYSIS ENDPOINT
+# ================================
+@csrf_exempt
+def mss_mean_reversion_regime_detector_v2(request):
+    """
+    Detects mean reversion characteristics and current regime for assets.
+    Analyzes:
+    - Distance from moving averages (20, 50, 100, 200-day)
+    - Bollinger Band position
+    - RSI levels
+    - Recent price extremes
+    - Mean reversion probability
+    - Current regime (trending vs mean-reverting)
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            lookback_days = data.get('lookback_days', 100)
+            
+            if not symbols:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbols required'
+                }, status=400)
+            
+            if isinstance(symbols, str):
+                symbols = [symbols]
+            
+            results = []
+            
+            for symbol in symbols:
+                try:
+                    # Fetch data
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period=f"{lookback_days + 50}d", interval='1d')
+                    
+                    if len(hist) < 50:
+                        continue
+                    
+                    # Calculate moving averages
+                    hist['SMA_20'] = hist['Close'].rolling(window=20).mean()
+                    hist['SMA_50'] = hist['Close'].rolling(window=50).mean()
+                    hist['SMA_100'] = hist['Close'].rolling(window=100).mean()
+                    hist['SMA_200'] = hist['Close'].rolling(window=200).mean()
+                    
+                    # Calculate Bollinger Bands (20-day, 2 std)
+                    hist['BB_Middle'] = hist['Close'].rolling(window=20).mean()
+                    hist['BB_Std'] = hist['Close'].rolling(window=20).std()
+                    hist['BB_Upper'] = hist['BB_Middle'] + (hist['BB_Std'] * 2)
+                    hist['BB_Lower'] = hist['BB_Middle'] - (hist['BB_Std'] * 2)
+                    
+                    # Calculate RSI (14-day)
+                    delta = hist['Close'].diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                    rs = gain / loss
+                    hist['RSI'] = 100 - (100 / (1 + rs))
+                    
+                    # Drop NaN values
+                    hist = hist.dropna()
+                    
+                    if len(hist) < 20:
+                        continue
+                    
+                    # Current values
+                    current_price = hist['Close'].iloc[-1]
+                    current_rsi = hist['RSI'].iloc[-1]
+                    
+                    # === DISTANCE FROM MOVING AVERAGES ===
+                    sma_20_distance = ((current_price - hist['SMA_20'].iloc[-1]) / hist['SMA_20'].iloc[-1]) * 100
+                    sma_50_distance = ((current_price - hist['SMA_50'].iloc[-1]) / hist['SMA_50'].iloc[-1]) * 100
+                    sma_100_distance = ((current_price - hist['SMA_100'].iloc[-1]) / hist['SMA_100'].iloc[-1]) * 100
+                    sma_200_distance = ((current_price - hist['SMA_200'].iloc[-1]) / hist['SMA_200'].iloc[-1]) * 100
+                    
+                    # === BOLLINGER BAND POSITION ===
+                    bb_upper = hist['BB_Upper'].iloc[-1]
+                    bb_lower = hist['BB_Lower'].iloc[-1]
+                    bb_middle = hist['BB_Middle'].iloc[-1]
+                    
+                    # Where in the band is price? (0 = lower band, 100 = upper band)
+                    bb_range = bb_upper - bb_lower
+                    if bb_range > 0:
+                        bb_position_pct = ((current_price - bb_lower) / bb_range) * 100
+                    else:
+                        bb_position_pct = 50
+                    
+                    # Distance from middle band
+                    bb_middle_distance = ((current_price - bb_middle) / bb_middle) * 100
+                    
+                    # === RECENT EXTREMES ===
+                    # 20-day high/low
+                    recent_high = hist['High'].tail(20).max()
+                    recent_low = hist['Low'].tail(20).min()
+                    
+                    # Where is price relative to recent range?
+                    recent_range = recent_high - recent_low
+                    if recent_range > 0:
+                        position_in_range = ((current_price - recent_low) / recent_range) * 100
+                    else:
+                        position_in_range = 50
+                    
+                    # Distance from recent extremes
+                    distance_from_high = ((current_price - recent_high) / recent_high) * 100
+                    distance_from_low = ((current_price - recent_low) / recent_low) * 100
+                    
+                    # === MEAN REVERSION SIGNALS ===
+                    mean_reversion_signals = []
+                    mean_reversion_score = 0
+                    
+                    # Signal 1: Far from SMA_20 (stretched)
+                    if abs(sma_20_distance) > 5:
+                        mean_reversion_signals.append(f"{'Above' if sma_20_distance > 0 else 'Below'} 20-day MA by {abs(sma_20_distance):.1f}%")
+                        mean_reversion_score += 20
+                    
+                    # Signal 2: Outside Bollinger Bands
+                    if bb_position_pct > 95:
+                        mean_reversion_signals.append("Near upper Bollinger Band - overbought")
+                        mean_reversion_score += 25
+                    elif bb_position_pct < 5:
+                        mean_reversion_signals.append("Near lower Bollinger Band - oversold")
+                        mean_reversion_score += 25
+                    
+                    # Signal 3: RSI extremes
+                    if current_rsi > 70:
+                        mean_reversion_signals.append(f"RSI overbought ({current_rsi:.1f})")
+                        mean_reversion_score += 25
+                    elif current_rsi < 30:
+                        mean_reversion_signals.append(f"RSI oversold ({current_rsi:.1f})")
+                        mean_reversion_score += 25
+                    
+                    # Signal 4: Near recent extremes
+                    if position_in_range > 95:
+                        mean_reversion_signals.append("At 20-day high - potential reversal")
+                        mean_reversion_score += 15
+                    elif position_in_range < 5:
+                        mean_reversion_signals.append("At 20-day low - potential reversal")
+                        mean_reversion_score += 15
+                    
+                    # Signal 5: Far from long-term MA
+                    if abs(sma_200_distance) > 15:
+                        mean_reversion_signals.append(f"Far from 200-day MA ({sma_200_distance:+.1f}%)")
+                        mean_reversion_score += 15
+                    
+                    # === REGIME DETECTION ===
+                    # Is the asset trending or mean-reverting?
+                    
+                    # Check MA alignment (trending if aligned)
+                    ma_alignment = 0
+                    if hist['SMA_20'].iloc[-1] > hist['SMA_50'].iloc[-1]:
+                        ma_alignment += 1
+                    if hist['SMA_50'].iloc[-1] > hist['SMA_100'].iloc[-1]:
+                        ma_alignment += 1
+                    if hist['SMA_100'].iloc[-1] > hist['SMA_200'].iloc[-1]:
+                        ma_alignment += 1
+                    
+                    # Check if MAs are diverging (trending) or converging (ranging)
+                    ma_spread = abs(hist['SMA_20'].iloc[-1] - hist['SMA_200'].iloc[-1]) / hist['SMA_200'].iloc[-1] * 100
+                    
+                    # Count MA crosses in last 20 days (more crosses = ranging)
+                    ma_crosses = 0
+                    for i in range(-20, -1):
+                        if (hist['Close'].iloc[i] > hist['SMA_20'].iloc[i] and hist['Close'].iloc[i+1] < hist['SMA_20'].iloc[i+1]) or \
+                           (hist['Close'].iloc[i] < hist['SMA_20'].iloc[i] and hist['Close'].iloc[i+1] > hist['SMA_20'].iloc[i+1]):
+                            ma_crosses += 1
+                    
+                    # Regime determination
+                    if ma_alignment == 3 and ma_spread > 3 and ma_crosses < 3:
+                        regime = 'strong_uptrend'
+                        regime_label = '🚀 STRONG UPTREND'
+                        regime_color = '#10b981'
+                        regime_description = 'Strong trending regime - avoid mean reversion trades'
+                    elif ma_alignment == 0 and ma_spread > 3 and ma_crosses < 3:
+                        regime = 'strong_downtrend'
+                        regime_label = '📉 STRONG DOWNTREND'
+                        regime_color = '#ef4444'
+                        regime_description = 'Strong trending regime - avoid mean reversion trades'
+                    elif ma_spread < 2 or ma_crosses >= 5:
+                        regime = 'mean_reverting'
+                        regime_label = '🔄 MEAN REVERTING'
+                        regime_color = '#8b5cf6'
+                        regime_description = 'Ranging/mean-reverting regime - good for MR trades'
+                    elif ma_alignment >= 2:
+                        regime = 'weak_uptrend'
+                        regime_label = '📈 WEAK UPTREND'
+                        regime_color = '#3b82f6'
+                        regime_description = 'Weak trend - some mean reversion possible'
+                    else:
+                        regime = 'weak_downtrend'
+                        regime_label = '📊 WEAK DOWNTREND'
+                        regime_color = '#f59e0b'
+                        regime_description = 'Weak trend - some mean reversion possible'
+                    
+                    # === MEAN REVERSION PROBABILITY ===
+                    # Higher score = more likely to mean revert
+                    if regime in ['mean_reverting']:
+                        mean_reversion_score += 30  # Bonus for ranging regime
+                    elif regime in ['strong_uptrend', 'strong_downtrend']:
+                        mean_reversion_score -= 20  # Penalty for strong trend
+                    
+                    mean_reversion_score = max(0, min(100, mean_reversion_score))
+                    
+                    # === MEAN REVERSION CATEGORY ===
+                    if mean_reversion_score >= 70:
+                        mr_category = 'high'
+                        mr_label = '🎯 HIGH PROBABILITY'
+                        mr_color = '#10b981'
+                    elif mean_reversion_score >= 40:
+                        mr_category = 'moderate'
+                        mr_label = '📊 MODERATE PROBABILITY'
+                        mr_color = '#f59e0b'
+                    else:
+                        mr_category = 'low'
+                        mr_label = '⚠️ LOW PROBABILITY'
+                        mr_color = '#ef4444'
+                    
+                    # === EXPECTED REVERSION TARGETS ===
+                    # Where should price revert to?
+                    reversion_targets = {
+                        'sma_20': round(hist['SMA_20'].iloc[-1], 2),
+                        'sma_50': round(hist['SMA_50'].iloc[-1], 2),
+                        'bb_middle': round(bb_middle, 2),
+                        'recent_range_midpoint': round((recent_high + recent_low) / 2, 2)
+                    }
+                    
+                    # Primary reversion target (closest major level)
+                    if abs(sma_20_distance) < abs(sma_50_distance):
+                        primary_target = reversion_targets['sma_20']
+                        primary_target_name = '20-day MA'
+                    else:
+                        primary_target = reversion_targets['sma_50']
+                        primary_target_name = '50-day MA'
+                    
+                    expected_move = ((primary_target - current_price) / current_price) * 100
+                    
+                    # === TRADING RECOMMENDATION ===
+                    if mean_reversion_score >= 70 and regime in ['mean_reverting', 'weak_uptrend', 'weak_downtrend']:
+                        if bb_position_pct > 80:
+                            recommendation = f"🔴 SELL - Strong mean reversion setup (target: {primary_target_name} @ ${primary_target})"
+                        elif bb_position_pct < 20:
+                            recommendation = f"🟢 BUY - Strong mean reversion setup (target: {primary_target_name} @ ${primary_target})"
+                        else:
+                            recommendation = "⚪ WAIT - Not at extreme yet"
+                    elif regime in ['strong_uptrend', 'strong_downtrend']:
+                        recommendation = "⚠️ AVOID - Strong trend, not suitable for mean reversion"
+                    else:
+                        recommendation = "⚪ NEUTRAL - Insufficient mean reversion signals"
+                    
+                    results.append({
+                        'symbol': symbol,
+                        'current_price': round(current_price, 2),
+                        
+                        # Regime Detection
+                        'regime': regime,
+                        'regime_label': regime_label,
+                        'regime_color': regime_color,
+                        'regime_description': regime_description,
+                        'ma_alignment': ma_alignment,
+                        'ma_spread_pct': round(ma_spread, 2),
+                        'ma_crosses_20d': ma_crosses,
+                        
+                        # Mean Reversion Analysis
+                        'mean_reversion_score': round(mean_reversion_score, 1),
+                        'mean_reversion_category': mr_category,
+                        'mean_reversion_label': mr_label,
+                        'mean_reversion_color': mr_color,
+                        'mean_reversion_signals': mean_reversion_signals,
+                        
+                        # Distance from Key Levels
+                        'sma_20_distance_pct': round(sma_20_distance, 2),
+                        'sma_50_distance_pct': round(sma_50_distance, 2),
+                        'sma_100_distance_pct': round(sma_100_distance, 2),
+                        'sma_200_distance_pct': round(sma_200_distance, 2),
+                        
+                        # Bollinger Bands
+                        'bb_position_pct': round(bb_position_pct, 1),
+                        'bb_middle_distance_pct': round(bb_middle_distance, 2),
+                        'bb_upper': round(bb_upper, 2),
+                        'bb_middle': round(bb_middle, 2),
+                        'bb_lower': round(bb_lower, 2),
+                        
+                        # RSI
+                        'rsi': round(current_rsi, 1),
+                        
+                        # Recent Range
+                        'recent_high_20d': round(recent_high, 2),
+                        'recent_low_20d': round(recent_low, 2),
+                        'position_in_range_pct': round(position_in_range, 1),
+                        'distance_from_high_pct': round(distance_from_high, 2),
+                        'distance_from_low_pct': round(distance_from_low, 2),
+                        
+                        # Reversion Targets
+                        'reversion_targets': reversion_targets,
+                        'primary_target': primary_target,
+                        'primary_target_name': primary_target_name,
+                        'expected_move_pct': round(expected_move, 2),
+                        
+                        # Recommendation
+                        'recommendation': recommendation
+                    })
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    import traceback
+                    print(traceback.format_exc())
+                    continue
+            
+            if not results:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No valid mean reversion data calculated'
+                }, status=400)
+            
+            # Sort by mean reversion score (highest first)
+            results.sort(key=lambda x: x['mean_reversion_score'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'assets_analyzed': len(results)
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in mean reversion analysis: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+
+# ================================
+# SECTOR PEERS NORMALIZED INDEX
+# ================================
+@csrf_exempt
+def mss_sector_peers_normalized_index_v2(request):
+    """
+    Creates a normalized index of all stocks in the same sector.
+    Useful for comparing individual stock performance against sector peers.
+    All stocks start at 100 and move relative to their starting point.
+    Uses SECTOR_MAPPINGS for accurate sector identification.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            lookback_days = data.get('lookback_days', 60)
+            
+            if not symbol:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbol required'
+                }, status=400)
+            
+            # Get sector from SECTOR_MAPPINGS
+            from .sector_mappings import SECTOR_MAPPINGS
+            sector = SECTOR_MAPPINGS.get(symbol)
+            
+            if not sector:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Sector not found for {symbol}'
+                }, status=400)
+            
+            # Get all peers in same sector
+            sector_peers = [s for s, sec in SECTOR_MAPPINGS.items() if sec == sector and s != symbol]
+            
+            if not sector_peers:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'No sector peers found for {sector}'
+                }, status=400)
+            
+            # Limit to 15 most liquid peers for performance
+            sector_peers = sector_peers[:15]
+            
+            # Fetch data for all peers
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days + 10)
+            
+            normalized_data = []
+            peer_performance = []
+            
+            for peer in sector_peers:
+                try:
+                    peer_ticker = yf.Ticker(peer)
+                    peer_hist = peer_ticker.history(start=start_date, end=end_date, interval='1d')
+                    
+                    if len(peer_hist) < 10:
+                        continue
+                    
+                    # Normalize to 100 at start
+                    base_price = peer_hist['Close'].iloc[0]
+                    peer_hist['Normalized'] = (peer_hist['Close'] / base_price) * 100
+                    
+                    for index, row in peer_hist.iterrows():
+                        normalized_data.append({
+                            'symbol': peer,
+                            'date': index.strftime('%Y-%m-%d'),
+                            'normalized_value': round(row['Normalized'], 2),
+                            'actual_price': round(row['Close'], 2)
+                        })
+                    
+                    # Calculate total return
+                    total_return = ((peer_hist['Close'].iloc[-1] - base_price) / base_price) * 100
+                    peer_performance.append({
+                        'symbol': peer,
+                        'total_return': round(total_return, 2)
+                    })
+                    
+                except Exception as e:
+                    print(f"Error fetching {peer}: {str(e)}")
+                    continue
+            
+            # Calculate sector average index
+            from collections import defaultdict
+            date_values = defaultdict(list)
+            
+            for entry in normalized_data:
+                date_values[entry['date']].append(entry['normalized_value'])
+            
+            sector_index = []
+            for date, values in sorted(date_values.items()):
+                sector_index.append({
+                    'date': date,
+                    'index_value': round(sum(values) / len(values), 2),
+                    'num_stocks': len(values)
+                })
+            
+            # Get target stock performance
+            target_ticker = yf.Ticker(symbol)
+            target_hist = target_ticker.history(start=start_date, end=end_date, interval='1d')
+            
+            if len(target_hist) < 10:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Insufficient data for {symbol}'
+                }, status=400)
+            
+            target_base = target_hist['Close'].iloc[0]
+            target_normalized = []
+            for index, row in target_hist.iterrows():
+                normalized_val = (row['Close'] / target_base) * 100
+                target_normalized.append({
+                    'date': index.strftime('%Y-%m-%d'),
+                    'value': round(normalized_val, 2)
+                })
+            
+            target_performance = ((target_hist['Close'].iloc[-1] - target_base) / target_base) * 100
+            
+            # Compare to sector average
+            sector_avg_return = sum(p['total_return'] for p in peer_performance) / len(peer_performance) if peer_performance else 0
+            outperformance = target_performance - sector_avg_return
+            
+            return JsonResponse({
+                'success': True,
+                'symbol': symbol,
+                'sector': sector,
+                'sector_index': sector_index,
+                'target_normalized': target_normalized,
+                'peer_performance': peer_performance,
+                'target_stock_return': round(target_performance, 2),
+                'sector_avg_return': round(sector_avg_return, 2),
+                'outperformance': round(outperformance, 2),
+                'peers_analyzed': len(peer_performance)
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in sector peers analysis: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
