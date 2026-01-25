@@ -33807,9 +33807,10 @@ def mss_mean_reversion_regime_detector_v2(request):
                 try:
                     # Fetch data
                     ticker = yf.Ticker(symbol)
-                    hist = ticker.history(period=f"{lookback_days + 50}d", interval='1d')
+                    hist = ticker.history(period=f"{lookback_days + 250}d", interval='1d')  # Increased buffer
+
                     
-                    if len(hist) < 50:
+                    if len(hist) < 30:
                         errors.append(f"{symbol}: Insufficient data (only {len(hist)} days)")
                         continue
                     
@@ -33837,7 +33838,7 @@ def mss_mean_reversion_regime_detector_v2(request):
                     # Drop NaN values
                     hist = hist.dropna()
                     
-                    if len(hist) < 20:
+                    if len(hist) < 10:
                         errors.append(f"{symbol}: Not enough valid data after calculations")
                         continue
                     
