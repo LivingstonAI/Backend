@@ -499,6 +499,11 @@ urlpatterns = [
      path('api/snowai-backtest/result/<uuid:result_id>/', views.snowai_backtest_result_detail, name='snowai_backtest_result_detail'),
 
      path('api/mss-fetch-chart-data-for-visualization/', views.mss_fetch_chart_data_for_visualization, name='mss_chart_data'),
+      # Mean Reversion & Regime Detection
+     path('api/mss-mean-reversion-regime-detector-v2/', views.mss_mean_reversion_regime_detector_v2, name='mss_mean_reversion_regime_detector_v2'),
+     
+     # Sector Peers Normalized Index
+     path('api/mss-sector-peers-normalized-index-v2/', views.mss_sector_peers_normalized_index_v2, name='mss_sector_peers_normalized_index_v2'),
 
 
 
