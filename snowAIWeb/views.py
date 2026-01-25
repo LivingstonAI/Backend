@@ -33784,13 +33784,6 @@ def mss_fetch_chart_data_for_visualization(request):
 def mss_mean_reversion_regime_detector_v2(request):
     """
     Detects mean reversion characteristics and current regime for assets.
-    Analyzes:
-    - Distance from moving averages (20, 50, 100, 200-day)
-    - Bollinger Band position
-    - RSI levels
-    - Recent price extremes
-    - Mean reversion probability
-    - Current regime (trending vs mean-reverting)
     """
     if request.method == 'POST':
         try:
@@ -33808,6 +33801,7 @@ def mss_mean_reversion_regime_detector_v2(request):
                 symbols = [symbols]
             
             results = []
+            errors = []  # Track errors for debugging
             
             for symbol in symbols:
                 try:
@@ -33816,6 +33810,7 @@ def mss_mean_reversion_regime_detector_v2(request):
                     hist = ticker.history(period=f"{lookback_days + 50}d", interval='1d')
                     
                     if len(hist) < 50:
+                        errors.append(f"{symbol}: Insufficient data (only {len(hist)} days)")
                         continue
                     
                     # Calculate moving averages
@@ -33834,18 +33829,21 @@ def mss_mean_reversion_regime_detector_v2(request):
                     delta = hist['Close'].diff()
                     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
                     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-                    rs = gain / loss
+                    
+                    # Avoid division by zero
+                    rs = gain / loss.replace(0, 0.0001)
                     hist['RSI'] = 100 - (100 / (1 + rs))
                     
                     # Drop NaN values
                     hist = hist.dropna()
                     
                     if len(hist) < 20:
+                        errors.append(f"{symbol}: Not enough valid data after calculations")
                         continue
                     
                     # Current values
-                    current_price = hist['Close'].iloc[-1]
-                    current_rsi = hist['RSI'].iloc[-1]
+                    current_price = float(hist['Close'].iloc[-1])
+                    current_rsi = float(hist['RSI'].iloc[-1])
                     
                     # === DISTANCE FROM MOVING AVERAGES ===
                     sma_20_distance = ((current_price - hist['SMA_20'].iloc[-1]) / hist['SMA_20'].iloc[-1]) * 100
@@ -33854,33 +33852,28 @@ def mss_mean_reversion_regime_detector_v2(request):
                     sma_200_distance = ((current_price - hist['SMA_200'].iloc[-1]) / hist['SMA_200'].iloc[-1]) * 100
                     
                     # === BOLLINGER BAND POSITION ===
-                    bb_upper = hist['BB_Upper'].iloc[-1]
-                    bb_lower = hist['BB_Lower'].iloc[-1]
-                    bb_middle = hist['BB_Middle'].iloc[-1]
+                    bb_upper = float(hist['BB_Upper'].iloc[-1])
+                    bb_lower = float(hist['BB_Lower'].iloc[-1])
+                    bb_middle = float(hist['BB_Middle'].iloc[-1])
                     
-                    # Where in the band is price? (0 = lower band, 100 = upper band)
                     bb_range = bb_upper - bb_lower
                     if bb_range > 0:
                         bb_position_pct = ((current_price - bb_lower) / bb_range) * 100
                     else:
                         bb_position_pct = 50
                     
-                    # Distance from middle band
                     bb_middle_distance = ((current_price - bb_middle) / bb_middle) * 100
                     
                     # === RECENT EXTREMES ===
-                    # 20-day high/low
-                    recent_high = hist['High'].tail(20).max()
-                    recent_low = hist['Low'].tail(20).min()
+                    recent_high = float(hist['High'].tail(20).max())
+                    recent_low = float(hist['Low'].tail(20).min())
                     
-                    # Where is price relative to recent range?
                     recent_range = recent_high - recent_low
                     if recent_range > 0:
                         position_in_range = ((current_price - recent_low) / recent_range) * 100
                     else:
                         position_in_range = 50
                     
-                    # Distance from recent extremes
                     distance_from_high = ((current_price - recent_high) / recent_high) * 100
                     distance_from_low = ((current_price - recent_low) / recent_low) * 100
                     
@@ -33888,12 +33881,10 @@ def mss_mean_reversion_regime_detector_v2(request):
                     mean_reversion_signals = []
                     mean_reversion_score = 0
                     
-                    # Signal 1: Far from SMA_20 (stretched)
                     if abs(sma_20_distance) > 5:
                         mean_reversion_signals.append(f"{'Above' if sma_20_distance > 0 else 'Below'} 20-day MA by {abs(sma_20_distance):.1f}%")
                         mean_reversion_score += 20
                     
-                    # Signal 2: Outside Bollinger Bands
                     if bb_position_pct > 95:
                         mean_reversion_signals.append("Near upper Bollinger Band - overbought")
                         mean_reversion_score += 25
@@ -33901,7 +33892,6 @@ def mss_mean_reversion_regime_detector_v2(request):
                         mean_reversion_signals.append("Near lower Bollinger Band - oversold")
                         mean_reversion_score += 25
                     
-                    # Signal 3: RSI extremes
                     if current_rsi > 70:
                         mean_reversion_signals.append(f"RSI overbought ({current_rsi:.1f})")
                         mean_reversion_score += 25
@@ -33909,7 +33899,6 @@ def mss_mean_reversion_regime_detector_v2(request):
                         mean_reversion_signals.append(f"RSI oversold ({current_rsi:.1f})")
                         mean_reversion_score += 25
                     
-                    # Signal 4: Near recent extremes
                     if position_in_range > 95:
                         mean_reversion_signals.append("At 20-day high - potential reversal")
                         mean_reversion_score += 15
@@ -33917,15 +33906,11 @@ def mss_mean_reversion_regime_detector_v2(request):
                         mean_reversion_signals.append("At 20-day low - potential reversal")
                         mean_reversion_score += 15
                     
-                    # Signal 5: Far from long-term MA
                     if abs(sma_200_distance) > 15:
                         mean_reversion_signals.append(f"Far from 200-day MA ({sma_200_distance:+.1f}%)")
                         mean_reversion_score += 15
                     
                     # === REGIME DETECTION ===
-                    # Is the asset trending or mean-reverting?
-                    
-                    # Check MA alignment (trending if aligned)
                     ma_alignment = 0
                     if hist['SMA_20'].iloc[-1] > hist['SMA_50'].iloc[-1]:
                         ma_alignment += 1
@@ -33934,17 +33919,17 @@ def mss_mean_reversion_regime_detector_v2(request):
                     if hist['SMA_100'].iloc[-1] > hist['SMA_200'].iloc[-1]:
                         ma_alignment += 1
                     
-                    # Check if MAs are diverging (trending) or converging (ranging)
                     ma_spread = abs(hist['SMA_20'].iloc[-1] - hist['SMA_200'].iloc[-1]) / hist['SMA_200'].iloc[-1] * 100
                     
-                    # Count MA crosses in last 20 days (more crosses = ranging)
                     ma_crosses = 0
                     for i in range(-20, -1):
-                        if (hist['Close'].iloc[i] > hist['SMA_20'].iloc[i] and hist['Close'].iloc[i+1] < hist['SMA_20'].iloc[i+1]) or \
-                           (hist['Close'].iloc[i] < hist['SMA_20'].iloc[i] and hist['Close'].iloc[i+1] > hist['SMA_20'].iloc[i+1]):
-                            ma_crosses += 1
+                        try:
+                            if (hist['Close'].iloc[i] > hist['SMA_20'].iloc[i] and hist['Close'].iloc[i+1] < hist['SMA_20'].iloc[i+1]) or \
+                               (hist['Close'].iloc[i] < hist['SMA_20'].iloc[i] and hist['Close'].iloc[i+1] > hist['SMA_20'].iloc[i+1]):
+                                ma_crosses += 1
+                        except:
+                            continue
                     
-                    # Regime determination
                     if ma_alignment == 3 and ma_spread > 3 and ma_crosses < 3:
                         regime = 'strong_uptrend'
                         regime_label = '🚀 STRONG UPTREND'
@@ -33971,16 +33956,13 @@ def mss_mean_reversion_regime_detector_v2(request):
                         regime_color = '#f59e0b'
                         regime_description = 'Weak trend - some mean reversion possible'
                     
-                    # === MEAN REVERSION PROBABILITY ===
-                    # Higher score = more likely to mean revert
                     if regime in ['mean_reverting']:
-                        mean_reversion_score += 30  # Bonus for ranging regime
+                        mean_reversion_score += 30
                     elif regime in ['strong_uptrend', 'strong_downtrend']:
-                        mean_reversion_score -= 20  # Penalty for strong trend
+                        mean_reversion_score -= 20
                     
                     mean_reversion_score = max(0, min(100, mean_reversion_score))
                     
-                    # === MEAN REVERSION CATEGORY ===
                     if mean_reversion_score >= 70:
                         mr_category = 'high'
                         mr_label = '🎯 HIGH PROBABILITY'
@@ -33994,16 +33976,13 @@ def mss_mean_reversion_regime_detector_v2(request):
                         mr_label = '⚠️ LOW PROBABILITY'
                         mr_color = '#ef4444'
                     
-                    # === EXPECTED REVERSION TARGETS ===
-                    # Where should price revert to?
                     reversion_targets = {
-                        'sma_20': round(hist['SMA_20'].iloc[-1], 2),
-                        'sma_50': round(hist['SMA_50'].iloc[-1], 2),
+                        'sma_20': round(float(hist['SMA_20'].iloc[-1]), 2),
+                        'sma_50': round(float(hist['SMA_50'].iloc[-1]), 2),
                         'bb_middle': round(bb_middle, 2),
                         'recent_range_midpoint': round((recent_high + recent_low) / 2, 2)
                     }
                     
-                    # Primary reversion target (closest major level)
                     if abs(sma_20_distance) < abs(sma_50_distance):
                         primary_target = reversion_targets['sma_20']
                         primary_target_name = '20-day MA'
@@ -34013,7 +33992,6 @@ def mss_mean_reversion_regime_detector_v2(request):
                     
                     expected_move = ((primary_target - current_price) / current_price) * 100
                     
-                    # === TRADING RECOMMENDATION ===
                     if mean_reversion_score >= 70 and regime in ['mean_reverting', 'weak_uptrend', 'weak_downtrend']:
                         if bb_position_pct > 80:
                             recommendation = f"🔴 SELL - Strong mean reversion setup (target: {primary_target_name} @ ${primary_target})"
@@ -34029,76 +34007,64 @@ def mss_mean_reversion_regime_detector_v2(request):
                     results.append({
                         'symbol': symbol,
                         'current_price': round(current_price, 2),
-                        
-                        # Regime Detection
                         'regime': regime,
                         'regime_label': regime_label,
                         'regime_color': regime_color,
                         'regime_description': regime_description,
-                        'ma_alignment': ma_alignment,
-                        'ma_spread_pct': round(ma_spread, 2),
-                        'ma_crosses_20d': ma_crosses,
-                        
-                        # Mean Reversion Analysis
-                        'mean_reversion_score': round(mean_reversion_score, 1),
+                        'ma_alignment': int(ma_alignment),
+                        'ma_spread_pct': round(float(ma_spread), 2),
+                        'ma_crosses_20d': int(ma_crosses),
+                        'mean_reversion_score': round(float(mean_reversion_score), 1),
                         'mean_reversion_category': mr_category,
                         'mean_reversion_label': mr_label,
                         'mean_reversion_color': mr_color,
                         'mean_reversion_signals': mean_reversion_signals,
-                        
-                        # Distance from Key Levels
-                        'sma_20_distance_pct': round(sma_20_distance, 2),
-                        'sma_50_distance_pct': round(sma_50_distance, 2),
-                        'sma_100_distance_pct': round(sma_100_distance, 2),
-                        'sma_200_distance_pct': round(sma_200_distance, 2),
-                        
-                        # Bollinger Bands
-                        'bb_position_pct': round(bb_position_pct, 1),
-                        'bb_middle_distance_pct': round(bb_middle_distance, 2),
+                        'sma_20_distance_pct': round(float(sma_20_distance), 2),
+                        'sma_50_distance_pct': round(float(sma_50_distance), 2),
+                        'sma_100_distance_pct': round(float(sma_100_distance), 2),
+                        'sma_200_distance_pct': round(float(sma_200_distance), 2),
+                        'bb_position_pct': round(float(bb_position_pct), 1),
+                        'bb_middle_distance_pct': round(float(bb_middle_distance), 2),
                         'bb_upper': round(bb_upper, 2),
                         'bb_middle': round(bb_middle, 2),
                         'bb_lower': round(bb_lower, 2),
-                        
-                        # RSI
-                        'rsi': round(current_rsi, 1),
-                        
-                        # Recent Range
+                        'rsi': round(float(current_rsi), 1),
                         'recent_high_20d': round(recent_high, 2),
                         'recent_low_20d': round(recent_low, 2),
-                        'position_in_range_pct': round(position_in_range, 1),
-                        'distance_from_high_pct': round(distance_from_high, 2),
-                        'distance_from_low_pct': round(distance_from_low, 2),
-                        
-                        # Reversion Targets
+                        'position_in_range_pct': round(float(position_in_range), 1),
+                        'distance_from_high_pct': round(float(distance_from_high), 2),
+                        'distance_from_low_pct': round(float(distance_from_low), 2),
                         'reversion_targets': reversion_targets,
                         'primary_target': primary_target,
                         'primary_target_name': primary_target_name,
-                        'expected_move_pct': round(expected_move, 2),
-                        
-                        # Recommendation
+                        'expected_move_pct': round(float(expected_move), 2),
                         'recommendation': recommendation
                     })
                     
                 except Exception as e:
-                    print(f"Error processing {symbol}: {str(e)}")
+                    errors.append(f"{symbol}: {str(e)}")
                     import traceback
-                    print(traceback.format_exc())
+                    print(f"Error processing {symbol}: {traceback.format_exc()}")
                     continue
             
             if not results:
+                error_msg = 'No valid mean reversion data calculated'
+                if errors:
+                    error_msg += f'. Errors: {"; ".join(errors[:3])}'  # Show first 3 errors
                 return JsonResponse({
                     'success': False,
-                    'error': 'No valid mean reversion data calculated'
+                    'error': error_msg,
+                    'details': errors
                 }, status=400)
             
-            # Sort by mean reversion score (highest first)
             results.sort(key=lambda x: x['mean_reversion_score'], reverse=True)
             
             return JsonResponse({
                 'success': True,
                 'data': results,
                 'timestamp': datetime.now().isoformat(),
-                'assets_analyzed': len(results)
+                'assets_analyzed': len(results),
+                'errors': errors if errors else None
             })
             
         except Exception as e:
@@ -34114,7 +34080,7 @@ def mss_mean_reversion_regime_detector_v2(request):
         'error': 'POST method required'
     }, status=405)
 
-
+    
 # ================================
 # SECTOR PEERS NORMALIZED INDEX
 # ================================
@@ -34139,13 +34105,12 @@ def mss_sector_peers_normalized_index_v2(request):
                 }, status=400)
             
             # Get sector from SECTOR_MAPPINGS
-            from .sector_mappings import SECTOR_MAPPINGS
             sector = SECTOR_MAPPINGS.get(symbol)
             
             if not sector:
                 return JsonResponse({
                     'success': False,
-                    'error': f'Sector not found for {symbol}'
+                    'error': f'Sector not found for {symbol}. Available symbols: {len(SECTOR_MAPPINGS)}'
                 }, status=400)
             
             # Get all peers in same sector
