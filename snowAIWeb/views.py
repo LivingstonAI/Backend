@@ -34230,6 +34230,205 @@ def mss_sector_peers_normalized_index_v2(request):
         'error': 'POST method required'
     }, status=405)
 
+# ================================
+# ENHANCED CHART DATA FOR AI CONTEXT
+# ================================
+@csrf_exempt
+def mss_generate_chart_context_for_ai_v2(request):
+    """
+    Generates detailed chart context for AI analysis.
+    Provides comprehensive data about price action, indicators, and patterns
+    that AI can use for informed analysis without actually seeing the chart.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            timeframe = data.get('timeframe', '1h')
+            lookback_days = data.get('lookback_days', 60)
+            
+            if not symbol:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbol required'
+                }, status=400)
+            
+            # Fetch chart data
+            ticker = yf.Ticker(symbol)
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days + 10)
+            
+            interval_map = {
+                '1h': '1h',
+                '4h': '1h',
+                '1d': '1d',
+                '1w': '1wk'
+            }
+            
+            interval = interval_map.get(timeframe, '1h')
+            hist = ticker.history(start=start_date, end=end_date, interval=interval)
+            
+            if hist.empty:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'No data available for {symbol}'
+                }, status=400)
+            
+            # Aggregate for 4h if needed
+            if timeframe == '4h' and interval == '1h':
+                hist = hist.resample('4H').agg({
+                    'Open': 'first',
+                    'High': 'max',
+                    'Low': 'min',
+                    'Close': 'last',
+                    'Volume': 'sum'
+                }).dropna()
+            
+            # Calculate indicators
+            hist['SMA_20'] = hist['Close'].rolling(window=20).mean()
+            hist['SMA_50'] = hist['Close'].rolling(window=50).mean()
+            hist['EMA_12'] = hist['Close'].ewm(span=12, adjust=False).mean()
+            hist['EMA_26'] = hist['Close'].ewm(span=26, adjust=False).mean()
+            
+            # RSI
+            delta = hist['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            hist['RSI'] = 100 - (100 / (1 + rs))
+            
+            # Bollinger Bands
+            hist['BB_Middle'] = hist['Close'].rolling(window=20).mean()
+            hist['BB_Std'] = hist['Close'].rolling(window=20).std()
+            hist['BB_Upper'] = hist['BB_Middle'] + (hist['BB_Std'] * 2)
+            hist['BB_Lower'] = hist['BB_Middle'] - (hist['BB_Std'] * 2)
+            
+            hist = hist.dropna()
+            
+            if len(hist) < 10:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Insufficient data for analysis'
+                }, status=400)
+            
+            # Current values
+            current_price = hist['Close'].iloc[-1]
+            current_rsi = hist['RSI'].iloc[-1]
+            
+            # Price action summary
+            recent_high = hist['High'].tail(20).max()
+            recent_low = hist['Low'].tail(20).min()
+            price_change_pct = ((current_price - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
+            
+            # Trend detection
+            if hist['SMA_20'].iloc[-1] > hist['SMA_50'].iloc[-1]:
+                trend = 'uptrend'
+            elif hist['SMA_20'].iloc[-1] < hist['SMA_50'].iloc[-1]:
+                trend = 'downtrend'
+            else:
+                trend = 'ranging'
+            
+            # Volume analysis
+            avg_volume = hist['Volume'].mean()
+            current_volume = hist['Volume'].iloc[-1]
+            volume_ratio = current_volume / avg_volume if avg_volume > 0 else 0
+            
+            # Support/Resistance levels
+            recent_data = hist.tail(50)
+            support_levels = []
+            resistance_levels = []
+            
+            # Find local minima (support)
+            for i in range(2, len(recent_data) - 2):
+                if recent_data['Low'].iloc[i] < recent_data['Low'].iloc[i-1] and \
+                   recent_data['Low'].iloc[i] < recent_data['Low'].iloc[i+1]:
+                    support_levels.append(round(recent_data['Low'].iloc[i], 2))
+            
+            # Find local maxima (resistance)
+            for i in range(2, len(recent_data) - 2):
+                if recent_data['High'].iloc[i] > recent_data['High'].iloc[i-1] and \
+                   recent_data['High'].iloc[i] > recent_data['High'].iloc[i+1]:
+                    resistance_levels.append(round(recent_data['High'].iloc[i], 2))
+            
+            # Get top 3 support/resistance
+            support_levels = sorted(set(support_levels))[-3:]
+            resistance_levels = sorted(set(resistance_levels), reverse=True)[-3:]
+            
+            # Recent candles summary (last 10)
+            recent_candles = []
+            for i in range(-10, 0):
+                candle_type = 'bullish' if hist['Close'].iloc[i] > hist['Open'].iloc[i] else 'bearish'
+                candle_size = abs(hist['Close'].iloc[i] - hist['Open'].iloc[i])
+                recent_candles.append({
+                    'type': candle_type,
+                    'size': round(candle_size, 2)
+                })
+            
+            # Create comprehensive context
+            chart_context = f"""
+CHART ANALYSIS FOR {symbol} ({timeframe} timeframe):
+
+CURRENT MARKET STATE:
+- Current Price: ${round(current_price, 2)}
+- Trend: {trend.upper()}
+- Price Change: {price_change_pct:+.2f}% over {len(hist)} periods
+- 20-day High: ${round(recent_high, 2)}
+- 20-day Low: ${round(recent_low, 2)}
+
+TECHNICAL INDICATORS:
+- RSI (14): {round(current_rsi, 2)} {'(Overbought)' if current_rsi > 70 else '(Oversold)' if current_rsi < 30 else '(Neutral)'}
+- Price vs SMA(20): {((current_price - hist['SMA_20'].iloc[-1]) / hist['SMA_20'].iloc[-1] * 100):+.2f}%
+- Price vs SMA(50): {((current_price - hist['SMA_50'].iloc[-1]) / hist['SMA_50'].iloc[-1] * 100):+.2f}%
+- Bollinger Band Position: {((current_price - hist['BB_Lower'].iloc[-1]) / (hist['BB_Upper'].iloc[-1] - hist['BB_Lower'].iloc[-1]) * 100):.1f}%
+
+VOLUME ANALYSIS:
+- Current Volume: {int(current_volume):,}
+- Average Volume: {int(avg_volume):,}
+- Volume Ratio: {volume_ratio:.2f}x average
+
+SUPPORT LEVELS: {', '.join([f'${s}' for s in support_levels]) if support_levels else 'None identified'}
+RESISTANCE LEVELS: {', '.join([f'${r}' for r in resistance_levels]) if resistance_levels else 'None identified'}
+
+RECENT PRICE ACTION:
+{len([c for c in recent_candles if c['type'] == 'bullish'])}/10 recent candles are bullish
+Average candle size: ${sum([c['size'] for c in recent_candles]) / len(recent_candles):.2f}
+
+MOVING AVERAGES:
+- SMA(20): ${round(hist['SMA_20'].iloc[-1], 2)}
+- SMA(50): ${round(hist['SMA_50'].iloc[-1], 2)}
+- EMA(12): ${round(hist['EMA_12'].iloc[-1], 2)}
+- EMA(26): ${round(hist['EMA_26'].iloc[-1], 2)}
+"""
+            
+            return JsonResponse({
+                'success': True,
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'chart_context': chart_context,
+                'raw_data': {
+                    'current_price': round(current_price, 2),
+                    'trend': trend,
+                    'rsi': round(current_rsi, 2),
+                    'volume_ratio': round(volume_ratio, 2),
+                    'price_change_pct': round(price_change_pct, 2),
+                    'support_levels': support_levels,
+                    'resistance_levels': resistance_levels
+                }
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error generating chart context: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
