@@ -505,6 +505,9 @@ urlpatterns = [
      # Sector Peers Normalized Index
      path('api/mss-sector-peers-normalized-index-v2/', views.mss_sector_peers_normalized_index_v2, name='mss_sector_peers_normalized_index_v2'),
 
+     path('api/mss-generate-chart-context-for-ai-v2/', views.mss_generate_chart_context_for_ai_v2, name='mss_generate_chart_context_for_ai_v2'),
+
+
 
 
 
