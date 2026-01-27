@@ -23389,7 +23389,7 @@ from datetime import datetime, timedelta
 import numpy as np
 from collections import defaultdict
 
-# Sector mapping for US stocks
+# Sector mapping for US stocks (500 stocks)
 SECTOR_MAPPINGS = {
     # Tech Giants
     'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
@@ -23484,6 +23484,123 @@ SECTOR_MAPPINGS = {
     'BABA': 'Technology', 'JD': 'Consumer Cyclical', 'PDD': 'Consumer Cyclical',
     'BIDU': 'Technology', 'NIO': 'Consumer Cyclical', 'XPEV': 'Consumer Cyclical',
     'LI': 'Consumer Cyclical',
+    
+    # Additional Technology
+    'IBM': 'Technology', 'AAOI': 'Technology', 'ACLS': 'Technology', 'ACN': 'Technology',
+    'ADSK': 'Technology', 'AKAM': 'Technology', 'ANSS': 'Technology', 'APH': 'Technology',
+    'ANET': 'Technology', 'ASML': 'Technology', 'AVAV': 'Technology', 'KEYS': 'Technology',
+    'MCHP': 'Technology', 'MTSI': 'Technology', 'MSI': 'Technology', 'MDB': 'Technology',
+    'NTAP': 'Technology', 'NTNX': 'Technology', 'ORCL': 'Technology', 'PAYC': 'Technology',
+    'PTC': 'Technology', 'ROP': 'Technology', 'SAP': 'Technology', 'SLAB': 'Technology',
+    'STX': 'Technology', 'TER': 'Technology', 'TSM': 'Technology', 'TYL': 'Technology',
+    'UMC': 'Technology', 'VRSN': 'Technology', 'WDC': 'Technology', 'XLNX': 'Technology',
+    'ZBRA': 'Technology', 'ZM': 'Technology', 'DOCU': 'Technology', 'TWLO': 'Technology',
+    'SQ': 'Technology', 'UBER': 'Technology', 'LYFT': 'Technology', 'DASH': 'Technology',
+    'PINS': 'Technology', 'SNAP': 'Technology', 'SPOT': 'Technology', 'ROKU': 'Technology',
+    'Z': 'Technology', 'ZG': 'Technology', 'AFRM': 'Technology', 'COIN': 'Technology',
+    'HOOD': 'Technology', 'SOFI': 'Technology', 'RBLX': 'Technology', 'ASTS': 'Technology',
+    
+    # Additional Financial Services
+    'AFL': 'Financial', 'AMG': 'Financial', 'AON': 'Financial', 'AJG': 'Financial',
+    'AMP': 'Financial', 'BEN': 'Financial', 'CBOE': 'Financial', 'CINF': 'Financial',
+    'DFS': 'Financial', 'ERIE': 'Financial', 'FITB': 'Financial', 'FRC': 'Financial',
+    'GL': 'Financial', 'HBAN': 'Financial', 'HIG': 'Financial', 'IVZ': 'Financial',
+    'JKHY': 'Financial', 'KEY': 'Financial', 'L': 'Financial', 'LNC': 'Financial',
+    'MTB': 'Financial', 'NTRS': 'Financial', 'NDAQ': 'Financial', 'PFG': 'Financial',
+    'RF': 'Financial', 'RJF': 'Financial', 'SIVB': 'Financial', 'STT': 'Financial',
+    'SYF': 'Financial', 'TROW': 'Financial', 'WRB': 'Financial', 'ZION': 'Financial',
+    'CFG': 'Financial', 'CMA': 'Financial', 'FHN': 'Financial', 'EWBC': 'Financial',
+    'WAL': 'Financial', 'WBS': 'Financial', 'ALLY': 'Financial', 'SOFI': 'Financial',
+    
+    # Additional Healthcare & Pharma
+    'ALGN': 'Healthcare', 'ATRC': 'Healthcare', 'BAX': 'Healthcare', 'BDX': 'Healthcare',
+    'BIO': 'Healthcare', 'BSX': 'Healthcare', 'CERN': 'Healthcare', 'DXCM': 'Healthcare',
+    'EW': 'Healthcare', 'EXAS': 'Healthcare', 'HOLX': 'Healthcare', 'HSIC': 'Healthcare',
+    'ILMN': 'Healthcare', 'INCY': 'Healthcare', 'IQV': 'Healthcare', 'LH': 'Healthcare',
+    'MDT': 'Healthcare', 'MOH': 'Healthcare', 'NBIX': 'Healthcare', 'PKI': 'Healthcare',
+    'PODD': 'Healthcare', 'RMD': 'Healthcare', 'STE': 'Healthcare', 'SYK': 'Healthcare',
+    'TFX': 'Healthcare', 'UHS': 'Healthcare', 'VRTX': 'Healthcare', 'WST': 'Healthcare',
+    'XRAY': 'Healthcare', 'ZBH': 'Healthcare', 'ZTS': 'Healthcare', 'TDOC': 'Healthcare',
+    'DOCS': 'Healthcare', 'VEEV': 'Healthcare', 'HALO': 'Healthcare', 'NVAX': 'Healthcare',
+    'IONS': 'Healthcare', 'Jazz': 'Healthcare', 'NBIX': 'Healthcare', 'UTHR': 'Healthcare',
+    
+    # Additional Consumer Cyclical
+    'AZO': 'Consumer Cyclical', 'BBY': 'Consumer Cyclical', 'BURL': 'Consumer Cyclical',
+    'CPRT': 'Consumer Cyclical', 'DHI': 'Consumer Cyclical', 'DRI': 'Consumer Cyclical',
+    'EXPE': 'Consumer Cyclical', 'GPC': 'Consumer Cyclical', 'GRMN': 'Consumer Cyclical',
+    'HAS': 'Consumer Cyclical', 'HLT': 'Consumer Cyclical', 'KMX': 'Consumer Cyclical',
+    'LEN': 'Consumer Cyclical', 'LVS': 'Consumer Cyclical', 'MGM': 'Consumer Cyclical',
+    'MHK': 'Consumer Cyclical', 'NVR': 'Consumer Cyclical', 'ORLY': 'Consumer Cyclical',
+    'PHM': 'Consumer Cyclical', 'POOL': 'Consumer Cyclical', 'RL': 'Consumer Cyclical',
+    'TSCO': 'Consumer Cyclical', 'TPR': 'Consumer Cyclical', 'ULTA': 'Consumer Cyclical',
+    'VFC': 'Consumer Cyclical', 'WHR': 'Consumer Cyclical', 'WYNN': 'Consumer Cyclical',
+    'APTV': 'Consumer Cyclical', 'BWA': 'Consumer Cyclical', 'DG': 'Consumer Cyclical',
+    'DLTR': 'Consumer Cyclical', 'DDS': 'Consumer Cyclical', 'FIVE': 'Consumer Cyclical',
+    'FL': 'Consumer Cyclical', 'FOXA': 'Consumer Cyclical', 'FOX': 'Consumer Cyclical',
+    'GPS': 'Consumer Cyclical', 'GT': 'Consumer Cyclical', 'HBI': 'Consumer Cyclical',
+    'LAD': 'Consumer Cyclical', 'LKQ': 'Consumer Cyclical', 'M': 'Consumer Cyclical',
+    'NCLH': 'Consumer Cyclical', 'NWL': 'Consumer Cyclical', 'PVH': 'Consumer Cyclical',
+    
+    # Additional Consumer Defensive
+    'ADM': 'Consumer Defensive', 'BF-B': 'Consumer Defensive', 'CAG': 'Consumer Defensive',
+    'CHD': 'Consumer Defensive', 'CLX': 'Consumer Defensive', 'CPB': 'Consumer Defensive',
+    'DG': 'Consumer Defensive', 'EL': 'Consumer Defensive', 'HSY': 'Consumer Defensive',
+    'K': 'Consumer Defensive', 'KDP': 'Consumer Defensive', 'KR': 'Consumer Defensive',
+    'KVUE': 'Consumer Defensive', 'MKC': 'Consumer Defensive', 'MNST': 'Consumer Defensive',
+    'SJM': 'Consumer Defensive', 'SYY': 'Consumer Defensive', 'TAP': 'Consumer Defensive',
+    'TSN': 'Consumer Defensive', 'WBA': 'Consumer Defensive', 'BGS': 'Consumer Defensive',
+    'BG': 'Consumer Defensive', 'COKE': 'Consumer Defensive', 'FLO': 'Consumer Defensive',
+    'HRL': 'Consumer Defensive', 'LANC': 'Consumer Defensive', 'POST': 'Consumer Defensive',
+    
+    # Additional Energy
+    'APA': 'Energy', 'CTRA': 'Energy', 'FANG': 'Energy', 'KMI': 'Energy',
+    'LNG': 'Energy', 'MRO': 'Energy', 'NOV': 'Energy', 'OKE': 'Energy',
+    'TRGP': 'Energy', 'WMB': 'Energy', 'EQT': 'Energy', 'AR': 'Energy',
+    'CLR': 'Energy', 'CNX': 'Energy', 'CQP': 'Energy', 'EXE': 'Energy',
+    'FTI': 'Energy', 'HP': 'Energy', 'MTDR': 'Energy', 'NBL': 'Energy',
+    'OVV': 'Energy', 'PBF': 'Energy', 'PR': 'Energy', 'RIG': 'Energy',
+    'SM': 'Energy', 'VAL': 'Energy', 'XEC': 'Energy',
+    
+    # Additional Industrials
+    'AOS': 'Industrials', 'CARR': 'Industrials', 'CHRW': 'Industrials', 'CMI': 'Industrials',
+    'DOV': 'Industrials', 'EMR': 'Industrials', 'ETN': 'Industrials', 'EXPD': 'Industrials',
+    'FAST': 'Industrials', 'FTV': 'Industrials', 'GNRC': 'Industrials', 'GWW': 'Industrials',
+    'IEX': 'Industrials', 'IR': 'Industrials', 'ITW': 'Industrials', 'J': 'Industrials',
+    'JBHT': 'Industrials', 'JCI': 'Industrials', 'LDOS': 'Industrials', 'MAS': 'Industrials',
+    'NSC': 'Industrials', 'ODFL': 'Industrials', 'OTIS': 'Industrials', 'PCAR': 'Industrials',
+    'PH': 'Industrials', 'PWR': 'Industrials', 'ROK': 'Industrials', 'ROL': 'Industrials',
+    'ROP': 'Industrials', 'RSG': 'Industrials', 'SNA': 'Industrials', 'SWK': 'Industrials',
+    'TT': 'Industrials', 'UAL': 'Industrials', 'URI': 'Industrials', 'VRSK': 'Industrials',
+    'WAB': 'Industrials', 'WM': 'Industrials', 'XYL': 'Industrials', 'AAL': 'Industrials',
+    'ALK': 'Industrials', 'JBLU': 'Industrials', 'LUV': 'Industrials', 'SAVE': 'Industrials',
+    
+    # Additional Communication Services
+    'EA': 'Communication', 'LYV': 'Communication', 'MTCH': 'Communication', 'NWSA': 'Communication',
+    'NWS': 'Communication', 'OMC': 'Communication', 'PARA': 'Communication', 'TTWO': 'Communication',
+    'WBD': 'Communication', 'IPG': 'Communication', 'DISH': 'Communication',
+    
+    # Additional Real Estate
+    'AVB': 'Real Estate', 'ARE': 'Real Estate', 'BXP': 'Real Estate', 'CBRE': 'Real Estate',
+    'DLR': 'Real Estate', 'EQR': 'Real Estate', 'ESS': 'Real Estate', 'EXR': 'Real Estate',
+    'FRT': 'Real Estate', 'HST': 'Real Estate', 'IRM': 'Real Estate', 'KIM': 'Real Estate',
+    'MAA': 'Real Estate', 'REG': 'Real Estate', 'SBAC': 'Real Estate', 'SLG': 'Real Estate',
+    'UDR': 'Real Estate', 'VTR': 'Real Estate', 'WELL': 'Real Estate', 'WY': 'Real Estate',
+    'INVH': 'Real Estate', 'PEAK': 'Real Estate', 'VNO': 'Real Estate',
+    
+    # Additional Materials
+    'AMCR': 'Materials', 'BALL': 'Materials', 'CF': 'Materials', 'CLF': 'Materials',
+    'CTVA': 'Materials', 'FMC': 'Materials', 'IP': 'Materials', 'MLM': 'Materials',
+    'MOS': 'Materials', 'NUE': 'Materials', 'PKG': 'Materials', 'PPG': 'Materials',
+    'SEE': 'Materials', 'STLD': 'Materials', 'SW': 'Materials', 'VMC': 'Materials',
+    'AVY': 'Materials', 'AA': 'Materials', 'MP': 'Materials', 'RS': 'Materials',
+    
+    # Additional Utilities
+    'AEE': 'Utilities', 'AES': 'Utilities', 'AWK': 'Utilities', 'CMS': 'Utilities',
+    'CNP': 'Utilities', 'DTE': 'Utilities', 'ED': 'Utilities', 'EIX': 'Utilities',
+    'ES': 'Utilities', 'ETR': 'Utilities', 'EVRG': 'Utilities', 'FE': 'Utilities',
+    'LNT': 'Utilities', 'NI': 'Utilities', 'NRG': 'Utilities', 'PCG': 'Utilities',
+    'PEG': 'Utilities', 'PNW': 'Utilities', 'PPL': 'Utilities', 'VST': 'Utilities',
+    'WEC': 'Utilities', 'XEL': 'Utilities', 'CEG': 'Utilities',
 }
 
 
