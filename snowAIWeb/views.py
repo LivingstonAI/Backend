@@ -23234,6 +23234,7 @@ def get_mss_historical_data(request):
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+
 @csrf_exempt
 def get_predefined_asset_lists(request):
     """
@@ -23246,95 +23247,135 @@ def get_predefined_asset_lists(request):
             'EURJPY=X', 'GBPJPY=X', 'AUDJPY=X', 'EURCHF=X'
         ],
         'stocks': [
-            # Tech Giants
+            # Tech Giants & Semiconductors
             'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 
             'TSLA', 'META', 'AMD', 'INTC', 'ORCL', 'CSCO',
             'ADBE', 'CRM', 'AVGO', 'QCOM', 'TXN', 'AMAT',
             'LRCX', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'NXPI',
+            'MU', 'ADI', 'MPWR', 'SWKS', 'QRVO', 'ON',
+            'IBM', 'AAOI', 'ACLS', 'ACN', 'ADSK', 'AKAM', 
+            'ANSS', 'APH', 'ANET', 'ASML', 'AVAV', 'KEYS',
+            'MCHP', 'MTSI', 'MSI', 'MDB', 'NTAP', 'NTNX',
+            'PAYC', 'PTC', 'ROP', 'SAP', 'SLAB', 'STX', 
+            'TER', 'TSM', 'TYL', 'UMC', 'VRSN', 'WDC', 
+            'XLNX', 'ZBRA',
             
-            # Financial Services
+            # Software & Cloud
+            'NOW', 'INTU', 'WDAY', 'PANW', 'CRWD', 'ZS',
+            'DDOG', 'NET', 'SNOW', 'PLTR', 'TEAM', 'FTNT',
+            'OKTA', 'S', 'CYBR',
+            
+            # Fintech & Payments
+            'V', 'MA', 'PYPL', 'ADP', 'FISV', 'FIS',
+            'ZM', 'DOCU', 'TWLO', 'SQ', 'UBER', 'LYFT', 
+            'DASH', 'PINS', 'SNAP', 'SPOT', 'ROKU', 'Z', 
+            'ZG', 'AFRM', 'COIN', 'HOOD', 'SOFI', 'RBLX', 
+            'ASTS',
+            
+            # Financial Services & Banks
             'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'BLK',
             'SCHW', 'AXP', 'SPGI', 'CME', 'ICE', 'MCO',
             'BK', 'USB', 'PNC', 'TFC', 'COF',
+            'AFL', 'AMG', 'AON', 'AJG', 'AMP', 'BEN', 
+            'CBOE', 'CINF', 'DFS', 'ERIE', 'FITB', 'FRC',
+            'GL', 'HBAN', 'HIG', 'IVZ', 'JKHY', 'KEY', 
+            'L', 'LNC', 'MTB', 'NTRS', 'NDAQ', 'PFG',
+            'RF', 'RJF', 'SIVB', 'STT', 'SYF', 'TROW', 
+            'WRB', 'ZION', 'CFG', 'CMA', 'FHN', 'EWBC',
+            'WAL', 'WBS', 'ALLY',
+            
+            # Insurance
+            'BRK-B', 'PGR', 'ALL', 'TRV', 'AIG', 'MET', 'PRU',
             
             # Healthcare & Pharma
             'JNJ', 'LLY', 'UNH', 'PFE', 'ABBV', 'MRK', 'TMO',
             'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS',
             'CI', 'ELV', 'HUM', 'VRTX', 'REGN', 'ISRG',
+            'BIIB', 'MRNA', 'BNTX', 'SGEN', 'ALNY', 'BGNE',
+            'MCK', 'CAH', 'COR', 'IDXX', 'A', 'WAT',
+            'ALGN', 'ATRC', 'BAX', 'BDX', 'BIO', 'BSX', 
+            'CERN', 'DXCM', 'EW', 'EXAS', 'HOLX', 'HSIC',
+            'ILMN', 'INCY', 'IQV', 'LH', 'MDT', 'MOH', 
+            'NBIX', 'PKI', 'PODD', 'RMD', 'STE', 'SYK',
+            'TFX', 'UHS', 'WST', 'XRAY', 'ZBH', 'ZTS', 
+            'TDOC', 'DOCS', 'VEEV', 'HALO', 'NVAX', 'IONS', 
+            'Jazz', 'UTHR',
             
-            # Consumer Discretionary
-            'AMZN', 'TSLA', 'HD', 'MCD', 'NKE', 'SBUX', 'TJX',
-            'LOW', 'BKNG', 'MAR', 'CMG', 'F', 'GM', 'ABNB',
+            # Consumer Discretionary & Retail
+            'HD', 'MCD', 'NKE', 'SBUX', 'TJX', 'LOW', 
+            'BKNG', 'MAR', 'CMG', 'F', 'GM', 'ABNB',
+            'SHOP', 'MELI', 'EBAY', 'ETSY', 'TGT', 'ROST',
+            'YUM', 'DPZ', 'QSR', 'AAL', 'DAL', 'UAL',
+            'LUV', 'CCL', 'RCL', 'EA', 'TTWO', 'RBLX',
+            'U', 'RIVN', 'LCID',
+            'AZO', 'BBY', 'BURL', 'CPRT', 'DHI', 'DRI',
+            'EXPE', 'GPC', 'GRMN', 'HAS', 'HLT', 'KMX',
+            'LEN', 'LVS', 'MGM', 'MHK', 'NVR', 'ORLY',
+            'PHM', 'POOL', 'RL', 'TSCO', 'TPR', 'ULTA',
+            'VFC', 'WHR', 'WYNN', 'APTV', 'BWA', 'DG',
+            'DLTR', 'DDS', 'FIVE', 'FL', 'FOXA', 'FOX',
+            'GPS', 'GT', 'HBI', 'LAD', 'LKQ', 'M',
+            'NCLH', 'NWL', 'PVH',
             
             # Consumer Staples
             'WMT', 'PG', 'KO', 'PEP', 'COST', 'PM', 'MO',
             'MDLZ', 'CL', 'KMB', 'GIS', 'KHC', 'STZ',
+            'ADM', 'BF-B', 'CAG', 'CHD', 'CLX', 'CPB',
+            'EL', 'HSY', 'K', 'KDP', 'KR', 'KVUE', 
+            'MKC', 'MNST', 'SJM', 'SYY', 'TAP', 'TSN', 
+            'WBA', 'BGS', 'BG', 'COKE', 'FLO', 'HRL', 
+            'LANC', 'POST',
             
             # Energy
             'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX',
             'VLO', 'OXY', 'HAL', 'DVN', 'HES', 'BKR',
+            'APA', 'CTRA', 'FANG', 'KMI', 'LNG', 'MRO', 
+            'NOV', 'OKE', 'TRGP', 'WMB', 'EQT', 'AR',
+            'CLR', 'CNX', 'CQP', 'EXE', 'FTI', 'HP', 
+            'MTDR', 'NBL', 'OVV', 'PBF', 'PR', 'RIG',
+            'SM', 'VAL', 'XEC',
             
             # Industrials
             'BA', 'HON', 'UNP', 'CAT', 'GE', 'RTX', 'LMT',
             'UPS', 'DE', 'MMM', 'GD', 'NOC', 'FDX', 'CSX',
+            'HWM', 'TDG', 'HEI', 'LHX', 'TXT',
+            'AOS', 'CARR', 'CHRW', 'CMI', 'DOV', 'EMR', 
+            'ETN', 'EXPD', 'FAST', 'FTV', 'GNRC', 'GWW',
+            'IEX', 'IR', 'ITW', 'J', 'JBHT', 'JCI', 
+            'LDOS', 'MAS', 'NSC', 'ODFL', 'OTIS', 'PCAR',
+            'PH', 'PWR', 'ROK', 'ROL', 'RSG', 'SNA', 
+            'SWK', 'TT', 'URI', 'VRSK', 'WAB', 'WM', 
+            'XYL', 'ALK', 'JBLU', 'SAVE',
             
-            # Telecom & Media
+            # Communication Services & Media
             'T', 'VZ', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR',
+            'LYV', 'MTCH', 'NWSA', 'NWS', 'OMC', 'PARA',
+            'WBD', 'IPG', 'DISH',
             
             # Real Estate & REITs
             'AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'SPG', 'O',
+            'AVB', 'ARE', 'BXP', 'CBRE', 'DLR', 'EQR', 
+            'ESS', 'EXR', 'FRT', 'HST', 'IRM', 'KIM',
+            'MAA', 'REG', 'SBAC', 'SLG', 'UDR', 'VTR', 
+            'WELL', 'WY', 'INVH', 'PEAK', 'VNO',
             
-            # Materials
+            # Materials & Chemicals
             'LIN', 'APD', 'SHW', 'ECL', 'DD', 'NEM', 'FCX',
+            'DOW', 'LYB', 'CE', 'ALB', 'EMN', 'SQM',
+            'AMCR', 'BALL', 'CF', 'CLF', 'CTVA', 'FMC', 
+            'IP', 'MLM', 'MOS', 'NUE', 'PKG', 'PPG',
+            'SEE', 'STLD', 'SW', 'VMC', 'AVY', 'AA', 
+            'MP', 'RS',
             
             # Utilities
             'NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE',
-            
-            # Payment Processors
-            'V', 'MA', 'PYPL', 'ADP', 'FISV', 'FIS',
-            
-            # E-commerce & Retail
-            'SHOP', 'MELI', 'EBAY', 'ETSY', 'TGT', 'ROST',
-            
-            # Semiconductors (Additional)
-            'MU', 'ADI', 'MPWR', 'SWKS', 'QRVO', 'ON',
-            
-            # Software & Cloud
-            'NOW', 'INTU', 'WDAY', 'PANW', 'CRWD', 'ZS',
-            'DDOG', 'NET', 'SNOW', 'PLTR', 'TEAM',
-            
-            # Biotech
-            'BIIB', 'MRNA', 'BNTX', 'SGEN', 'ALNY', 'BGNE',
-            
-            # Aerospace & Defense
-            'HWM', 'TDG', 'HEI', 'LHX', 'TXT',
+            'AEE', 'AES', 'AWK', 'CMS', 'CNP', 'DTE', 
+            'ED', 'EIX', 'ES', 'ETR', 'EVRG', 'FE',
+            'LNT', 'NI', 'NRG', 'PCG', 'PEG', 'PNW', 
+            'PPL', 'VST', 'WEC', 'XEL', 'CEG',
             
             # Chinese ADRs
             'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV', 'LI',
-            
-            # EVs & Battery
-            'RIVN', 'LCID', 'ALB', 'SQM',
-            
-            # Cybersecurity
-            'FTNT', 'OKTA', 'S', 'CYBR',
-            
-            # Entertainment & Gaming
-            'EA', 'TTWO', 'RBLX', 'U',
-            
-            # Travel & Hospitality
-            'AAL', 'DAL', 'UAL', 'LUV', 'CCL', 'RCL',
-            
-            # Insurance
-            'BRK-B', 'PGR', 'ALL', 'TRV', 'AIG', 'MET', 'PRU',
-            
-            # Food & Beverage
-            'MCD', 'YUM', 'SBUX', 'DPZ', 'QSR', 'CMG',
-            
-            # Pharma Services
-            'MCK', 'CAH', 'COR', 'IDXX', 'A', 'WAT',
-            
-            # Chemicals
-            'DOW', 'LYB', 'CE', 'ALB', 'EMN',
         ],
         'indices': [
             # US Indices
@@ -23378,7 +23419,6 @@ def get_predefined_asset_lists(request):
         'success': True,
         'asset_lists': asset_lists
     })
-
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
