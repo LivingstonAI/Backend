@@ -31304,72 +31304,61 @@ def mss_quantum_retracement_fibonacci_entry_optimizer(request):
         }, status=500)
 
 
-def calculate_atr(df, period=14):
-    """Calculate Average True Range"""
-    high_low = df['High'] - df['Low']
-    high_close = np.abs(df['High'] - df['Close'].shift())
-    low_close = np.abs(df['Low'] - df['Close'].shift())
-    
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = np.max(ranges, axis=1)
-    
-    return true_range.rolling(period).mean()
+
+import pandas as pd
+import numpy as np
+from typing import Union
 
 
 def average_retracement(
     data: Union[pd.DataFrame, np.ndarray],
     min_patterns: int = 3,
     sensitivity: str = 'medium',
-    max_lookback: int = 500  # Maximum bars to analyze
+    max_lookback: int = 500
 ) -> bool:
     """
-    Checks if the current price is within the average retracement zone based on 
-    historical retracement patterns. Automatically detects the LATEST trend period
-    and only analyzes that period for efficiency.
+    IMPROVED VERSION - More flexible retracement detection.
     
-    Optimized for large datasets by:
-    1. Detecting when the current trend started
-    2. Only analyzing data from that point forward
-    3. Capping maximum lookback to prevent performance issues
-    
-    Works for both uptrends and downtrends:
-    - In uptrend: Returns True when price has retraced DOWN to typical retracement levels
-    - In downtrend: Returns True when price has retraced UP to typical retracement levels
+    Key improvements:
+    1. Adaptive swing detection (catches both deep and shallow retracements)
+    2. Relaxed retracement percentage thresholds (5-95% instead of 10-90%)
+    3. No requirement for new highs/lows after retracement
+    4. Multiple timeframe swing detection (3-bar, 5-bar, 10-bar windows)
+    5. More lenient current position detection
     
     Args:
-        data: DataFrame with OHLC data or numpy array of close prices
-        min_patterns: Minimum historical patterns required for valid signal (default 3)
-        sensitivity: 'aggressive', 'medium', or 'conservative' (default 'medium')
-        max_lookback: Maximum bars to look back (default 500)
+        data: DataFrame with OHLC data
+        min_patterns: Minimum historical patterns required (default 3)
+        sensitivity: 'aggressive', 'medium', or 'conservative'
+        max_lookback: Maximum bars to analyze (default 500)
     
     Returns:
-        bool: True if price is in average retracement zone, False otherwise
+        bool: True if price is in average retracement zone
     """
     try:
         # Extract OHLC data
         if isinstance(data, pd.DataFrame):
             if not all(col in data.columns for col in ['Open', 'High', 'Low', 'Close']):
-                print("[Average Retracement] Error: DataFrame missing OHLC columns")
+                print("[Avg Retracement] Error: Missing OHLC columns")
                 return False
             df = data.copy()
         else:
-            print("[Average Retracement] Error: Requires DataFrame with OHLC data")
+            print("[Avg Retracement] Error: Requires DataFrame")
             return False
         
         total_bars = len(df)
         
         if total_bars < 100:
-            print(f"[Average Retracement] Error: Insufficient data. Got {total_bars} bars, need at least 100")
+            print(f"[Avg Retracement] Error: Need 100+ bars, got {total_bars}")
             return False
         
-        # Step 1: Work with most recent data only (for large datasets)
-        # Use last max_lookback bars or entire dataset if smaller
+        # Use recent data only
         analysis_length = min(max_lookback, total_bars)
         df_recent = df.iloc[-analysis_length:].copy()
         
-        print(f"[Average Retracement] Dataset size: {total_bars} bars, Analyzing last: {len(df_recent)} bars")
+        print(f"[Avg Retracement] Analyzing {len(df_recent)}/{total_bars} bars")
         
-        # Step 2: Calculate EMAs to detect trend
+        # Calculate EMAs for trend detection
         df_recent['EMA_20'] = df_recent['Close'].ewm(span=20, adjust=False).mean()
         df_recent['EMA_50'] = df_recent['Close'].ewm(span=50, adjust=False).mean()
         df_recent['EMA_100'] = df_recent['Close'].ewm(span=100, adjust=False).mean()
@@ -31385,79 +31374,87 @@ def average_retracement(
             trend_condition = lambda i: (df_recent['EMA_20'].iloc[i] < df_recent['EMA_50'].iloc[i] and 
                                         df_recent['EMA_50'].iloc[i] < df_recent['EMA_100'].iloc[i])
         else:
-            print("[Average Retracement] No clear trend detected")
+            print("[Avg Retracement] No clear trend")
             return False
         
-        # Step 3: Find when CURRENT trend started by going backwards
+        # Find when current trend started
         trend_start_index = None
-        
-        # Need at least 100 bars for reliable EMAs
         for i in range(len(df_recent) - 1, 99, -1):
             if not trend_condition(i):
                 trend_start_index = i + 1
                 break
         
-        # If trend is older than our lookback window, use the start of our data
         if trend_start_index is None:
             trend_start_index = 100
         
-        # Extract only the trending period
         df_trend = df_recent.iloc[trend_start_index:].copy()
         trend_duration = len(df_trend)
         
-        print(f"[Average Retracement] Trend: {current_trend}, Duration: {trend_duration} bars (started at index {trend_start_index})")
+        print(f"[Avg Retracement] {current_trend.upper()}, Duration: {trend_duration} bars")
         
-        if trend_duration < 50:
-            print(f"[Average Retracement] Error: Trend too short. Duration: {trend_duration} bars, need at least 50")
+        if trend_duration < 30:  # Reduced from 50
+            print(f"[Avg Retracement] Trend too short ({trend_duration} bars)")
             return False
         
-        # Step 4: Find swing points ONLY within the trending period
-        swing_highs = []
-        swing_lows = []
+        # ============================================
+        # IMPROVED: Multi-timeframe swing detection
+        # ============================================
         
-        lookback_window = min(10, trend_duration // 10)  # Adaptive window based on trend duration
-        
-        for i in range(lookback_window, len(df_trend) - lookback_window):
-            # Swing high
-            window_high = df_trend['High'].iloc[i-lookback_window:i+lookback_window+1].max()
-            if df_trend['High'].iloc[i] == window_high:
-                swing_highs.append({
-                    'index': i,
-                    'price': df_trend['High'].iloc[i]
-                })
+        def find_swings_multi_timeframe(df, windows=[3, 5, 10]):
+            """Find swing points using multiple window sizes"""
+            all_highs = {}
+            all_lows = {}
             
-            # Swing low
-            window_low = df_trend['Low'].iloc[i-lookback_window:i+lookback_window+1].min()
-            if df_trend['Low'].iloc[i] == window_low:
-                swing_lows.append({
-                    'index': i,
-                    'price': df_trend['Low'].iloc[i]
-                })
+            for window in windows:
+                for i in range(window, len(df) - window):
+                    # Swing high
+                    window_high = df['High'].iloc[i-window:i+window+1].max()
+                    if df['High'].iloc[i] == window_high:
+                        if i not in all_highs:
+                            all_highs[i] = df['High'].iloc[i]
+                    
+                    # Swing low
+                    window_low = df['Low'].iloc[i-window:i+window+1].min()
+                    if df['Low'].iloc[i] == window_low:
+                        if i not in all_lows:
+                            all_lows[i] = df['Low'].iloc[i]
+            
+            swing_highs = [{'index': k, 'price': v} for k, v in sorted(all_highs.items())]
+            swing_lows = [{'index': k, 'price': v} for k, v in sorted(all_lows.items())]
+            
+            return swing_highs, swing_lows
         
-        if len(swing_highs) < 3 or len(swing_lows) < 3:
-            print(f"[Average Retracement] Error: Insufficient swing points in trend period. Highs: {len(swing_highs)}, Lows: {len(swing_lows)}")
+        swing_highs, swing_lows = find_swings_multi_timeframe(df_trend)
+        
+        if len(swing_highs) < 2 or len(swing_lows) < 2:  # Reduced from 3
+            print(f"[Avg Retracement] Not enough swings. Highs: {len(swing_highs)}, Lows: {len(swing_lows)}")
             return False
         
-        print(f"[Average Retracement] Found {len(swing_highs)} swing highs, {len(swing_lows)} swing lows in trend period")
+        print(f"[Avg Retracement] Found {len(swing_highs)} highs, {len(swing_lows)} lows")
         
-        # Step 5: Calculate historical retracements ONLY within this trend
+        # ============================================
+        # IMPROVED: More flexible retracement detection
+        # ============================================
+        
         retracement_percentages = []
         
         if current_trend == 'uptrend':
-            # Find bullish retracements
-            for i in range(len(swing_lows) - 1):
+            # Find bullish retracements (price pulls back then continues up)
+            for i in range(len(swing_lows)):
                 low = swing_lows[i]
                 
-                # Find next swing high
+                # Find next swing high after this low
                 next_highs = [h for h in swing_highs if h['index'] > low['index']]
                 if not next_highs:
                     continue
+                
                 high = next_highs[0]
                 
                 # Find retracement (next swing low) after the high
                 next_lows = [l for l in swing_lows if l['index'] > high['index']]
                 if not next_lows:
                     continue
+                
                 retracement_low = next_lows[0]
                 
                 # Calculate retracement percentage
@@ -31467,28 +31464,27 @@ def average_retracement(
                 if swing_range > 0 and retracement_depth > 0:
                     retracement_pct = (retracement_depth / swing_range) * 100
                     
-                    # Only count reasonable retracements (10-90%)
-                    if 10 <= retracement_pct <= 90:
-                        # Verify trend continued after retracement
-                        future_highs = [h for h in swing_highs if h['index'] > retracement_low['index'] and h['index'] < retracement_low['index'] + 50]
-                        if future_highs and any(h['price'] > high['price'] * 1.001 for h in future_highs):
-                            retracement_percentages.append(retracement_pct)
+                    # RELAXED: Accept 5-95% retracements (was 10-90%)
+                    if 5 <= retracement_pct <= 95:
+                        retracement_percentages.append(retracement_pct)
         
         else:  # downtrend
-            # Find bearish retracements
-            for i in range(len(swing_highs) - 1):
+            # Find bearish retracements (price bounces up then continues down)
+            for i in range(len(swing_highs)):
                 high = swing_highs[i]
                 
-                # Find next swing low
+                # Find next swing low after this high
                 next_lows = [l for l in swing_lows if l['index'] > high['index']]
                 if not next_lows:
                     continue
+                
                 low = next_lows[0]
                 
                 # Find retracement (next swing high) after the low
                 next_highs = [h for h in swing_highs if h['index'] > low['index']]
                 if not next_highs:
                     continue
+                
                 retracement_high = next_highs[0]
                 
                 # Calculate retracement percentage
@@ -31498,109 +31494,144 @@ def average_retracement(
                 if swing_range > 0 and retracement_depth > 0:
                     retracement_pct = (retracement_depth / swing_range) * 100
                     
-                    # Only count reasonable retracements (10-90%)
-                    if 10 <= retracement_pct <= 90:
-                        # Verify trend continued after retracement
-                        future_lows = [l for l in swing_lows if l['index'] > retracement_high['index'] and l['index'] < retracement_high['index'] + 50]
-                        if future_lows and any(l['price'] < low['price'] * 0.999 for l in future_lows):
-                            retracement_percentages.append(retracement_pct)
+                    # RELAXED: Accept 5-95% retracements (was 10-90%)
+                    if 5 <= retracement_pct <= 95:
+                        retracement_percentages.append(retracement_pct)
         
-        # Check if we have enough historical patterns
+        # Check pattern count
         if len(retracement_percentages) < min_patterns:
-            print(f"[Average Retracement] Error: Insufficient patterns in trend. Found {len(retracement_percentages)}, need {min_patterns}")
+            print(f"[Avg Retracement] Only {len(retracement_percentages)}/{min_patterns} patterns found")
             return False
         
-        print(f"[Average Retracement] Found {len(retracement_percentages)} valid retracement patterns")
+        print(f"[Avg Retracement] Found {len(retracement_percentages)} patterns: {[f'{x:.1f}%' for x in sorted(retracement_percentages)]}")
         
-        # Step 6: Calculate statistical thresholds
-        median_retracement = np.median(retracement_percentages)
-        percentile_25 = np.percentile(retracement_percentages, 25)
-        percentile_75 = np.percentile(retracement_percentages, 75)
+        # ============================================
+        # Calculate thresholds
+        # ============================================
         
-        # Set thresholds based on sensitivity
+        median_ret = np.median(retracement_percentages)
+        mean_ret = np.mean(retracement_percentages)
+        std_ret = np.std(retracement_percentages)
+        p25 = np.percentile(retracement_percentages, 25)
+        p75 = np.percentile(retracement_percentages, 75)
+        
+        # IMPROVED: More generous thresholds based on sensitivity
         if sensitivity == 'aggressive':
-            lower_threshold = percentile_25 - 5
-            upper_threshold = percentile_25 + 10
+            # Wide zone - catches more signals
+            lower_threshold = max(5, p25 - 15)
+            upper_threshold = min(95, p75 + 15)
         elif sensitivity == 'conservative':
-            lower_threshold = percentile_75 - 10
-            upper_threshold = percentile_75 + 5
+            # Tight zone - only strong retracements
+            lower_threshold = max(5, median_ret - 10)
+            upper_threshold = min(95, median_ret + 10)
         else:  # medium
-            lower_threshold = median_retracement - 10
-            upper_threshold = median_retracement + 10
+            # Balanced zone
+            lower_threshold = max(5, mean_ret - std_ret)
+            upper_threshold = min(95, mean_ret + std_ret)
         
-        # Ensure thresholds are reasonable
-        lower_threshold = max(10, lower_threshold)
-        upper_threshold = min(90, upper_threshold)
+        print(f"[Avg Retracement] Stats - Mean: {mean_ret:.1f}%, Median: {median_ret:.1f}%, Std: {std_ret:.1f}%")
+        print(f"[Avg Retracement] P25: {p25:.1f}%, P75: {p75:.1f}%")
+        print(f"[Avg Retracement] Zone ({sensitivity}): {lower_threshold:.1f}% - {upper_threshold:.1f}%")
         
-        print(f"[Average Retracement] Statistics - Median: {median_retracement:.1f}%, P25: {percentile_25:.1f}%, P75: {percentile_75:.1f}%")
-        print(f"[Average Retracement] Thresholds ({sensitivity}) - Lower: {lower_threshold:.1f}%, Upper: {upper_threshold:.1f}%")
+        # ============================================
+        # IMPROVED: Check current position more flexibly
+        # ============================================
         
-        # Step 7: Find recent swing points within trend and calculate current retracement
-        recent_window = min(50, trend_duration // 3)  # Last portion of trend
+        # Look at last 20% of trend (was 33%)
+        recent_window = max(10, int(trend_duration * 0.2))
         
         if current_trend == 'uptrend':
-            # Find recent low and high
+            # Find recent swing points
             recent_lows = [l for l in swing_lows if l['index'] >= len(df_trend) - recent_window]
             recent_highs = [h for h in swing_highs if h['index'] >= len(df_trend) - recent_window]
             
+            # If no recent swings, use wider window
             if not recent_lows or not recent_highs:
-                print("[Average Retracement] Error: No recent swing points found in trend")
+                recent_window = int(trend_duration * 0.4)
+                recent_lows = [l for l in swing_lows if l['index'] >= len(df_trend) - recent_window]
+                recent_highs = [h for h in swing_highs if h['index'] >= len(df_trend) - recent_window]
+            
+            if not recent_lows or not recent_highs:
+                print("[Avg Retracement] No recent swing points")
                 return False
             
             recent_low = min([l['price'] for l in recent_lows])
             recent_high = max([h['price'] for h in recent_highs])
             current_price = df_trend['Close'].iloc[-1]
             
-            # Calculate current retracement from recent high
             swing_range = recent_high - recent_low
             if swing_range <= 0:
-                print("[Average Retracement] Error: Invalid swing range")
+                print("[Avg Retracement] Invalid range")
                 return False
             
+            # Calculate how much we've retraced from the high
             current_retracement = ((recent_high - current_price) / swing_range) * 100
             
-            # Check if current retracement is within average zone
+            # Check if we're in the zone
             in_zone = lower_threshold <= current_retracement <= upper_threshold
             
-            print(f"[Average Retracement] UPTREND - Current: {current_retracement:.1f}%, Target Range: {lower_threshold:.1f}%-{upper_threshold:.1f}%, In Zone: {in_zone}")
-            print(f"[Average Retracement] Price: ${current_price:.2f}, Recent High: ${recent_high:.2f}, Recent Low: ${recent_low:.2f}")
+            print(f"[Avg Retracement] UPTREND CHECK")
+            print(f"  Price: ${current_price:.2f} | High: ${recent_high:.2f} | Low: ${recent_low:.2f}")
+            print(f"  Current Retracement: {current_retracement:.1f}%")
+            print(f"  Target Zone: {lower_threshold:.1f}% - {upper_threshold:.1f}%")
+            print(f"  ✅ IN ZONE" if in_zone else f"  ❌ NOT IN ZONE")
             
             return in_zone
         
         else:  # downtrend
-            # Find recent high and low
             recent_highs = [h for h in swing_highs if h['index'] >= len(df_trend) - recent_window]
             recent_lows = [l for l in swing_lows if l['index'] >= len(df_trend) - recent_window]
             
+            # If no recent swings, use wider window
             if not recent_highs or not recent_lows:
-                print("[Average Retracement] Error: No recent swing points found in trend")
+                recent_window = int(trend_duration * 0.4)
+                recent_highs = [h for h in swing_highs if h['index'] >= len(df_trend) - recent_window]
+                recent_lows = [l for l in swing_lows if l['index'] >= len(df_trend) - recent_window]
+            
+            if not recent_highs or not recent_lows:
+                print("[Avg Retracement] No recent swing points")
                 return False
             
             recent_high = max([h['price'] for h in recent_highs])
             recent_low = min([l['price'] for l in recent_lows])
             current_price = df_trend['Close'].iloc[-1]
             
-            # Calculate current retracement from recent low
             swing_range = recent_high - recent_low
             if swing_range <= 0:
-                print("[Average Retracement] Error: Invalid swing range")
+                print("[Avg Retracement] Invalid range")
                 return False
             
+            # Calculate how much we've retraced from the low
             current_retracement = ((current_price - recent_low) / swing_range) * 100
             
-            # Check if current retracement is within average zone
+            # Check if we're in the zone
             in_zone = lower_threshold <= current_retracement <= upper_threshold
             
-            print(f"[Average Retracement] DOWNTREND - Current: {current_retracement:.1f}%, Target Range: {lower_threshold:.1f}%-{upper_threshold:.1f}%, In Zone: {in_zone}")
-            print(f"[Average Retracement] Price: ${current_price:.2f}, Recent Low: ${recent_low:.2f}, Recent High: ${recent_high:.2f}")
+            print(f"[Avg Retracement] DOWNTREND CHECK")
+            print(f"  Price: ${current_price:.2f} | High: ${recent_high:.2f} | Low: ${recent_low:.2f}")
+            print(f"  Current Retracement: {current_retracement:.1f}%")
+            print(f"  Target Zone: {lower_threshold:.1f}% - {upper_threshold:.1f}%")
+            print(f"  ✅ IN ZONE" if in_zone else f"  ❌ NOT IN ZONE")
             
             return in_zone
     
     except Exception as e:
-        print(f"[Average Retracement] Error: Unexpected exception - {type(e).__name__}: {str(e)}")
+        print(f"[Avg Retracement] Error: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
+
+
+def calculate_atr(df, period=14):
+    """Calculate Average True Range"""
+    high_low = df['High'] - df['Low']
+    high_close = np.abs(df['High'] - df['Close'].shift())
+    low_close = np.abs(df['Low'] - df['Close'].shift())
+    
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = np.max(ranges, axis=1)
+    
+    return true_range.rolling(period).mean()
 
 
 def get_retracement_stats(
@@ -34651,6 +34682,649 @@ MOVING AVERAGES:
         'success': False,
         'error': 'POST method required'
     }, status=405)
+
+
+# ================================
+# ALL ASSET CLASS MAPPINGS 
+# 591 Total Assets: 541 Stocks + 24 Indices + 18 Commodities + 8 Bonds
+# ================================
+
+ALL_ASSET_MAPPINGS = {
+    # ========== STOCKS (541 from SECTOR_MAPPINGS) ==========
+    
+    # Tech Giants & Semiconductors (30)
+    'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
+    'AMZN': 'Consumer Cyclical', 'NVDA': 'Technology', 'TSLA': 'Consumer Cyclical',
+    'META': 'Technology', 'AMD': 'Technology', 'INTC': 'Technology', 'ORCL': 'Technology',
+    'CSCO': 'Technology', 'ADBE': 'Technology', 'CRM': 'Technology', 'AVGO': 'Technology',
+    'QCOM': 'Technology', 'TXN': 'Technology', 'AMAT': 'Technology', 'LRCX': 'Technology',
+    'KLAC': 'Technology', 'SNPS': 'Technology', 'CDNS': 'Technology', 'MRVL': 'Technology',
+    'NXPI': 'Technology', 'MU': 'Technology', 'ADI': 'Technology', 'MPWR': 'Technology',
+    'SWKS': 'Technology', 'QRVO': 'Technology', 'ON': 'Technology',
+    
+    # Financial Services & Banks (73)
+    'JPM': 'Financial', 'BAC': 'Financial', 'WFC': 'Financial', 'C': 'Financial',
+    'GS': 'Financial', 'MS': 'Financial', 'BLK': 'Financial', 'SCHW': 'Financial',
+    'AXP': 'Financial', 'SPGI': 'Financial', 'CME': 'Financial', 'ICE': 'Financial',
+    'MCO': 'Financial', 'BK': 'Financial', 'USB': 'Financial', 'PNC': 'Financial',
+    'TFC': 'Financial', 'COF': 'Financial', 'V': 'Financial', 'MA': 'Financial',
+    'PYPL': 'Financial', 'ADP': 'Financial', 'FISV': 'Financial', 'FIS': 'Financial',
+    'AFL': 'Financial', 'AMG': 'Financial', 'AON': 'Financial', 'AJG': 'Financial',
+    'AMP': 'Financial', 'BEN': 'Financial', 'CBOE': 'Financial', 'CINF': 'Financial',
+    'DFS': 'Financial', 'ERIE': 'Financial', 'FITB': 'Financial', 'FRC': 'Financial',
+    'GL': 'Financial', 'HBAN': 'Financial', 'HIG': 'Financial', 'IVZ': 'Financial',
+    'JKHY': 'Financial', 'KEY': 'Financial', 'L': 'Financial', 'LNC': 'Financial',
+    'MTB': 'Financial', 'NTRS': 'Financial', 'NDAQ': 'Financial', 'PFG': 'Financial',
+    'RF': 'Financial', 'RJF': 'Financial', 'SIVB': 'Financial', 'STT': 'Financial',
+    'SYF': 'Financial', 'TROW': 'Financial', 'WRB': 'Financial', 'ZION': 'Financial',
+    'CFG': 'Financial', 'CMA': 'Financial', 'FHN': 'Financial', 'EWBC': 'Financial',
+    'WAL': 'Financial', 'WBS': 'Financial', 'ALLY': 'Financial',
+    'BRK-B': 'Financial', 'PGR': 'Financial', 'ALL': 'Financial', 'TRV': 'Financial',
+    'AIG': 'Financial', 'MET': 'Financial', 'PRU': 'Financial',
+    
+    # Healthcare & Pharma (67)
+    'JNJ': 'Healthcare', 'LLY': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare',
+    'ABBV': 'Healthcare', 'MRK': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
+    'DHR': 'Healthcare', 'BMY': 'Healthcare', 'AMGN': 'Healthcare', 'GILD': 'Healthcare',
+    'CVS': 'Healthcare', 'CI': 'Healthcare', 'ELV': 'Healthcare', 'HUM': 'Healthcare',
+    'VRTX': 'Healthcare', 'REGN': 'Healthcare', 'ISRG': 'Healthcare', 'BIIB': 'Healthcare',
+    'MRNA': 'Healthcare', 'BNTX': 'Healthcare', 'SGEN': 'Healthcare', 'ALNY': 'Healthcare',
+    'BGNE': 'Healthcare', 'MCK': 'Healthcare', 'CAH': 'Healthcare', 'COR': 'Healthcare',
+    'IDXX': 'Healthcare', 'A': 'Healthcare', 'WAT': 'Healthcare',
+    'ALGN': 'Healthcare', 'ATRC': 'Healthcare', 'BAX': 'Healthcare', 'BDX': 'Healthcare',
+    'BIO': 'Healthcare', 'BSX': 'Healthcare', 'CERN': 'Healthcare', 'DXCM': 'Healthcare',
+    'EW': 'Healthcare', 'EXAS': 'Healthcare', 'HOLX': 'Healthcare', 'HSIC': 'Healthcare',
+    'ILMN': 'Healthcare', 'INCY': 'Healthcare', 'IQV': 'Healthcare', 'LH': 'Healthcare',
+    'MDT': 'Healthcare', 'MOH': 'Healthcare', 'NBIX': 'Healthcare', 'PKI': 'Healthcare',
+    'PODD': 'Healthcare', 'RMD': 'Healthcare', 'STE': 'Healthcare', 'SYK': 'Healthcare',
+    'TFX': 'Healthcare', 'UHS': 'Healthcare', 'WST': 'Healthcare',
+    'XRAY': 'Healthcare', 'ZBH': 'Healthcare', 'ZTS': 'Healthcare', 'TDOC': 'Healthcare',
+    'DOCS': 'Healthcare', 'VEEV': 'Healthcare', 'HALO': 'Healthcare', 'NVAX': 'Healthcare',
+    'IONS': 'Healthcare', 'Jazz': 'Healthcare', 'UTHR': 'Healthcare',
+    
+    # Consumer Cyclical (78)
+    'HD': 'Consumer Cyclical', 'MCD': 'Consumer Cyclical', 'NKE': 'Consumer Cyclical',
+    'SBUX': 'Consumer Cyclical', 'TJX': 'Consumer Cyclical', 'LOW': 'Consumer Cyclical',
+    'BKNG': 'Consumer Cyclical', 'MAR': 'Consumer Cyclical', 'CMG': 'Consumer Cyclical',
+    'F': 'Consumer Cyclical', 'GM': 'Consumer Cyclical', 'ABNB': 'Consumer Cyclical',
+    'SHOP': 'Consumer Cyclical', 'MELI': 'Consumer Cyclical', 'EBAY': 'Consumer Cyclical',
+    'ETSY': 'Consumer Cyclical', 'TGT': 'Consumer Cyclical', 'ROST': 'Consumer Cyclical',
+    'YUM': 'Consumer Cyclical', 'DPZ': 'Consumer Cyclical', 'QSR': 'Consumer Cyclical',
+    'AAL': 'Consumer Cyclical', 'DAL': 'Consumer Cyclical', 'UAL': 'Consumer Cyclical',
+    'LUV': 'Consumer Cyclical', 'CCL': 'Consumer Cyclical', 'RCL': 'Consumer Cyclical',
+    'EA': 'Consumer Cyclical', 'TTWO': 'Consumer Cyclical', 'RBLX': 'Consumer Cyclical',
+    'U': 'Consumer Cyclical', 'RIVN': 'Consumer Cyclical', 'LCID': 'Consumer Cyclical',
+    'AZO': 'Consumer Cyclical', 'BBY': 'Consumer Cyclical', 'BURL': 'Consumer Cyclical',
+    'CPRT': 'Consumer Cyclical', 'DHI': 'Consumer Cyclical', 'DRI': 'Consumer Cyclical',
+    'EXPE': 'Consumer Cyclical', 'GPC': 'Consumer Cyclical', 'GRMN': 'Consumer Cyclical',
+    'HAS': 'Consumer Cyclical', 'HLT': 'Consumer Cyclical', 'KMX': 'Consumer Cyclical',
+    'LEN': 'Consumer Cyclical', 'LVS': 'Consumer Cyclical', 'MGM': 'Consumer Cyclical',
+    'MHK': 'Consumer Cyclical', 'NVR': 'Consumer Cyclical', 'ORLY': 'Consumer Cyclical',
+    'PHM': 'Consumer Cyclical', 'POOL': 'Consumer Cyclical', 'RL': 'Consumer Cyclical',
+    'TSCO': 'Consumer Cyclical', 'TPR': 'Consumer Cyclical', 'ULTA': 'Consumer Cyclical',
+    'VFC': 'Consumer Cyclical', 'WHR': 'Consumer Cyclical', 'WYNN': 'Consumer Cyclical',
+    'APTV': 'Consumer Cyclical', 'BWA': 'Consumer Cyclical', 'DG': 'Consumer Cyclical',
+    'DLTR': 'Consumer Cyclical', 'DDS': 'Consumer Cyclical', 'FIVE': 'Consumer Cyclical',
+    'FL': 'Consumer Cyclical', 'FOXA': 'Consumer Cyclical', 'FOX': 'Consumer Cyclical',
+    'GPS': 'Consumer Cyclical', 'GT': 'Consumer Cyclical', 'HBI': 'Consumer Cyclical',
+    'LAD': 'Consumer Cyclical', 'LKQ': 'Consumer Cyclical', 'M': 'Consumer Cyclical',
+    'NCLH': 'Consumer Cyclical', 'NWL': 'Consumer Cyclical', 'PVH': 'Consumer Cyclical',
+    'JD': 'Consumer Cyclical', 'PDD': 'Consumer Cyclical', 'NIO': 'Consumer Cyclical', 
+    'XPEV': 'Consumer Cyclical', 'LI': 'Consumer Cyclical',
+    
+    # Consumer Defensive (26)
+    'WMT': 'Consumer Defensive', 'PG': 'Consumer Defensive', 'KO': 'Consumer Defensive',
+    'PEP': 'Consumer Defensive', 'COST': 'Consumer Defensive', 'PM': 'Consumer Defensive',
+    'MO': 'Consumer Defensive', 'MDLZ': 'Consumer Defensive', 'CL': 'Consumer Defensive',
+    'KMB': 'Consumer Defensive', 'GIS': 'Consumer Defensive', 'KHC': 'Consumer Defensive',
+    'STZ': 'Consumer Defensive', 'ADM': 'Consumer Defensive', 'BF-B': 'Consumer Defensive', 
+    'CAG': 'Consumer Defensive', 'CHD': 'Consumer Defensive', 'CLX': 'Consumer Defensive', 
+    'CPB': 'Consumer Defensive', 'EL': 'Consumer Defensive', 'HSY': 'Consumer Defensive',
+    'K': 'Consumer Defensive', 'KDP': 'Consumer Defensive', 'KR': 'Consumer Defensive',
+    'KVUE': 'Consumer Defensive', 'MKC': 'Consumer Defensive', 'MNST': 'Consumer Defensive',
+    'SJM': 'Consumer Defensive', 'SYY': 'Consumer Defensive', 'TAP': 'Consumer Defensive',
+    'TSN': 'Consumer Defensive', 'WBA': 'Consumer Defensive', 'BGS': 'Consumer Defensive',
+    'BG': 'Consumer Defensive', 'COKE': 'Consumer Defensive', 'FLO': 'Consumer Defensive',
+    'HRL': 'Consumer Defensive', 'LANC': 'Consumer Defensive', 'POST': 'Consumer Defensive',
+    
+    # Energy (27)
+    'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy', 'EOG': 'Energy', 'SLB': 'Energy',
+    'MPC': 'Energy', 'PSX': 'Energy', 'VLO': 'Energy', 'OXY': 'Energy', 'HAL': 'Energy',
+    'DVN': 'Energy', 'HES': 'Energy', 'BKR': 'Energy', 'APA': 'Energy', 'CTRA': 'Energy', 
+    'FANG': 'Energy', 'KMI': 'Energy', 'LNG': 'Energy', 'MRO': 'Energy', 'NOV': 'Energy', 
+    'OKE': 'Energy', 'TRGP': 'Energy', 'WMB': 'Energy', 'EQT': 'Energy', 'AR': 'Energy',
+    'CLR': 'Energy', 'CNX': 'Energy', 'CQP': 'Energy', 'EXE': 'Energy', 'FTI': 'Energy', 
+    'HP': 'Energy', 'MTDR': 'Energy', 'NBL': 'Energy', 'OVV': 'Energy', 'PBF': 'Energy', 
+    'PR': 'Energy', 'RIG': 'Energy', 'SM': 'Energy', 'VAL': 'Energy', 'XEC': 'Energy',
+    
+    # Industrials (50)
+    'BA': 'Industrials', 'HON': 'Industrials', 'UNP': 'Industrials', 'CAT': 'Industrials',
+    'GE': 'Industrials', 'RTX': 'Industrials', 'LMT': 'Industrials', 'UPS': 'Industrials',
+    'DE': 'Industrials', 'MMM': 'Industrials', 'GD': 'Industrials', 'NOC': 'Industrials',
+    'FDX': 'Industrials', 'CSX': 'Industrials', 'HWM': 'Industrials', 'TDG': 'Industrials',
+    'HEI': 'Industrials', 'LHX': 'Industrials', 'TXT': 'Industrials',
+    'AOS': 'Industrials', 'CARR': 'Industrials', 'CHRW': 'Industrials', 'CMI': 'Industrials',
+    'DOV': 'Industrials', 'EMR': 'Industrials', 'ETN': 'Industrials', 'EXPD': 'Industrials',
+    'FAST': 'Industrials', 'FTV': 'Industrials', 'GNRC': 'Industrials', 'GWW': 'Industrials',
+    'IEX': 'Industrials', 'IR': 'Industrials', 'ITW': 'Industrials', 'J': 'Industrials',
+    'JBHT': 'Industrials', 'JCI': 'Industrials', 'LDOS': 'Industrials', 'MAS': 'Industrials',
+    'NSC': 'Industrials', 'ODFL': 'Industrials', 'OTIS': 'Industrials', 'PCAR': 'Industrials',
+    'PH': 'Industrials', 'PWR': 'Industrials', 'ROK': 'Industrials', 'ROL': 'Industrials',
+    'RSG': 'Industrials', 'SNA': 'Industrials', 'SWK': 'Industrials', 'TT': 'Industrials', 
+    'URI': 'Industrials', 'VRSK': 'Industrials', 'WAB': 'Industrials', 'WM': 'Industrials', 
+    'XYL': 'Industrials', 'ALK': 'Industrials', 'JBLU': 'Industrials', 'SAVE': 'Industrials',
+    
+    # Communication Services (16)
+    'T': 'Communication', 'VZ': 'Communication', 'CMCSA': 'Communication',
+    'NFLX': 'Communication', 'DIS': 'Communication', 'TMUS': 'Communication',
+    'CHTR': 'Communication', 'LYV': 'Communication', 'MTCH': 'Communication', 
+    'NWSA': 'Communication', 'NWS': 'Communication', 'OMC': 'Communication', 
+    'PARA': 'Communication', 'WBD': 'Communication', 'IPG': 'Communication', 
+    'DISH': 'Communication',
+    
+    # Real Estate (23)
+    'AMT': 'Real Estate', 'PLD': 'Real Estate', 'CCI': 'Real Estate',
+    'EQIX': 'Real Estate', 'PSA': 'Real Estate', 'SPG': 'Real Estate', 'O': 'Real Estate',
+    'AVB': 'Real Estate', 'ARE': 'Real Estate', 'BXP': 'Real Estate', 'CBRE': 'Real Estate',
+    'DLR': 'Real Estate', 'EQR': 'Real Estate', 'ESS': 'Real Estate', 'EXR': 'Real Estate',
+    'FRT': 'Real Estate', 'HST': 'Real Estate', 'IRM': 'Real Estate', 'KIM': 'Real Estate',
+    'MAA': 'Real Estate', 'REG': 'Real Estate', 'SBAC': 'Real Estate', 'SLG': 'Real Estate',
+    'UDR': 'Real Estate', 'VTR': 'Real Estate', 'WELL': 'Real Estate', 'WY': 'Real Estate',
+    'INVH': 'Real Estate', 'PEAK': 'Real Estate', 'VNO': 'Real Estate',
+    
+    # Materials (33)
+    'LIN': 'Materials', 'APD': 'Materials', 'SHW': 'Materials', 'ECL': 'Materials',
+    'DD': 'Materials', 'NEM': 'Materials', 'FCX': 'Materials', 'DOW': 'Materials',
+    'LYB': 'Materials', 'CE': 'Materials', 'ALB': 'Materials', 'EMN': 'Materials',
+    'SQM': 'Materials', 'AMCR': 'Materials', 'BALL': 'Materials', 'CF': 'Materials', 
+    'CLF': 'Materials', 'CTVA': 'Materials', 'FMC': 'Materials', 'IP': 'Materials', 
+    'MLM': 'Materials', 'MOS': 'Materials', 'NUE': 'Materials', 'PKG': 'Materials', 
+    'PPG': 'Materials', 'SEE': 'Materials', 'STLD': 'Materials', 'SW': 'Materials', 
+    'VMC': 'Materials', 'AVY': 'Materials', 'AA': 'Materials', 'MP': 'Materials', 
+    'RS': 'Materials',
+    
+    # Utilities (24)
+    'NEE': 'Utilities', 'DUK': 'Utilities', 'SO': 'Utilities', 'D': 'Utilities',
+    'AEP': 'Utilities', 'EXC': 'Utilities', 'SRE': 'Utilities', 'AEE': 'Utilities', 
+    'AES': 'Utilities', 'AWK': 'Utilities', 'CMS': 'Utilities', 'CNP': 'Utilities', 
+    'DTE': 'Utilities', 'ED': 'Utilities', 'EIX': 'Utilities', 'ES': 'Utilities', 
+    'ETR': 'Utilities', 'EVRG': 'Utilities', 'FE': 'Utilities', 'LNT': 'Utilities', 
+    'NI': 'Utilities', 'NRG': 'Utilities', 'PCG': 'Utilities', 'PEG': 'Utilities', 
+    'PNW': 'Utilities', 'PPL': 'Utilities', 'VST': 'Utilities', 'WEC': 'Utilities', 
+    'XEL': 'Utilities', 'CEG': 'Utilities',
+    
+    # Additional Technology (66)
+    'IBM': 'Technology', 'AAOI': 'Technology', 'ACLS': 'Technology', 'ACN': 'Technology',
+    'ADSK': 'Technology', 'AKAM': 'Technology', 'ANSS': 'Technology', 'APH': 'Technology',
+    'ANET': 'Technology', 'ASML': 'Technology', 'AVAV': 'Technology', 'KEYS': 'Technology',
+    'MCHP': 'Technology', 'MTSI': 'Technology', 'MSI': 'Technology', 'MDB': 'Technology',
+    'NTAP': 'Technology', 'NTNX': 'Technology', 'PAYC': 'Technology',
+    'PTC': 'Technology', 'ROP': 'Technology', 'SAP': 'Technology', 'SLAB': 'Technology',
+    'STX': 'Technology', 'TER': 'Technology', 'TSM': 'Technology', 'TYL': 'Technology',
+    'UMC': 'Technology', 'VRSN': 'Technology', 'WDC': 'Technology', 'XLNX': 'Technology',
+    'ZBRA': 'Technology', 'ZM': 'Technology', 'DOCU': 'Technology', 'TWLO': 'Technology',
+    'SQ': 'Technology', 'UBER': 'Technology', 'LYFT': 'Technology', 'DASH': 'Technology',
+    'PINS': 'Technology', 'SNAP': 'Technology', 'SPOT': 'Technology', 'ROKU': 'Technology',
+    'Z': 'Technology', 'ZG': 'Technology', 'AFRM': 'Technology', 'COIN': 'Technology',
+    'HOOD': 'Technology', 'ASTS': 'Technology',
+    'NOW': 'Technology', 'INTU': 'Technology', 'WDAY': 'Technology', 'PANW': 'Technology',
+    'CRWD': 'Technology', 'ZS': 'Technology', 'DDOG': 'Technology', 'NET': 'Technology',
+    'SNOW': 'Technology', 'PLTR': 'Technology', 'TEAM': 'Technology', 'FTNT': 'Technology',
+    'OKTA': 'Technology', 'S': 'Technology', 'CYBR': 'Technology',
+    'BABA': 'Technology', 'BIDU': 'Technology',
+    
+    # ========== INDICES (24) ==========
+    # US Indices (5)
+    '^GSPC': 'Technology',  # S&P 500
+    '^DJI': 'Technology',   # Dow Jones Industrial Average
+    '^IXIC': 'Technology',  # NASDAQ Composite
+    '^RUT': 'Technology',   # Russell 2000
+    '^VIX': 'Technology',   # CBOE Volatility Index
+    
+    # European Indices (8)
+    '^FTSE': 'Technology',   # FTSE 100
+    '^GDAXI': 'Technology',  # DAX
+    '^FCHI': 'Technology',   # CAC 40
+    '^IBEX': 'Technology',   # IBEX 35
+    '^AEX': 'Technology',    # AEX
+    '^SSMI': 'Technology',   # Swiss Market Index
+    '^OMXS30': 'Technology', # OMX Stockholm 30
+    '^BFX': 'Technology',    # BEL 20
+    
+    # Asian Indices (8)
+    '^N225': 'Technology',      # Nikkei 225
+    '^HSI': 'Technology',       # Hang Seng Index
+    '000001.SS': 'Technology',  # Shanghai Composite
+    '^STI': 'Technology',       # Straits Times Index
+    '^BSESN': 'Technology',     # BSE SENSEX
+    '^NSEI': 'Technology',      # NIFTY 50
+    '^KS11': 'Technology',      # KOSPI Composite Index
+    '^TWII': 'Technology',      # Taiwan Weighted Index
+    '^JKSE': 'Technology',      # Jakarta Composite Index
+    
+    # Other Global Indices (5)
+    '^AXJO': 'Technology',   # S&P/ASX 200
+    '^GSPTSE': 'Technology', # S&P/TSX Composite Index
+    '^MXX': 'Technology',    # IPC Mexico
+    '^BVSP': 'Technology',   # IBOVESPA
+    '^MERV': 'Technology',   # MERVAL
+    
+    # ========== COMMODITIES (18) ==========
+    # Precious Metals (4)
+    'GC=F': 'Materials',  # Gold Futures
+    'SI=F': 'Materials',  # Silver Futures
+    'PL=F': 'Materials',  # Platinum Futures
+    'PA=F': 'Materials',  # Palladium Futures
+    
+    # Energy Commodities (5)
+    'CL=F': 'Energy',  # Crude Oil WTI Futures
+    'BZ=F': 'Energy',  # Brent Crude Oil Futures
+    'NG=F': 'Energy',  # Natural Gas Futures
+    'RB=F': 'Energy',  # RBOB Gasoline Futures
+    'HO=F': 'Energy',  # Heating Oil Futures
+    
+    # Base Metals (2)
+    'HG=F': 'Materials',  # Copper Futures
+    'ALI=F': 'Materials', # Aluminum Futures
+    
+    # Agricultural Commodities (8)
+    'ZC=F': 'Materials',  # Corn Futures
+    'ZW=F': 'Materials',  # Wheat Futures
+    'ZS=F': 'Materials',  # Soybeans Futures
+    'KC=F': 'Materials',  # Coffee Futures
+    'SB=F': 'Materials',  # Sugar Futures
+    'CT=F': 'Materials',  # Cotton Futures
+    'CC=F': 'Materials',  # Cocoa Futures
+    'LBS=F': 'Materials', # Lumber Futures
+    
+    # ========== BONDS & YIELDS (8) ==========
+    # US Treasury Yields (4)
+    '^TNX': 'Bonds and Yields',  # 10-Year Treasury Yield
+    '^TYX': 'Bonds and Yields',  # 30-Year Treasury Yield
+    '^FVX': 'Bonds and Yields',  # 5-Year Treasury Yield
+    '^IRX': 'Bonds and Yields',  # 13-Week Treasury Bill Yield
+    
+    # Treasury Futures (4)
+    'ZN=F': 'Bonds and Yields',  # 10-Year T-Note Futures
+    'ZB=F': 'Bonds and Yields',  # 30-Year T-Bond Futures
+    'ZT=F': 'Bonds and Yields',  # 2-Year T-Note Futures
+    'ZF=F': 'Bonds and Yields',  # 5-Year T-Note Futures
+}
+
+
+from datetime import datetime, timedelta, time
+from django.utils import timezone
+from sklearn.linear_model import LinearRegression
+import pytz
+
+# ================================
+# TRADING STRATEGIES
+# ================================
+
+UPTREND_CODE = """
+# 3-Layer Elite Uptrend Strategy
+set_take_profit(number=2, type_of_setting='PERCENTAGE')
+set_stop_loss(number=1, type_of_setting='PERCENTAGE')
+
+if num_positions == 0:
+    if is_uptrend(data=dataset, lookback_days=30):
+        if is_bullish_market_retracement(data=dataset, lookback_period=20):
+            if average_retracement(data=dataset, min_patterns=3, sensitivity='medium'):
+                return_statement = 'buy'
+"""
+
+DOWNTREND_CODE = """
+# 3-Layer Elite Downtrend Strategy
+set_take_profit(number=2, type_of_setting='PERCENTAGE')
+set_stop_loss(number=1, type_of_setting='PERCENTAGE')
+
+if num_positions == 0:
+    if is_downtrend(data=dataset, lookback_days=30):
+        if is_bearish_market_retracement(data=dataset, lookback_period=20):
+            if average_retracement(data=dataset, min_patterns=3, sensitivity='medium'):
+                return_statement = 'sell'
+"""
+
+
+# ================================
+# STEP 1: DAILY SCAN FOR HIGH R² ASSETS
+# ================================
+
+def snowai_scan_high_r_squared_assets():
+    """
+    Scans all assets from ALL_ASSET_MAPPINGS for high R² values.
+    Runs once per day and stores results in SnowAIAllEncompassingDailyStock.
+    """
+    print("🔍 Starting daily R² scan for all asset classes (excluding Forex)...")
+    
+    today = timezone.now().date()
+    all_symbols = list(ALL_ASSET_MAPPINGS.keys())
+    
+    high_r_squared_assets = []
+    
+    for symbol in all_symbols:
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="60d")
+            
+            if hist.empty or len(hist) < 20:
+                continue
+            
+            # Calculate R² using linear regression
+            prices = hist['Close'].values
+            X = np.arange(len(prices)).reshape(-1, 1)
+            y = prices.reshape(-1, 1)
+            
+            model = LinearRegression()
+            model.fit(X, y)
+            r_squared = model.score(X, y)
+            r_squared = max(0, min(r_squared, 1.0))
+            
+            # Only keep assets with R² >= 0.7 (strong trend)
+            if r_squared >= 0.7:
+                # Determine trend direction
+                slope = model.coef_[0][0]
+                if slope > 0:
+                    trend = 'uptrend'
+                elif slope < 0:
+                    trend = 'downtrend'
+                else:
+                    trend = 'ranging'
+                
+                # Calculate MSS for reference
+                hist['returns'] = hist['Close'].pct_change()
+                returns = hist['returns'].dropna()
+                volatility = returns.std() if len(returns) > 0 else 0
+                
+                # Simple MSS approximation
+                mss = r_squared * 100 * (1 - min(volatility * 10, 1))
+                
+                current_price = hist['Close'].iloc[-1]
+                sector = ALL_ASSET_MAPPINGS.get(symbol, 'Unknown')
+                
+                high_r_squared_assets.append({
+                    'symbol': symbol,
+                    'r_squared': r_squared,
+                    'trend': trend,
+                    'mss': mss,
+                    'current_price': current_price,
+                    'sector': sector
+                })
+                
+        except Exception as e:
+            print(f"Error scanning {symbol}: {str(e)}")
+            continue
+    
+    # Sort by R² descending
+    high_r_squared_assets.sort(key=lambda x: x['r_squared'], reverse=True)
+    
+    # Store top 50 assets in database
+    for asset in high_r_squared_assets[:50]:
+        SnowAIAllEncompassingDailyStock.objects.update_or_create(
+            date=today,
+            asset=asset['symbol'],
+            defaults={
+                'sector': asset['sector'],
+                'r_squared': asset['r_squared'],
+                'mss': asset['mss'],
+                'current_trend': asset['trend'],
+                'current_price': asset['current_price'],
+                'is_active': True,
+                'has_open_position': False
+            }
+        )
+    
+    print(f"✅ Scan complete! Found {len(high_r_squared_assets)} high R² assets. Stored top 50.")
+    return len(high_r_squared_assets)
+
+
+# ================================
+# STEP 2: EXECUTE TRADES ON HIGH R² ASSETS
+# ================================
+
+def snowai_execute_all_encompassing_world_trades():
+    """
+    Executes trades for all active high R² assets.
+    Checks positions, manages risk, and logs trades.
+    """
+    print("🌍 Executing SnowAI All Encompassing World Model trades...")
+    
+    # Get or create account
+    account, created = Account.objects.get_or_create(
+        account_name='SnowAI All Encompassing World Model',
+        defaults={
+            'main_assets': 'Global Markets',
+            'initial_capital': 100000.0
+        }
+    )
+    
+    if created:
+        print("✅ Created SnowAI All Encompassing World Model account")
+    
+    # Get today's active assets
+    today = timezone.now().date()
+    active_assets = SnowAIAllEncompassingDailyStock.objects.filter(
+        date=today,
+        is_active=True
+    )
+    
+    print(f"Found {active_assets.count()} active assets for today")
+    
+    for asset_record in active_assets:
+        try:
+            # Get market data
+            dataset = get_market_data(asset_record.asset, '1d')
+            
+            if dataset is None or len(dataset) == 0:
+                continue
+            
+            current_price = dataset['Close'].iloc[-1]
+            
+            # Check existing position
+            if asset_record.has_open_position:
+                # Check TP/SL
+                snowai_check_and_close_position(asset_record, current_price, account)
+                continue
+            
+            # Determine which strategy to use
+            if asset_record.current_trend == 'uptrend':
+                strategy_code = UPTREND_CODE
+                expected_direction = 'BUY'
+            elif asset_record.current_trend == 'downtrend':
+                strategy_code = DOWNTREND_CODE
+                expected_direction = 'SELL'
+            else:
+                continue  # Skip ranging markets
+            
+            # Prepare namespace
+            namespace = snowai_prepare_namespace(asset_record, dataset)
+            
+            # Execute strategy
+            exec(strategy_code, namespace)
+            
+            return_statement = namespace.get('return_statement', None)
+            
+            if return_statement in ['buy', 'sell']:
+                # Get TP/SL from namespace
+                tp_value = namespace.get('_take_profit', 2)
+                sl_value = namespace.get('_stop_loss', 1)
+                
+                # Calculate TP/SL prices
+                if return_statement == 'buy':
+                    tp_price = current_price * (1 + tp_value / 100)
+                    sl_price = current_price * (1 - sl_value / 100)
+                    position_type = 'BUY'
+                else:
+                    tp_price = current_price * (1 - tp_value / 100)
+                    sl_price = current_price * (1 + sl_value / 100)
+                    position_type = 'SELL'
+                
+                # Open position
+                asset_record.has_open_position = True
+                asset_record.position_type = position_type
+                asset_record.entry_price = current_price
+                asset_record.take_profit_price = tp_price
+                asset_record.stop_loss_price = sl_price
+                asset_record.entry_time = timezone.now()
+                asset_record.save()
+                
+                print(f"✅ Opened {position_type} position for {asset_record.asset} at ${current_price}")
+                
+        except Exception as e:
+            print(f"Error trading {asset_record.asset}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            continue
+
+
+# ================================
+# STEP 3: CHECK AND CLOSE POSITIONS
+# ================================
+
+def snowai_check_and_close_position(asset_record, current_price, account):
+    """
+    Checks if TP or SL has been hit and closes position.
+    Logs trade to AccountTrades.
+    """
+    should_close = False
+    hit_tp = False
+    
+    if asset_record.position_type == 'BUY':
+        if current_price >= asset_record.take_profit_price:
+            should_close = True
+            hit_tp = True
+        elif current_price <= asset_record.stop_loss_price:
+            should_close = True
+            hit_tp = False
+    
+    elif asset_record.position_type == 'SELL':
+        if current_price <= asset_record.take_profit_price:
+            should_close = True
+            hit_tp = True
+        elif current_price >= asset_record.stop_loss_price:
+            should_close = True
+            hit_tp = False
+    
+    if should_close:
+        # Calculate P&L
+        if asset_record.position_type == 'BUY':
+            pnl_pct = ((current_price - asset_record.entry_price) / asset_record.entry_price) * 100
+        else:  # SELL
+            pnl_pct = ((asset_record.entry_price - current_price) / asset_record.entry_price) * 100
+        
+        # Assume $10,000 per position (adjust as needed)
+        position_size = 10000
+        pnl_dollars = position_size * (pnl_pct / 100)
+        
+        # Determine outcome
+        outcome = 'Profit' if pnl_dollars > 0 else 'Loss'
+        
+        # Get current time info
+        now = timezone.now()
+        day_closed = now.strftime('%A')
+        
+        # Determine trading session
+        us_eastern = pytz.timezone('US/Eastern')
+        current_time_us = now.astimezone(us_eastern).time()
+        
+        if time(9, 30) <= current_time_us <= time(16, 0):
+            session_closed = 'New York'
+        else:
+            session_closed = 'After Hours'
+        
+        # Log trade to AccountTrades
+        AccountTrades.objects.create(
+            account=account,
+            asset=asset_record.asset,
+            sector=asset_record.sector,
+            order_type=asset_record.position_type,
+            strategy='SnowAI All Encompassing World - High R² + 3-Layer Confirmation',
+            day_of_week_entered=asset_record.entry_time.strftime('%A'),
+            day_of_week_closed=day_closed,
+            trading_session_entered='New York',
+            trading_session_closed=session_closed,
+            outcome=outcome,
+            amount=pnl_dollars,
+            date_entered=asset_record.entry_time,
+            reflection=f"R²: {asset_record.r_squared:.3f}, Trend: {asset_record.current_trend}, {'TP Hit' if hit_tp else 'SL Hit'}"
+        )
+        
+        # Reset position
+        asset_record.has_open_position = False
+        asset_record.position_type = None
+        asset_record.entry_price = None
+        asset_record.take_profit_price = None
+        asset_record.stop_loss_price = None
+        asset_record.entry_time = None
+        asset_record.save()
+        
+        print(f"{'✅' if outcome == 'Profit' else '❌'} Closed {asset_record.position_type} for {asset_record.asset}: {outcome} ${pnl_dollars:.2f}")
+
+
+# ================================
+# HELPER FUNCTIONS
+# ================================
+
+def snowai_prepare_namespace(asset_record, dataset):
+    """Prepare namespace for strategy execution"""
+    
+    def set_take_profit(number, type_of_setting='PERCENTAGE'):
+        namespace['_take_profit'] = number
+    
+    def set_stop_loss(number, type_of_setting='PERCENTAGE'):
+        namespace['_stop_loss'] = number
+    
+    namespace = {
+        'num_positions': 1 if asset_record.has_open_position else 0,
+        'dataset': dataset,
+        'asset': asset_record.asset,
+        'set_take_profit': set_take_profit,
+        'set_stop_loss': set_stop_loss,
+        '_take_profit': 2,
+        '_stop_loss': 1,
+        # All your trading functions (same as ActiveForwardTestModel)
+        'is_uptrend': is_uptrend,
+        'is_downtrend': is_downtrend,
+        'is_bullish_market_retracement': is_bullish_market_retracement,
+        'is_bearish_market_retracement': is_bearish_market_retracement,
+        'average_retracement': average_retracement,
+        # Add all other trading functions from your prepare_namespace
+    }
+    
+    return namespace
+
+
+# ================================
+# SCHEDULER JOBS
+# ================================
+
+# Job 1: Scan for high R² assets once per day, 2 minutes after market open (9:32 AM ET)
+scheduler.add_job(
+    snowai_scan_high_r_squared_assets,
+    trigger='cron',
+    hour=9,
+    minute=32,
+    timezone='US/Eastern',
+    id='snowai_world_daily_scan',
+    name='SnowAI All Encompassing World Daily High R² Asset Scanner',
+    replace_existing=True
+)
+
+# Job 2: Execute trades every 25 minutes during market hours
+scheduler.add_job(
+    snowai_execute_all_encompassing_world_trades,
+    trigger='cron',
+    hour='9-16',
+    minute='*/25',
+    day_of_week='mon-fri',
+    timezone='US/Eastern',
+    id='snowai_world_trades',
+    name='SnowAI All Encompassing World Trade Execution',
+    replace_existing=True
+)
+
+
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
