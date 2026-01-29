@@ -20180,18 +20180,19 @@ def get_default_youtube_cookies():
     """Return updated default YouTube cookies for bot detection bypass"""
     return {
         "GPS": "1",
-        "YSC": "FHn3n08s0P8",
-        "VISITOR_INFO1_LIVE": "31Mb8-Hdb-0",
-        "VISITOR_PRIVACY_METADATA": "CgJaQRIEGgAgMg%3D%3D",
-        "__Secure-1PSIDTS": "sidts-CjUBwQ9iIzpwYQrC7xJOzg-aYyKKiUztj7mPKgbTOOt6bV9soOYJeZKtreTueu2Te6EmBTQ6dhAA",
-        "__Secure-3PSIDTS": "sidts-CjUBwQ9iIzpwYQrC7xJOzg-aYyKKiUztj7mPKgbTOOt6bV9soOYJeZKtreTueu2Te6EmBTQ6dhAA",
-        "__Secure-3PAPISID": "7aph5Sq9un6IOJTG/AvNR8-Tar5Osbfu0Y",
-        "__Secure-3PSID": "g.a0002whVj5rgUCOba7GdCCIe0M1_QjggulPFhyemJoDIUgOZF-JBtfk4VjnnDYoFB3wngyYH0QACgYKAX4SARESFQHGX2Mi-zPpLfUbqvKuTrJGo-QGGhoVAUF8yKqBkSkURZaFJYwrVSrdRDlZ0076",
-        "LOGIN_INFO": "AFmmF2swRQIgEeG6is4-vdZGXq3D9EUne1RvXw-xSW9UrfWWwFFB7ZYCIQC8UaG5ApZDUNf7wfmHS40hUHvUvYHDrohMkoHUtC56Dg:QUQ3MjNmeUVOU1pUbkVXbXhHUS1ENThyLTFtUkRmamNwN0ltT2FvcHNKR2s5R1NvekZnV3dXMHNIRWQ1bDVtNXU4RGRZM05RUmx6b2o1MFAySVo4Q0NrQS03Zkl4OWpZOExqY1ZIQ0VUd2JwN212NF9xRTJPdmlFTFdkR280blZVWEVJT0VwX3dIQXh0RG9rUll5QlZIYTZkQ2hWX2w5UFZ3",
-        "__Secure-ROLLOUT_TOKEN": "CK3m5Kimx6iLVxDw4O_7oMuQAxj83Mn9oMuQAw%3D%3D",
-        "PREF": "tz=Africa.Johannesburg&f5=30000",
-        "__Secure-3PSIDCC": "AKEyXzVFmK21pfqNLYvrwUp-jlKjxCxXNHuQtvJK71iZlDnezNLxpmZHXS9Mz5lXb6RZOBvHzA"
+        "YSC": "DBq3sUjMuS8",
+        "VISITOR_INFO1_LIVE": "AyvSdlP9amM",
+        "VISITOR_PRIVACY_METADATA": "CgJaQRIEGgAgJg%3D%3D",
+        "__Secure-3PAPISID": "qJBCHKqm7eZ_JQq3/Aorow0An2q26jvSju",
+        "__Secure-3PSID": "g.a0006QhVjythuN4j7W1Isv620n69aD7FMe1trCvZPYBk9LxGSNY1yHTzYkh-taLOpElBC_k4uQACgYKAdwSARESFQHGX2Mi5RxKoQsEsMJ1Qc7WgqlTKRoVAUF8yKp3VjgjFsYXQGiH23Cg-UKg0076",
+        "LOGIN_INFO": "AFmmF2swRAIgUSTkwIfm_UXgN7rAmTXVZB4lfiTzT92iAYKF2KHbFw0CIAy07dQeJGF7lnkTthMzsh_a1Y79ecB00XGrDkilV5Gb:QUQ3MjNmelBnLXBwdU1PbHh4YlhhLXVkY1MwQW42eXRDOG9lZThvU3FYTWpNQ3JRZnowOUl4U3ZueUVNS2F2OEVGQXFLeFZoTTVVa0JRTHQ0cTNJcWhvZ21yZ3d1V21tMngtUUFUdThEZXFsMG4tSXdoT3ZUMXBiU3M4Z3B3ZlFlRWt5ZXpZRktNTlFZQndNRW1RMEFyOVN3eVBOOWVRbGN3",
+        "__Secure-ROLLOUT_TOKEN": "CK3BnZaPge_u0gEQ16jo1cKwkgMYsuSr2MKwkgM%3D",
+        "__Secure-1PSIDTS": "sidts-CjQB7I_69HwP1Kt5uBhMsO7h95XUYQriC312xFIhS7Z4easDPoR8tl7vZcUTscPgNzeQ9AGJEAA",
+        "__Secure-3PSIDTS": "sidts-CjQB7I_69HwP1Kt5uBhMsO7h95XUYQriC312xFIhS7Z4easDPoR8tl7vZcUTscPgNzeQ9AGJEAA",
+        "PREF": "tz=Africa.Johannesburg&f5=30000&f4=4000000",
+        "__Secure-3PSIDCC": "AKEyXzU9iwuokDIrkB95wJl5OSP66nHrzquGquKAOi1hRxatIv3TTIE93_qNqQxcmF51WmqDgA"
     }
+
 
 
 def process_cookies_data(cookies_data):
