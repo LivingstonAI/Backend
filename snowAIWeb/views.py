@@ -28838,9 +28838,9 @@ def prepare_namespace(model, dataset):
 
 scheduler.add_job(
     execute_all_forward_tests,
-    trigger=IntervalTrigger(minutes=1),
+    trigger=IntervalTrigger(minutes=5),
     id='snowai_forward_test_job',
-    name='Execute all SnowAI forward tests every minute',
+    name='Execute all SnowAI forward tests every 5 minutes',
     replace_existing=True
 )
 
