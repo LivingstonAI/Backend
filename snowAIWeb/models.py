@@ -82,6 +82,7 @@ class AccountTrades(models.Model):
     asset = models.CharField(max_length=100)  # Traded asset, e.g., EURUSD, XAUUSD
     order_type = models.CharField(max_length=50)  # Type of order, e.g., Buy or Sell
     strategy = models.CharField(max_length=100)  # Strategy used for the trade
+    sector = models.CharField(max_length=100, blank=True, null=True, default='Unknown')  # NEW FIELD with default
     day_of_week_entered = models.CharField(max_length=10)  # Day trade was entered, e.g., Monday
     day_of_week_closed = models.CharField(max_length=10, blank=True, null=True)  # Day trade closed
     trading_session_entered = models.CharField(max_length=50)  # Session entered, e.g., London, NY
@@ -1944,6 +1945,38 @@ class SnowAIBacktestSession(models.Model):
     def __str__(self):
         return f"Session {str(self.id)[:8]} - {self.status}"
 
+
+class SnowAIAllEncompassingDailyStock(models.Model):
+    """
+    Tracks daily high R² stocks identified for trading.
+    One record per asset per day.
+    """
+    date = models.DateField(default=timezone.now)
+    asset = models.CharField(max_length=20)
+    sector = models.CharField(max_length=100)
+    r_squared = models.FloatField()
+    mss = models.FloatField()
+    current_trend = models.CharField(max_length=20)  # 'uptrend', 'downtrend', 'ranging'
+    current_price = models.FloatField()
+
+    # Position tracking
+    is_active = models.BooleanField(default=True)
+    has_open_position = models.BooleanField(default=False)
+    position_type = models.CharField(max_length=10, null=True, blank=True)  # 'BUY' or 'SELL'
+    entry_price = models.FloatField(null=True, blank=True)
+    take_profit_price = models.FloatField(null=True, blank=True)
+    stop_loss_price = models.FloatField(null=True, blank=True)
+    entry_time = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('date', 'asset')
+        ordering = ['-date', '-r_squared']
+
+    def __str__(self):
+        return f"{self.date} - {self.asset} ({self.current_trend}) - R²: {self.r_squared}"
 
 
 class ContactUs(models.Model):

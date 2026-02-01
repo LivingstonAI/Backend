@@ -35298,30 +35298,30 @@ def snowai_prepare_namespace(asset_record, dataset):
 # SCHEDULER JOBS
 # ================================
 
-# # Job 1: Scan for high R² assets once per day, 2 minutes after market open (9:32 AM ET)
-# scheduler.add_job(
-#     snowai_scan_high_r_squared_assets,
-#     trigger='cron',
-#     hour=9,
-#     minute=32,
-#     timezone='US/Eastern',
-#     id='snowai_world_daily_scan',
-#     name='SnowAI All Encompassing World Daily High R² Asset Scanner',
-#     replace_existing=True
-# )
+# Job 1: Scan for high R² assets once per day, 2 minutes after market open (9:32 AM ET)
+scheduler.add_job(
+    snowai_scan_high_r_squared_assets,
+    trigger='cron',
+    hour=9,
+    minute=32,
+    timezone='US/Eastern',
+    id='snowai_world_daily_scan',
+    name='SnowAI All Encompassing World Daily High R² Asset Scanner',
+    replace_existing=True
+)
 
-# # Job 2: Execute trades every 25 minutes during market hours
-# scheduler.add_job(
-#     snowai_execute_all_encompassing_world_trades,
-#     trigger='cron',
-#     hour='9-16',
-#     minute='*/25',
-#     day_of_week='mon-fri',
-#     timezone='US/Eastern',
-#     id='snowai_world_trades',
-#     name='SnowAI All Encompassing World Trade Execution',
-#     replace_existing=True
-# )
+# Job 2: Execute trades every 25 minutes during market hours
+scheduler.add_job(
+    snowai_execute_all_encompassing_world_trades,
+    trigger='cron',
+    hour='9-16',
+    minute='*/25',
+    day_of_week='mon-fri',
+    timezone='US/Eastern',
+    id='snowai_world_trades',
+    name='SnowAI All Encompassing World Trade Execution',
+    replace_existing=True
+)
 
 
 
