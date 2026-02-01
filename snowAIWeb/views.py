@@ -35324,7 +35324,622 @@ scheduler.add_job(
 )
 
 
+# ============================================================
+# NEW ENDPOINT 1: BULK — Commodities vs Materials Sector
+# Compares aggregate commodity basket against all Materials
+# sector stocks. Detects correlation, beta, divergence regime,
+# and generates structured insights.
+# ============================================================
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_commodity_vs_materials_analyzer(request):
+    """
+    Bulk analysis: How are commodities moving relative to Materials sector stocks?
+    
+    Commodity basket used:
+      - GLD  (Gold)
+      - SLV  (Silver)
+      - USO  (Oil)
+      - UNG  (Natural Gas)
+      - GCC  (Broad Commodities)
+      - JJC  (Copper)
+    
+    Returns correlation, rolling correlation trend, beta, divergence score,
+    regime label, and structured insights.
+    """
+    try:
+        data = json.loads(request.body)
+        lookback_days = data.get('lookback_days', 60)
+
+        # ── Commodity basket tickers ──
+        COMMODITY_TICKERS = ['GLD', 'SLV', 'USO', 'UNG', 'GCC', 'JJC']
+
+        # ── Pull Materials stocks from the sector mapping ──
+        materials_symbols = [sym for sym, sec in SECTOR_MAPPINGS.items() if sec == 'Materials']
+
+        # ── Fetch commodity data ──
+        commodity_series = {}
+        for ticker in COMMODITY_TICKERS:
+            try:
+                hist = yf.Ticker(ticker).history(period=f'{lookback_days + 10}d')
+                if not hist.empty:
+                    commodity_series[ticker] = hist['Close']
+            except Exception:
+                continue
+
+        if len(commodity_series) < 2:
+            return JsonResponse({'success': False, 'error': 'Could not fetch enough commodity data'})
+
+        # ── Build equal-weight commodity index (normalised to 100 at start) ──
+        import pandas as pd
+        commodity_df = pd.DataFrame(commodity_series).dropna()
+        # Normalise each series to 100 at first row, then average
+        normalised = commodity_df.div(commodity_df.iloc[0]) * 100
+        commodity_index = normalised.mean(axis=1)  # equal-weight basket index
+
+        # ── Fetch Materials stock data ──
+        stock_series = {}
+        stock_meta = []
+        for sym in materials_symbols:
+            try:
+                hist = yf.Ticker(sym).history(period=f'{lookback_days + 10}d')
+                if hist.empty or len(hist) < 5:
+                    continue
+                stock_series[sym] = hist['Close']
+                info = yf.Ticker(sym).info
+                mcap = info.get('marketCap', hist['Close'].iloc[-1] * hist['Volume'].mean())
+                stock_meta.append({'symbol': sym, 'market_cap': mcap or 0})
+            except Exception:
+                continue
+
+        if not stock_series:
+            return JsonResponse({'success': False, 'error': 'No Materials stock data available'})
+
+        # ── Build market-cap-weighted Materials index ──
+        stock_df = pd.DataFrame(stock_series).dropna()
+        # Align dates with commodity index
+        common_dates = stock_df.index.intersection(commodity_index.index)
+        if len(common_dates) < 5:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping dates'})
+
+        stock_df = stock_df.loc[common_dates]
+        commodity_index = commodity_index.loc[common_dates]
+
+        total_mcap = sum(m['market_cap'] for m in stock_meta if m['symbol'] in stock_df.columns)
+        if total_mcap == 0:
+            total_mcap = 1
+
+        # Normalise each stock to 100 then weight
+        stock_norm = stock_df.div(stock_df.iloc[0]) * 100
+        weights = {}
+        for m in stock_meta:
+            if m['symbol'] in stock_norm.columns:
+                weights[m['symbol']] = m['market_cap'] / total_mcap
+
+        materials_index = stock_norm.multiply(pd.Series(weights)).sum(axis=1)
+
+        # ── Compute daily returns for correlation / beta ──
+        comm_returns = commodity_index.pct_change().dropna()
+        mat_returns = materials_index.pct_change().dropna()
+        common_ret_dates = comm_returns.index.intersection(mat_returns.index)
+        comm_returns = comm_returns.loc[common_ret_dates]
+        mat_returns = mat_returns.loc[common_ret_dates]
+
+        # Full-period correlation
+        full_corr = float(np.corrcoef(comm_returns.values, mat_returns.values)[0, 1])
+
+        # Beta = cov(mat, comm) / var(comm)
+        cov_matrix = np.cov(mat_returns.values, comm_returns.values)
+        beta = float(cov_matrix[0, 1] / cov_matrix[1, 1]) if cov_matrix[1, 1] != 0 else 0.0
+
+        # ── Rolling 10-day correlation for trend detection ──
+        window = min(10, len(comm_returns) // 3)
+        rolling_corr = comm_returns.rolling(window).corr(mat_returns).dropna()
+        recent_corr = float(rolling_corr.iloc[-1]) if len(rolling_corr) > 0 else full_corr
+        prev_corr = float(rolling_corr.iloc[-window]) if len(rolling_corr) > window else full_corr
+        corr_trend = "rising" if recent_corr > prev_corr + 0.05 else ("falling" if recent_corr < prev_corr - 0.05 else "stable")
+
+        # ── Divergence score: how much did they drift apart recently? ──
+        # Normalise both to 100 at start, look at end-of-period gap
+        comm_norm = (commodity_index / commodity_index.iloc[0]) * 100
+        mat_norm = (materials_index / materials_index.iloc[0]) * 100
+        divergence_score = round(float(mat_norm.iloc[-1] - comm_norm.iloc[-1]), 2)
+
+        # ── Regime detection ──
+        if recent_corr >= 0.6 and abs(divergence_score) < 5:
+            regime = "ALIGNED"
+            regime_color = "#10b981"
+            regime_desc = "Materials stocks are moving in harmony with commodities. Classic sector-commodity linkage is intact."
+        elif recent_corr >= 0.3 and abs(divergence_score) < 10:
+            regime = "WEAKENING"
+            regime_color = "#f59e0b"
+            regime_desc = "Correlation is softening. Materials stocks are beginning to decouple — watch for further divergence."
+        elif abs(divergence_score) >= 10 or recent_corr < 0.2:
+            regime = "DIVERGING"
+            regime_color = "#ef4444"
+            regime_desc = "Significant divergence detected. Materials stocks are no longer tracking commodity moves closely — potential mispricing or macro override."
+        else:
+            regime = "NOISY"
+            regime_color = "#6b7280"
+            regime_desc = "Mixed signals. Low correlation with moderate price drift — likely driven by stock-specific factors."
+
+        # ── Build time-series for chart ──
+        timeseries = []
+        for date in common_dates:
+            timeseries.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'commodities': round(float(comm_norm.loc[date]), 2),
+                'materials': round(float(mat_norm.loc[date]), 2)
+            })
+
+        # ── Per-commodity correlation with materials index ──
+        commodity_breakdowns = []
+        for ticker, series in commodity_series.items():
+            try:
+                aligned = series.loc[series.index.intersection(mat_returns.index)]
+                ticker_ret = aligned.pct_change().dropna()
+                common_idx = ticker_ret.index.intersection(mat_returns.index)
+                if len(common_idx) < 5:
+                    continue
+                c = float(np.corrcoef(ticker_ret.loc[common_idx].values, mat_returns.loc[common_idx].values)[0, 1])
+                commodity_breakdowns.append({
+                    'ticker': ticker,
+                    'correlation': round(c, 3),
+                    'period_return': round(float((series.iloc[-1] - series.iloc[0]) / series.iloc[0] * 100), 2)
+                })
+            except Exception:
+                continue
+
+        commodity_breakdowns.sort(key=lambda x: abs(x['correlation']), reverse=True)
+
+        # ── Insights generation ──
+        insights = []
+
+        if regime == "DIVERGING":
+            if divergence_score > 0:
+                insights.append("📈 Materials stocks are outperforming commodities — possible equity premium or sector rotation INTO materials independent of raw price moves.")
+            else:
+                insights.append("📉 Materials stocks are lagging commodities — companies may be absorbing cost increases or facing margin pressure.")
+            insights.append(f"⚡ Divergence magnitude: {abs(divergence_score):.1f} points. Historical mean-reversion suggests this gap may close.")
+
+        if regime == "WEAKENING":
+            insights.append("⚠️ Correlation is eroding. Monitor whether this is a temporary blip or the start of a sustained decoupling.")
+            if corr_trend == "falling":
+                insights.append("📉 Rolling correlation trend is falling — decoupling is accelerating.")
+
+        if regime == "ALIGNED":
+            insights.append("✅ Classic commodity-materials linkage is healthy. Materials stocks should continue tracking commodity price moves.")
+            if beta > 1.2:
+                insights.append(f"📊 Beta of {beta:.2f} means Materials stocks are amplifying commodity moves — leverage effect from operating margins.")
+            elif beta < 0.8:
+                insights.append(f"📊 Beta of {beta:.2f} is subdued — stock-specific factors (earnings, valuations) are dampening commodity pass-through.")
+
+        # Top correlated commodity
+        if commodity_breakdowns:
+            top = commodity_breakdowns[0]
+            insights.append(f"🏆 Strongest commodity link: {top['ticker']} (corr: {top['correlation']:.2f}). This commodity is the best predictor of Materials sector moves.")
+
+        # ── Stocks actually in our current MSS data ──
+        # (frontend will filter, but we flag which ones we found)
+        found_materials = [m['symbol'] for m in stock_meta if m['symbol'] in stock_df.columns]
+
+        return JsonResponse({
+            'success': True,
+            'regime': regime,
+            'regime_color': regime_color,
+            'regime_description': regime_desc,
+            'full_correlation': round(full_corr, 3),
+            'recent_correlation': round(recent_corr, 3),
+            'correlation_trend': corr_trend,
+            'beta': round(beta, 3),
+            'divergence_score': divergence_score,
+            'timeseries': timeseries,
+            'commodity_breakdowns': commodity_breakdowns,
+            'insights': insights,
+            'materials_stocks_analyzed': len(found_materials),
+            'commodities_analyzed': len(commodity_series),
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# NEW ENDPOINT 2: PER-STOCK — Individual Materials Stock vs
+# Commodity Basket Alignment
+# Shows how a single stock SHOULD be moving based on commodity
+# trends, and where it's actually at. Flags misalignment.
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_individual_stock_commodity_alignment(request):
+    """
+    For a single Materials sector stock: compute expected movement
+    based on commodity basket, compare to actual, and flag divergence.
+    
+    Returns:
+      - alignment_score (0-100, higher = moving as expected)
+      - expected_return vs actual_return
+      - signal (overperforming / underperforming / aligned)
+      - per-commodity correlation for this stock
+      - trading implication
+    """
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        lookback_days = data.get('lookback_days', 60)
+
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'})
+
+        # Verify it's a Materials stock
+        sector = SECTOR_MAPPINGS.get(symbol)
+        if sector != 'Materials':
+            return JsonResponse({'success': False, 'error': f'{symbol} is not a Materials sector stock (sector: {sector})'})
+
+        COMMODITY_TICKERS = ['GLD', 'SLV', 'USO', 'UNG', 'GCC', 'JJC']
+
+        import pandas as pd
+
+        # ── Fetch the stock ──
+        ticker_obj = yf.Ticker(symbol)
+        stock_hist = ticker_obj.history(period=f'{lookback_days + 10}d')
+        if stock_hist.empty or len(stock_hist) < 5:
+            return JsonResponse({'success': False, 'error': f'No price data for {symbol}'})
+
+        stock_close = stock_hist['Close']
+
+        # ── Fetch commodities ──
+        commodity_series = {}
+        for t in COMMODITY_TICKERS:
+            try:
+                hist = yf.Ticker(t).history(period=f'{lookback_days + 10}d')
+                if not hist.empty:
+                    commodity_series[t] = hist['Close']
+            except Exception:
+                continue
+
+        if len(commodity_series) < 2:
+            return JsonResponse({'success': False, 'error': 'Could not fetch commodity data'})
+
+        # ── Align dates ──
+        commodity_df = pd.DataFrame(commodity_series)
+        all_series = commodity_df.copy()
+        all_series[symbol] = stock_close
+        all_series = all_series.dropna()
+
+        if len(all_series) < 5:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping data'})
+
+        # ── Build equal-weight commodity index ──
+        comm_cols = [c for c in all_series.columns if c != symbol]
+        comm_norm = all_series[comm_cols].div(all_series[comm_cols].iloc[0]) * 100
+        commodity_index = comm_norm.mean(axis=1)
+
+        stock_norm = (all_series[symbol] / all_series[symbol].iloc[0]) * 100
+
+        # ── Returns ──
+        comm_returns = commodity_index.pct_change().dropna()
+        stock_returns = stock_norm.pct_change().dropna()
+        common_idx = comm_returns.index.intersection(stock_returns.index)
+        comm_returns = comm_returns.loc[common_idx]
+        stock_returns = stock_returns.loc[common_idx]
+
+        # ── Correlation ──
+        correlation = float(np.corrcoef(comm_returns.values, stock_returns.values)[0, 1])
+
+        # ── Beta (stock vs commodity basket) ──
+        cov_m = np.cov(stock_returns.values, comm_returns.values)
+        beta = float(cov_m[0, 1] / cov_m[1, 1]) if cov_m[1, 1] != 0 else 0.0
+
+        # ── Expected vs Actual return ──
+        commodity_total_return = float(commodity_index.iloc[-1] - 100)   # % from baseline 100
+        stock_total_return = float(stock_norm.iloc[-1] - 100)
+
+        # Expected return = beta * commodity return (simple linear model)
+        expected_return = round(beta * commodity_total_return, 2)
+        actual_return = round(stock_total_return, 2)
+        return_gap = round(actual_return - expected_return, 2)
+
+        # ── Alignment score (0-100) ──
+        # Based on how close actual is to expected, penalised by correlation weakness
+        max_gap = max(abs(return_gap), 1)
+        gap_penalty = min(abs(return_gap) / 20.0, 1.0)  # 20% gap = full penalty
+        corr_factor = max(correlation, 0)
+        alignment_score = round((1 - gap_penalty) * corr_factor * 100, 1)
+        alignment_score = max(0, min(100, alignment_score))
+
+        # ── Signal ──
+        if return_gap > 3:
+            signal = "OUTPERFORMING"
+            signal_color = "#10b981"
+            signal_desc = f"{symbol} gained {return_gap:.1f}% MORE than commodity trends predicted. Could indicate strong fundamentals or upcoming catalyst."
+        elif return_gap < -3:
+            signal = "UNDERPERFORMING"
+            signal_color = "#ef4444"
+            signal_desc = f"{symbol} lagged commodity expectations by {abs(return_gap):.1f}%. May face headwinds or is absorbing cost pressures."
+        else:
+            signal = "ALIGNED"
+            signal_color = "#10b981"
+            signal_desc = f"{symbol} is moving within expected range of commodity-driven returns. Normal behaviour."
+
+        # ── Per-commodity correlation for this stock ──
+        per_commodity = []
+        for t in comm_cols:
+            try:
+                t_ret = all_series[t].pct_change().dropna()
+                s_ret = all_series[symbol].pct_change().dropna()
+                common = t_ret.index.intersection(s_ret.index)
+                if len(common) < 5:
+                    continue
+                c = float(np.corrcoef(t_ret.loc[common].values, s_ret.loc[common].values)[0, 1])
+                per_commodity.append({
+                    'ticker': t,
+                    'correlation': round(c, 3),
+                    'period_return': round(float((all_series[t].iloc[-1] - all_series[t].iloc[0]) / all_series[t].iloc[0] * 100), 2)
+                })
+            except Exception:
+                continue
+
+        per_commodity.sort(key=lambda x: abs(x['correlation']), reverse=True)
+
+        # ── Trading implication ──
+        implications = []
+        if signal == "OUTPERFORMING":
+            implications.append("Consider whether this outperformance is sustainable or likely to mean-revert.")
+            if correlation > 0.5:
+                implications.append("High correlation suggests the stock will likely re-anchor to commodity trends — watch for pullback.")
+            else:
+                implications.append("Low correlation suggests stock-specific drivers are dominant — fundamental re-rating may be underway.")
+        elif signal == "UNDERPERFORMING":
+            implications.append("Stock is lagging commodities — potential value opportunity if commodity trends hold.")
+            implications.append("Check for company-specific risks (earnings, debt, guidance) that may explain the lag.")
+        else:
+            implications.append("Stock is tracking commodities as expected. No divergence trade opportunity at this time.")
+
+        # ── Time series for mini chart ──
+        timeseries = []
+        for date in all_series.index:
+            timeseries.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'commodities': round(float(commodity_index.loc[date]), 2),
+                'stock': round(float(stock_norm.loc[date]), 2)
+            })
+
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'alignment_score': alignment_score,
+            'correlation': round(correlation, 3),
+            'beta': round(beta, 3),
+            'expected_return': expected_return,
+            'actual_return': actual_return,
+            'return_gap': return_gap,
+            'signal': signal,
+            'signal_color': signal_color,
+            'signal_description': signal_desc,
+            'per_commodity_correlations': per_commodity,
+            'implications': implications,
+            'timeseries': timeseries,
+            'commodity_total_return': round(commodity_total_return, 2),
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# NEW ENDPOINT 3: BULK — S&P 500 vs Technology Sector
+# Technology is the largest S&P 500 sector by weight (~30%+),
+# so divergence here is macro-significant. Detects whether
+# Tech is driving the index or lagging it.
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_sp500_vs_tech_sector_analyzer(request):
+    """
+    Bulk analysis: How is the Technology sector moving relative to the S&P 500?
+    
+    Uses ^GSPC for S&P 500 and a basket of top Technology stocks 
+    (market-cap weighted) from SECTOR_MAPPINGS.
+    
+    Returns correlation, beta, alpha, divergence, regime, insights.
+    """
+    try:
+        data = json.loads(request.body)
+        lookback_days = data.get('lookback_days', 60)
+
+        import pandas as pd
+
+        # ── Fetch S&P 500 ──
+        sp500_hist = yf.Ticker('^GSPC').history(period=f'{lookback_days + 10}d')
+        if sp500_hist.empty:
+            return JsonResponse({'success': False, 'error': 'Could not fetch S&P 500 data'})
+        sp500_close = sp500_hist['Close']
+
+        # ── Get Technology stocks ──
+        tech_symbols = [sym for sym, sec in SECTOR_MAPPINGS.items() if sec == 'Technology']
+
+        # ── Fetch Tech stock data with market caps ──
+        tech_data = []
+        tech_series = {}
+        for sym in tech_symbols:
+            try:
+                hist = yf.Ticker(sym).history(period=f'{lookback_days + 10}d')
+                if hist.empty or len(hist) < 5:
+                    continue
+                info = yf.Ticker(sym).info
+                mcap = info.get('marketCap', hist['Close'].iloc[-1] * hist['Volume'].mean())
+                tech_series[sym] = hist['Close']
+                tech_data.append({'symbol': sym, 'market_cap': mcap or 0})
+            except Exception:
+                continue
+
+        if not tech_series:
+            return JsonResponse({'success': False, 'error': 'No Technology stock data available'})
+
+        # ── Build DataFrames and align ──
+        tech_df = pd.DataFrame(tech_series)
+        combined = tech_df.copy()
+        combined['SP500'] = sp500_close
+        combined = combined.dropna()
+
+        if len(combined) < 5:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping data'})
+
+        sp500_aligned = combined['SP500']
+        tech_cols = [c for c in combined.columns if c != 'SP500']
+
+        # ── Market-cap weighted Tech index ──
+        total_mcap = sum(d['market_cap'] for d in tech_data if d['symbol'] in tech_cols)
+        if total_mcap == 0:
+            total_mcap = 1
+
+        tech_norm = combined[tech_cols].div(combined[tech_cols].iloc[0]) * 100
+        weights = {}
+        for d in tech_data:
+            if d['symbol'] in tech_norm.columns:
+                weights[d['symbol']] = d['market_cap'] / total_mcap
+
+        tech_index = tech_norm.multiply(pd.Series(weights)).sum(axis=1)
+        sp500_norm = (sp500_aligned / sp500_aligned.iloc[0]) * 100
+
+        # ── Returns ──
+        sp_ret = sp500_norm.pct_change().dropna()
+        tech_ret = tech_index.pct_change().dropna()
+        common_idx = sp_ret.index.intersection(tech_ret.index)
+        sp_ret = sp_ret.loc[common_idx]
+        tech_ret = tech_ret.loc[common_idx]
+
+        # ── Correlation ──
+        full_corr = float(np.corrcoef(sp_ret.values, tech_ret.values)[0, 1])
+
+        # ── Beta (Tech vs S&P) ──
+        cov_m = np.cov(tech_ret.values, sp_ret.values)
+        beta = float(cov_m[0, 1] / cov_m[1, 1]) if cov_m[1, 1] != 0 else 0.0
+
+        # ── Rolling correlation ──
+        window = min(10, len(sp_ret) // 3)
+        rolling_corr = sp_ret.rolling(window).corr(tech_ret).dropna()
+        recent_corr = float(rolling_corr.iloc[-1]) if len(rolling_corr) > 0 else full_corr
+        prev_corr = float(rolling_corr.iloc[-window]) if len(rolling_corr) > window else full_corr
+        corr_trend = "rising" if recent_corr > prev_corr + 0.05 else ("falling" if recent_corr < prev_corr - 0.05 else "stable")
+
+        # ── Alpha (annualised excess return) ──
+        sp_total = float(sp500_norm.iloc[-1] - 100)
+        tech_total = float(tech_index.iloc[-1] - 100)
+        alpha = round(tech_total - (beta * sp_total), 2)  # Jensen's alpha (simplified, period-based)
+
+        # ── Divergence ──
+        divergence_score = round(tech_total - sp_total, 2)
+
+        # ── Regime ──
+        if beta > 1.3 and divergence_score > 3:
+            regime = "TECH LEADING"
+            regime_color = "#3b82f6"
+            regime_desc = "Technology is amplifying S&P moves and pulling ahead. Risk-on, growth-favoured environment."
+        elif beta > 1.0 and abs(divergence_score) <= 5:
+            regime = "ALIGNED (HIGH BETA)"
+            regime_color = "#10b981"
+            regime_desc = "Tech is tracking the S&P with expected amplification. Normal risk-on behaviour."
+        elif abs(divergence_score) > 8:
+            regime = "DIVERGING"
+            regime_color = "#ef4444"
+            regime_desc = "Tech and S&P are moving apart significantly. Rotation or macro regime shift in progress."
+        elif beta < 0.7:
+            regime = "TECH LAGGING"
+            regime_color = "#f59e0b"
+            regime_desc = "Technology is underperforming the broader index. Value rotation or rate-sensitivity pressure."
+        else:
+            regime = "STABLE"
+            regime_color = "#6b7280"
+            regime_desc = "Normal market conditions. Tech and S&P moving in expected relationship."
+
+        # ── Time series ──
+        timeseries = []
+        for date in combined.index:
+            timeseries.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'sp500': round(float(sp500_norm.loc[date]), 2),
+                'technology': round(float(tech_index.loc[date]), 2)
+            })
+
+        # ── Top 5 Tech stocks by contribution (weight * return) ──
+        top_contributors = []
+        for d in tech_data:
+            sym = d['symbol']
+            if sym not in tech_cols:
+                continue
+            w = weights.get(sym, 0)
+            ret = float((combined[sym].iloc[-1] - combined[sym].iloc[0]) / combined[sym].iloc[0] * 100)
+            contribution = w * ret
+            top_contributors.append({
+                'symbol': sym,
+                'weight': round(w * 100, 2),
+                'return': round(ret, 2),
+                'contribution': round(contribution, 2)
+            })
+        top_contributors.sort(key=lambda x: abs(x['contribution']), reverse=True)
+        top_contributors = top_contributors[:7]
+
+        # ── Insights ──
+        insights = []
+
+        if regime == "TECH LEADING":
+            insights.append("🚀 Tech is in leadership mode — momentum strategies in top tech names may be favourable.")
+            insights.append(f"📊 Tech beta of {beta:.2f} means it's amplifying S&P moves by {beta:.1f}x.")
+            if alpha > 2:
+                insights.append(f"⭐ Tech is generating {alpha:.1f}% alpha over the S&P — genuine outperformance, not just leverage.")
+
+        if regime == "DIVERGING":
+            if divergence_score > 0:
+                insights.append("📈 Tech is pulling ahead of the S&P — could be the start of a growth rally or unsustainable divergence.")
+            else:
+                insights.append("📉 Tech is falling behind the S&P — rotation into value/defensive sectors may be underway.")
+            insights.append("⚡ Monitor for mean-reversion: large divergences historically tend to compress.")
+
+        if regime == "TECH LAGGING":
+            insights.append("⚠️ Tech underperformance often signals rate sensitivity or valuation compression.")
+            insights.append("💡 This environment historically favours value, financials, and energy over growth.")
+
+        if corr_trend == "falling":
+            insights.append("📉 Correlation between Tech and S&P is declining — market internals are weakening.")
+        elif corr_trend == "rising":
+            insights.append("📈 Correlation is increasing — market is becoming more unified in direction.")
+
+        # Top contributor insight
+        if top_contributors:
+            top = top_contributors[0]
+            insights.append(f"🏆 {top['symbol']} is the largest contributor ({top['weight']}% weight, {top['return']:+.1f}% return).")
+
+        return JsonResponse({
+            'success': True,
+            'regime': regime,
+            'regime_color': regime_color,
+            'regime_description': regime_desc,
+            'full_correlation': round(full_corr, 3),
+            'recent_correlation': round(recent_corr, 3),
+            'correlation_trend': corr_trend,
+            'beta': round(beta, 3),
+            'alpha': alpha,
+            'sp500_return': round(sp_total, 2),
+            'tech_return': round(tech_total, 2),
+            'divergence_score': divergence_score,
+            'timeseries': timeseries,
+            'top_contributors': top_contributors,
+            'insights': insights,
+            'tech_stocks_analyzed': len(tech_cols),
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        
 
 # LEGODI BACKEND CODE
 def send_simple_message():

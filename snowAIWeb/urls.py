@@ -507,6 +507,19 @@ urlpatterns = [
 
      path('api/mss-generate-chart-context-for-ai-v2/', views.mss_generate_chart_context_for_ai_v2, name='mss_generate_chart_context_for_ai_v2'),
 
+     # ============================================================
+     # NEW URL ROUTES — Commodity / Sector Correlation Analysis
+     # ============================================================
+
+     # Bulk: Commodities vs Materials sector stocks
+     path('api/mss-commodity-vs-materials-analyzer/', views.mss_commodity_vs_materials_analyzer, name='mss-commodity-vs-materials-analyzer'),
+
+     # Per-stock: Individual Materials stock vs commodity basket
+     path('api/mss-individual-stock-commodity-alignment/', views.mss_individual_stock_commodity_alignment, name='mss-individual-stock-commodity-alignment'),
+
+     # Bulk: S&P 500 vs Technology sector
+     path('api/mss-sp500-vs-tech-sector-analyzer/', views.mss_sp500_vs_tech_sector_analyzer, name='mss-sp500-vs-tech-sector-analyzer'),
+
 
 
 
