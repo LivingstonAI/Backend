@@ -36494,7 +36494,7 @@ def mss_tech_subsector_bulk_analyzer(request):
                 rotation_signals.append({
                     'subsector': s['subsector'],
                     'signal': 'ROLLING OVER',
-                    'description': f"{s['subsector']} sentiment is bullish but momentum is fading — potential rotation OUT.'
+                    'description': f"{s['subsector']} sentiment is bullish but momentum is fading — potential rotation OUT."
                 })
             elif s['sentiment_label'] == 'BEARISH' and s['momentum_score'] > 1:
                 rotation_signals.append({
