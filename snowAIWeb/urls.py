@@ -520,6 +520,16 @@ urlpatterns = [
      # Bulk: S&P 500 vs Technology sector
      path('api/mss-sp500-vs-tech-sector-analyzer/', views.mss_sp500_vs_tech_sector_analyzer, name='mss-sp500-vs-tech-sector-analyzer'),
 
+     # ============================================================
+     # URL ROUTES — Technology Subsector Analysis
+     # ============================================================
+
+     # Bulk: Compare all Technology subsectors
+     path('api/mss-tech-subsector-bulk-analyzer/', views.mss_tech_subsector_bulk_analyzer, name='mss-tech-subsector-bulk-analyzer'),
+
+     # Per-stock: Individual Tech stock vs its subsector peers
+     path('api/mss-tech-stock-subsector-alignment/', views.mss_tech_stock_subsector_alignment, name='mss-tech-stock-subsector-alignment'),
+
 
 
 
