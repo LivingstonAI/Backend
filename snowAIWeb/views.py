@@ -36111,7 +36111,722 @@ def mss_sp500_vs_tech_sector_analyzer(request):
         })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# TECHNOLOGY SUBSECTOR TAXONOMY
+# Maps every Technology stock to a granular subsector.
+# Used for intra-sector correlation analysis and peer comparison.
+# ============================================================
+
+TECH_SUBSECTOR_MAPPINGS = {
+    # ── SEMICONDUCTORS (Design & Manufacturing) ──
+    'NVDA': 'Semiconductors', 'AMD': 'Semiconductors', 'INTC': 'Semiconductors',
+    'QCOM': 'Semiconductors', 'TXN': 'Semiconductors', 'AVGO': 'Semiconductors',
+    'AMAT': 'Semiconductors', 'LRCX': 'Semiconductors', 'KLAC': 'Semiconductors',
+    'MU': 'Semiconductors', 'ADI': 'Semiconductors', 'NXPI': 'Semiconductors',
+    'MRVL': 'Semiconductors', 'MPWR': 'Semiconductors', 'SWKS': 'Semiconductors',
+    'QRVO': 'Semiconductors', 'ON': 'Semiconductors', 'MCHP': 'Semiconductors',
+    'MTSI': 'Semiconductors', 'SLAB': 'Semiconductors', 'XLNX': 'Semiconductors',
+    'TSM': 'Semiconductors', 'UMC': 'Semiconductors', 'ASML': 'Semiconductors',
+    'TER': 'Semiconductors', 'AAOI': 'Semiconductors',
+    
+    # ── CLOUD & INFRASTRUCTURE SOFTWARE ──
+    'MSFT': 'Cloud & Infrastructure', 'ORCL': 'Cloud & Infrastructure',
+    'CRM': 'Cloud & Infrastructure', 'NOW': 'Cloud & Infrastructure',
+    'SNOW': 'Cloud & Infrastructure', 'WDAY': 'Cloud & Infrastructure',
+    'TEAM': 'Cloud & Infrastructure', 'MDB': 'Cloud & Infrastructure',
+    'NTNX': 'Cloud & Infrastructure', 'NTAP': 'Cloud & Infrastructure',
+    'STX': 'Cloud & Infrastructure', 'WDC': 'Cloud & Infrastructure',
+    'NET': 'Cloud & Infrastructure', 'DDOG': 'Cloud & Infrastructure',
+    
+    # ── CYBERSECURITY ──
+    'PANW': 'Cybersecurity', 'CRWD': 'Cybersecurity', 'ZS': 'Cybersecurity',
+    'FTNT': 'Cybersecurity', 'OKTA': 'Cybersecurity', 'S': 'Cybersecurity',
+    'CYBR': 'Cybersecurity',
+    
+    # ── ENTERPRISE SOFTWARE & SaaS ──
+    'ADBE': 'Enterprise SaaS', 'INTU': 'Enterprise SaaS', 'ADSK': 'Enterprise SaaS',
+    'ANSS': 'Enterprise SaaS', 'CDNS': 'Enterprise SaaS', 'SNPS': 'Enterprise SaaS',
+    'PTC': 'Enterprise SaaS', 'TYL': 'Enterprise SaaS', 'ROP': 'Enterprise SaaS',
+    'PAYC': 'Enterprise SaaS', 'DOCU': 'Enterprise SaaS', 'ZM': 'Enterprise SaaS',
+    'VEEV': 'Enterprise SaaS',
+    
+    # ── NETWORKING & TELECOMMUNICATIONS EQUIPMENT ──
+    'CSCO': 'Networking', 'AKAM': 'Networking', 'ANET': 'Networking',
+    'MSI': 'Networking', 'KEYS': 'Networking', 'VRSN': 'Networking',
+    'ZBRA': 'Networking',
+    
+    # ── INTERNET & CONSUMER PLATFORMS ──
+    'GOOGL': 'Internet Platforms', 'GOOG': 'Internet Platforms',
+    'META': 'Internet Platforms', 'BABA': 'Internet Platforms',
+    'BIDU': 'Internet Platforms', 'SNAP': 'Internet Platforms',
+    'PINS': 'Internet Platforms', 'Z': 'Internet Platforms',
+    'ZG': 'Internet Platforms', 'ROKU': 'Internet Platforms',
+    'SPOT': 'Internet Platforms',
+    
+    # ── FINTECH & PAYMENTS ──
+    'SQ': 'Fintech', 'PYPL': 'Fintech', 'AFRM': 'Fintech',
+    'COIN': 'Fintech', 'HOOD': 'Fintech', 'SOFI': 'Fintech',
+    
+    # ── MOBILITY & RIDESHARE ──
+    'UBER': 'Mobility', 'LYFT': 'Mobility', 'DASH': 'Mobility',
+    
+    # ── SEMICONDUCTORS EQUIPMENT (separate from design/mfg) ──
+    # (Already covered under Semiconductors, but could split if needed)
+    
+    # ── IT SERVICES & CONSULTING ──
+    'IBM': 'IT Services', 'ACN': 'IT Services', 'ACLS': 'IT Services',
+    
+    # ── HARDWARE & DEVICES ──
+    'AAPL': 'Hardware & Devices', 'GRMN': 'Hardware & Devices',
+    'APH': 'Hardware & Devices', 'AVAV': 'Hardware & Devices',
+    
+    # ── DATA & ANALYTICS ──
+    'PLTR': 'Data & Analytics', 'TWLO': 'Data & Analytics',
+    
+    # ── SPACE & SATELLITE ──
+    'ASTS': 'Space & Satellite',
+    
+    # ── GAMING & METAVERSE ──
+    'RBLX': 'Gaming & Metaverse',
+    
+    # ── AUTOMATION & ROBOTICS ──
+    'SAP': 'Automation & ERP',
+}
+
+
+# ── SUBSECTOR METADATA ──
+# Characteristics of each subsector for contextual insights.
+
+SUBSECTOR_CHARACTERISTICS = {
+    'Semiconductors': {
+        'volatility': 'High',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['AI demand', 'datacenter buildouts', 'consumer electronics cycles', 'auto chip demand'],
+        'typical_beta_range': (1.2, 1.6),
+        'sentiment_indicators': ['Philadelphia Semiconductor Index', 'Taiwan Semi earnings', 'ASML bookings'],
+        'description': 'Capital-intensive, cyclical, levered to AI/datacenter mega-trends. High beta, sensitive to capex cycles.'
+    },
+    'Cloud & Infrastructure': {
+        'volatility': 'Medium',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['enterprise IT spend', 'cloud migration rates', 'subscription renewals', 'AI infra buildout'],
+        'typical_beta_range': (1.0, 1.3),
+        'sentiment_indicators': ['AWS/Azure revenue growth', 'enterprise software guidance', 'CIO surveys'],
+        'description': 'Recurring revenue models, sticky customers. Benefits from digital transformation and cloud adoption.'
+    },
+    'Cybersecurity': {
+        'volatility': 'Medium-High',
+        'cycle_sensitivity': 'Low',
+        'key_drivers': ['breach headlines', 'regulatory compliance mandates', 'zero-trust adoption', 'geopolitical tensions'],
+        'typical_beta_range': (1.1, 1.5),
+        'sentiment_indicators': ['breach frequency data', 'federal IT security budgets', 'insider threat trends'],
+        'description': 'Mission-critical, non-discretionary spend. Resilient to downturns, driven by threat landscape.'
+    },
+    'Enterprise SaaS': {
+        'volatility': 'Medium',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['SMB vs enterprise mix', 'seat expansion', 'pricing power', 'churn rates'],
+        'typical_beta_range': (1.0, 1.4),
+        'sentiment_indicators': ['RPO growth', 'net retention rates', 'free cash flow margins'],
+        'description': 'High gross margins, subscription-based. Sensitive to customer budget pressures in downturns.'
+    },
+    'Networking': {
+        'volatility': 'Medium',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['5G rollouts', 'enterprise network refresh cycles', 'datacenter interconnect demand'],
+        'typical_beta_range': (0.9, 1.2),
+        'description': 'Capex-driven, lumpy order patterns. Benefits from infrastructure upgrades and 5G.'
+    },
+    'Internet Platforms': {
+        'volatility': 'High',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['ad spend cycles', 'user growth metrics', 'regulatory risk', 'engagement trends'],
+        'typical_beta_range': (1.2, 1.7),
+        'sentiment_indicators': ['digital ad spend forecasts', 'DAU/MAU trends', 'ARPU growth'],
+        'description': 'Ad-revenue dependent (mostly), high regulatory scrutiny. Levered to consumer engagement and advertiser budgets.'
+    },
+    'Fintech': {
+        'volatility': 'Very High',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['transaction volumes', 'crypto market sentiment', 'interest rate environment', 'regulation'],
+        'typical_beta_range': (1.3, 2.0),
+        'sentiment_indicators': ['payment volumes', 'crypto prices', 'neobank account growth'],
+        'description': 'Disruptive models, high growth expectations. Extremely sensitive to rates, crypto, and consumer spending.'
+    },
+    'Mobility': {
+        'volatility': 'Very High',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['take rates', 'driver supply', 'autonomous vehicle progress', 'consumer discretionary spend'],
+        'typical_beta_range': (1.4, 2.0),
+        'description': 'Gig economy plays, thin margins. Sensitive to labor costs, fuel prices, consumer budgets.'
+    },
+    'IT Services': {
+        'volatility': 'Low',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['outsourcing trends', 'digital transformation budgets', 'consulting demand'],
+        'typical_beta_range': (0.8, 1.1),
+        'description': 'Steady, contract-based revenue. Lower beta, resilient to market swings.'
+    },
+    'Hardware & Devices': {
+        'volatility': 'Medium',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['iPhone cycles', 'wearables adoption', 'consumer upgrade cycles'],
+        'typical_beta_range': (1.0, 1.3),
+        'description': 'Consumer-driven, seasonal patterns. Apple dominates; others are niche or industrial.'
+    },
+    'Data & Analytics': {
+        'volatility': 'High',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['AI/ML adoption', 'data governance mandates', 'enterprise analytics spend'],
+        'typical_beta_range': (1.2, 1.6),
+        'description': 'High-growth, mission-critical. Benefits from AI tailwinds and data proliferation.'
+    },
+    'Space & Satellite': {
+        'volatility': 'Extreme',
+        'cycle_sensitivity': 'Low',
+        'key_drivers': ['constellation buildouts', 'government contracts', 'rural broadband mandates'],
+        'typical_beta_range': (1.5, 2.5),
+        'description': 'Speculative, early-stage. Extremely high risk/reward, driven by technological breakthroughs.'
+    },
+    'Gaming & Metaverse': {
+        'volatility': 'Very High',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['engagement metrics', 'monetization rates', 'metaverse hype cycles'],
+        'typical_beta_range': (1.3, 1.9),
+        'description': 'User engagement-driven, sensitive to content pipelines and platform dynamics.'
+    },
+    'Automation & ERP': {
+        'volatility': 'Low-Medium',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['enterprise modernization cycles', 'cloud ERP migrations'],
+        'typical_beta_range': (0.9, 1.2),
+        'description': 'Mission-critical backend systems. Sticky, long sales cycles, resilient revenue.'
+    },
+}
+
+
+# ── HELPER: Get subsector for a Technology stock ──
+def get_tech_subsector(symbol):
+    """Returns the subsector string for a Technology stock, or None if not found."""
+    return TECH_SUBSECTOR_MAPPINGS.get(symbol)
+
+
+def get_subsector_stocks(subsector):
+    """Returns a list of all stock symbols in a given subsector."""
+    return [sym for sym, sub in TECH_SUBSECTOR_MAPPINGS.items() if sub == subsector]
+
+
+def get_all_subsectors():
+    """Returns a sorted list of unique subsector names."""
+    return sorted(set(TECH_SUBSECTOR_MAPPINGS.values()))
+
+
                 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+# NEW ENDPOINT 4: BULK — Technology Subsector Analysis (1h)
+#
+# Compares all Technology subsectors against each other:
+#   - Semiconductors vs Cloud vs Cybersecurity vs Fintech etc.
+#   - Per-subsector: sentiment, momentum, return, volatility
+#   - Relative strength ranking (which subsectors leading/lagging)
+#   - Cross-subsector correlation matrix
+#   - Sector rotation signals (money flowing into/out of subsectors)
+#   - Trade opportunities: which subsectors to overweight/underweight
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_tech_subsector_bulk_analyzer(request):
+    """
+    Bulk: Compare all Technology subsectors on 1h timeframe.
+    Returns per-subsector sentiment, momentum, returns, and rotation signals.
+    """
+    try:
+        
+        data = json.loads(request.body)
+        lookback_hours = data.get('lookback_hours', 720)
+        
+        subsectors = get_all_subsectors()
+        
+        # ── Fetch 1h data for all Tech stocks ──
+        subsector_series = {}  # { subsector: { symbol: Close Series } }
+        subsector_meta   = {}  # { subsector: [{ symbol, market_cap }, ...] }
+        
+        for subsector in subsectors:
+            stocks = get_subsector_stocks(subsector)
+            series_dict = {}
+            meta_list   = []
+            
+            for sym in stocks:
+                hist = fetch_1h(sym, lookback_hours)
+                if hist is None or len(hist) < 10:
+                    continue
+                series_dict[sym] = hist['Close']
+                try:
+                    info = yf.Ticker(sym).info
+                    mcap = info.get('marketCap') or (float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean()))
+                except Exception:
+                    mcap = float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean())
+                meta_list.append({'symbol': sym, 'market_cap': mcap or 0})
+            
+            if series_dict:
+                subsector_series[subsector] = series_dict
+                subsector_meta[subsector]   = meta_list
+        
+        if not subsector_series:
+            return JsonResponse({'success': False, 'error': 'No subsector data available'})
+        
+        # ── Build market-cap-weighted index for each subsector ──
+        subsector_indices = {}   # { subsector: normalised Series (base 100) }
+        subsector_returns = {}   # { subsector: return Series }
+        subsector_sentiments = {}
+        
+        for subsector, series_dict in subsector_series.items():
+            df = pd.DataFrame(series_dict).dropna()
+            if len(df) < 10:
+                continue
+            
+            # Market-cap weight
+            total_mcap = sum(m['market_cap'] for m in subsector_meta[subsector] if m['symbol'] in df.columns) or 1
+            norm = df.div(df.iloc[0]) * 100
+            weights = {m['symbol']: m['market_cap'] / total_mcap
+                       for m in subsector_meta[subsector] if m['symbol'] in norm.columns}
+            index = norm.multiply(pd.Series(weights)).sum(axis=1)
+            subsector_indices[subsector] = index
+            subsector_returns[subsector] = index.pct_change().dropna()
+            
+            # Sentiment
+            subsector_sentiments[subsector] = compute_sector_sentiment(df)
+        
+        # ── Align all subsector indices to common timestamps ──
+        # Find intersection of all indices
+        common_idx = None
+        for idx in subsector_indices.values():
+            if common_idx is None:
+                common_idx = idx.index
+            else:
+                common_idx = common_idx.intersection(idx.index)
+        
+        if len(common_idx) < 10:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping 1h bars across subsectors'})
+        
+        # Realign
+        for subsector in subsector_indices:
+            subsector_indices[subsector] = subsector_indices[subsector].loc[common_idx]
+            subsector_returns[subsector] = subsector_returns[subsector].loc[
+                subsector_returns[subsector].index.intersection(common_idx)
+            ]
+        
+        # ── Per-Subsector Metrics ──
+        subsector_stats = []
+        for subsector in sorted(subsector_indices.keys()):
+            idx = subsector_indices[subsector]
+            ret = subsector_returns[subsector]
+            sent = subsector_sentiments[subsector]
+            char = SUBSECTOR_CHARACTERISTICS.get(subsector, {})
+            
+            total_return = float(idx.iloc[-1] - 100)
+            volatility   = float(ret.std() * np.sqrt(252 * 6.5)) * 100  # annualised from 1h
+            sharpe_proxy = (total_return / volatility) if volatility > 0 else 0
+            
+            # Momentum score: 20-bar vs 50-bar EMA slope
+            ema20 = idx.ewm(span=20, adjust=False).mean()
+            ema50 = idx.ewm(span=50, adjust=False).mean()
+            if len(ema50) >= 50:
+                momentum_score = round(float((ema20.iloc[-1] - ema50.iloc[-1]) / ema50.iloc[-1] * 100), 2)
+            else:
+                momentum_score = 0.0
+            
+            # Relative strength vs median
+            subsector_stats.append({
+                'subsector': subsector,
+                'return': round(total_return, 2),
+                'volatility': round(volatility, 2),
+                'sharpe': round(sharpe_proxy, 2),
+                'momentum_score': momentum_score,
+                'sentiment_label': sent['label'],
+                'sentiment_score': sent['score'],
+                'sentiment_confidence': sent['confidence'],
+                'stocks_count': len(subsector_series[subsector]),
+                'characteristics': char.get('description', ''),
+                'key_drivers': char.get('key_drivers', []),
+                'typical_beta': char.get('typical_beta_range', (1.0, 1.0))
+            })
+        
+        # ── Rank subsectors by return ──
+        subsector_stats.sort(key=lambda x: x['return'], reverse=True)
+        
+        # Assign rank and relative strength
+        median_return = np.median([s['return'] for s in subsector_stats])
+        for i, s in enumerate(subsector_stats):
+            s['rank'] = i + 1
+            s['relative_strength'] = "LEADING" if s['return'] > median_return + 2 else \
+                                     ("LAGGING" if s['return'] < median_return - 2 else "NEUTRAL")
+        
+        # ── Rotation Signals ──
+        # Identify subsectors with momentum divergence from sentiment
+        rotation_signals = []
+        for s in subsector_stats:
+            if s['sentiment_label'] == 'BULLISH' and s['momentum_score'] < -1:
+                rotation_signals.append({
+                    'subsector': s['subsector'],
+                    'signal': 'ROLLING OVER',
+                    'description': f"{s['subsector']} sentiment is bullish but momentum is fading — potential rotation OUT.'
+                })
+            elif s['sentiment_label'] == 'BEARISH' and s['momentum_score'] > 1:
+                rotation_signals.append({
+                    'subsector': s['subsector'],
+                    'signal': 'BOTTOMING',
+                    'description': f"{s['subsector']} sentiment is bearish but momentum is turning — potential rotation IN."
+                })
+            elif s['sentiment_label'] == 'BULLISH' and s['momentum_score'] > 2:
+                rotation_signals.append({
+                    'subsector': s['subsector'],
+                    'signal': 'ACCELERATING',
+                    'description': f"{s['subsector']} is bullish with strong momentum — continue overweighting."
+                })
+        
+        # ── Cross-Subsector Correlation Matrix (optional, compute top pairs) ──
+        # For brevity, we compute correlation between top 5 and bottom 5 subsectors
+        top5 = [s['subsector'] for s in subsector_stats[:5]]
+        bot5 = [s['subsector'] for s in subsector_stats[-5:]]
+        corr_pairs = []
+        for sub1 in top5:
+            for sub2 in bot5:
+                ret1 = subsector_returns[sub1]
+                ret2 = subsector_returns[sub2]
+                common = ret1.index.intersection(ret2.index)
+                if len(common) < 10:
+                    continue
+                c = float(np.corrcoef(ret1.loc[common].values, ret2.loc[common].values)[0, 1])
+                corr_pairs.append({
+                    'subsector1': sub1,
+                    'subsector2': sub2,
+                    'correlation': round(c, 3)
+                })
+        corr_pairs.sort(key=lambda x: abs(x['correlation']), reverse=True)
+        
+        # ── Trade Recommendations (subsector level) ──
+        # Overweight: BULLISH + LEADING
+        # Underweight: BEARISH + LAGGING
+        # Neutral: everything else
+        trade_recs = []
+        for s in subsector_stats:
+            if s['sentiment_label'] == 'BULLISH' and s['relative_strength'] == 'LEADING':
+                action = 'OVERWEIGHT'
+                color  = '#10b981'
+                rationale = f"{s['subsector']} is bullish with {s['return']:+.1f}% return, leading the pack. Momentum score {s['momentum_score']:+.1f}% confirms strength."
+            elif s['sentiment_label'] == 'BEARISH' and s['relative_strength'] == 'LAGGING':
+                action = 'UNDERWEIGHT'
+                color  = '#ef4444'
+                rationale = f"{s['subsector']} is bearish with {s['return']:+.1f}% return, lagging peers. Avoid or trim exposure."
+            elif s['sentiment_label'] == 'BULLISH' and s['relative_strength'] == 'LAGGING':
+                action = 'WATCH'
+                color  = '#f59e0b'
+                rationale = f"{s['subsector']} sentiment is bullish but lagging on returns — catch-up opportunity or warning sign."
+            elif s['sentiment_label'] == 'BEARISH' and s['relative_strength'] == 'LEADING':
+                action = 'WATCH'
+                color  = '#f59e0b'
+                rationale = f"{s['subsector']} is leading despite bearish sentiment — resilience or about to roll over."
+            else:
+                action = 'NEUTRAL'
+                color  = '#6b7280'
+                rationale = f"{s['subsector']} is in neutral territory. No strong signal to overweight or underweight."
+            
+            trade_recs.append({
+                'subsector': s['subsector'],
+                'action': action,
+                'action_color': color,
+                'rationale': rationale,
+                'return': s['return'],
+                'momentum': s['momentum_score'],
+                'sentiment': s['sentiment_label']
+            })
+        
+        # ── Insights ──
+        insights = []
+        top = subsector_stats[0]
+        bottom = subsector_stats[-1]
+        insights.append(f"🏆 Leading subsector: {top['subsector']} ({top['return']:+.1f}% on 1h, sentiment: {top['sentiment_label']}).")
+        insights.append(f"📉 Lagging subsector: {bottom['subsector']} ({bottom['return']:+.1f}% on 1h, sentiment: {bottom['sentiment_label']}).")
+        
+        bullish_count = sum(1 for s in subsector_stats if s['sentiment_label'] == 'BULLISH')
+        bearish_count = sum(1 for s in subsector_stats if s['sentiment_label'] == 'BEARISH')
+        insights.append(f"📊 Breadth: {bullish_count} subsectors bullish, {bearish_count} bearish out of {len(subsector_stats)} total.")
+        
+        if rotation_signals:
+            insights.append(f"🔄 {len(rotation_signals)} rotation signal(s) detected — check rotation_signals for details.")
+        
+        # ── Timeseries (top 3 subsectors for chart) ──
+        top3 = [s['subsector'] for s in subsector_stats[:3]]
+        step = max(1, len(common_idx) // 200)
+        timeseries = []
+        for i in range(0, len(common_idx), step):
+            date = common_idx[i]
+            point = {'date': date.strftime('%Y-%m-%d %H:%M')}
+            for sub in top3:
+                point[sub] = round(float(subsector_indices[sub].loc[date]), 2)
+            timeseries.append(point)
+        
+        return JsonResponse({
+            'success': True,
+            'timeframe': '1h',
+            'subsector_stats': subsector_stats,
+            'trade_recommendations': trade_recs,
+            'rotation_signals': rotation_signals,
+            'correlation_pairs': corr_pairs[:10],  # top 10
+            'timeseries': timeseries,
+            'top3_subsectors': top3,
+            'insights': insights,
+            'total_subsectors': len(subsector_stats),
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# NEW ENDPOINT 5: PER-STOCK — Individual Tech Stock vs
+#                              Its Subsector Peers (1h)
+#
+# For a single Technology stock (e.g. NVDA):
+#   - Identifies its subsector (e.g. Semiconductors)
+#   - Builds a peer index (all other stocks in that subsector)
+#   - Calculates expected vs actual return (beta-based)
+#   - Flags if stock is outperforming/underperforming its peers
+#   - Generates trade rec based on peer alignment + subsector sentiment
+#   - Shows which specific peers are leading/lagging
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_tech_stock_subsector_alignment(request):
+    """
+    Per-stock: How is this Tech stock performing vs its subsector peers on 1h?
+    Returns alignment score, peer comparison, subsector sentiment, trade rec.
+    """
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        lookback_hours = data.get('lookback_hours', 720)
+        
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'})
+        
+        # Verify it's a Technology stock
+        sector = SECTOR_MAPPINGS.get(symbol)
+        if sector != 'Technology':
+            return JsonResponse({'success': False, 'error': f'{symbol} is not a Technology stock (sector: {sector})'})
+        
+        subsector = get_tech_subsector(symbol)
+        if not subsector:
+            return JsonResponse({'success': False, 'error': f'{symbol} subsector mapping not found'})
+        
+        # ── Fetch the stock (1h) ──
+        stock_hist = fetch_1h(symbol, lookback_hours)
+        if stock_hist is None or len(stock_hist) < 10:
+            return JsonResponse({'success': False, 'error': f'No 1h data for {symbol}'})
+        stock_close = stock_hist['Close']
+        
+        # ── Fetch all peers in the same subsector (excluding this stock) ──
+        peers = [s for s in get_subsector_stocks(subsector) if s != symbol]
+        peer_series = {}
+        peer_meta   = []
+        for peer in peers:
+            hist = fetch_1h(peer, lookback_hours)
+            if hist is None or len(hist) < 10:
+                continue
+            peer_series[peer] = hist['Close']
+            try:
+                info = yf.Ticker(peer).info
+                mcap = info.get('marketCap') or (float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean()))
+            except Exception:
+                mcap = float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean())
+            peer_meta.append({'symbol': peer, 'market_cap': mcap or 0})
+        
+        if not peer_series:
+            return JsonResponse({'success': False, 'error': f'No peer data available for {subsector}'})
+        
+        # ── Build peer index (market-cap weighted, excluding target stock) ──
+        peer_df = pd.DataFrame(peer_series)
+        all_series = peer_df.copy()
+        all_series[symbol] = stock_close
+        all_series = all_series.dropna()
+        
+        if len(all_series) < 10:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping 1h bars'})
+        
+        # Peer index (without target stock)
+        total_mcap = sum(m['market_cap'] for m in peer_meta if m['symbol'] in peer_df.columns) or 1
+        peer_norm  = peer_df.loc[all_series.index].div(peer_df.loc[all_series.index].iloc[0]) * 100
+        weights    = {m['symbol']: m['market_cap'] / total_mcap
+                      for m in peer_meta if m['symbol'] in peer_norm.columns}
+        peer_index = peer_norm.multiply(pd.Series(weights)).sum(axis=1)
+        
+        # Stock normalised
+        stock_norm = (all_series[symbol] / all_series[symbol].iloc[0]) * 100
+        
+        # ── Returns ──
+        peer_ret  = peer_index.pct_change().dropna()
+        stock_ret = stock_norm.pct_change().dropna()
+        common    = peer_ret.index.intersection(stock_ret.index)
+        peer_ret, stock_ret = peer_ret.loc[common], stock_ret.loc[common]
+        
+        correlation = float(np.corrcoef(peer_ret.values, stock_ret.values)[0, 1])
+        
+        cov_m = np.cov(stock_ret.values, peer_ret.values)
+        beta  = float(cov_m[0, 1] / cov_m[1, 1]) if cov_m[1, 1] != 0 else 0.0
+        
+        # ── Expected vs Actual ──
+        peer_total_return  = float(peer_index.iloc[-1] - 100)
+        stock_total_return = float(stock_norm.iloc[-1] - 100)
+        expected_return    = round(beta * peer_total_return, 2)
+        actual_return      = round(stock_total_return, 2)
+        return_gap         = round(actual_return - expected_return, 2)
+        
+        # ── Alignment score ──
+        alignment = round(max(0, min(100, (1 - min(abs(return_gap)/20, 1)) * max(correlation, 0) * 100)), 1)
+        
+        # ── Signal ──
+        if   return_gap >  3: signal, signal_color = "OUTPERFORMING PEERS", "#10b981"
+        elif return_gap < -3: signal, signal_color = "UNDERPERFORMING PEERS", "#ef4444"
+        else:                 signal, signal_color = "ALIGNED WITH PEERS", "#10b981"
+        
+        signal_desc = (f"{symbol} gained {return_gap:.1f}% more than its {subsector} peers on 1h."  if return_gap > 3
+                  else f"{symbol} lagged its {subsector} peers by {abs(return_gap):.1f}% on 1h."     if return_gap < -3
+                  else f"{symbol} is tracking its {subsector} peers as expected on 1h.")
+        
+        # ── Subsector Sentiment ──
+        # Use the peer basket to compute subsector sentiment
+        subsector_sentiment = compute_sector_sentiment(peer_df.loc[all_series.index])
+        
+        # ── Per-Peer Comparison (top 5 peers by market cap) ──
+        peer_meta.sort(key=lambda x: x['market_cap'], reverse=True)
+        top_peers = []
+        for m in peer_meta[:5]:
+            p_sym = m['symbol']
+            if p_sym not in all_series.columns:
+                continue
+            p_norm = (all_series[p_sym] / all_series[p_sym].iloc[0]) * 100
+            p_ret  = float(p_norm.iloc[-1] - 100)
+            top_peers.append({
+                'symbol': p_sym,
+                'return': round(p_ret, 2),
+                'vs_target': round(p_ret - stock_total_return, 2)
+            })
+        
+        # ── Trade Recommendation (peer-relative) ──
+        # Use subsector sentiment + peer alignment
+        trade_rec = generate_trade_rec(
+            symbol=symbol,
+            sector_sentiment=subsector_sentiment,
+            stock_return=actual_return,
+            expected_return=expected_return,
+            return_gap=return_gap,
+            correlation=round(correlation, 3),
+            alignment_score=alignment,
+            beta=round(beta, 3)
+        )
+        
+        # Add subsector-specific context
+        char = SUBSECTOR_CHARACTERISTICS.get(subsector, {})
+        trade_rec['subsector'] = subsector
+        trade_rec['subsector_description'] = char.get('description', '')
+        trade_rec['key_drivers'] = char.get('key_drivers', [])
+        
+        # ── Implications ──
+        implications = [
+            f"🎯 Recommendation: {trade_rec['action']} — {trade_rec['rationale']}",
+            f"📍 Entry: {trade_rec['entry']}",
+            f"⚖️ Risk/Reward: {trade_rec['risk_reward']}",
+            f"🔍 Subsector: {subsector} ({char.get('description', 'N/A')})"
+        ]
+        
+        # ── Timeseries ──
+        step = max(1, len(all_series) // 200)
+        timeseries = []
+        for i in range(0, len(all_series), step):
+            date = all_series.index[i]
+            timeseries.append({
+                'date': date.strftime('%Y-%m-%d %H:%M'),
+                'peer_index': round(float(peer_index.loc[date]), 2),
+                'stock':      round(float(stock_norm.loc[date]), 2)
+            })
+        
+        # ── Insights ──
+        insights = []
+        insights.append(f"📊 {symbol} is in the {subsector} subsector with {len(peer_series)} peers.")
+        insights.append(f"🎭 Subsector sentiment: {subsector_sentiment['label']} (score {subsector_sentiment['score']}/100, confidence {subsector_sentiment['confidence']}).")
+        if return_gap > 0:
+            insights.append(f"🚀 {symbol} is outperforming peers by {return_gap:.1f}% — check for stock-specific catalysts.")
+        elif return_gap < 0:
+            insights.append(f"⚠️ {symbol} is underperforming peers by {abs(return_gap):.1f}% — investigate headwinds or lagging fundamentals.")
+        else:
+            insights.append(f"✅ {symbol} is moving in line with {subsector} peers — no divergence detected.")
+        
+        if top_peers:
+            best_peer = max(top_peers, key=lambda x: x['return'])
+            insights.append(f"🏆 Best peer: {best_peer['symbol']} ({best_peer['return']:+.1f}%).")
+        
+        return JsonResponse({
+            'success': True,
+            'timeframe': '1h',
+            'symbol': symbol,
+            'subsector': subsector,
+            'alignment_score': alignment,
+            'correlation': round(correlation, 3),
+            'beta': round(beta, 3),
+            'expected_return': expected_return,
+            'actual_return': actual_return,
+            'return_gap': return_gap,
+            'signal': signal,
+            'signal_color': signal_color,
+            'signal_description': signal_desc,
+            'subsector_sentiment': subsector_sentiment,
+            'trade_recommendation': trade_rec,
+            'top_peers': top_peers,
+            'peer_index_return': round(peer_total_return, 2),
+            'implications': implications,
+            'timeseries': timeseries,
+            'insights': insights,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+
+
+
+
+
+
+
 
 # LEGODI BACKEND CODE
 def send_simple_message():
