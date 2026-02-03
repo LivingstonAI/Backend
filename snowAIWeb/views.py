@@ -34990,15 +34990,15 @@ if num_positions == 0:
 
 def snowai_scan_high_r_squared_assets():
     """
-    Scans all assets from ALL_ASSET_MAPPINGS for high R² values.
+    Scans all assets from ALL_ASSET_MAPPINGS for high trend scores.
     Runs once per day and stores results in SnowAIAllEncompassingDailyStock.
     """
-    print("🔍 Starting daily R² scan for all asset classes (excluding Forex)...")
+    print("🔍 Starting daily trend score scan for all asset classes (excluding Forex)...")
     
     today = timezone.now().date()
     all_symbols = list(ALL_ASSET_MAPPINGS.keys())
     
-    high_r_squared_assets = []
+    high_trend_score_assets = []
     
     for symbol in all_symbols:
         try:
@@ -35008,7 +35008,7 @@ def snowai_scan_high_r_squared_assets():
             if hist.empty or len(hist) < 20:
                 continue
             
-            # Calculate R² using linear regression
+            # Calculate trend score components (from _calculate_mss logic)
             prices = hist['Close'].values
             X = np.arange(len(prices)).reshape(-1, 1)
             y = prices.reshape(-1, 1)
@@ -35018,8 +35018,34 @@ def snowai_scan_high_r_squared_assets():
             r_squared = model.score(X, y)
             r_squared = max(0, min(r_squared, 1.0))
             
-            # Only keep assets with R² >= 0.7 (strong trend)
-            if r_squared >= 0.7:
+            # Calculate returns and trend consistency
+            hist['returns'] = hist['Close'].pct_change()
+            returns = hist['returns'].dropna()
+            
+            if len(returns) > 0:
+                positive_days = (returns > 0).sum()
+                trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
+            else:
+                trend_consistency = 0
+            
+            # Calculate trend strength (magnitude of slope relative to price)
+            if len(prices) > 0 and prices[0] != 0:
+                slope_per_day = model.coef_[0][0]
+                avg_price = np.mean(prices)
+                trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
+                trend_strength = min(trend_strength, 1.0)
+            else:
+                trend_strength = 0
+            
+            # Calculate trend score (0-100)
+            trend_score = (
+                r_squared * 0.5 +
+                trend_consistency * 0.3 +
+                trend_strength * 0.2
+            ) * 100
+            
+            # Only keep assets with trend_score >= 60 (strong trend)
+            if trend_score >= 60:
                 # Determine trend direction
                 slope = model.coef_[0][0]
                 if slope > 0:
@@ -35029,20 +35055,39 @@ def snowai_scan_high_r_squared_assets():
                 else:
                     trend = 'ranging'
                 
-                # Calculate MSS for reference
-                hist['returns'] = hist['Close'].pct_change()
-                returns = hist['returns'].dropna()
+                # Calculate volatility for MSS
                 volatility = returns.std() if len(returns) > 0 else 0
+                normalized_volatility = min(volatility / 0.05, 1.0)
+                stability_factor = (1 - normalized_volatility) ** 0.6
                 
-                # Simple MSS approximation
-                mss = r_squared * 100 * (1 - min(volatility * 10, 1))
+                # Calculate liquidity factor
+                if 'Volume' in hist.columns:
+                    avg_volume = hist['Volume'].mean()
+                    
+                    if avg_volume > 10000000:
+                        liquidity_factor = 1.2
+                    elif avg_volume > 1000000:
+                        liquidity_factor = 1.0
+                    elif avg_volume > 100000:
+                        liquidity_factor = 0.9
+                    else:
+                        liquidity_factor = 0.8
+                else:
+                    liquidity_factor = 1.0
+                
+                # Calculate full MSS
+                mss = trend_score * stability_factor * liquidity_factor
+                mss = min(max(mss, 0), 100)
                 
                 current_price = hist['Close'].iloc[-1]
                 sector = ALL_ASSET_MAPPINGS.get(symbol, 'Unknown')
                 
-                high_r_squared_assets.append({
+                high_trend_score_assets.append({
                     'symbol': symbol,
                     'r_squared': r_squared,
+                    'trend_score': trend_score,
+                    'trend_consistency': trend_consistency,
+                    'trend_strength': trend_strength,
                     'trend': trend,
                     'mss': mss,
                     'current_price': current_price,
@@ -35053,11 +35098,11 @@ def snowai_scan_high_r_squared_assets():
             print(f"Error scanning {symbol}: {str(e)}")
             continue
     
-    # Sort by R² descending
-    high_r_squared_assets.sort(key=lambda x: x['r_squared'], reverse=True)
+    # Sort by trend_score descending (primary) and MSS (secondary)
+    high_trend_score_assets.sort(key=lambda x: (x['trend_score'], x['mss']), reverse=True)
     
-    # Store top 50 assets in database
-    for asset in high_r_squared_assets[:50]:
+    # Store ALL qualifying assets in database
+    for asset in high_trend_score_assets:
         SnowAIAllEncompassingDailyStock.objects.update_or_create(
             date=today,
             asset=asset['symbol'],
@@ -35072,9 +35117,10 @@ def snowai_scan_high_r_squared_assets():
             }
         )
     
-    print(f"✅ Scan complete! Found {len(high_r_squared_assets)} high R² assets. Stored top 50.")
-    return len(high_r_squared_assets)
-
+    print(f"✅ Scan complete! Found and stored {len(high_trend_score_assets)} high trend score assets (>= 60).")
+    if len(high_trend_score_assets) > 0:
+        print(f"📊 Trend score range: {high_trend_score_assets[0]['trend_score']:.2f} - {high_trend_score_assets[-1]['trend_score']:.2f}")
+    return len(high_trend_score_assets)
 
 # ================================
 # STEP 2: EXECUTE TRADES ON HIGH R² ASSETS
@@ -36319,28 +36365,6 @@ def get_subsector_stocks(subsector):
 def get_all_subsectors():
     """Returns a sorted list of unique subsector names."""
     return sorted(set(TECH_SUBSECTOR_MAPPINGS.values()))
-
-
-                
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ============================================================
