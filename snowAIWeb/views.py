@@ -34963,8 +34963,8 @@ import pytz
 
 UPTREND_CODE = """
 # 2-Layer Elite Uptrend Strategy
-set_take_profit(number=2, type_of_setting='PERCENTAGE')
-set_stop_loss(number=1, type_of_setting='PERCENTAGE')
+set_take_profit(number=8, type_of_setting='PERCENTAGE')
+set_stop_loss(number=4, type_of_setting='PERCENTAGE')
 
 if num_positions == 0:
     if is_uptrend(data=dataset, lookback_days=30):
@@ -34974,8 +34974,8 @@ if num_positions == 0:
 
 DOWNTREND_CODE = """
 # 2-Layer Elite Downtrend Strategy
-set_take_profit(number=2, type_of_setting='PERCENTAGE')
-set_stop_loss(number=1, type_of_setting='PERCENTAGE')
+set_take_profit(number=8, type_of_setting='PERCENTAGE')
+set_stop_loss(number=4, type_of_setting='PERCENTAGE')
 
 if num_positions == 0:
     if is_downtrend(data=dataset, lookback_days=30):
@@ -35190,8 +35190,8 @@ def snowai_execute_all_encompassing_world_trades():
             
             if return_statement in ['buy', 'sell']:
                 # Get TP/SL from namespace
-                tp_value = namespace.get('_take_profit', 2)
-                sl_value = namespace.get('_stop_loss', 1)
+                tp_value = namespace.get('_take_profit', 8)
+                sl_value = namespace.get('_stop_loss', 4)
                 
                 # Calculate TP/SL prices
                 if return_statement == 'buy':
@@ -35324,8 +35324,8 @@ def snowai_prepare_namespace(asset_record, dataset):
         'asset': asset_record.asset,
         'set_take_profit': set_take_profit,
         'set_stop_loss': set_stop_loss,
-        '_take_profit': 2,
-        '_stop_loss': 1,
+        '_take_profit': 8,
+        '_stop_loss': 4,
         # All your trading functions (same as ActiveForwardTestModel)
         'is_uptrend': is_uptrend,
         'is_downtrend': is_downtrend,
