@@ -530,6 +530,13 @@ urlpatterns = [
      # Per-stock: Individual Tech stock vs its subsector peers
      path('api/mss-tech-stock-subsector-alignment/', views.mss_tech_stock_subsector_alignment, name='mss-tech-stock-subsector-alignment'),
 
+     # ============================================================
+     # URL ROUTE — Institutional vs Retail Analysis
+     # ============================================================
+
+     # Per-asset: Infer institutional vs retail influence on price action
+     path('api/mss-institutional-vs-retail-analyzer/', views.mss_institutional_vs_retail_analyzer, name='mss-institutional-vs-retail-analyzer'),
+
 
 
 
