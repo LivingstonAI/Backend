@@ -19,7 +19,10 @@ WORKDIR /usr/src/app
 COPY . .
 
 # Upgrade pip, setuptools, and wheel
-RUN pip install --upgrade pip setuptools wheel
+RUN pip install --upgrade pip wheel
+
+# Explicitly install setuptools (ensures pkg_resources is available)
+RUN pip install --no-cache-dir setuptools==70.0.0
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
