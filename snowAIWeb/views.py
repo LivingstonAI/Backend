@@ -37249,6 +37249,7 @@ def mss_sector_deep_dive_analyzer(request):
         stock_data = {}  # { symbol: { hist, mcap } }
         failed = []
         
+        
         for sym in sector_stocks:
             hist = fetch_1h(sym, lookback_hours)
             if hist is None or len(hist) < 10:
