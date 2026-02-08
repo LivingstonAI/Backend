@@ -37778,6 +37778,7 @@ def mss_sector_deep_dive_analyzer(request):
     
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
