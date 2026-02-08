@@ -106,7 +106,6 @@ from dataclasses import dataclass
 # current_hour = datetime.datetime.now().time().hour
 
 
-
 scheduler = BackgroundScheduler()
 scheduler.start()
 
