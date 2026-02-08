@@ -537,6 +537,10 @@ urlpatterns = [
      # Per-asset: Infer institutional vs retail influence on price action
      path('api/mss-institutional-vs-retail-analyzer/', views.mss_institutional_vs_retail_analyzer, name='mss-institutional-vs-retail-analyzer'),
 
+     # Bulk: Deep analysis of any sector (health, drivers, opportunities)
+     path('api/mss-sector-deep-dive-analyzer/', views.mss_sector_deep_dive_analyzer, name='mss-sector-deep-dive-analyzer'),
+
+
 
 
 
