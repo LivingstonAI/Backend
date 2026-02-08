@@ -37540,52 +37540,113 @@ def mss_sector_deep_dive_analyzer(request):
             # ── 5. SIGNAL GENERATION ──
             gap = s['return'] - sector_median_return
             
-            # BUY CONDITIONS (prioritize trending + institutional)
-            if (is_trending and trend_quality > 0.5 and inst_score > 60 and 
-                s['return'] > 0 and sector_sentiment['label'] in ['BULLISH', 'CHOPPY']):
+            # Lower thresholds — we want to catch MORE opportunities, not fewer
+            # Trend quality > 0.3 = acceptable (was 0.5)
+            # Inst score > 40 = acceptable (was 60)
+            # Focus on TREND FIRST, institutions second
+            
+            # ═══ PRIMARY BUY CONDITIONS ═══
+            
+            # BUY 1: Strong trend with any institutional presence
+            if (trend_quality > 0.4 and inst_score > 40 and s['return'] > 0):
                 action = 'BUY'
                 action_color = '#10b981'
-                rationale = f"{sym} in clean uptrend (quality {trend_quality:.2f}) with institutional backing ({inst_score:.0f}/100). Trend-following setup."
+                rationale = f"{sym} trending up (quality {trend_quality:.2f}) with institutional flow ({inst_score:.0f}/100)."
                 if elasticity > 1.2:
-                    rationale += f" High beta ({elasticity:.2f}x) amplifies sector moves."
+                    rationale += f" High beta ({elasticity:.2f}x)."
             
-            # BUY (catch-up in trending regime)
-            elif (is_trending and gap < -3 and s['correlation'] > 0.6 and 
-                  inst_score > 50 and sector_sentiment['label'] == 'BULLISH'):
+            # BUY 2: Trending regime + positive return (ignore institutional score if trend is strong)
+            elif (is_trending and trend_quality > 0.35 and s['return'] > 1):
                 action = 'BUY'
                 action_color = '#10b981'
-                rationale = f"{sym} lagging sector by {abs(gap):.1f}% but in trending regime with decent institutional flow. Catch-up + trend alignment."
+                rationale = f"{sym} in trending regime (quality {trend_quality:.2f}), up {s['return']:+.1f}%. Follow the trend."
             
-            # SELL CONDITIONS (weak trend + poor institutional backing)
-            elif (trend_quality < 0.3 and inst_score < 40 and s['return'] < -2):
-                action = 'SELL'
-                action_color = '#ef4444'
-                rationale = f"{sym} choppy trend (quality {trend_quality:.2f}) with weak institutional flow ({inst_score:.0f}/100). No conviction."
+            # BUY 3: Sector bullish + stock positive + decent trend
+            elif (sector_sentiment['label'] == 'BULLISH' and s['return'] > 0 and trend_quality > 0.3):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} up {s['return']:+.1f}% in bullish sector. Trend quality {trend_quality:.2f}."
             
-            # SELL (downtrend confirmed by institutions)
-            elif (is_trending and s['return'] < -3 and inst_score > 60 and 
-                  sector_sentiment['label'] in ['BEARISH', 'CHOPPY']):
-                action = 'SELL'
-                action_color = '#ef4444'
-                rationale = f"{sym} in confirmed downtrend with institutional distribution. Exit or short."
+            # BUY 4: Catch-up trade (lagging but good trend + correlation)
+            elif (gap < -3 and s['correlation'] > 0.5 and trend_quality > 0.3 and 
+                  sector_sentiment['label'] in ['BULLISH', 'CHOPPY']):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} lagging sector by {abs(gap):.1f}% but decent trend ({trend_quality:.2f}). Catch-up opportunity."
             
-            # HOLD (trending + strong)
-            elif (is_trending and trend_quality > 0.6 and s['return'] > 3 and inst_score > 60):
+            # BUY 5: High institutional + positive (any trend)
+            elif (inst_score > 65 and s['return'] > 0):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} strong institutional backing ({inst_score:.0f}/100), up {s['return']:+.1f}%."
+            
+            # ═══ HOLD CONDITIONS ═══
+            
+            # HOLD 1: Already trending + profitable
+            elif (is_trending and s['return'] > 2 and trend_quality > 0.4):
                 action = 'HOLD'
                 action_color = '#3b82f6'
-                rationale = f"{sym} strong trend (quality {trend_quality:.2f}) with institutional support. Ride momentum."
+                rationale = f"{sym} in trend (quality {trend_quality:.2f}), up {s['return']:+.1f}%. Ride momentum."
             
-            # TRIM (extended in mean-reverting regime)
-            elif (not is_trending and gap > 8 and trend_quality < 0.4):
+            # HOLD 2: Good institutional flow + positive
+            elif (inst_score > 60 and s['return'] > 1):
+                action = 'HOLD'
+                action_color = '#3b82f6'
+                rationale = f"{sym} institutional support ({inst_score:.0f}/100). Hold position."
+            
+            # ═══ SELL CONDITIONS ═══
+            
+            # SELL 1: Downtrend confirmed
+            elif (is_trending and s['return'] < -2 and trend_quality > 0.35):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} confirmed downtrend (quality {trend_quality:.2f}), down {s['return']:.1f}%."
+            
+            # SELL 2: Weak trend + negative
+            elif (trend_quality < 0.25 and s['return'] < -1):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} choppy (quality {trend_quality:.2f}), down {s['return']:.1f}%. No conviction."
+            
+            # SELL 3: Bearish sector + stock negative
+            elif (sector_sentiment['label'] == 'BEARISH' and s['return'] < -1):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} down {s['return']:.1f}% in bearish sector. Exit."
+            
+            # SELL 4: Poor institutional + negative
+            elif (inst_score < 35 and s['return'] < -1.5):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} weak flow ({inst_score:.0f}/100), down {s['return']:.1f}%. Retail dumping."
+            
+            # ═══ TRIM CONDITIONS ═══
+            
+            # TRIM 1: Extended in choppy regime
+            elif (not is_trending and gap > 6 and trend_quality < 0.35):
                 action = 'TRIM'
                 action_color = '#f59e0b'
-                rationale = f"{sym} extended ({gap:+.1f}% vs sector) in choppy regime. Mean-reversion risk."
+                rationale = f"{sym} extended ({gap:+.1f}% vs sector) in choppy regime. Take profits."
             
-            # WATCH (good setup forming but not confirmed)
-            elif (trend_quality > 0.5 and inst_score > 50 and abs(gap) < 3):
+            # TRIM 2: Way ahead of sector
+            elif (gap > 10):
+                action = 'TRIM'
+                action_color = '#f59e0b'
+                rationale = f"{sym} leading sector by {gap:.1f}%. Consider profit-taking."
+            
+            # ═══ WATCH CONDITIONS ═══
+            
+            # WATCH 1: Building trend
+            elif (trend_quality > 0.35 and abs(s['return']) < 2):
                 action = 'WATCH'
                 action_color = '#6b7280'
-                rationale = f"{sym} clean trend forming (quality {trend_quality:.2f}) with decent flow. Wait for confirmation."
+                rationale = f"{sym} decent trend forming (quality {trend_quality:.2f}). Wait for confirmation."
+            
+            # WATCH 2: Decent institutional but flat
+            elif (inst_score > 55 and abs(s['return']) < 1.5):
+                action = 'WATCH'
+                action_color = '#6b7280'
+                rationale = f"{sym} institutional interest ({inst_score:.0f}/100) but no clear direction yet."
             
             else:
                 continue  # No clear opportunity
@@ -37717,8 +37778,7 @@ def mss_sector_deep_dive_analyzer(request):
     
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
+        
 # LEGODI BACKEND CODE
 def send_simple_message():
     # Replace with your Mailgun domain and API key
