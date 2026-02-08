@@ -37211,3 +37211,625 @@ def mss_institutional_vs_retail_analyzer(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+# ============================================================
+# NEW ENDPOINT 7: BULK — Sector Deep Dive Analysis (1h)
+#
+# For any chosen sector (Technology, Materials, Healthcare, etc.):
+#   - Sector health score (sentiment + momentum + breadth)
+#   - Top 10 / Bottom 10 performers by return
+#   - Index drivers (stocks ranked by market cap weight × return impact)
+#   - Sector rotation signals (money flowing in/out)
+#   - Best buy/sell opportunities (correlation divergence + sector sentiment)
+#   - Concentration risk (how much is driven by top 5 stocks)
+#   - Sector vs SPY performance comparison
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_sector_deep_dive_analyzer(request):
+    """
+    Deep analysis of a single sector on 1h timeframe.
+    Returns health metrics, top/bottom performers, index drivers, and trade opportunities.
+    """
+    try:
+        data = json.loads(request.body)
+        sector_name = data.get('sector')
+        lookback_hours = data.get('lookback_hours', 720)
+        
+        if not sector_name:
+            return JsonResponse({'success': False, 'error': 'Sector name required'})
+        
+        # Get all stocks in this sector from SECTOR_MAPPINGS
+        sector_stocks = [sym for sym, sec in SECTOR_MAPPINGS.items() if sec == sector_name]
+        
+        if not sector_stocks:
+            return JsonResponse({'success': False, 'error': f'No stocks found for sector: {sector_name}'})
+        
+        # ── Fetch 1h data for all stocks in sector ──
+        stock_data = {}  # { symbol: { hist, mcap } }
+        failed = []
+        
+        for sym in sector_stocks:
+            hist = fetch_1h(sym, lookback_hours)
+            if hist is None or len(hist) < 10:
+                failed.append(sym)
+                continue
+            
+            # Get market cap
+            try:
+                info = yf.Ticker(sym).info
+                mcap = info.get('marketCap') or (float(hist['Close'].iloc[-1]) * info.get('sharesOutstanding', 1000000))
+            except Exception:
+                mcap = float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean())
+            
+            stock_data[sym] = {
+                'hist': hist,
+                'mcap': mcap or 0,
+                'close': hist['Close']
+            }
+        
+        if len(stock_data) < 3:
+            return JsonResponse({'success': False, 'error': f'Insufficient data for {sector_name} (only {len(stock_data)} stocks with data)'})
+        
+        # ── Build sector index (market-cap weighted) ──
+        close_df = pd.DataFrame({sym: d['close'] for sym, d in stock_data.items()})
+        close_df = close_df.dropna()
+        
+        if len(close_df) < 10:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping bars'})
+        
+        total_mcap = sum(d['mcap'] for d in stock_data.values())
+        weights = {sym: stock_data[sym]['mcap'] / total_mcap for sym in close_df.columns}
+        
+        # Normalized to 100
+        norm_df = close_df.div(close_df.iloc[0]) * 100
+        sector_index = norm_df.multiply(pd.Series(weights)).sum(axis=1)
+        
+        # ── Fetch SPY for comparison ──
+        spy_hist = fetch_1h('SPY', lookback_hours)
+        if spy_hist is not None and len(spy_hist) >= 10:
+            spy_close = spy_hist['Close']
+            spy_norm = (spy_close / spy_close.iloc[0]) * 100
+            # Align to sector index
+            spy_aligned = spy_norm.reindex(sector_index.index, method='ffill')
+        else:
+            spy_aligned = None
+        
+        # ── Sector Health Score ──
+        sector_sentiment = compute_sector_sentiment(close_df)
+        
+        # Additional health metrics
+        sector_return = float(sector_index.iloc[-1] - 100)
+        sector_volatility = float(close_df.pct_change().std().mean() * np.sqrt(252 * 6.5) * 100)  # annualized
+        
+        # Breadth: % of stocks positive over lookback
+        stocks_positive = (close_df.iloc[-1] > close_df.iloc[0]).sum()
+        breadth_pct = round(stocks_positive / len(close_df) * 100, 1)
+        
+        # Momentum: 20-bar vs 50-bar EMA slope
+        ema20 = sector_index.ewm(span=20, adjust=False).mean()
+        ema50 = sector_index.ewm(span=50, adjust=False).mean()
+        if len(ema50) >= 50:
+            momentum_score = round(float((ema20.iloc[-1] - ema50.iloc[-1]) / ema50.iloc[-1] * 100), 2)
+        else:
+            momentum_score = 0.0
+        
+        health_score = round(
+            sector_sentiment['score'] * 0.4 +
+            (50 + min(max(sector_return, -10), 10) * 5) * 0.3 +  # return component
+            breadth_pct * 0.3,
+            1
+        )
+        
+        if health_score >= 70:
+            health_label = "STRONG"
+            health_color = "#10b981"
+        elif health_score >= 50:
+            health_label = "NEUTRAL"
+            health_color = "#f59e0b"
+        else:
+            health_label = "WEAK"
+            health_color = "#ef4444"
+        
+        # ── Per-Stock Performance ──
+        stock_performance = []
+        for sym in close_df.columns:
+            closes = close_df[sym]
+            total_ret = float((closes.iloc[-1] - closes.iloc[0]) / closes.iloc[0] * 100)
+            mcap = stock_data[sym]['mcap']
+            weight = weights[sym]
+            
+            # Contribution to index return
+            contribution = round(total_ret * weight, 2)
+            
+            # Correlation with sector index
+            ret_series = closes.pct_change().dropna()
+            idx_ret = sector_index.pct_change().dropna()
+            common_idx = ret_series.index.intersection(idx_ret.index)
+            if len(common_idx) >= 10:
+                corr = float(np.corrcoef(ret_series.loc[common_idx], idx_ret.loc[common_idx])[0, 1])
+            else:
+                corr = 0.0
+            
+            stock_performance.append({
+                'symbol': sym,
+                'return': round(total_ret, 2),
+                'mcap': mcap,
+                'weight': round(weight * 100, 2),
+                'contribution': contribution,
+                'correlation': round(corr, 3)
+            })
+        
+        # Sort by return
+        stock_performance.sort(key=lambda x: x['return'], reverse=True)
+        
+        # ── Index Drivers (by contribution) ──
+        index_drivers = sorted(stock_performance, key=lambda x: abs(x['contribution']), reverse=True)[:10]
+        
+        # ── Top 10 / Bottom 10 ──
+        top_10 = stock_performance[:10]
+        bottom_10 = stock_performance[-10:]
+        
+        # ── Concentration Risk ──
+        top5_contribution = sum(abs(s['contribution']) for s in stock_performance[:5])
+        concentration_pct = round(top5_contribution / abs(sector_return) * 100 if sector_return != 0 else 0, 1)
+        
+        # ── Trade Opportunities (Trend-Based + Institutional Flow) ──
+        # New methodology:
+        # 1. Assess trend quality (clean vs choppy)
+        # 2. Detect regime (trending vs mean-reverting)
+        # 3. Measure trend elasticity (responsiveness)
+        # 4. Infer institutional participation (micro-structure signals)
+        # 5. Generate context-aware signals (trend-following + institutional confirmation)
+        
+        sector_median_return = np.median([s['return'] for s in stock_performance])
+        
+        trade_opportunities = []
+        for s in stock_performance:
+            sym = s['symbol']
+            closes = close_df[sym]
+            hist = stock_data[sym]['hist']
+            
+            # ── 1. TREND QUALITY (MSS-style calculation) ──
+            # Uses R² + trend consistency + trend strength
+            # More accurate than simple efficiency ratio
+            
+            try:
+                from sklearn.linear_model import LinearRegression
+                
+                # Calculate returns
+                returns = closes.pct_change().dropna()
+                
+                # R² (trend clarity from linear regression)
+                prices = closes.values
+                X = np.arange(len(prices)).reshape(-1, 1)
+                y = prices.reshape(-1, 1)
+                
+                model = LinearRegression()
+                model.fit(X, y)
+                r_squared = float(model.score(X, y))
+                
+                # Trend consistency (directional strength)
+                if len(returns) > 0:
+                    positive_days = (returns > 0).sum()
+                    trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
+                else:
+                    trend_consistency = 0
+                
+                # Trend strength (magnitude of slope relative to price)
+                if len(prices) > 0 and prices[0] != 0:
+                    slope_per_bar = model.coef_[0][0]
+                    avg_price = np.mean(prices)
+                    trend_strength = abs(slope_per_bar * len(prices)) / avg_price if avg_price != 0 else 0
+                    trend_strength = min(trend_strength, 1.0)
+                else:
+                    trend_strength = 0
+                
+                # Composite trend quality (0-100 scale)
+                trend_quality = (
+                    r_squared * 0.5 +
+                    trend_consistency * 0.3 +
+                    trend_strength * 0.2
+                )
+                trend_quality = float(min(max(trend_quality, 0), 1))
+                
+            except Exception as e:
+                # Fallback to simple efficiency if sklearn fails
+                net_move = abs(closes.iloc[-1] - closes.iloc[0])
+                total_move = closes.diff().abs().sum()
+                trend_quality = net_move / total_move if total_move > 0 else 0
+                trend_quality = float(trend_quality)
+            
+            # ── 2. REGIME DETECTION (ADX proxy) ──
+            # Trending: price consistently making new highs/lows
+            # Mean-reverting: price oscillating around mean
+            lookback = min(20, len(closes))
+            highs = closes.rolling(lookback).max()
+            lows = closes.rolling(lookback).min()
+            ranges = highs - lows
+            current_range = ranges.iloc[-1] if len(ranges) > 0 else 0
+            avg_range = ranges.mean() if len(ranges) > 0 else 1
+            
+            # If current range expanding (breakout) → trending
+            # If current range contracting (compression) → mean-reverting
+            range_expansion = float(current_range / avg_range) if avg_range > 0 else 1
+            is_trending = range_expansion > 1.2  # expanding range = trending
+            
+            # ── 3. TREND ELASTICITY (responsiveness to directional moves) ──
+            # Correlation with sector + beta to sector
+            ret_series = closes.pct_change().dropna()
+            idx_ret = sector_index.pct_change().dropna()
+            common_idx = ret_series.index.intersection(idx_ret.index)
+            
+            if len(common_idx) >= 10:
+                cov_m = np.cov(ret_series.loc[common_idx], idx_ret.loc[common_idx])
+                elasticity = float(cov_m[0, 1] / cov_m[1, 1]) if cov_m[1, 1] != 0 else 1.0
+            else:
+                elasticity = 1.0
+            
+            # High elasticity (>1.2) = amplifies sector moves (high beta)
+            # Low elasticity (<0.8) = dampens sector moves (defensive)
+            
+            # ── 4. INSTITUTIONAL FLOW SIGNALS (6-signal model from inst/retail analyzer) ──
+            # Volume Profile: sustained vs spiky
+            vol_20d_avg = hist['Volume'].tail(100).mean() if len(hist) >= 100 else hist['Volume'].mean()
+            recent_vol = hist['Volume'].tail(20)
+            vol_bars_above_avg = (recent_vol > vol_20d_avg).sum()
+            vol_sustainability = vol_bars_above_avg / len(recent_vol)
+            vol_cv = recent_vol.std() / recent_vol.mean() if recent_vol.mean() > 0 else 0
+            vol_score = (vol_sustainability * 0.7 + (1 - min(vol_cv, 1.0)) * 0.3) * 100
+            
+            # Order Flow: price-volume correlation
+            recent_hist = hist.tail(20).copy()
+            recent_hist['price_change'] = recent_hist['Close'].pct_change()
+            recent_hist['vol_norm'] = (recent_hist['Volume'] - recent_hist['Volume'].mean()) / recent_hist['Volume'].std() if recent_hist['Volume'].std() > 0 else 0
+            pv_corr = recent_hist[['price_change', 'vol_norm']].corr().iloc[0, 1] if not recent_hist['price_change'].isna().all() else 0
+            pv_corr = 0 if np.isnan(pv_corr) else pv_corr
+            order_flow_score = max(0, min(100, (pv_corr + 1) / 2 * 100))
+            
+            # Efficiency: smooth vs choppy execution
+            recent_hist['range'] = recent_hist['High'] - recent_hist['Low']
+            recent_hist['net_move'] = abs(recent_hist['Close'] - recent_hist['Open'])
+            recent_hist['efficiency'] = recent_hist['net_move'] / recent_hist['range']
+            recent_hist['efficiency'] = recent_hist['efficiency'].replace([np.inf, -np.inf], np.nan).fillna(0)
+            efficiency_score = recent_hist['efficiency'].mean() * 100
+            
+            # Time-of-Day (institutional hours weighting)
+            try:
+                if recent_hist.index.tz is None:
+                    recent_hist.index = recent_hist.index.tz_localize('UTC').tz_convert('America/New_York')
+                elif str(recent_hist.index.tz) != 'America/New_York':
+                    recent_hist.index = recent_hist.index.tz_convert('America/New_York')
+                
+                recent_hist['hour'] = recent_hist.index.hour
+                
+                def inst_hour_weight(hour):
+                    if 9 <= hour <= 11 or 15 <= hour <= 16:
+                        return 1.0
+                    elif 11 < hour < 15:
+                        return 0.7
+                    else:
+                        return 0.2
+                
+                recent_hist['inst_weight'] = recent_hist['hour'].apply(inst_hour_weight)
+                tod_score = (recent_hist['Volume'] * recent_hist['inst_weight']).sum() / recent_hist['Volume'].sum() * 100 if recent_hist['Volume'].sum() > 0 else 50
+            except Exception:
+                tod_score = 50
+            
+            # Tape Speed: volume autocorrelation
+            vol_autocorr = recent_vol.autocorr(lag=1) if len(recent_vol) > 2 else 0
+            vol_autocorr = 0 if np.isnan(vol_autocorr) else vol_autocorr
+            tape_score = max(0, min(100, (vol_autocorr + 1) / 2 * 100))
+            
+            # Dark Pool Proxy: block trade detection
+            block_candidates = (recent_hist['net_move'] / recent_hist['range']) > 0.7
+            block_ratio = block_candidates.sum() / len(recent_hist)
+            dark_pool_score = block_ratio * 100
+            
+            # Composite institutional score (weighted)
+            inst_score = (
+                vol_score * 0.20 +
+                order_flow_score * 0.25 +
+                efficiency_score * 0.20 +
+                tod_score * 0.10 +
+                tape_score * 0.15 +
+                dark_pool_score * 0.10
+            )
+            inst_score = round(inst_score, 1)
+            
+            # ── 5. SIGNAL GENERATION ──
+            gap = s['return'] - sector_median_return
+            
+            # BUY CONDITIONS (prioritize trending + institutional)
+            if (is_trending and trend_quality > 0.5 and inst_score > 60 and 
+                s['return'] > 0 and sector_sentiment['label'] in ['BULLISH', 'CHOPPY']):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} in clean uptrend (quality {trend_quality:.2f}) with institutional backing ({inst_score:.0f}/100). Trend-following setup."
+                if elasticity > 1.2:
+                    rationale += f" High beta ({elasticity:.2f}x) amplifies sector moves."
+            
+            # BUY (catch-up in trending regime)
+            elif (is_trending and gap < -3 and s['correlation'] > 0.6 and 
+                  inst_score > 50 and sector_sentiment['label'] == 'BULLISH'):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} lagging sector by {abs(gap):.1f}% but in trending regime with decent institutional flow. Catch-up + trend alignment."
+            
+            # SELL CONDITIONS (weak trend + poor institutional backing)
+            elif (trend_quality < 0.3 and inst_score < 40 and s['return'] < -2):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} choppy trend (quality {trend_quality:.2f}) with weak institutional flow ({inst_score:.0f}/100). No conviction."
+            
+            # SELL (downtrend confirmed by institutions)
+            elif (is_trending and s['return'] < -3 and inst_score > 60 and 
+                  sector_sentiment['label'] in ['BEARISH', 'CHOPPY']):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} in confirmed downtrend with institutional distribution. Exit or short."
+            
+            # HOLD (trending + strong)
+            elif (is_trending and trend_quality > 0.6 and s['return'] > 3 and inst_score > 60):
+                action = 'HOLD'
+                action_color = '#3b82f6'
+                rationale = f"{sym} strong trend (quality {trend_quality:.2f}) with institutional support. Ride momentum."
+            
+            # TRIM (extended in mean-reverting regime)
+            elif (not is_trending and gap > 8 and trend_quality < 0.4):
+                action = 'TRIM'
+                action_color = '#f59e0b'
+                rationale = f"{sym} extended ({gap:+.1f}% vs sector) in choppy regime. Mean-reversion risk."
+            
+            # WATCH (good setup forming but not confirmed)
+            elif (trend_quality > 0.5 and inst_score > 50 and abs(gap) < 3):
+                action = 'WATCH'
+                action_color = '#6b7280'
+                rationale = f"{sym} clean trend forming (quality {trend_quality:.2f}) with decent flow. Wait for confirmation."
+            
+            else:
+                continue  # No clear opportunity
+            
+            trade_opportunities.append({
+                'symbol': s['symbol'],
+                'action': action,
+                'action_color': action_color,
+                'rationale': rationale,
+                'return': s['return'],
+                'gap_vs_sector': round(gap, 2),
+                'correlation': s['correlation'],
+                'weight': s['weight'],
+                'trend_quality': round(trend_quality, 2),
+                'is_trending': is_trending,
+                'elasticity': round(elasticity, 2),
+                'inst_score': inst_score
+            })
+        
+        # Sort by action priority
+        action_priority = {'BUY': 0, 'TRIM': 1, 'WATCH': 2, 'SELL': 3}
+        trade_opportunities.sort(key=lambda x: (action_priority[x['action']], -abs(x['gap_vs_sector'])))
+        
+        # ── Sector vs SPY ──
+        if spy_aligned is not None:
+            spy_return = float(spy_aligned.iloc[-1] - 100)
+            relative_strength = round(sector_return - spy_return, 2)
+            if relative_strength > 2:
+                vs_spy_label = "OUTPERFORMING"
+                vs_spy_color = "#10b981"
+            elif relative_strength < -2:
+                vs_spy_label = "UNDERPERFORMING"
+                vs_spy_color = "#ef4444"
+            else:
+                vs_spy_label = "INLINE"
+                vs_spy_color = "#f59e0b"
+        else:
+            spy_return = None
+            relative_strength = None
+            vs_spy_label = "N/A"
+            vs_spy_color = "#6b7280"
+        
+        # ── Rotation Signals ──
+        rotation_signals = []
+        
+        if sector_sentiment['label'] == 'BULLISH' and momentum_score < -1:
+            rotation_signals.append({
+                'signal': 'ROLLING OVER',
+                'description': f"{sector_name} sentiment is bullish but momentum fading — potential rotation OUT."
+            })
+        elif sector_sentiment['label'] == 'BEARISH' and momentum_score > 1:
+            rotation_signals.append({
+                'signal': 'BOTTOMING',
+                'description': f"{sector_name} sentiment is bearish but momentum turning — potential rotation IN."
+            })
+        elif sector_sentiment['label'] == 'BULLISH' and momentum_score > 2 and breadth_pct > 70:
+            rotation_signals.append({
+                'signal': 'ACCELERATING',
+                'description': f"{sector_name} is bullish with strong momentum and breadth — continue overweighting."
+            })
+        
+        if vs_spy_label == "UNDERPERFORMING" and sector_sentiment['label'] == 'BULLISH':
+            rotation_signals.append({
+                'signal': 'LAGGING SPY',
+                'description': f"{sector_name} is bullish but underperforming SPY — watch for catch-up or sector-specific headwind."
+            })
+        elif vs_spy_label == "OUTPERFORMING" and sector_sentiment['label'] == 'BEARISH':
+            rotation_signals.append({
+                'signal': 'RESILIENT',
+                'description': f"{sector_name} is bearish but still outperforming SPY — relative strength may indicate bottoming."
+            })
+        
+        # ── Insights ──
+        insights = []
+        insights.append(f"📊 {sector_name} Health: {health_label} (score {health_score}/100, sentiment {sector_sentiment['label']}).")
+        insights.append(f"📈 Sector return: {sector_return:+.2f}% on 1h. Breadth: {breadth_pct}% stocks positive.")
+        insights.append(f"🎯 Top performer: {top_10[0]['symbol']} ({top_10[0]['return']:+.2f}%). Bottom: {bottom_10[-1]['symbol']} ({bottom_10[-1]['return']:+.2f}%).")
+        insights.append(f"⚖️ Concentration: Top 5 stocks drive {concentration_pct}% of sector move.")
+        
+        if spy_return is not None:
+            insights.append(f"🆚 vs SPY: {vs_spy_label} ({relative_strength:+.2f}% relative).")
+        
+        if rotation_signals:
+            insights.append(f"🔄 {len(rotation_signals)} rotation signal(s) detected.")
+        
+        insights.append(f"💡 {len(trade_opportunities)} trade opportunities identified.")
+        
+        # ── Timeseries (sector index + SPY) ──
+        step = max(1, len(sector_index) // 200)
+        timeseries = []
+        for i in range(0, len(sector_index), step):
+            date = sector_index.index[i]
+            point = {
+                'date': date.strftime('%Y-%m-%d %H:%M'),
+                'sector': round(float(sector_index.iloc[i]), 2)
+            }
+            if spy_aligned is not None and date in spy_aligned.index:
+                point['spy'] = round(float(spy_aligned.loc[date]), 2)
+            timeseries.append(point)
+        
+        return JsonResponse({
+            'success': True,
+            'timeframe': '1h',
+            'sector_name': sector_name,
+            'total_stocks': len(stock_data),
+            'failed_stocks': failed,
+            'health_score': health_score,
+            'health_label': health_label,
+            'health_color': health_color,
+            'sector_return': round(sector_return, 2),
+            'sector_volatility': round(sector_volatility, 2),
+            'breadth_pct': breadth_pct,
+            'momentum_score': momentum_score,
+            'sector_sentiment': sector_sentiment,
+            'spy_return': round(spy_return, 2) if spy_return is not None else None,
+            'relative_strength': relative_strength,
+            'vs_spy_label': vs_spy_label,
+            'vs_spy_color': vs_spy_color,
+            'concentration_pct': concentration_pct,
+            'top_10': top_10,
+            'bottom_10': bottom_10,
+            'index_drivers': index_drivers,
+            'trade_opportunities': trade_opportunities,
+            'rotation_signals': rotation_signals,
+            'timeseries': timeseries,
+            'insights': insights,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
