@@ -37212,7 +37212,6 @@ def mss_institutional_vs_retail_analyzer(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
-
 # ============================================================
 # NEW ENDPOINT 7: BULK — Sector Deep Dive Analysis (1h)
 #
@@ -37376,32 +37375,128 @@ def mss_sector_deep_dive_analyzer(request):
         top5_contribution = sum(abs(s['contribution']) for s in stock_performance[:5])
         concentration_pct = round(top5_contribution / abs(sector_return) * 100 if sector_return != 0 else 0, 1)
         
-        # ── Trade Opportunities ──
-        # Buy: stocks lagging sector but high correlation (catch-up candidates)
-        # Sell: stocks leading sector by too much (extended)
+        # ── Trade Opportunities (Trend-Based + Institutional Flow) ──
+        # New methodology:
+        # 1. Assess trend quality (clean vs choppy)
+        # 2. Detect regime (trending vs mean-reverting)
+        # 3. Measure trend elasticity (responsiveness)
+        # 4. Infer institutional participation (micro-structure signals)
+        # 5. Generate context-aware signals (trend-following + institutional confirmation)
         
         sector_median_return = np.median([s['return'] for s in stock_performance])
         
         trade_opportunities = []
         for s in stock_performance:
+            sym = s['symbol']
+            closes = close_df[sym]
+            hist = stock_data[sym]['hist']
+            
+            # ── 1. TREND QUALITY (Efficiency Ratio) ──
+            # High = clean trend, Low = choppy
+            net_move = abs(closes.iloc[-1] - closes.iloc[0])
+            total_move = closes.diff().abs().sum()
+            trend_quality = net_move / total_move if total_move > 0 else 0
+            trend_quality = float(trend_quality)
+            
+            # ── 2. REGIME DETECTION (ADX proxy) ──
+            # Trending: price consistently making new highs/lows
+            # Mean-reverting: price oscillating around mean
+            lookback = min(20, len(closes))
+            highs = closes.rolling(lookback).max()
+            lows = closes.rolling(lookback).min()
+            ranges = highs - lows
+            current_range = ranges.iloc[-1] if len(ranges) > 0 else 0
+            avg_range = ranges.mean() if len(ranges) > 0 else 1
+            
+            # If current range expanding (breakout) → trending
+            # If current range contracting (compression) → mean-reverting
+            range_expansion = float(current_range / avg_range) if avg_range > 0 else 1
+            is_trending = range_expansion > 1.2  # expanding range = trending
+            
+            # ── 3. TREND ELASTICITY (responsiveness to directional moves) ──
+            # Correlation with sector + beta to sector
+            ret_series = closes.pct_change().dropna()
+            idx_ret = sector_index.pct_change().dropna()
+            common_idx = ret_series.index.intersection(idx_ret.index)
+            
+            if len(common_idx) >= 10:
+                cov_m = np.cov(ret_series.loc[common_idx], idx_ret.loc[common_idx])
+                elasticity = float(cov_m[0, 1] / cov_m[1, 1]) if cov_m[1, 1] != 0 else 1.0
+            else:
+                elasticity = 1.0
+            
+            # High elasticity (>1.2) = amplifies sector moves (high beta)
+            # Low elasticity (<0.8) = dampens sector moves (defensive)
+            
+            # ── 4. INSTITUTIONAL FLOW SIGNALS (simplified from earlier model) ──
+            # Volume sustainability
+            recent_vol = hist['Volume'].tail(20)
+            avg_vol = hist['Volume'].tail(100).mean() if len(hist) >= 100 else recent_vol.mean()
+            vol_sustainability = (recent_vol > avg_vol).sum() / len(recent_vol)
+            
+            # Price-volume correlation
+            price_change = hist['Close'].tail(20).pct_change()
+            vol_norm = (recent_vol - recent_vol.mean()) / recent_vol.std() if recent_vol.std() > 0 else 0
+            pv_corr = price_change.corr(vol_norm) if not price_change.isna().all() else 0
+            
+            # Institutional score (0-100)
+            inst_score = (
+                vol_sustainability * 40 +  # sustained volume
+                max(0, (pv_corr + 1) / 2) * 40 +  # volume confirms direction
+                trend_quality * 20  # smooth execution
+            )
+            inst_score = round(inst_score, 1)
+            
+            # ── 5. SIGNAL GENERATION ──
             gap = s['return'] - sector_median_return
             
-            if sector_sentiment['label'] == 'BULLISH' and gap < -5 and s['correlation'] > 0.6:
+            # BUY CONDITIONS (prioritize trending + institutional)
+            if (is_trending and trend_quality > 0.5 and inst_score > 60 and 
+                s['return'] > 0 and sector_sentiment['label'] in ['BULLISH', 'CHOPPY']):
                 action = 'BUY'
                 action_color = '#10b981'
-                rationale = f"{s['symbol']} lagging sector by {abs(gap):.1f}% despite high correlation ({s['correlation']:.2f}) — catch-up trade."
-            elif sector_sentiment['label'] == 'BULLISH' and gap > 10:
-                action = 'TRIM'
-                action_color = '#f59e0b'
-                rationale = f"{s['symbol']} leading sector by {gap:.1f}% — extended, consider profit-taking."
-            elif sector_sentiment['label'] == 'BEARISH' and gap < -5:
+                rationale = f"{sym} in clean uptrend (quality {trend_quality:.2f}) with institutional backing ({inst_score:.0f}/100). Trend-following setup."
+                if elasticity > 1.2:
+                    rationale += f" High beta ({elasticity:.2f}x) amplifies sector moves."
+            
+            # BUY (catch-up in trending regime)
+            elif (is_trending and gap < -3 and s['correlation'] > 0.6 and 
+                  inst_score > 50 and sector_sentiment['label'] == 'BULLISH'):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} lagging sector by {abs(gap):.1f}% but in trending regime with decent institutional flow. Catch-up + trend alignment."
+            
+            # SELL CONDITIONS (weak trend + poor institutional backing)
+            elif (trend_quality < 0.3 and inst_score < 40 and s['return'] < -2):
                 action = 'SELL'
                 action_color = '#ef4444'
-                rationale = f"{s['symbol']} lagging in weak sector — double weakness, exit first."
-            elif sector_sentiment['label'] == 'BEARISH' and gap > 5 and s['correlation'] > 0.5:
+                rationale = f"{sym} choppy trend (quality {trend_quality:.2f}) with weak institutional flow ({inst_score:.0f}/100). No conviction."
+            
+            # SELL (downtrend confirmed by institutions)
+            elif (is_trending and s['return'] < -3 and inst_score > 60 and 
+                  sector_sentiment['label'] in ['BEARISH', 'CHOPPY']):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} in confirmed downtrend with institutional distribution. Exit or short."
+            
+            # HOLD (trending + strong)
+            elif (is_trending and trend_quality > 0.6 and s['return'] > 3 and inst_score > 60):
+                action = 'HOLD'
+                action_color = '#3b82f6'
+                rationale = f"{sym} strong trend (quality {trend_quality:.2f}) with institutional support. Ride momentum."
+            
+            # TRIM (extended in mean-reverting regime)
+            elif (not is_trending and gap > 8 and trend_quality < 0.4):
+                action = 'TRIM'
+                action_color = '#f59e0b'
+                rationale = f"{sym} extended ({gap:+.1f}% vs sector) in choppy regime. Mean-reversion risk."
+            
+            # WATCH (good setup forming but not confirmed)
+            elif (trend_quality > 0.5 and inst_score > 50 and abs(gap) < 3):
                 action = 'WATCH'
                 action_color = '#6b7280'
-                rationale = f"{s['symbol']} showing relative strength in weak sector — wait for sector recovery before buying."
+                rationale = f"{sym} clean trend forming (quality {trend_quality:.2f}) with decent flow. Wait for confirmation."
+            
             else:
                 continue  # No clear opportunity
             
@@ -37413,7 +37508,11 @@ def mss_sector_deep_dive_analyzer(request):
                 'return': s['return'],
                 'gap_vs_sector': round(gap, 2),
                 'correlation': s['correlation'],
-                'weight': s['weight']
+                'weight': s['weight'],
+                'trend_quality': round(trend_quality, 2),
+                'is_trending': is_trending,
+                'elasticity': round(elasticity, 2),
+                'inst_score': inst_score
             })
         
         # Sort by action priority
