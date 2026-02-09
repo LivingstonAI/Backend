@@ -37778,6 +37778,247 @@ def mss_sector_deep_dive_analyzer(request):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+
+# ============================================================
+# ENDPOINT 1: Toggle Asset of Interest
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_toggle_asset_of_interest(request):
+    """
+    Toggle an asset as 'of interest' for the current trading day.
+    """
+    try:
+        from .models import AssetOfInterest  # Adjust import based on your structure
+        
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        asset_class = data.get('asset_class')
+        sector = data.get('sector')
+        
+        if not symbol or not asset_class:
+            return JsonResponse({'success': False, 'error': 'Symbol and asset_class required'})
+        
+        is_saved, message = AssetOfInterest.toggle_asset(symbol, asset_class, sector)
+        
+        return JsonResponse({
+            'success': True,
+            'is_saved': is_saved,
+            'message': message,
+            'trading_date': str(AssetOfInterest.get_current_trading_date())
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# ENDPOINT 2: Get Today's Assets of Interest
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_get_todays_assets(request):
+    """
+    Get all assets marked as 'of interest' for the current trading day.
+    """
+    try:
+        from .models import AssetOfInterest
+        
+        data = json.loads(request.body)
+        asset_class = data.get('asset_class')  # Optional filter
+        
+        symbols = list(AssetOfInterest.get_todays_assets(asset_class))
+        trading_date = AssetOfInterest.get_current_trading_date()
+        
+        return JsonResponse({
+            'success': True,
+            'symbols': symbols,
+            'count': len(symbols),
+            'trading_date': str(trading_date),
+            'asset_class': asset_class
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# ENDPOINT 3: Check if Asset is Saved Today
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_check_asset_saved(request):
+    """
+    Check if a specific asset is saved for today.
+    """
+    try:
+        from .models import AssetOfInterest
+        
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'})
+        
+        is_saved = AssetOfInterest.is_saved_today(symbol)
+        
+        return JsonResponse({
+            'success': True,
+            'is_saved': is_saved,
+            'symbol': symbol,
+            'trading_date': str(AssetOfInterest.get_current_trading_date())
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# ENDPOINT 4: Stock Popularity Analyzer (OpenAI)
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_stock_popularity_analyzer(request):
+    """
+    Analyzes how well-known a stock is using OpenAI + yfinance data.
+    Returns popularity score, recognition factors, and trading implications.
+    """
+    try:
+        import openai
+        import os
+        
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'})
+        
+        # ── Fetch stock data ──
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            
+            # Extract key info
+            company_name = info.get('longName') or info.get('shortName') or symbol
+            sector = info.get('sector', 'N/A')
+            industry = info.get('industry', 'N/A')
+            market_cap = info.get('marketCap', 0)
+            employees = info.get('fullTimeEmployees', 'N/A')
+            description = info.get('longBusinessSummary', 'No description available')
+            website = info.get('website', 'N/A')
+            exchange = info.get('exchange', 'N/A')
+            
+            # Format market cap
+            if market_cap > 0:
+                if market_cap >= 1e12:
+                    mcap_str = f"${market_cap/1e12:.2f}T"
+                elif market_cap >= 1e9:
+                    mcap_str = f"${market_cap/1e9:.2f}B"
+                elif market_cap >= 1e6:
+                    mcap_str = f"${market_cap/1e6:.2f}M"
+                else:
+                    mcap_str = f"${market_cap:,.0f}"
+            else:
+                mcap_str = "N/A"
+            
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': f'Failed to fetch stock data: {str(e)}'})
+        
+        # ── Build OpenAI prompt ──
+        prompt = f"""You are a stock market analyst. Analyze how well-known and recognizable the following company is to the general public and retail traders.
+
+Company: {company_name} ({symbol})
+Sector: {sector}
+Industry: {industry}
+Market Cap: {mcap_str}
+Employees: {employees}
+Exchange: {exchange}
+Description: {description[:500]}...
+
+Rate the company's popularity/recognition on these dimensions:
+
+1. **Brand Recognition** (0-10): How recognizable is the brand to average consumers?
+2. **Retail Trader Awareness** (0-10): How well-known is this stock among retail traders?
+3. **Media Coverage** (0-10): How frequently does this company appear in financial news?
+4. **Social Media Presence** (0-10): How actively discussed is this stock on social platforms?
+5. **Institutional Coverage** (0-10): How much analyst coverage does it receive?
+
+Provide:
+- Overall Popularity Score (0-100)
+- Popularity Level: "Mega-Cap Household Name", "Well-Known Blue Chip", "Mid-Tier Recognized", "Niche/Specialist", or "Obscure/Unknown"
+- Key Recognition Factors (3-5 bullet points explaining what makes it known/unknown)
+- Trading Implications (2-3 sentences on liquidity, volatility expectations, and retail vs institutional interest)
+
+Be honest but slightly generous in your assessment. Focus on factual recognition rather than subjective quality judgments.
+
+Return ONLY valid JSON in this exact format:
+{{
+  "popularity_score": 75,
+  "popularity_level": "Well-Known Blue Chip",
+  "brand_recognition": 8,
+  "retail_awareness": 7,
+  "media_coverage": 8,
+  "social_presence": 6,
+  "institutional_coverage": 9,
+  "recognition_factors": [
+    "Major player in tech sector with consumer-facing products",
+    "Frequently mentioned in CNBC and Bloomberg coverage",
+    "Strong institutional ownership suggests professional interest"
+  ],
+  "trading_implications": "High liquidity stock with tight spreads. Expect moderate volatility during earnings. Strong institutional base provides support, while retail interest can amplify momentum moves."
+}}"""
+        
+        # ── Call OpenAI ──
+        try:
+            openai.api_key = os.getenv('OPENAI_API_KEY')
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a financial analyst specializing in stock market popularity analysis. Return only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=800
+            )
+            
+            # Parse response
+            response_text = response.choices[0].message.content.strip()
+            
+            # Remove markdown code fences if present
+            if response_text.startswith('```'):
+                response_text = response_text.split('```')[1]
+                if response_text.startswith('json'):
+                    response_text = response_text[4:]
+                response_text = response_text.strip()
+            
+            analysis = json.loads(response_text)
+            
+        except json.JSONDecodeError as e:
+            return JsonResponse({'success': False, 'error': f'Failed to parse AI response: {str(e)}'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': f'OpenAI API error: {str(e)}'})
+        
+        # ── Add metadata ──
+        analysis['symbol'] = symbol
+        analysis['company_name'] = company_name
+        analysis['market_cap'] = mcap_str
+        analysis['sector'] = sector
+        analysis['industry'] = industry
+        
+        return JsonResponse({
+            'success': True,
+            'analysis': analysis,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():

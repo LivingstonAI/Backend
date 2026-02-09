@@ -1979,6 +1979,109 @@ class SnowAIAllEncompassingDailyStock(models.Model):
         return f"{self.date} - {self.asset} ({self.current_trend}) - R²: {self.r_squared}"
 
 
+# ============================================================
+# DJANGO MODEL — Assets of Interest (Daily Tracker)
+# ============================================================
+
+from django.db import models
+from django.utils import timezone
+import pytz
+
+class AssetOfInterest(models.Model):
+    """
+    Stores assets marked as 'of interest' for a specific trading day.
+    Trading day runs from NY market open (9:30 AM ET) to next day's open.
+    """
+    symbol = models.CharField(max_length=20)
+    asset_class = models.CharField(max_length=50)  # stocks, forex, crypto, etc.
+    sector = models.CharField(max_length=100, blank=True, null=True)
+    trading_date = models.DateField()  # The trading day this asset was marked
+    added_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True, null=True)  # Optional user notes
+    
+    class Meta:
+        db_table = 'mss_assets_of_interest'
+        unique_together = ('symbol', 'trading_date')  # One entry per symbol per day
+        ordering = ['-trading_date', 'symbol']
+        indexes = [
+            models.Index(fields=['trading_date', 'asset_class']),
+            models.Index(fields=['symbol']),
+        ]
+    
+    def __str__(self):
+        return f"{self.symbol} - {self.trading_date}"
+    
+    @staticmethod
+    def get_current_trading_date():
+        """
+        Returns the current trading date based on NY market hours.
+        If before 9:30 AM ET, returns previous trading day.
+        If after 9:30 AM ET, returns current date.
+        """
+        ny_tz = pytz.timezone('America/New_York')
+        now = timezone.now().astimezone(ny_tz)
+        
+        # Market opens at 9:30 AM ET
+        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        
+        if now < market_open:
+            # Before market open → use previous day
+            trading_date = (now - timezone.timedelta(days=1)).date()
+        else:
+            # After market open → use current day
+            trading_date = now.date()
+        
+        return trading_date
+    
+    @classmethod
+    def is_saved_today(cls, symbol):
+        """Check if a symbol is saved for the current trading day."""
+        trading_date = cls.get_current_trading_date()
+        return cls.objects.filter(symbol=symbol, trading_date=trading_date).exists()
+    
+    @classmethod
+    def toggle_asset(cls, symbol, asset_class, sector=None):
+        """
+        Toggle an asset for the current trading day.
+        Returns (is_saved, message)
+        """
+        trading_date = cls.get_current_trading_date()
+        
+        existing = cls.objects.filter(symbol=symbol, trading_date=trading_date).first()
+        
+        if existing:
+            # Remove
+            existing.delete()
+            return (False, f"{symbol} removed from today's watchlist")
+        else:
+            # Add
+            cls.objects.create(
+                symbol=symbol,
+                asset_class=asset_class,
+                sector=sector,
+                trading_date=trading_date
+            )
+            return (True, f"{symbol} added to today's watchlist")
+    
+    @classmethod
+    def get_todays_assets(cls, asset_class=None):
+        """Get all assets marked for the current trading day."""
+        trading_date = cls.get_current_trading_date()
+        qs = cls.objects.filter(trading_date=trading_date)
+        
+        if asset_class:
+            qs = qs.filter(asset_class=asset_class)
+        
+        return qs.values_list('symbol', flat=True)
+
+
+# ============================================================
+# MIGRATION COMMAND
+# ============================================================
+# python manage.py makemigrations
+# python manage.py migrate
+
+
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)

@@ -540,6 +540,22 @@ urlpatterns = [
      # Bulk: Deep analysis of any sector (health, drivers, opportunities)
      path('api/mss-sector-deep-dive-analyzer/', views.mss_sector_deep_dive_analyzer, name='mss-sector-deep-dive-analyzer'),
 
+     # ============================================================
+     # URL ROUTES — Assets of Interest + Stock Popularity
+     # ============================================================
+
+     # Toggle asset as 'of interest' for current trading day
+     path('api/mss-toggle-asset-of-interest/', views.mss_toggle_asset_of_interest, name='mss-toggle-asset-of-interest'),
+
+     # Get all assets marked for today
+     path('api/mss-get-todays-assets/', views.mss_get_todays_assets, name='mss-get-todays-assets'),
+
+     # Check if specific asset is saved today
+     path('api/mss-check-asset-saved/', views.mss_check_asset_saved, name='mss-check-asset-saved'),
+
+     # Analyze stock popularity using OpenAI
+     path('api/mss-stock-popularity-analyzer/', views.mss_stock_popularity_analyzer, name='mss-stock-popularity-analyzer'),
+
 
 
 
