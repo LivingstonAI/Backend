@@ -49,6 +49,7 @@ ALLOWED_HOSTS = [
     # "https://silencium-ascendio.vercel.app",
     # "https://crystal-mindforge.vercel.app",
     "https://frontend-production-406b.up.railway.app",
+    "https://frontend-production-cc6d.up.railway.app"
 ]
 
 REST_FRAMEWORK = {
@@ -66,7 +67,8 @@ CORS_ORIGIN_WHITELIST = (
     # 'https://silencium-ascendio.vercel.app',
     # "https://crystal-mindforge.vercel.app",
     "http://zinaida-production.up.railway.app",
-    "https://frontend-production-406b.up.railway.app"
+    "https://frontend-production-406b.up.railway.app",
+    "https://frontend-production-cc6d.up.railway.app"
 )
 
 
@@ -77,6 +79,7 @@ CSRF_TRUSTED_ORIGINS = [
     # 'https://crystal-mindforge.vercel.app',
     'http://zinaida-production.up.railway.app',
     "https://frontend-production-406b.up.railway.app",
+    "https://frontend-production-cc6d.up.railway.app",
     # 'https://www.metatrader5.com/en/trading-platform/web-trading',
 ]
 
@@ -211,6 +214,7 @@ CORS_ALLOWED_ORIGINS = [
     # 'https://crystal-mindforge.vercel.app',
     'http://zinaida-production.up.railway.app',
     "https://frontend-production-406b.up.railway.app",
+    "https://frontend-production-cc6d.up.railway.app",
     # "https://www.metatrader5.com/en/trading-platform/web-trading",
 ] # If this is used, then not need to use `CORS_ALLOW_ALL_ORIGINS = True`
 
