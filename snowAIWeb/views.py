@@ -35323,8 +35323,8 @@ def snowai_prepare_namespace(asset_record, dataset):
         'asset': asset_record.asset,
         'set_take_profit': set_take_profit,
         'set_stop_loss': set_stop_loss,
-        '_take_profit': 8,
-        '_stop_loss': 4,
+        '_take_profit': 4,
+        '_stop_loss': 2,
         # All your trading functions (same as ActiveForwardTestModel)
         'is_uptrend': is_uptrend,
         'is_downtrend': is_downtrend,
