@@ -38019,6 +38019,690 @@ Return ONLY valid JSON in this exact format:
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+from decimal import Decimal
+import json
+import uuid
+from datetime import datetime, timedelta
+import pytz
+
+# Import the models (adjust the import path based on your project structure)
+# from .models import SnowAITradeOrderExecutionRecord, SnowAIPaperTradingBacktestSession, SnowAITradingPerformanceSnapshot
+
+
+@csrf_exempt
+def snowai_execute_trade_order_placement(request):
+    """
+    Execute a new trade order (buy or sell)
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            # Generate unique trade ID
+            trade_id = f"TRADE_{uuid.uuid4().hex[:12].upper()}"
+            
+            # Extract data
+            asset_symbol = data.get('asset_symbol')
+            asset_name = data.get('asset_name')
+            asset_class = data.get('asset_class')
+            order_type = data.get('order_type')  # BUY or SELL
+            entry_price = Decimal(str(data.get('entry_price')))
+            quantity = Decimal(str(data.get('quantity', 1.0)))
+            stop_loss = Decimal(str(data.get('stop_loss'))) if data.get('stop_loss') else None
+            take_profit = Decimal(str(data.get('take_profit'))) if data.get('take_profit') else None
+            timezone_str = data.get('timezone', 'UTC')
+            notes = data.get('notes', '')
+            is_paper_trade = data.get('is_paper_trade', True)
+            
+            # Get current time in user's timezone
+            user_tz = pytz.timezone(timezone_str)
+            entry_timestamp = timezone.now().astimezone(user_tz)
+            
+            # Create trade order
+            trade = SnowAITradeOrderExecutionRecord.objects.create(
+                trade_id=trade_id,
+                asset_symbol=asset_symbol,
+                asset_name=asset_name,
+                asset_class=asset_class,
+                order_type=order_type,
+                entry_price=entry_price,
+                quantity=quantity,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                entry_timestamp=entry_timestamp,
+                entry_timezone=timezone_str,
+                notes=notes,
+                is_paper_trade=is_paper_trade,
+                status='OPEN'
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'trade_id': trade_id,
+                'message': f'{order_type} order placed for {asset_symbol}',
+                'trade_data': {
+                    'trade_id': trade.trade_id,
+                    'asset_symbol': trade.asset_symbol,
+                    'order_type': trade.order_type,
+                    'entry_price': float(trade.entry_price),
+                    'quantity': float(trade.quantity),
+                    'stop_loss': float(trade.stop_loss) if trade.stop_loss else None,
+                    'take_profit': float(trade.take_profit) if trade.take_profit else None,
+                    'entry_timestamp': entry_timestamp.isoformat(),
+                    'status': trade.status
+                }
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_close_trade_order_execution(request):
+    """
+    Close an open trade order
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            trade_id = data.get('trade_id')
+            exit_price = Decimal(str(data.get('exit_price')))
+            exit_reason = data.get('exit_reason', 'MANUAL')  # MANUAL, TAKE_PROFIT, STOP_LOSS
+            timezone_str = data.get('timezone', 'UTC')
+            
+            # Get the trade
+            trade = SnowAITradeOrderExecutionRecord.objects.get(trade_id=trade_id, status='OPEN')
+            
+            # Get current time in user's timezone
+            user_tz = pytz.timezone(timezone_str)
+            exit_timestamp = timezone.now().astimezone(user_tz)
+            
+            # Update trade
+            trade.exit_price = exit_price
+            trade.exit_reason = exit_reason
+            trade.exit_timestamp = exit_timestamp
+            trade.exit_timezone = timezone_str
+            trade.status = 'CLOSED'
+            
+            # Calculate P&L
+            pnl, pnl_pct = trade.calculate_pnl()
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Trade {trade_id} closed',
+                'trade_data': {
+                    'trade_id': trade.trade_id,
+                    'asset_symbol': trade.asset_symbol,
+                    'order_type': trade.order_type,
+                    'entry_price': float(trade.entry_price),
+                    'exit_price': float(trade.exit_price),
+                    'profit_loss': float(trade.profit_loss) if trade.profit_loss else 0,
+                    'profit_loss_percentage': float(trade.profit_loss_percentage) if trade.profit_loss_percentage else 0,
+                    'exit_reason': trade.exit_reason,
+                    'entry_timestamp': trade.entry_timestamp.isoformat(),
+                    'exit_timestamp': exit_timestamp.isoformat(),
+                    'status': trade.status
+                }
+            })
+            
+        except SnowAITradeOrderExecutionRecord.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Trade not found or already closed'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_fetch_trade_history_for_asset(request):
+    """
+    Fetch all trade history for a specific asset
+    """
+    if request.method == 'GET':
+        try:
+            asset_symbol = request.GET.get('asset_symbol')
+            status_filter = request.GET.get('status', 'ALL')  # ALL, OPEN, CLOSED
+            
+            # Build query
+            query = SnowAITradeOrderExecutionRecord.objects.filter(asset_symbol=asset_symbol)
+            
+            if status_filter != 'ALL':
+                query = query.filter(status=status_filter)
+            
+            # Get trades
+            trades = query.all()
+            
+            # Calculate statistics
+            total_trades = trades.count()
+            closed_trades = trades.filter(status='CLOSED')
+            winning_trades = closed_trades.filter(profit_loss__gt=0).count()
+            losing_trades = closed_trades.filter(profit_loss__lt=0).count()
+            
+            total_profit = sum([float(t.profit_loss) for t in closed_trades if t.profit_loss and t.profit_loss > 0])
+            total_loss = sum([float(t.profit_loss) for t in closed_trades if t.profit_loss and t.profit_loss < 0])
+            
+            win_rate = (winning_trades / closed_trades.count() * 100) if closed_trades.count() > 0 else 0
+            
+            # Prepare trade data
+            trades_data = []
+            for trade in trades:
+                trades_data.append({
+                    'trade_id': trade.trade_id,
+                    'order_type': trade.order_type,
+                    'entry_price': float(trade.entry_price),
+                    'exit_price': float(trade.exit_price) if trade.exit_price else None,
+                    'quantity': float(trade.quantity),
+                    'stop_loss': float(trade.stop_loss) if trade.stop_loss else None,
+                    'take_profit': float(trade.take_profit) if trade.take_profit else None,
+                    'profit_loss': float(trade.profit_loss) if trade.profit_loss else None,
+                    'profit_loss_percentage': float(trade.profit_loss_percentage) if trade.profit_loss_percentage else None,
+                    'status': trade.status,
+                    'exit_reason': trade.exit_reason,
+                    'entry_timestamp': trade.entry_timestamp.isoformat(),
+                    'exit_timestamp': trade.exit_timestamp.isoformat() if trade.exit_timestamp else None,
+                    'entry_timezone': trade.entry_timezone,
+                    'notes': trade.notes,
+                    'is_paper_trade': trade.is_paper_trade
+                })
+            
+            return JsonResponse({
+                'success': True,
+                'asset_symbol': asset_symbol,
+                'total_trades': total_trades,
+                'statistics': {
+                    'closed_trades': closed_trades.count(),
+                    'winning_trades': winning_trades,
+                    'losing_trades': losing_trades,
+                    'win_rate': round(win_rate, 2),
+                    'total_profit': round(total_profit, 2),
+                    'total_loss': round(total_loss, 2),
+                    'net_profit': round(total_profit + total_loss, 2)
+                },
+                'trades': trades_data
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_fetch_overall_trading_performance(request):
+    """
+    Fetch overall trading performance across all assets
+    """
+    if request.method == 'GET':
+        try:
+            # Get all trades
+            all_trades = SnowAITradeOrderExecutionRecord.objects.all()
+            closed_trades = all_trades.filter(status='CLOSED')
+            
+            # Overall statistics
+            total_trades = all_trades.count()
+            total_closed = closed_trades.count()
+            total_open = all_trades.filter(status='OPEN').count()
+            
+            winning_trades = closed_trades.filter(profit_loss__gt=0).count()
+            losing_trades = closed_trades.filter(profit_loss__lt=0).count()
+            
+            total_profit = sum([float(t.profit_loss) for t in closed_trades if t.profit_loss and t.profit_loss > 0])
+            total_loss = sum([float(t.profit_loss) for t in closed_trades if t.profit_loss and t.profit_loss < 0])
+            net_profit = total_profit + total_loss
+            
+            win_rate = (winning_trades / total_closed * 100) if total_closed > 0 else 0
+            
+            # Best and worst trades
+            best_trade = closed_trades.order_by('-profit_loss').first()
+            worst_trade = closed_trades.order_by('profit_loss').first()
+            
+            # Per asset class breakdown
+            asset_classes = ['Crypto', 'Stocks', 'Forex', 'Indices', 'Commodities']
+            asset_class_stats = {}
+            
+            for asset_class in asset_classes:
+                class_trades = closed_trades.filter(asset_class=asset_class)
+                class_count = class_trades.count()
+                
+                if class_count > 0:
+                    class_wins = class_trades.filter(profit_loss__gt=0).count()
+                    class_losses = class_trades.filter(profit_loss__lt=0).count()
+                    class_profit = sum([float(t.profit_loss) for t in class_trades if t.profit_loss and t.profit_loss > 0])
+                    class_loss = sum([float(t.profit_loss) for t in class_trades if t.profit_loss and t.profit_loss < 0])
+                    
+                    asset_class_stats[asset_class] = {
+                        'total_trades': class_count,
+                        'winning_trades': class_wins,
+                        'losing_trades': class_losses,
+                        'win_rate': round((class_wins / class_count * 100), 2),
+                        'total_profit': round(class_profit, 2),
+                        'total_loss': round(class_loss, 2),
+                        'net_profit': round(class_profit + class_loss, 2)
+                    }
+            
+            # Per asset breakdown
+            assets = all_trades.values_list('asset_symbol', flat=True).distinct()
+            asset_stats = []
+            
+            for asset in assets:
+                asset_trades = closed_trades.filter(asset_symbol=asset)
+                asset_count = asset_trades.count()
+                
+                if asset_count > 0:
+                    asset_wins = asset_trades.filter(profit_loss__gt=0).count()
+                    asset_losses = asset_trades.filter(profit_loss__lt=0).count()
+                    asset_profit = sum([float(t.profit_loss) for t in asset_trades if t.profit_loss and t.profit_loss > 0])
+                    asset_loss = sum([float(t.profit_loss) for t in asset_trades if t.profit_loss and t.profit_loss < 0])
+                    
+                    asset_info = all_trades.filter(asset_symbol=asset).first()
+                    
+                    asset_stats.append({
+                        'asset_symbol': asset,
+                        'asset_name': asset_info.asset_name,
+                        'asset_class': asset_info.asset_class,
+                        'total_trades': asset_count,
+                        'winning_trades': asset_wins,
+                        'losing_trades': asset_losses,
+                        'win_rate': round((asset_wins / asset_count * 100), 2),
+                        'total_profit': round(asset_profit, 2),
+                        'total_loss': round(asset_loss, 2),
+                        'net_profit': round(asset_profit + asset_loss, 2)
+                    })
+            
+            # Sort by net profit
+            asset_stats.sort(key=lambda x: x['net_profit'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'overall_statistics': {
+                    'total_trades': total_trades,
+                    'closed_trades': total_closed,
+                    'open_positions': total_open,
+                    'winning_trades': winning_trades,
+                    'losing_trades': losing_trades,
+                    'win_rate': round(win_rate, 2),
+                    'total_profit': round(total_profit, 2),
+                    'total_loss': round(total_loss, 2),
+                    'net_profit': round(net_profit, 2),
+                    'profit_factor': round(abs(total_profit / total_loss), 2) if total_loss != 0 else 0,
+                    'best_trade': {
+                        'trade_id': best_trade.trade_id,
+                        'asset_symbol': best_trade.asset_symbol,
+                        'profit_loss': float(best_trade.profit_loss)
+                    } if best_trade else None,
+                    'worst_trade': {
+                        'trade_id': worst_trade.trade_id,
+                        'asset_symbol': worst_trade.asset_symbol,
+                        'profit_loss': float(worst_trade.profit_loss)
+                    } if worst_trade else None
+                },
+                'asset_class_breakdown': asset_class_stats,
+                'asset_breakdown': asset_stats
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_start_paper_trading_backtest(request):
+    """
+    Start a paper trading backtest session
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            session_id = f"BACKTEST_{uuid.uuid4().hex[:12].upper()}"
+            
+            asset_symbol = data.get('asset_symbol')
+            asset_name = data.get('asset_name')
+            timeframe = data.get('timeframe')
+            start_date = datetime.fromisoformat(data.get('start_date'))
+            end_date = datetime.fromisoformat(data.get('end_date'))
+            initial_balance = Decimal(str(data.get('initial_balance', 10000)))
+            
+            # Create backtest session
+            session = SnowAIPaperTradingBacktestSession.objects.create(
+                session_id=session_id,
+                asset_symbol=asset_symbol,
+                asset_name=asset_name,
+                timeframe=timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                initial_balance=initial_balance,
+                final_balance=initial_balance,
+                status='IN_PROGRESS'
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'session_id': session_id,
+                'message': f'Backtest session started for {asset_symbol}',
+                'session_data': {
+                    'session_id': session.session_id,
+                    'asset_symbol': session.asset_symbol,
+                    'timeframe': session.timeframe,
+                    'start_date': session.start_date.isoformat(),
+                    'end_date': session.end_date.isoformat(),
+                    'initial_balance': float(session.initial_balance),
+                    'status': session.status
+                }
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_add_trade_to_backtest_session(request):
+    """
+    Add a trade to an ongoing backtest session
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            session_id = data.get('session_id')
+            trade_data = data.get('trade_data')
+            
+            # Get session
+            session = SnowAIPaperTradingBacktestSession.objects.get(session_id=session_id)
+            
+            # Add trade to session
+            trades_list = session.trades_data
+            trades_list.append(trade_data)
+            session.trades_data = trades_list
+            
+            # Update session statistics
+            session.total_trades += 1
+            
+            if trade_data.get('profit_loss'):
+                pnl = Decimal(str(trade_data['profit_loss']))
+                session.final_balance += pnl
+                
+                if pnl > 0:
+                    session.winning_trades += 1
+                    session.total_profit += pnl
+                    if pnl > session.largest_win:
+                        session.largest_win = pnl
+                else:
+                    session.losing_trades += 1
+                    session.total_loss += pnl
+                    if pnl < session.largest_loss:
+                        session.largest_loss = pnl
+            
+            # Update equity curve
+            equity_data = session.equity_curve
+            equity_data.append({
+                'timestamp': trade_data.get('timestamp'),
+                'balance': float(session.final_balance)
+            })
+            session.equity_curve = equity_data
+            
+            session.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Trade added to backtest session',
+                'current_balance': float(session.final_balance),
+                'total_trades': session.total_trades
+            })
+            
+        except SnowAIPaperTradingBacktestSession.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Backtest session not found'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_complete_backtest_session(request):
+    """
+    Complete a backtest session and calculate final metrics
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            session_id = data.get('session_id')
+            
+            # Get session
+            session = SnowAIPaperTradingBacktestSession.objects.get(session_id=session_id)
+            
+            # Calculate final metrics
+            session.calculate_metrics()
+            session.status = 'COMPLETED'
+            session.completed_at = timezone.now()
+            session.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Backtest session completed',
+                'session_results': {
+                    'session_id': session.session_id,
+                    'asset_symbol': session.asset_symbol,
+                    'initial_balance': float(session.initial_balance),
+                    'final_balance': float(session.final_balance),
+                    'total_return': float(session.final_balance - session.initial_balance),
+                    'total_return_percentage': float(((session.final_balance - session.initial_balance) / session.initial_balance) * 100),
+                    'total_trades': session.total_trades,
+                    'winning_trades': session.winning_trades,
+                    'losing_trades': session.losing_trades,
+                    'win_rate': float(session.win_rate) if session.win_rate else 0,
+                    'profit_factor': float(session.profit_factor) if session.profit_factor else 0,
+                    'average_win': float(session.average_win) if session.average_win else 0,
+                    'average_loss': float(session.average_loss) if session.average_loss else 0,
+                    'largest_win': float(session.largest_win),
+                    'largest_loss': float(session.largest_loss),
+                    'trades': session.trades_data,
+                    'equity_curve': session.equity_curve
+                }
+            })
+            
+        except SnowAIPaperTradingBacktestSession.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Backtest session not found'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_fetch_all_backtest_sessions(request):
+    """
+    Fetch all backtest sessions
+    """
+    if request.method == 'GET':
+        try:
+            sessions = SnowAIPaperTradingBacktestSession.objects.all()
+            
+            sessions_data = []
+            for session in sessions:
+                sessions_data.append({
+                    'session_id': session.session_id,
+                    'asset_symbol': session.asset_symbol,
+                    'asset_name': session.asset_name,
+                    'timeframe': session.timeframe,
+                    'start_date': session.start_date.isoformat(),
+                    'end_date': session.end_date.isoformat(),
+                    'initial_balance': float(session.initial_balance),
+                    'final_balance': float(session.final_balance) if session.final_balance else None,
+                    'total_return': float(session.final_balance - session.initial_balance) if session.final_balance else None,
+                    'total_trades': session.total_trades,
+                    'win_rate': float(session.win_rate) if session.win_rate else None,
+                    'status': session.status,
+                    'created_at': session.created_at.isoformat(),
+                    'completed_at': session.completed_at.isoformat() if session.completed_at else None
+                })
+            
+            return JsonResponse({
+                'success': True,
+                'sessions': sessions_data,
+                'total_sessions': len(sessions_data)
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_check_and_execute_stop_loss_take_profit(request):
+    """
+    Check open positions and auto-execute stop loss or take profit
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            current_prices = data.get('current_prices', {})  # Dict of asset_symbol: current_price
+            timezone_str = data.get('timezone', 'UTC')
+            
+            executed_trades = []
+            
+            # Get all open trades
+            open_trades = SnowAITradeOrderExecutionRecord.objects.filter(status='OPEN')
+            
+            for trade in open_trades:
+                if trade.asset_symbol not in current_prices:
+                    continue
+                
+                current_price = Decimal(str(current_prices[trade.asset_symbol]))
+                
+                should_close = False
+                exit_reason = None
+                
+                # Check stop loss
+                if trade.stop_loss:
+                    if trade.order_type == 'BUY' and current_price <= trade.stop_loss:
+                        should_close = True
+                        exit_reason = 'STOP_LOSS'
+                    elif trade.order_type == 'SELL' and current_price >= trade.stop_loss:
+                        should_close = True
+                        exit_reason = 'STOP_LOSS'
+                
+                # Check take profit
+                if trade.take_profit and not should_close:
+                    if trade.order_type == 'BUY' and current_price >= trade.take_profit:
+                        should_close = True
+                        exit_reason = 'TAKE_PROFIT'
+                    elif trade.order_type == 'SELL' and current_price <= trade.take_profit:
+                        should_close = True
+                        exit_reason = 'TAKE_PROFIT'
+                
+                # Execute closure
+                if should_close:
+                    user_tz = pytz.timezone(timezone_str)
+                    exit_timestamp = timezone.now().astimezone(user_tz)
+                    
+                    trade.exit_price = current_price
+                    trade.exit_reason = exit_reason
+                    trade.exit_timestamp = exit_timestamp
+                    trade.exit_timezone = timezone_str
+                    trade.status = 'CLOSED'
+                    
+                    pnl, pnl_pct = trade.calculate_pnl()
+                    
+                    executed_trades.append({
+                        'trade_id': trade.trade_id,
+                        'asset_symbol': trade.asset_symbol,
+                        'exit_reason': exit_reason,
+                        'exit_price': float(current_price),
+                        'profit_loss': float(pnl) if pnl else 0,
+                        'profit_loss_percentage': float(pnl_pct) if pnl_pct else 0
+                    })
+            
+            return JsonResponse({
+                'success': True,
+                'executed_count': len(executed_trades),
+                'executed_trades': executed_trades
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_delete_trade_order(request):
+    """
+    Delete a trade order (for testing/cleanup)
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            trade_id = data.get('trade_id')
+            
+            trade = SnowAITradeOrderExecutionRecord.objects.get(trade_id=trade_id)
+            trade.delete()
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Trade {trade_id} deleted'
+            })
+            
+        except SnowAITradeOrderExecutionRecord.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Trade not found'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():

@@ -2075,12 +2075,190 @@ class AssetOfInterest(models.Model):
         return qs.values_list('symbol', flat=True)
 
 
-# ============================================================
-# MIGRATION COMMAND
-# ============================================================
-# python manage.py makemigrations
-# python manage.py migrate
+class SnowAITradeOrderExecutionRecord(models.Model):
+    """
+    Model to store individual trade orders with full details
+    """
+    ORDER_TYPE_CHOICES = [
+        ('BUY', 'Buy'),
+        ('SELL', 'Sell'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('OPEN', 'Open'),
+        ('CLOSED', 'Closed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+    
+    # Trade identification
+    trade_id = models.CharField(max_length=100, unique=True, db_index=True)
+    asset_symbol = models.CharField(max_length=50, db_index=True)
+    asset_name = models.CharField(max_length=200)
+    asset_class = models.CharField(max_length=50)  # Crypto, Stocks, Forex, etc.
+    
+    # Order details
+    order_type = models.CharField(max_length=4, choices=ORDER_TYPE_CHOICES)
+    entry_price = models.DecimalField(max_digits=20, decimal_places=8)
+    quantity = models.DecimalField(max_digits=20, decimal_places=8, default=1.0)
+    
+    # Risk management
+    stop_loss = models.DecimalField(max_digits=20, decimal_places=8, null=True, blank=True)
+    take_profit = models.DecimalField(max_digits=20, decimal_places=8, null=True, blank=True)
+    
+    # Exit details
+    exit_price = models.DecimalField(max_digits=20, decimal_places=8, null=True, blank=True)
+    exit_reason = models.CharField(max_length=50, null=True, blank=True)  # TAKE_PROFIT, STOP_LOSS, MANUAL
+    
+    # P&L calculation
+    profit_loss = models.DecimalField(max_digits=20, decimal_places=8, null=True, blank=True)
+    profit_loss_percentage = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
+    
+    # Status and timestamps
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='OPEN')
+    entry_timestamp = models.DateTimeField(db_index=True)
+    exit_timestamp = models.DateTimeField(null=True, blank=True)
+    
+    # User timezone tracking
+    entry_timezone = models.CharField(max_length=50, default='UTC')
+    exit_timezone = models.CharField(max_length=50, null=True, blank=True)
+    
+    # Additional metadata
+    notes = models.TextField(blank=True, default='')
+    is_paper_trade = models.BooleanField(default=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'snowai_trade_order_execution_record'
+        ordering = ['-entry_timestamp']
+        indexes = [
+            models.Index(fields=['asset_symbol', 'status']),
+            models.Index(fields=['entry_timestamp']),
+            models.Index(fields=['is_paper_trade']),
+        ]
+    
+    def __str__(self):
+        return f"{self.trade_id} - {self.order_type} {self.asset_symbol} @ {self.entry_price}"
+    
+    def calculate_pnl(self):
+        """Calculate profit/loss when trade is closed"""
+        if self.exit_price and self.entry_price:
+            if self.order_type == 'BUY':
+                pnl = (float(self.exit_price) - float(self.entry_price)) * float(self.quantity)
+                pnl_pct = ((float(self.exit_price) - float(self.entry_price)) / float(self.entry_price)) * 100
+            else:  # SELL
+                pnl = (float(self.entry_price) - float(self.exit_price)) * float(self.quantity)
+                pnl_pct = ((float(self.entry_price) - float(self.exit_price)) / float(self.entry_price)) * 100
+            
+            self.profit_loss = pnl
+            self.profit_loss_percentage = pnl_pct
+            self.save()
+            return pnl, pnl_pct
+        return None, None
 
+
+class SnowAIPaperTradingBacktestSession(models.Model):
+    """
+    Model to store paper trading backtest sessions
+    """
+    # Session identification
+    session_id = models.CharField(max_length=100, unique=True, db_index=True)
+    asset_symbol = models.CharField(max_length=50)
+    asset_name = models.CharField(max_length=200)
+    
+    # Session parameters
+    timeframe = models.CharField(max_length=10)  # 1M, 5M, 15M, 1H, etc.
+    start_date = models.DateTimeField()
+    end_date = models.DateTimeField()
+    initial_balance = models.DecimalField(max_digits=20, decimal_places=2, default=10000)
+    
+    # Results
+    final_balance = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    total_trades = models.IntegerField(default=0)
+    winning_trades = models.IntegerField(default=0)
+    losing_trades = models.IntegerField(default=0)
+    total_profit = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    total_loss = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    
+    # Performance metrics
+    win_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    profit_factor = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
+    average_win = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    average_loss = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    largest_win = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    largest_loss = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    
+    # Session metadata
+    trades_data = models.JSONField(default=list)  # Store all trades in the session
+    equity_curve = models.JSONField(default=list)  # Store balance over time
+    status = models.CharField(max_length=20, default='IN_PROGRESS')
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'snowai_paper_trading_backtest_session'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.session_id} - {self.asset_symbol} ({self.status})"
+    
+    def calculate_metrics(self):
+        """Calculate all performance metrics"""
+        if self.total_trades > 0:
+            self.win_rate = (self.winning_trades / self.total_trades) * 100
+            
+            if self.total_loss != 0:
+                self.profit_factor = abs(float(self.total_profit) / float(self.total_loss))
+            
+            if self.winning_trades > 0:
+                self.average_win = self.total_profit / self.winning_trades
+            
+            if self.losing_trades > 0:
+                self.average_loss = self.total_loss / self.losing_trades
+            
+            self.save()
+
+
+class SnowAITradingPerformanceSnapshot(models.Model):
+    """
+    Model to store periodic performance snapshots across all assets
+    """
+    snapshot_id = models.CharField(max_length=100, unique=True, db_index=True)
+    snapshot_date = models.DateTimeField(auto_now_add=True)
+    
+    # Overall statistics
+    total_trades_all_time = models.IntegerField(default=0)
+    total_profit_all_time = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    total_loss_all_time = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    overall_win_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    
+    # Per asset class breakdown
+    crypto_stats = models.JSONField(default=dict)
+    stocks_stats = models.JSONField(default=dict)
+    forex_stats = models.JSONField(default=dict)
+    indices_stats = models.JSONField(default=dict)
+    commodities_stats = models.JSONField(default=dict)
+    
+    # Best and worst performers
+    best_performing_asset = models.CharField(max_length=50, blank=True)
+    best_performance_pnl = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    worst_performing_asset = models.CharField(max_length=50, blank=True)
+    worst_performance_pnl = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    
+    # Additional metadata
+    total_assets_traded = models.IntegerField(default=0)
+    active_positions = models.IntegerField(default=0)
+    
+    class Meta:
+        db_table = 'snowai_trading_performance_snapshot'
+        ordering = ['-snapshot_date']
+    
+    def __str__(self):
+        return f"Performance Snapshot - {self.snapshot_date.strftime('%Y-%m-%d %H:%M')}"
 
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)

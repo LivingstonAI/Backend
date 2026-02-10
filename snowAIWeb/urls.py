@@ -556,12 +556,21 @@ urlpatterns = [
      # Analyze stock popularity using OpenAI
      path('api/mss-stock-popularity-analyzer/', views.mss_stock_popularity_analyzer, name='mss-stock-popularity-analyzer'),
 
-
-
-
-
-
-
+     # Trade execution endpoints
+     path('api/snowai-execute-trade-order-placement/', views.snowai_execute_trade_order_placement, name='snowai_execute_trade_order_placement'),
+     path('api/snowai-close-trade-order-execution/', views.snowai_close_trade_order_execution, name='snowai_close_trade_order_execution'),
+     path('api/snowai-fetch-trade-history-for-asset/', views.snowai_fetch_trade_history_for_asset, name='snowai_fetch_trade_history_for_asset'),
+     path('api/snowai-fetch-overall-trading-performance/', views.snowai_fetch_overall_trading_performance, name='snowai_fetch_overall_trading_performance'),
+     
+     # Paper trading / backtest endpoints
+     path('api/snowai-start-paper-trading-backtest/', views.snowai_start_paper_trading_backtest, name='snowai_start_paper_trading_backtest'),
+     path('api/snowai-add-trade-to-backtest-session/', views.snowai_add_trade_to_backtest_session, name='snowai_add_trade_to_backtest_session'),
+     path('api/snowai-complete-backtest-session/', views.snowai_complete_backtest_session, name='snowai_complete_backtest_session'),
+     path('api/snowai-fetch-all-backtest-sessions/', views.snowai_fetch_all_backtest_sessions, name='snowai_fetch_all_backtest_sessions'),
+     
+     # Utility endpoints
+     path('api/snowai-check-and-execute-stop-loss-take-profit/', views.snowai_check_and_execute_stop_loss_take_profit, name='snowai_check_and_execute_stop_loss_take_profit'),
+     path('api/snowai-delete-trade-order/', views.snowai_delete_trade_order, name='snowai_delete_trade_order'),
 
 
     # create appproprate urls.py here
