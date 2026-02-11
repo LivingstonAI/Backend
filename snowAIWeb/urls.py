@@ -572,6 +572,11 @@ urlpatterns = [
      path('api/snowai-check-and-execute-stop-loss-take-profit/', views.snowai_check_and_execute_stop_loss_take_profit, name='snowai_check_and_execute_stop_loss_take_profit'),
      path('api/snowai-delete-trade-order/', views.snowai_delete_trade_order, name='snowai_delete_trade_order'),
 
+     # Add the function from snowai_fetch_stock_info.py
+
+     # Then add to urls.py:
+     path('api/snowai-fetch-stock-info/', views.snowai_fetch_stock_info, name='snowai_fetch_stock_info'),
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

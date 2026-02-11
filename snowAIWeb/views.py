@@ -38703,6 +38703,66 @@ def snowai_delete_trade_order(request):
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+
+@csrf_exempt
+def snowai_fetch_stock_info(request):
+    """
+    Fetch detailed stock information from yfinance
+    """
+    if request.method == 'POST':
+        try:
+            import yfinance as yf
+            
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            
+            if not symbol:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbol is required'
+                }, status=400)
+            
+            # Fetch stock info
+            stock = yf.Ticker(symbol)
+            info = stock.info
+            
+            # Extract relevant information
+            stock_data = {
+                'symbol': symbol,
+                'longName': info.get('longName'),
+                'currentPrice': info.get('currentPrice') or info.get('regularMarketPrice'),
+                'marketCap': info.get('marketCap'),
+                'peRatio': info.get('trailingPE') or info.get('forwardPE'),
+                'dividendYield': info.get('dividendYield'),
+                'sector': info.get('sector'),
+                'industry': info.get('industry'),
+                'website': info.get('website'),
+                'summary': info.get('longBusinessSummary'),
+                'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
+                'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow'),
+                'volume': info.get('volume'),
+                'averageVolume': info.get('averageVolume'),
+                'beta': info.get('beta'),
+                'earningsPerShare': info.get('trailingEps'),
+                'bookValue': info.get('bookValue'),
+                'priceToBook': info.get('priceToBook'),
+                'returnOnEquity': info.get('returnOnEquity'),
+                'debtToEquity': info.get('debtToEquity'),
+            }
+            
+            return JsonResponse({
+                'success': True,
+                'data': stock_data
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
