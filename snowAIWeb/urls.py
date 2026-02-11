@@ -577,6 +577,16 @@ urlpatterns = [
      # Then add to urls.py:
      path('api/snowai-fetch-stock-info/', views.snowai_fetch_stock_info, name='snowai_fetch_stock_info'),
 
+     # ============================================================
+     # URL ROUTES — Trade Execution
+     # ============================================================
+
+     # Execute a new trade order
+     path('api/mss-execute-trade-order/', views.mss_execute_trade_order, name='mss-execute-trade-order'),
+
+     # Get open trades for an asset
+     path('api/mss-get-open-trades/', views.mss_get_open_trades, name='mss-get-open-trades'),
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

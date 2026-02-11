@@ -38763,6 +38763,205 @@ def snowai_fetch_stock_info(request):
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+
+
+# ============================================================
+# ENDPOINT: Execute Trade Order
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_execute_trade_order(request):
+    """
+    Create a new trade execution record.
+    Validates inputs and stores in SnowAITradeOrderExecutionRecord model.
+    """
+    try:
+        from decimal import Decimal, InvalidOperation
+        import uuid
+        
+        data = json.loads(request.body)
+        
+        # ── Required fields ──
+        asset_symbol = data.get('asset_symbol')
+        order_type = data.get('order_type')  # BUY or SELL
+        entry_price = data.get('entry_price')
+        
+        if not all([asset_symbol, order_type, entry_price]):
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing required fields: asset_symbol, order_type, entry_price'
+            }, status=400)
+        
+        # Validate order_type
+        if order_type not in ['BUY', 'SELL']:
+            return JsonResponse({
+                'success': False,
+                'error': 'order_type must be BUY or SELL'
+            }, status=400)
+        
+        # ── Optional fields ──
+        asset_name = data.get('asset_name', asset_symbol)
+        asset_class = data.get('asset_class', 'Stocks')
+        quantity = data.get('quantity', '1.0')
+        stop_loss = data.get('stop_loss')
+        take_profit = data.get('take_profit')
+        notes = data.get('notes', '')
+        is_paper_trade = data.get('is_paper_trade', True)
+        entry_timezone = data.get('entry_timezone', 'America/New_York')
+        
+        # ── Convert to Decimal ──
+        try:
+            entry_price_decimal = Decimal(str(entry_price))
+            quantity_decimal = Decimal(str(quantity))
+            
+            stop_loss_decimal = Decimal(str(stop_loss)) if stop_loss else None
+            take_profit_decimal = Decimal(str(take_profit)) if take_profit else None
+            
+        except (InvalidOperation, ValueError) as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'Invalid number format: {str(e)}'
+            }, status=400)
+        
+        # ── Validation ──
+        if entry_price_decimal <= 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Entry price must be greater than 0'
+            }, status=400)
+        
+        if quantity_decimal <= 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Quantity must be greater than 0'
+            }, status=400)
+        
+        if stop_loss_decimal and stop_loss_decimal <= 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Stop loss must be greater than 0'
+            }, status=400)
+        
+        if take_profit_decimal and take_profit_decimal <= 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Take profit must be greater than 0'
+            }, status=400)
+        
+        # Validate SL/TP logic
+        if order_type == 'BUY':
+            if stop_loss_decimal and stop_loss_decimal >= entry_price_decimal:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'For BUY orders, stop loss must be below entry price'
+                }, status=400)
+            if take_profit_decimal and take_profit_decimal <= entry_price_decimal:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'For BUY orders, take profit must be above entry price'
+                }, status=400)
+        else:  # SELL
+            if stop_loss_decimal and stop_loss_decimal <= entry_price_decimal:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'For SELL orders, stop loss must be above entry price'
+                }, status=400)
+            if take_profit_decimal and take_profit_decimal >= entry_price_decimal:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'For SELL orders, take profit must be below entry price'
+                }, status=400)
+        
+        # ── Generate unique trade_id ──
+        trade_id = f"{asset_symbol}_{order_type}_{int(timezone.now().timestamp())}_{str(uuid.uuid4())[:8]}"
+        
+        # ── Create record ──
+        trade = SnowAITradeOrderExecutionRecord.objects.create(
+            trade_id=trade_id,
+            asset_symbol=asset_symbol,
+            asset_name=asset_name,
+            asset_class=asset_class,
+            order_type=order_type,
+            entry_price=entry_price_decimal,
+            quantity=quantity_decimal,
+            stop_loss=stop_loss_decimal,
+            take_profit=take_profit_decimal,
+            status='OPEN',
+            entry_timestamp=timezone.now(),
+            entry_timezone=entry_timezone,
+            notes=notes,
+            is_paper_trade=is_paper_trade
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'{order_type} order executed successfully',
+            'trade': {
+                'trade_id': trade.trade_id,
+                'asset_symbol': trade.asset_symbol,
+                'order_type': trade.order_type,
+                'entry_price': float(trade.entry_price),
+                'quantity': float(trade.quantity),
+                'stop_loss': float(trade.stop_loss) if trade.stop_loss else None,
+                'take_profit': float(trade.take_profit) if trade.take_profit else None,
+                'entry_timestamp': trade.entry_timestamp.isoformat(),
+                'is_paper_trade': trade.is_paper_trade
+            }
+        })
+    
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status=500)
+
+
+# ============================================================
+# ENDPOINT: Get Open Trades for Asset
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_get_open_trades(request):
+    """
+    Get all open trades for a specific asset.
+    """
+    try:
+        
+        data = json.loads(request.body)
+        asset_symbol = data.get('asset_symbol')
+        
+        if not asset_symbol:
+            return JsonResponse({'success': False, 'error': 'asset_symbol required'}, status=400)
+        
+        trades = SnowAITradeOrderExecutionRecord.objects.filter(
+            asset_symbol=asset_symbol,
+            status='OPEN'
+        ).order_by('-entry_timestamp')
+        
+        trades_data = [{
+            'trade_id': t.trade_id,
+            'order_type': t.order_type,
+            'entry_price': float(t.entry_price),
+            'quantity': float(t.quantity),
+            'stop_loss': float(t.stop_loss) if t.stop_loss else None,
+            'take_profit': float(t.take_profit) if t.take_profit else None,
+            'entry_timestamp': t.entry_timestamp.isoformat(),
+            'notes': t.notes
+        } for t in trades]
+        
+        return JsonResponse({
+            'success': True,
+            'trades': trades_data,
+            'count': len(trades_data)
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
