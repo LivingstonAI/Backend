@@ -587,6 +587,14 @@ urlpatterns = [
      # Get open trades for an asset
      path('api/mss-get-open-trades/', views.mss_get_open_trades, name='mss-get-open-trades'),
 
+     # views.py — paste in the snowai_edit_trade_order.py content
+     # urls.py — add:
+     path('api/snowai-edit-trade-order/', views.snowai_edit_trade_order, name='snowai_edit_trade_order'),
+
+     path('api/snowai-fetch-all-open-positions/', views.snowai_fetch_all_open_positions, name='snowai_fetch_all_open_positions'),
+
+
+
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

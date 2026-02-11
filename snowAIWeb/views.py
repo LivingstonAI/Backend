@@ -38962,6 +38962,50 @@ def mss_get_open_trades(request):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+@csrf_exempt
+def snowai_fetch_all_open_positions(request):
+    """
+    Fetch all currently open (not closed/cancelled) trade positions across all assets.
+    Used by the frontend "Open Positions" panel.
+    """
+    if request.method == 'GET':
+        try:
+            open_trades = SnowAITradeOrderExecutionRecord.objects.filter(
+                status='OPEN'
+            ).order_by('-entry_timestamp')
+
+            positions = []
+            for trade in open_trades:
+                positions.append({
+                    'trade_id': trade.trade_id,
+                    'asset_symbol': trade.asset_symbol,
+                    'asset_name': trade.asset_name,
+                    'asset_class': trade.asset_class,
+                    'order_type': trade.order_type,
+                    'entry_price': float(trade.entry_price),
+                    'quantity': float(trade.quantity),
+                    'stop_loss': float(trade.stop_loss) if trade.stop_loss else None,
+                    'take_profit': float(trade.take_profit) if trade.take_profit else None,
+                    'entry_timestamp': trade.entry_timestamp.isoformat(),
+                    'entry_timezone': trade.entry_timezone,
+                    'notes': trade.notes,
+                    'is_paper_trade': trade.is_paper_trade,
+                    'status': trade.status,
+                })
+
+            return JsonResponse({
+                'success': True,
+                'open_positions': positions,
+                'total': len(positions)
+            })
+
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
