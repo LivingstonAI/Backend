@@ -2260,6 +2260,110 @@ class SnowAITradingPerformanceSnapshot(models.Model):
     def __str__(self):
         return f"Performance Snapshot - {self.snapshot_date.strftime('%Y-%m-%d %H:%M')}"
 
+
+from django.db import models
+import uuid
+
+
+class SnowAITradingModel(models.Model):
+    """
+    Stores AI-generated OHLC signal functions that can be deployed as live strategies.
+    Each model contains Python code (a boolean function) and is linked to an asset.
+    """
+    STATUS_CHOICES = [
+        ('DRAFT',    'Draft'),
+        ('ACTIVE',   'Active - Running'),
+        ('PAUSED',   'Paused'),
+        ('ARCHIVED', 'Archived'),
+    ]
+    DIRECTION_CHOICES = [
+        ('BUY',  'Long / Buy'),
+        ('SELL', 'Short / Sell'),
+        ('BOTH', 'Both directions'),
+    ]
+
+    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name            = models.CharField(max_length=200)
+    description     = models.TextField(blank=True)
+    plain_english   = models.TextField(help_text="The plain-English prompt the user typed")
+    function_name   = models.CharField(max_length=100, help_text="Python function name, e.g. is_high_volume")
+    code            = models.TextField(help_text="Raw Python source — must define function_name(df) -> bool")
+
+    # Deployment config
+    asset_symbol    = models.CharField(max_length=50)
+    asset_name      = models.CharField(max_length=200, blank=True)
+    asset_class     = models.CharField(max_length=100, blank=True)
+    timeframe       = models.CharField(max_length=10, default='1H')
+    direction       = models.CharField(max_length=4, choices=DIRECTION_CHOICES, default='BUY')
+    take_profit_pct = models.DecimalField(max_digits=6, decimal_places=2, default=8.00,
+                                           help_text="Take-profit as % of entry price")
+    stop_loss_pct   = models.DecimalField(max_digits=6, decimal_places=2, default=4.00,
+                                           help_text="Stop-loss as % of entry price")
+    position_size   = models.DecimalField(max_digits=12, decimal_places=2, default=1000.00,
+                                           help_text="Dollar amount per position")
+
+    status          = models.CharField(max_length=10, choices=STATUS_CHOICES, default='DRAFT')
+    last_run_at     = models.DateTimeField(null=True, blank=True)
+    last_signal     = models.BooleanField(null=True, blank=True)
+    error_log       = models.TextField(blank=True)
+    created_at      = models.DateTimeField(auto_now_add=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'SnowAI Trading Model'
+        verbose_name_plural = 'SnowAI Trading Models'
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['asset_symbol']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.asset_symbol}) [{self.status}]"
+
+
+class SnowAIModelTrade(models.Model):
+    """
+    Trades opened/closed by a SnowAITradingModel via the scheduler.
+    Separate from manual trades so we can track per-model performance.
+    """
+    OUTCOME_CHOICES = [
+        ('OPEN',   'Open'),
+        ('TP_HIT', 'Take Profit Hit'),
+        ('SL_HIT', 'Stop Loss Hit'),
+        ('MANUAL', 'Manually Closed'),
+    ]
+
+    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    model           = models.ForeignKey(SnowAITradingModel, on_delete=models.CASCADE,
+                                         related_name='trades')
+    asset_symbol    = models.CharField(max_length=50)
+    order_type      = models.CharField(max_length=4)   # BUY / SELL
+    entry_price     = models.DecimalField(max_digits=20, decimal_places=6)
+    exit_price      = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    take_profit_price = models.DecimalField(max_digits=20, decimal_places=6)
+    stop_loss_price = models.DecimalField(max_digits=20, decimal_places=6)
+    quantity        = models.DecimalField(max_digits=20, decimal_places=6, default=1)
+    profit_loss     = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    profit_loss_pct = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
+    outcome         = models.CharField(max_length=10, choices=OUTCOME_CHOICES, default='OPEN')
+    entry_timestamp = models.DateTimeField(auto_now_add=True)
+    exit_timestamp  = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-entry_timestamp']
+        verbose_name = 'SnowAI Model Trade'
+        verbose_name_plural = 'SnowAI Model Trades'
+        indexes = [
+            models.Index(fields=['outcome']),
+            models.Index(fields=['asset_symbol']),
+            models.Index(fields=['model', 'outcome']),
+        ]
+
+    def __str__(self):
+        return f"{self.model.name} | {self.order_type} {self.asset_symbol} | {self.outcome}"
+        
+
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)

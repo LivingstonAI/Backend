@@ -593,6 +593,37 @@ urlpatterns = [
 
      path('api/snowai-fetch-all-open-positions/', views.snowai_fetch_all_open_positions, name='snowai_fetch_all_open_positions'),
 
+         # ── AI Trading Model CRUD ───────────────────────────────────────────────
+     path('api/snowai-save-trading-model/',
+          views.snowai_save_trading_model,
+          name='snowai_save_trading_model'),
+
+     path('api/snowai-list-trading-models/',
+          views.snowai_list_trading_models,
+          name='snowai_list_trading_models'),
+
+     path('api/snowai-update-model-status/',
+          views.snowai_update_model_status,
+          name='snowai_update_model_status'),
+
+     path('api/snowai-delete-trading-model/',
+          views.snowai_delete_trading_model,
+          name='snowai_delete_trading_model'),
+
+     path('api/snowai-get-model-trades/',
+          views.snowai_get_model_trades,
+          name='snowai_get_model_trades'),
+
+     # ── Already added in previous sessions (keep if not present) ───────────
+     path('api/snowai-edit-trade-order/',
+          views.snowai_edit_trade_order,
+          name='snowai_edit_trade_order'),
+
+     path('api/snowai-fetch-all-open-positions/',
+          views.snowai_fetch_all_open_positions,
+          name='snowai_fetch_all_open_positions'),
+
+
 
 
 
