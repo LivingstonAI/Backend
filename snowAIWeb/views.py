@@ -32536,4 +32536,7083 @@ def calculate_mss_for_dataframe(df):
         else:
             liquidity_factor = 0.8
         
-        # Calculate 
+        # Calculate trend score
+        trend_score = (
+            r_squared * 0.5 +
+            trend_consistency * 0.3 +
+            trend_strength * 0.2
+        ) * 100
+        
+        # Normalized volatility (simplified - using local max)
+        normalized_volatility = min(volatility / 0.1, 1.0)  # Assume 0.1 as high volatility threshold
+        
+        # Stability factor
+        stability_factor = (1 - normalized_volatility) ** 0.6
+        
+        # Calculate MSS
+        mss = trend_score * stability_factor * liquidity_factor
+        mss = min(max(mss, 0), 100)
+        
+        # Determine category
+        if mss >= 47:
+            category = "stable"
+        elif mss >= 30:
+            category = "choppy"
+        else:
+            category = "volatile"
+        
+        return {
+            'mss': mss,
+            'volatility': volatility,
+            'normalized_volatility': normalized_volatility,
+            'r_squared': r_squared,
+            'trend_consistency': trend_consistency,
+            'trend_strength': trend_strength,
+            'liquidity_factor': liquidity_factor,
+            'category': category
+        }
+        
+    except Exception as e:
+        print(f"Error in calculate_mss_for_dataframe: {str(e)}")
+        return None
+
+
+@csrf_exempt
+def mss_analyze_trend_duration_timeline(request):
+    """
+    Analyzes how long the current trend has been active using 1h timeframe for precision.
+    Works backwards from current data to find when the trend started using EMA crossovers.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            
+            if not symbols:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbols required'
+                }, status=400)
+            
+            # Handle single symbol or list
+            if isinstance(symbols, str):
+                symbols = [symbols]
+            
+            results = []
+            
+            for symbol in symbols:
+                try:
+                    # Download 1h data for precise trend detection
+                    # 60 days of 1h data = ~1440 hours (60 days * 24 hours, adjusted for trading hours)
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=60)
+                    
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(start=start_date, end=end_date, interval='1h')
+                    
+                    if len(hist) < 100:
+                        print(f"Skipping {symbol}: insufficient 1h data ({len(hist)} bars)")
+                        continue
+                    
+                    # Calculate EMAs on 1h timeframe for trend detection
+                    # Using shorter EMAs for 1h data (20h, 50h, 100h instead of days)
+                    hist['EMA_20'] = hist['Close'].ewm(span=20, adjust=False).mean()
+                    hist['EMA_50'] = hist['Close'].ewm(span=50, adjust=False).mean()
+                    hist['EMA_100'] = hist['Close'].ewm(span=100, adjust=False).mean()
+                    
+                    # Drop NaN values from EMA calculations
+                    hist = hist.dropna()
+                    
+                    if len(hist) < 100:
+                        print(f"Skipping {symbol}: insufficient data after EMA calculation")
+                        continue
+                    
+                    # Determine current trend using 1h EMAs
+                    current_trend = None
+                    ema_20_current = hist['EMA_20'].iloc[-1]
+                    ema_50_current = hist['EMA_50'].iloc[-1]
+                    ema_100_current = hist['EMA_100'].iloc[-1]
+                    
+                    if ema_20_current > ema_50_current > ema_100_current:
+                        current_trend = 'uptrend'
+                        trend_emoji = '📈'
+                        trend_color = '#10b981'
+                    elif ema_20_current < ema_50_current < ema_100_current:
+                        current_trend = 'downtrend'
+                        trend_emoji = '📉'
+                        trend_color = '#ef4444'
+                    else:
+                        current_trend = 'ranging'
+                        trend_emoji = '➡️'
+                        trend_color = '#6b7280'
+                    
+                    # Find when trend started by going backwards through 1h bars
+                    trend_start_index = None
+                    trend_duration_hours = 0
+                    trend_duration_days = 0
+                    
+                    if current_trend != 'ranging':
+                        for i in range(len(hist) - 1, 99, -1):  # Need at least 100 bars for EMAs
+                            ema_20 = hist['EMA_20'].iloc[i]
+                            ema_50 = hist['EMA_50'].iloc[i]
+                            ema_100 = hist['EMA_100'].iloc[i]
+                            
+                            # Check if trend condition is still valid
+                            if current_trend == 'uptrend':
+                                if not (ema_20 > ema_50 > ema_100):
+                                    trend_start_index = i + 1
+                                    break
+                            elif current_trend == 'downtrend':
+                                if not (ema_20 < ema_50 < ema_100):
+                                    trend_start_index = i + 1
+                                    break
+                        
+                        if trend_start_index is None:
+                            # Trend is older than our 1h data
+                            trend_start_index = 100
+                            trend_duration_hours = len(hist) - trend_start_index
+                            
+                            # Convert hours to days (approximate - accounting for trading hours)
+                            # Forex: ~24h/day, Stocks: ~6.5h trading day
+                            # Use 24h for simplicity (will be close enough for forex/crypto, conservative for stocks)
+                            trend_duration_days = trend_duration_hours / 24
+                            
+                            duration_status = f"60+ days (trend older than analysis period)"
+                        else:
+                            trend_duration_hours = len(hist) - trend_start_index
+                            
+                            # Convert to days (24h for forex/crypto, conservative for stocks)
+                            trend_duration_days = trend_duration_hours / 24
+                            
+                            # Get actual timestamp of trend start for precise duration
+                            trend_start_time = hist.index[trend_start_index]
+                            current_time = hist.index[-1]
+                            actual_duration = current_time - trend_start_time
+                            actual_days = actual_duration.total_seconds() / (24 * 3600)
+                            
+                            duration_status = f"{actual_days:.1f} days ({trend_duration_hours} hours)"
+                            trend_duration_days = actual_days  # Use actual calculated days
+                    else:
+                        # Ranging market - find how long it's been ranging
+                        trend_duration_hours = 0
+                        trend_duration_days = 0
+                        duration_status = "Ranging (no clear trend)"
+                    
+                    # Categorize trend age based on DAYS (more precise with 1h data)
+                    if current_trend == 'ranging':
+                        age_category = 'ranging'
+                        age_label = '😴 Ranging'
+                        freshness_score = 0
+                    elif trend_duration_days <= 3:  # 0-3 days = VERY fresh (just started!)
+                        age_category = 'very_fresh'
+                        age_label = '🔥 Brand New'
+                        freshness_score = 100
+                    elif trend_duration_days <= 7:  # 3-7 days = Fresh
+                        age_category = 'fresh'
+                        age_label = '⚡ Fresh'
+                        freshness_score = 85
+                    elif trend_duration_days <= 14:  # 1-2 weeks = Early
+                        age_category = 'early'
+                        age_label = '✨ Early'
+                        freshness_score = 70
+                    elif trend_duration_days <= 30:  # 2-4 weeks = Established
+                        age_category = 'established'
+                        age_label = '✅ Established'
+                        freshness_score = 50
+                    elif trend_duration_days <= 45:  # 1-1.5 months = Mature
+                        age_category = 'mature'
+                        age_label = '📊 Mature'
+                        freshness_score = 30
+                    else:  # 1.5+ months = Aging
+                        age_category = 'aging'
+                        age_label = '⏳ Aging'
+                        freshness_score = 10
+                    
+                    # Calculate trend strength over duration using 1h precision
+                    if trend_start_index is not None and current_trend != 'ranging':
+                        trend_period_data = hist.iloc[trend_start_index:]
+                        start_price = trend_period_data['Close'].iloc[0]
+                        current_price = trend_period_data['Close'].iloc[-1]
+                        
+                        if start_price > 0:
+                            total_move_pct = ((current_price - start_price) / start_price) * 100
+                            # Average move per day (more meaningful than per hour)
+                            avg_move_per_day = total_move_pct / trend_duration_days if trend_duration_days > 0 else 0
+                        else:
+                            total_move_pct = 0
+                            avg_move_per_day = 0
+                    else:
+                        total_move_pct = 0
+                        avg_move_per_day = 0
+                    
+                    # Determine entry recommendation based on trend age
+                    if current_trend == 'ranging':
+                        entry_recommendation = "⏸️ Wait for trend to form"
+                        entry_priority = "low"
+                    elif age_category == 'very_fresh':
+                        entry_recommendation = "🚀 EXCELLENT ENTRY - Trend just started (0-3 days)!"
+                        entry_priority = "highest"
+                    elif age_category == 'fresh':
+                        entry_recommendation = "🔥 GREAT ENTRY - Very early (3-7 days)"
+                        entry_priority = "very_high"
+                    elif age_category == 'early':
+                        entry_recommendation = "✅ GOOD ENTRY - Still early (1-2 weeks)"
+                        entry_priority = "high"
+                    elif age_category == 'established':
+                        entry_recommendation = "⚠️ MODERATE - Trend established (2-4 weeks)"
+                        entry_priority = "medium"
+                    elif age_category == 'mature':
+                        entry_recommendation = "🤔 LATE - Consider waiting for pullback (1+ month)"
+                        entry_priority = "low"
+                    else:
+                        entry_recommendation = "❌ TOO LATE - Trend may be exhausting (1.5+ months)"
+                        entry_priority = "very_low"
+                    
+                    results.append({
+                        'symbol': symbol,
+                        'current_trend': current_trend,
+                        'trend_emoji': trend_emoji,
+                        'trend_color': trend_color,
+                        'trend_duration_days': round(trend_duration_days, 1),
+                        'trend_duration_hours': trend_duration_hours,
+                        'duration_status': duration_status,
+                        'age_category': age_category,
+                        'age_label': age_label,
+                        'freshness_score': freshness_score,
+                        'entry_recommendation': entry_recommendation,
+                        'entry_priority': entry_priority,
+                        'total_move_pct': round(total_move_pct, 2),
+                        'avg_move_per_day': round(avg_move_per_day, 3),
+                        'current_price': round(hist['Close'].iloc[-1], 2),
+                        'trend_start_price': round(hist['Close'].iloc[trend_start_index], 2) if trend_start_index else None,
+                        'trend_start_time': hist.index[trend_start_index].strftime('%Y-%m-%d %H:%M') if trend_start_index else None,
+                        'analysis_period_days': 60,
+                        'timeframe': '1h',
+                        'total_bars_analyzed': len(hist)
+                    })
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    import traceback
+                    print(traceback.format_exc())
+                    continue
+            
+            if not results:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No valid trend duration data retrieved'
+                }, status=400)
+            
+            # Sort by freshness score (newest trends first by default)
+            results.sort(key=lambda x: x['freshness_score'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'assets_analyzed': len(results),
+                'timeframe': '1h',
+                'lookback_period': '60 days'
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in trend duration analysis: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+
+
+@csrf_exempt
+def mss_calculate_average_daily_range_projections(request):
+    """
+    Calculates Average Daily Range (ADR) for assets and projects potential end-of-day prices.
+    Uses High-Low range to capture full intraday movement.
+    Provides both bullish and bearish projections for current trading day.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            lookback_days = data.get('lookback_days', 20)  # Default 20 trading days
+            
+            if not symbols:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbols required'
+                }, status=400)
+            
+            # Handle single symbol or list
+            if isinstance(symbols, str):
+                symbols = [symbols]
+            
+            results = []
+            
+            for symbol in symbols:
+                try:
+                    # Download daily data for ADR calculation
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period=f"{lookback_days + 10}d", interval='1d')
+                    
+                    if len(hist) < 10:
+                        print(f"Skipping {symbol}: insufficient daily data")
+                        continue
+                    
+                    # Use last N days for ADR calculation
+                    analysis_data = hist.tail(lookback_days)
+                    
+                    # Calculate daily ranges (High - Low)
+                    analysis_data['daily_range'] = analysis_data['High'] - analysis_data['Low']
+                    analysis_data['daily_range_pct'] = (analysis_data['daily_range'] / analysis_data['Open']) * 100
+                    
+                    # Calculate upward movement (Close - Open) for trending days
+                    analysis_data['daily_move'] = analysis_data['Close'] - analysis_data['Open']
+                    analysis_data['daily_move_pct'] = (analysis_data['daily_move'] / analysis_data['Open']) * 100
+                    
+                    # Separate bullish and bearish days
+                    bullish_days = analysis_data[analysis_data['daily_move'] > 0]
+                    bearish_days = analysis_data[analysis_data['daily_move'] < 0]
+                    
+                    # === CALCULATE AVERAGE DAILY RANGE ===
+                    adr_dollars = analysis_data['daily_range'].mean()
+                    adr_pct = analysis_data['daily_range_pct'].mean()
+                    
+                    # Calculate median (less affected by outliers)
+                    median_range_dollars = analysis_data['daily_range'].median()
+                    median_range_pct = analysis_data['daily_range_pct'].median()
+                    
+                    # Calculate standard deviation (volatility of the range)
+                    std_range_dollars = analysis_data['daily_range'].std()
+                    std_range_pct = analysis_data['daily_range_pct'].std()
+                    
+                    # Min and Max ranges observed
+                    min_range = analysis_data['daily_range'].min()
+                    max_range = analysis_data['daily_range'].max()
+                    
+                    # === CALCULATE DIRECTIONAL BIAS ===
+                    # Average movement on bullish days
+                    if len(bullish_days) > 0:
+                        avg_bullish_move_dollars = bullish_days['daily_move'].mean()
+                        avg_bullish_move_pct = bullish_days['daily_move_pct'].mean()
+                        avg_bullish_range = bullish_days['daily_range'].mean()
+                    else:
+                        avg_bullish_move_dollars = 0
+                        avg_bullish_move_pct = 0
+                        avg_bullish_range = 0
+                    
+                    # Average movement on bearish days
+                    if len(bearish_days) > 0:
+                        avg_bearish_move_dollars = bearish_days['daily_move'].mean()
+                        avg_bearish_move_pct = bearish_days['daily_move_pct'].mean()
+                        avg_bearish_range = bearish_days['daily_range'].mean()
+                    else:
+                        avg_bearish_move_dollars = 0
+                        avg_bearish_move_pct = 0
+                        avg_bearish_range = 0
+                    
+                    # === GET CURRENT DAY DATA ===
+                    current_price = hist['Close'].iloc[-1]
+                    today_open = hist['Open'].iloc[-1]
+                    today_high = hist['High'].iloc[-1]
+                    today_low = hist['Low'].iloc[-1]
+                    
+                    # Current day's range so far
+                    current_range = today_high - today_low
+                    current_range_pct = (current_range / today_open) * 100 if today_open > 0 else 0
+                    
+                    # How much of average range has been used today?
+                    range_completion_pct = (current_range / adr_dollars) * 100 if adr_dollars > 0 else 0
+                    
+                    # === PROJECT END-OF-DAY SCENARIOS ===
+                    
+                    # Bullish scenario: Price moves up by average bullish move
+                    bullish_eod_projection = current_price + avg_bullish_move_dollars
+                    bullish_potential_high = current_price + (avg_bullish_range * 0.7)  # 70% of avg range up
+                    bullish_potential_low = current_price - (avg_bullish_range * 0.3)  # 30% of avg range down
+                    
+                    # Bearish scenario: Price moves down by average bearish move
+                    bearish_eod_projection = current_price + avg_bearish_move_dollars  # Already negative
+                    bearish_potential_high = current_price + (avg_bearish_range * 0.3)  # 30% of avg range up
+                    bearish_potential_low = current_price - (avg_bearish_range * 0.7)  # 70% of avg range down
+                    
+                    # Conservative projection: Use median instead of mean
+                    conservative_high = current_price + (median_range_dollars / 2)
+                    conservative_low = current_price - (median_range_dollars / 2)
+                    
+                    # Aggressive projection: Current price +/- full ADR
+                    aggressive_high = current_price + adr_dollars
+                    aggressive_low = current_price - adr_dollars
+                    
+                    # === PROBABILITY ESTIMATES ===
+                    # Based on historical data
+                    total_days = len(analysis_data)
+                    bullish_probability = (len(bullish_days) / total_days * 100) if total_days > 0 else 50
+                    bearish_probability = (len(bearish_days) / total_days * 100) if total_days > 0 else 50
+                    
+                    # === VOLATILITY CATEGORY ===
+                    if adr_pct >= 5.0:
+                        volatility_category = "extreme"
+                        volatility_label = "🔥 Extreme Mover"
+                        volatility_color = "#dc2626"
+                    elif adr_pct >= 3.0:
+                        volatility_category = "high"
+                        volatility_label = "⚡ High Volatility"
+                        volatility_color = "#f59e0b"
+                    elif adr_pct >= 1.5:
+                        volatility_category = "moderate"
+                        volatility_label = "📊 Moderate Range"
+                        volatility_color = "#10b981"
+                    elif adr_pct >= 0.5:
+                        volatility_category = "low"
+                        volatility_label = "😴 Low Volatility"
+                        volatility_color = "#3b82f6"
+                    else:
+                        volatility_category = "very_low"
+                        volatility_label = "💤 Very Quiet"
+                        volatility_color = "#6b7280"
+                    
+                    # === RANGE REMAINING ===
+                    # How much potential movement is left today?
+                    remaining_range_dollars = max(0, adr_dollars - current_range)
+                    remaining_range_pct = (remaining_range_dollars / current_price) * 100 if current_price > 0 else 0
+                    
+                    # === TRADING RECOMMENDATION ===
+                    if range_completion_pct >= 90:
+                        range_status = "⚠️ Near Daily Limit - Low potential remaining"
+                    elif range_completion_pct >= 70:
+                        range_status = "🤔 Significant Move Done - Be cautious"
+                    elif range_completion_pct >= 50:
+                        range_status = "📊 Mid-Range - Moderate potential"
+                    elif range_completion_pct >= 30:
+                        range_status = "✅ Early in Range - Good potential"
+                    else:
+                        range_status = "🚀 Fresh Day - High potential remaining"
+                    
+                    results.append({
+                        'symbol': symbol,
+                        
+                        # Average Daily Range Stats
+                        'adr_dollars': round(adr_dollars, 2),
+                        'adr_pct': round(adr_pct, 2),
+                        'median_range_dollars': round(median_range_dollars, 2),
+                        'median_range_pct': round(median_range_pct, 2),
+                        'std_range_dollars': round(std_range_dollars, 2),
+                        'min_range': round(min_range, 2),
+                        'max_range': round(max_range, 2),
+                        
+                        # Volatility Classification
+                        'volatility_category': volatility_category,
+                        'volatility_label': volatility_label,
+                        'volatility_color': volatility_color,
+                        
+                        # Current Day Status
+                        'current_price': round(current_price, 2),
+                        'today_open': round(today_open, 2),
+                        'today_high': round(today_high, 2),
+                        'today_low': round(today_low, 2),
+                        'current_range': round(current_range, 2),
+                        'current_range_pct': round(current_range_pct, 2),
+                        'range_completion_pct': round(range_completion_pct, 1),
+                        'range_status': range_status,
+                        'remaining_range_dollars': round(remaining_range_dollars, 2),
+                        'remaining_range_pct': round(remaining_range_pct, 2),
+                        
+                        # Bullish Scenario Projections
+                        'bullish_eod_projection': round(bullish_eod_projection, 2),
+                        'bullish_potential_high': round(bullish_potential_high, 2),
+                        'bullish_potential_low': round(bullish_potential_low, 2),
+                        'avg_bullish_move_dollars': round(avg_bullish_move_dollars, 2),
+                        'avg_bullish_move_pct': round(avg_bullish_move_pct, 2),
+                        'bullish_probability': round(bullish_probability, 1),
+                        
+                        # Bearish Scenario Projections
+                        'bearish_eod_projection': round(bearish_eod_projection, 2),
+                        'bearish_potential_high': round(bearish_potential_high, 2),
+                        'bearish_potential_low': round(bearish_potential_low, 2),
+                        'avg_bearish_move_dollars': round(avg_bearish_move_dollars, 2),
+                        'avg_bearish_move_pct': round(avg_bearish_move_pct, 2),
+                        'bearish_probability': round(bearish_probability, 1),
+                        
+                        # Conservative/Aggressive Ranges
+                        'conservative_high': round(conservative_high, 2),
+                        'conservative_low': round(conservative_low, 2),
+                        'aggressive_high': round(aggressive_high, 2),
+                        'aggressive_low': round(aggressive_low, 2),
+                        
+                        # Historical Context
+                        'bullish_days_count': len(bullish_days),
+                        'bearish_days_count': len(bearish_days),
+                        'total_days_analyzed': total_days,
+                        'lookback_period': lookback_days
+                    })
+                    
+                except Exception as e:
+                    print(f"Error processing {symbol}: {str(e)}")
+                    import traceback
+                    print(traceback.format_exc())
+                    continue
+            
+            if not results:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No valid ADR data calculated'
+                }, status=400)
+            
+            # Sort by ADR percentage (highest volatility first)
+            results.sort(key=lambda x: x['adr_pct'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'assets_analyzed': len(results),
+                'methodology': 'Average Daily Range calculated using High-Low spread over specified lookback period'
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in ADR calculation: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+
+@csrf_exempt
+def mss_estimate_price_target_timeline(request):
+    """
+    Estimates how many days it will take for an asset to reach a target price.
+    Uses historical daily movement data, current trend, and statistical analysis.
+    
+    Provides:
+    - Estimated days to target
+    - Probability of reaching target
+    - Best/worst case scenarios
+    - Trend compatibility analysis
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            target_price = data.get('target_price')
+            lookback_days = data.get('lookback_days', 60)  # Historical data for analysis
+            
+            if not symbol or target_price is None:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbol and target_price required'
+                }, status=400)
+            
+            target_price = float(target_price)
+            
+            # Download daily data for historical analysis
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period=f"{lookback_days + 10}d", interval='1d')
+            
+            if len(hist) < 20:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Insufficient data for {symbol}'
+                }, status=400)
+            
+            # Current price
+            current_price = hist['Close'].iloc[-1]
+            
+            # Calculate distance to target
+            price_distance = target_price - current_price
+            price_distance_pct = (price_distance / current_price) * 100
+            
+            # Determine direction needed
+            direction_needed = 'bullish' if price_distance > 0 else 'bearish' if price_distance < 0 else 'none'
+            
+            if direction_needed == 'none':
+                return JsonResponse({
+                    'success': True,
+                    'symbol': symbol,
+                    'current_price': round(current_price, 2),
+                    'target_price': round(target_price, 2),
+                    'estimated_days': 0,
+                    'probability': 100.0,
+                    'analysis': "Target price equals current price - already there!",
+                    'recommendation': "✅ Target already reached"
+                })
+            
+            # === ANALYZE HISTORICAL TREND ===
+            # Calculate EMAs for trend detection
+            hist['EMA_20'] = hist['Close'].ewm(span=20, adjust=False).mean()
+            hist['EMA_50'] = hist['Close'].ewm(span=50, adjust=False).mean()
+            
+            hist = hist.dropna()
+            
+            # Determine current trend
+            current_trend = None
+            if hist['EMA_20'].iloc[-1] > hist['EMA_50'].iloc[-1]:
+                current_trend = 'uptrend'
+                trend_emoji = '📈'
+            elif hist['EMA_20'].iloc[-1] < hist['EMA_50'].iloc[-1]:
+                current_trend = 'downtrend'
+                trend_emoji = '📉'
+            else:
+                current_trend = 'ranging'
+                trend_emoji = '➡️'
+            
+            # === CALCULATE HISTORICAL VELOCITY ===
+            # How fast does this asset typically move?
+            
+            # Daily returns
+            hist['daily_return'] = hist['Close'].pct_change()
+            hist['daily_return_abs'] = hist['daily_return'].abs()
+            
+            # Separate bullish and bearish days
+            bullish_days = hist[hist['daily_return'] > 0]
+            bearish_days = hist[hist['daily_return'] < 0]
+            
+            # Average daily movement
+            avg_daily_move_pct = hist['daily_return'].mean()
+            avg_daily_move_dollars = current_price * avg_daily_move_pct
+            
+            # Average bullish day movement
+            if len(bullish_days) > 0:
+                avg_bullish_move_pct = bullish_days['daily_return'].mean()
+                avg_bullish_move_dollars = current_price * avg_bullish_move_pct
+            else:
+                avg_bullish_move_pct = 0
+                avg_bullish_move_dollars = 0
+            
+            # Average bearish day movement
+            if len(bearish_days) > 0:
+                avg_bearish_move_pct = bearish_days['daily_return'].mean()
+                avg_bearish_move_dollars = current_price * avg_bearish_move_pct
+            else:
+                avg_bearish_move_pct = 0
+                avg_bearish_move_dollars = 0
+            
+            # === CHECK TREND COMPATIBILITY ===
+            # Is the target compatible with current trend?
+            trend_compatible = False
+            trend_conflict_penalty = 1.0
+            
+            if direction_needed == 'bullish' and current_trend == 'uptrend':
+                trend_compatible = True
+                analysis_trend = "✅ Target aligns with current uptrend"
+            elif direction_needed == 'bearish' and current_trend == 'downtrend':
+                trend_compatible = True
+                analysis_trend = "✅ Target aligns with current downtrend"
+            elif direction_needed == 'bullish' and current_trend == 'downtrend':
+                trend_compatible = False
+                trend_conflict_penalty = 3.0  # 3x longer if fighting trend
+                analysis_trend = "⚠️ Target requires reversing downtrend - DIFFICULT"
+            elif direction_needed == 'bearish' and current_trend == 'uptrend':
+                trend_compatible = False
+                trend_conflict_penalty = 3.0
+                analysis_trend = "⚠️ Target requires reversing uptrend - DIFFICULT"
+            else:  # ranging
+                trend_compatible = True
+                trend_conflict_penalty = 1.5  # Slightly harder in ranging market
+                analysis_trend = "⚠️ Currently ranging - direction uncertain"
+            
+            # === ESTIMATE TIMELINE ===
+            
+            if direction_needed == 'bullish':
+                # Need upward movement
+                if avg_bullish_move_dollars > 0:
+                    # Base estimate: distance / average bullish day move
+                    estimated_days_base = abs(price_distance) / avg_bullish_move_dollars
+                else:
+                    # No bullish movement historically - very unlikely
+                    estimated_days_base = 999999
+                
+                relevant_avg_move = avg_bullish_move_pct
+                
+            else:  # bearish
+                # Need downward movement
+                if avg_bearish_move_dollars < 0:
+                    # Base estimate: distance / average bearish day move
+                    estimated_days_base = abs(price_distance) / abs(avg_bearish_move_dollars)
+                else:
+                    # No bearish movement historically - very unlikely
+                    estimated_days_base = 999999
+                
+                relevant_avg_move = avg_bearish_move_pct
+            
+            # Apply trend conflict penalty
+            estimated_days = estimated_days_base * trend_conflict_penalty
+            
+            # === CALCULATE PROBABILITY ===
+            # Based on:
+            # 1. Trend compatibility
+            # 2. Historical movement patterns
+            # 3. Distance to target
+            
+            probability = 100.0
+            
+            # Penalty for trend conflict
+            if not trend_compatible:
+                probability *= 0.3  # 70% reduction if fighting trend
+            
+            # Penalty for extreme distance
+            if abs(price_distance_pct) > 50:
+                probability *= 0.2  # Very large move
+            elif abs(price_distance_pct) > 30:
+                probability *= 0.4
+            elif abs(price_distance_pct) > 15:
+                probability *= 0.7
+            elif abs(price_distance_pct) > 5:
+                probability *= 0.9
+            
+            # Bonus if recent momentum supports target
+            recent_returns = hist['daily_return'].tail(5).mean()
+            if (direction_needed == 'bullish' and recent_returns > 0) or \
+               (direction_needed == 'bearish' and recent_returns < 0):
+                probability *= 1.2  # Recent momentum helps
+            
+            # Cap probability
+            probability = min(max(probability, 0), 100)
+            
+            # === BEST/WORST CASE SCENARIOS ===
+            # Best case: Consistent strong days in right direction
+            if direction_needed == 'bullish':
+                best_case_move = bullish_days['daily_return'].quantile(0.75) if len(bullish_days) > 0 else 0
+                worst_case_move = bullish_days['daily_return'].quantile(0.25) if len(bullish_days) > 0 else 0
+            else:
+                best_case_move = bearish_days['daily_return'].quantile(0.25) if len(bearish_days) > 0 else 0  # More negative = better
+                worst_case_move = bearish_days['daily_return'].quantile(0.75) if len(bearish_days) > 0 else 0
+            
+            if best_case_move != 0:
+                best_case_days = abs(price_distance_pct / (best_case_move * 100))
+            else:
+                best_case_days = 999999
+            
+            if worst_case_move != 0:
+                worst_case_days = abs(price_distance_pct / (worst_case_move * 100))
+            else:
+                worst_case_days = 999999
+            
+            # === CATEGORIZE TIMELINE ===
+            if estimated_days < 0 or estimated_days > 999:
+                timeline_category = 'unlikely'
+                timeline_label = '❌ HIGHLY UNLIKELY'
+                timeline_color = '#7f1d1d'
+                recommendation = f"Target of ${target_price} is unlikely to be reached given current trend and historical patterns"
+                estimated_days = 0
+                
+            elif estimated_days <= 7:
+                timeline_category = 'immediate'
+                timeline_label = '🚀 VERY SOON'
+                timeline_color = '#10b981'
+                recommendation = f"Target could be reached within a week if current momentum continues"
+                
+            elif estimated_days <= 30:
+                timeline_category = 'short_term'
+                timeline_label = '⚡ SHORT TERM'
+                timeline_color = '#3b82f6'
+                recommendation = f"Target achievable within a month at current pace"
+                
+            elif estimated_days <= 90:
+                timeline_category = 'medium_term'
+                timeline_label = '📊 MEDIUM TERM'
+                timeline_color = '#f59e0b'
+                recommendation = f"Target is a 1-3 month objective at historical velocity"
+                
+            elif estimated_days <= 180:
+                timeline_category = 'long_term'
+                timeline_label = '⏳ LONG TERM'
+                timeline_color = '#ef4444'
+                recommendation = f"Target is 3-6 months away - requires sustained trend"
+                
+            else:
+                timeline_category = 'very_long_term'
+                timeline_label = '🐌 VERY LONG TERM'
+                timeline_color = '#991b1b'
+                recommendation = f"Target requires {int(estimated_days)} days - consider more realistic targets"
+            
+            # === PROVIDE CONTEXT ===
+            # What needs to happen for target to be reached?
+            if direction_needed == 'bullish':
+                required_daily_move_pct = price_distance_pct / max(estimated_days, 1)
+                context = f"Requires average daily gain of {abs(required_daily_move_pct):.2f}% " \
+                         f"(historical avg bullish day: {avg_bullish_move_pct * 100:.2f}%)"
+            else:
+                required_daily_move_pct = price_distance_pct / max(estimated_days, 1)
+                context = f"Requires average daily loss of {abs(required_daily_move_pct):.2f}% " \
+                         f"(historical avg bearish day: {avg_bearish_move_pct * 100:.2f}%)"
+            
+            # === RISK ASSESSMENT ===
+            if probability < 20:
+                risk_assessment = "🔴 VERY HIGH RISK - Target conflicts with trend/historical patterns"
+            elif probability < 40:
+                risk_assessment = "🟠 HIGH RISK - Challenging target requiring favorable conditions"
+            elif probability < 60:
+                risk_assessment = "🟡 MODERATE RISK - Achievable but not guaranteed"
+            elif probability < 80:
+                risk_assessment = "🟢 LOW RISK - Realistic target aligned with trends"
+            else:
+                risk_assessment = "🟢 VERY LOW RISK - Highly probable target"
+            
+            return JsonResponse({
+                'success': True,
+                'symbol': symbol,
+                'current_price': round(current_price, 2),
+                'target_price': round(target_price, 2),
+                'price_distance': round(price_distance, 2),
+                'price_distance_pct': round(price_distance_pct, 2),
+                'direction_needed': direction_needed,
+                
+                # Timeline Estimate
+                'estimated_days': round(estimated_days, 1) if estimated_days < 999 else 0,
+                'best_case_days': round(best_case_days, 1) if best_case_days < 999 else 0,
+                'worst_case_days': round(worst_case_days, 1) if worst_case_days < 999 else 0,
+                'timeline_category': timeline_category,
+                'timeline_label': timeline_label,
+                'timeline_color': timeline_color,
+                
+                # Probability & Risk
+                'probability': round(probability, 1),
+                'risk_assessment': risk_assessment,
+                
+                # Trend Analysis
+                'current_trend': current_trend,
+                'trend_emoji': trend_emoji,
+                'trend_compatible': trend_compatible,
+                'analysis_trend': analysis_trend,
+                
+                # Historical Context
+                'avg_daily_move_pct': round(avg_daily_move_pct * 100, 3),
+                'avg_bullish_move_pct': round(avg_bullish_move_pct * 100, 3),
+                'avg_bearish_move_pct': round(avg_bearish_move_pct * 100, 3),
+                'bullish_days_count': len(bullish_days),
+                'bearish_days_count': len(bearish_days),
+                
+                # Recommendations
+                'recommendation': recommendation,
+                'context': context,
+                'lookback_days': lookback_days
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in price target estimation: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+import json
+import threading
+import pandas as pd
+import yfinance as yf
+from backtesting import Backtest, Strategy
+from bokeh.embed import json_item
+from datetime import datetime
+from .models import SnowAIBacktestResult, SnowAIBacktestSession
+import warnings
+
+# Suppress Bokeh warnings
+warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+
+# Import your existing trading functions
+# Adjust the import path based on your project structure
+try:
+    from .trading_functions import (
+        is_uptrend, is_downtrend, is_ranging_market,
+        is_bullish_market_retracement, is_bearish_market_retracement,
+        is_resistance_level, is_support_level,
+        buy_hold, sell_hold, is_stable_market
+    )
+    
+    FUNCTION_MAP = {
+        'is_uptrend': is_uptrend,
+        'is_downtrend': is_downtrend,
+        'is_ranging_market': is_ranging_market,
+        'is_bullish_market_retracement': is_bullish_market_retracement,
+        'is_bearish_market_retracement': is_bearish_market_retracement,
+        'is_resistance_level': is_resistance_level,
+        'is_support_level': is_support_level,
+        'buy_hold': buy_hold,
+        'sell_hold': sell_hold,
+        'is_stable_market': is_stable_market
+    }
+except ImportError:
+    # Fallback if functions don't exist yet
+    FUNCTION_MAP = {}
+    print("Warning: Trading functions not found. Please ensure they are imported correctly.")
+
+
+@csrf_exempt
+def snowai_backtest_run(request):
+    """
+    Start a new backtest with selected functions
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    
+    try:
+        data = json.loads(request.body)
+        
+        # Validate configuration
+        required_fields = ['asset_symbol', 'timeframe', 'start_year', 'end_year', 
+                          'initial_capital', 'take_profit', 'stop_loss', 'selected_functions']
+        
+        for field in required_fields:
+            if field not in data:
+                return JsonResponse({'error': f'Missing field: {field}'}, status=400)
+        
+        if not data['selected_functions']:
+            return JsonResponse({'error': 'At least one function must be selected'}, status=400)
+        
+        # Create session
+        session = SnowAIBacktestSession.objects.create(
+            config=data,
+            status='Initializing backtest...',
+            progress=0
+        )
+        
+        # Start backtest in background thread
+        thread = threading.Thread(
+            target=run_backtest_worker,
+            args=(str(session.id), data)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return JsonResponse({
+            'session_id': str(session.id),
+            'message': 'Backtest started'
+        })
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowai_backtest_status(request, session_id):
+    """
+    Get status of running backtest
+    """
+    try:
+        session = SnowAIBacktestSession.objects.get(id=session_id)
+        
+        response_data = {
+            'session_id': str(session.id),
+            'status': session.status,
+            'progress': session.progress,
+            'completed': session.completed_at is not None,
+            'error': session.error_message
+        }
+        
+        # If completed, include result
+        if session.result:
+            response_data['result'] = format_result_for_api(session.result, include_plot=True)
+        
+        return JsonResponse(response_data)
+    
+    except SnowAIBacktestSession.DoesNotExist:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowai_backtest_results_list(request):
+    """
+    List all saved backtest results with optional filtering
+    """
+    try:
+        results = SnowAIBacktestResult.objects.all()
+        
+        # Apply filters if provided
+        asset_symbol = request.GET.get('asset_symbol')
+        timeframe = request.GET.get('timeframe')
+        
+        if asset_symbol:
+            results = results.filter(asset_symbol=asset_symbol)
+        if timeframe:
+            results = results.filter(timeframe=timeframe)
+        
+        # Limit results
+        limit = int(request.GET.get('limit', 100))
+        results = results[:limit]
+        
+        results_data = [format_result_for_api(r, include_plot=False) for r in results]
+        
+        return JsonResponse({'results': results_data})
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowai_backtest_result_detail(request, result_id):
+    """
+    Get detailed result including plot
+    """
+    try:
+        result = SnowAIBacktestResult.objects.get(id=result_id)
+        return JsonResponse(format_result_for_api(result, include_plot=True))
+    
+    except SnowAIBacktestResult.DoesNotExist:
+        return JsonResponse({'error': 'Result not found'}, status=404)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def format_result_for_api(result, include_plot=False):
+    """
+    Format SnowAIBacktestResult for API response
+    """
+    data = {
+        'id': str(result.id),
+        'asset_symbol': result.asset_symbol,
+        'timeframe': result.timeframe,
+        'start_year': result.start_year,
+        'end_year': result.end_year,
+        'initial_capital': str(result.initial_capital),
+        'take_profit': str(result.take_profit),
+        'stop_loss': str(result.stop_loss),
+        'selected_functions': json.dumps(result.selected_functions),
+        'start_date': str(result.start_date),
+        'end_date': str(result.end_date),
+        'duration': result.duration,
+        'exposure_time': str(result.exposure_time),
+        'equity_final': str(result.equity_final),
+        'equity_peak': str(result.equity_peak),
+        'return_percent': str(result.return_percent),
+        'buy_hold_return': str(result.buy_hold_return),
+        'annual_return': str(result.annual_return),
+        'volatility_annual': str(result.volatility_annual),
+        'sharpe_ratio': str(result.sharpe_ratio),
+        'sortino_ratio': str(result.sortino_ratio),
+        'calmar_ratio': str(result.calmar_ratio),
+        'max_drawdown': str(result.max_drawdown),
+        'avg_drawdown': str(result.avg_drawdown),
+        'max_drawdown_duration': result.max_drawdown_duration,
+        'avg_drawdown_duration': result.avg_drawdown_duration,
+        'num_trades': result.num_trades,
+        'win_rate': str(result.win_rate),
+        'best_trade': str(result.best_trade),
+        'worst_trade': str(result.worst_trade),
+        'avg_trade': str(result.avg_trade),
+        'max_trade_duration': result.max_trade_duration,
+        'avg_trade_duration': result.avg_trade_duration,
+        'profit_factor': str(result.profit_factor),
+        'expectancy': str(result.expectancy),
+        'created_at': result.created_at.isoformat()
+    }
+    
+    if include_plot:
+        data['plot_json'] = result.plot_json
+    
+    return data
+
+
+def parse_datetime_safe(datetime_str):
+    """
+    Safely parse datetime string, handling timezone information
+    """
+    try:
+        # Remove timezone info if present
+        datetime_str = str(datetime_str)
+        if '+' in datetime_str or datetime_str.endswith('Z'):
+            # Split on + or Z to remove timezone
+            datetime_str = datetime_str.split('+')[0].split('Z')[0].split('-05:00')[0].strip()
+        
+        # Try different formats
+        formats = [
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%d',
+            '%Y-%m-%d %H:%M:%S.%f',
+        ]
+        
+        for fmt in formats:
+            try:
+                return datetime.strptime(datetime_str, fmt).date()
+            except ValueError:
+                continue
+        
+        # If all formats fail, try pandas
+        return pd.to_datetime(datetime_str).date()
+    
+    except Exception as e:
+        print(f"Error parsing datetime '{datetime_str}': {e}")
+        return None
+
+
+def run_backtest_worker(session_id, config):
+    """
+    Background worker that runs the actual backtest
+    """
+    session = SnowAIBacktestSession.objects.get(id=session_id)
+    
+    try:
+        # Update status
+        session.status = 'Downloading market data...'
+        session.progress = 10
+        session.save()
+        
+        # Download data using yfinance
+        ticker = yf.Ticker(config['asset_symbol'])
+        
+        start_date = f"{config['start_year']}-01-01"
+        end_date = f"{config['end_year']}-12-31"
+        
+        df = ticker.history(
+            start=start_date,
+            end=end_date,
+            interval=config['timeframe']
+        )
+        
+        if df.empty:
+            raise ValueError(f"No data available for {config['asset_symbol']}")
+        
+        # Prepare data for Backtesting.py (needs OHLC columns)
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        df = df.dropna()
+        
+        if len(df) < 50:
+            raise ValueError(f"Insufficient data: only {len(df)} bars available")
+        
+        session.status = 'Running backtest...'
+        session.progress = 30
+        session.save()
+        
+        # Create dynamic strategy class
+        class SnowAIStrategy(Strategy):
+            def init(self):
+                self.take_profit_pct = float(config['take_profit'])
+                self.stop_loss_pct = float(config['stop_loss'])
+                self.entry_price = None
+            
+            def next(self):
+                # Get current window for function evaluation
+                current_idx = len(self.data.df) - 1
+                window_start = max(0, current_idx - 50)
+                window_data = self.data.df.iloc[window_start:current_idx+1].copy()
+                
+                # Check if all selected functions return True (buy signal)
+                all_signals_true = True
+                for func_name in config['selected_functions']:
+                    if func_name in FUNCTION_MAP:
+                        try:
+                            if not FUNCTION_MAP[func_name](window_data):
+                                all_signals_true = False
+                                break
+                        except Exception as e:
+                            print(f"Error in {func_name}: {e}")
+                            all_signals_true = False
+                            break
+                    else:
+                        print(f"Warning: Function '{func_name}' not found in FUNCTION_MAP")
+                        all_signals_true = False
+                        break
+                
+                # Entry logic
+                if not self.position and all_signals_true:
+                    self.buy()
+                    self.entry_price = self.data.Close[-1]
+                
+                # Exit logic (take profit / stop loss)
+                elif self.position and self.entry_price:
+                    current_price = self.data.Close[-1]
+                    pnl_pct = ((current_price - self.entry_price) / self.entry_price) * 100
+                    
+                    if pnl_pct >= self.take_profit_pct:
+                        self.position.close()
+                        self.entry_price = None
+                    elif pnl_pct <= -self.stop_loss_pct:
+                        self.position.close()
+                        self.entry_price = None
+        
+        # Run backtest
+        bt = Backtest(
+            df,
+            SnowAIStrategy,
+            cash=float(config['initial_capital']),
+            commission=0.002,
+            exclusive_orders=True
+        )
+        
+        session.status = 'Analyzing results...'
+        session.progress = 70
+        session.save()
+        
+        output = bt.run()
+        
+        # Generate Bokeh plot
+        session.status = 'Generating visualization...'
+        session.progress = 85
+        session.save()
+        
+        plot_json = None
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                plot = bt.plot()
+                plot_json = json_item(plot, "backtest_plot")
+        except Exception as e:
+            print(f"Error generating plot: {e}")
+            plot_json = None
+        
+        # Save result to database
+        session.status = 'Saving results...'
+        session.progress = 95
+        session.save()
+        
+        # Parse dates safely
+        start_date_parsed = parse_datetime_safe(output['Start'])
+        end_date_parsed = parse_datetime_safe(output['End'])
+        
+        if not start_date_parsed or not end_date_parsed:
+            raise ValueError("Failed to parse start/end dates from backtest output")
+        
+        result = SnowAIBacktestResult.objects.create(
+            asset_symbol=config['asset_symbol'],
+            timeframe=config['timeframe'],
+            start_year=config['start_year'],
+            end_year=config['end_year'],
+            initial_capital=config['initial_capital'],
+            take_profit=config['take_profit'],
+            stop_loss=config['stop_loss'],
+            selected_functions=config['selected_functions'],
+            
+            start_date=start_date_parsed,
+            end_date=end_date_parsed,
+            duration=str(output['Duration']),
+            exposure_time=float(output['Exposure Time [%]']),
+            
+            equity_final=float(output['Equity Final [$]']),
+            equity_peak=float(output['Equity Peak [$]']),
+            
+            return_percent=float(output['Return [%]']),
+            buy_hold_return=float(output['Buy & Hold Return [%]']),
+            annual_return=float(output['Return (Ann.) [%]']),
+            
+            volatility_annual=float(output['Volatility (Ann.) [%]']),
+            sharpe_ratio=float(output['Sharpe Ratio']),
+            sortino_ratio=float(output['Sortino Ratio']),
+            calmar_ratio=float(output['Calmar Ratio']),
+            
+            max_drawdown=float(output['Max. Drawdown [%]']),
+            avg_drawdown=float(output['Avg. Drawdown [%]']),
+            max_drawdown_duration=str(output['Max. Drawdown Duration']),
+            avg_drawdown_duration=str(output['Avg. Drawdown Duration']),
+            
+            num_trades=int(output['# Trades']),
+            win_rate=float(output['Win Rate [%]']),
+            best_trade=float(output['Best Trade [%]']),
+            worst_trade=float(output['Worst Trade [%]']),
+            avg_trade=float(output['Avg. Trade [%]']),
+            max_trade_duration=str(output['Max. Trade Duration']),
+            avg_trade_duration=str(output['Avg. Trade Duration']),
+            
+            profit_factor=float(output['Profit Factor']),
+            expectancy=float(output['Expectancy [%]']),
+            
+            plot_json=plot_json
+        )
+        
+        # Update session
+        session.result = result
+        session.status = 'Completed'
+        session.progress = 100
+        session.completed_at = timezone.now()
+        session.save()
+    
+    except Exception as e:
+        session.status = 'Error'
+        session.error_message = str(e)
+        session.progress = 0
+        session.save()
+        print(f"Backtest error: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def run_scheduled_backtests():
+    """
+    Run backtests on a schedule (called by Django scheduler)
+    Configure the assets and functions you want to test automatically
+    """
+    # Define your scheduled backtest configurations
+    test_configs = [
+        {
+            'asset_symbol': 'AAPL',
+            'timeframe': '1d',
+            'start_year': 2020,
+            'end_year': 2024,
+            'initial_capital': 10000,
+            'take_profit': 4.0,
+            'stop_loss': 2.0,
+            'selected_functions': ['is_uptrend', 'is_support_level']
+        },
+        {
+            'asset_symbol': 'TSLA',
+            'timeframe': '1d',
+            'start_year': 2020,
+            'end_year': 2024,
+            'initial_capital': 10000,
+            'take_profit': 5.0,
+            'stop_loss': 2.5,
+            'selected_functions': ['is_bullish_market_retracement', 'buy_hold']
+        },
+        # Add more configurations as needed
+    ]
+    
+    for config in test_configs:
+        try:
+            session = SnowAIBacktestSession.objects.create(
+                config=config,
+                status='Scheduled backtest initializing...',
+                progress=0
+            )
+            
+            thread = threading.Thread(
+                target=run_backtest_worker,
+                args=(str(session.id), config)
+            )
+            thread.daemon = True
+            thread.start()
+            
+            print(f"Started scheduled backtest for {config['asset_symbol']}")
+        except Exception as e:
+            print(f"Error starting scheduled backtest: {e}")
+
+# from django.apps import AppConfig
+# from apscheduler.triggers.cron import CronTrigger
+
+# scheduler = BackgroundScheduler()
+#     scheduler.add_job(
+#         run_scheduled_backtests,
+#         trigger=CronTrigger(hour=2, minute=0),  # 2 AM daily
+#         id='snowai_daily',
+#         replace_existing=True
+#     )
+
+
+
+@csrf_exempt
+def mss_fetch_chart_data_for_visualization(request):
+    """
+    Fetches OHLCV data for chart visualization with flexible timeframes.
+    Returns data in format compatible with TradingView Lightweight Charts.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            timeframe = data.get('timeframe', '1h')  # 1h, 4h, 1d, 1w
+            lookback_days = data.get('lookback_days', 60)
+            
+            if not symbols:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbols required'
+                }, status=400)
+            
+            # Handle single symbol or list
+            if isinstance(symbols, str):
+                symbols = [symbols]
+            
+            # Map timeframe to yfinance interval
+            interval_map = {
+                '1h': '1h',
+                '4h': '1h',  # We'll aggregate
+                '1d': '1d',
+                '1w': '1wk'
+            }
+            
+            interval = interval_map.get(timeframe, '1h')
+            
+            results = {}
+            
+            for symbol in symbols:
+                try:
+                    # Fetch data with buffer
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=lookback_days + 10)
+                    
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(start=start_date, end=end_date, interval=interval)
+                    
+                    if hist.empty:
+                        continue
+                    
+                    # If 4h requested, aggregate 1h data
+                    if timeframe == '4h' and interval == '1h':
+                        hist = hist.resample('4H').agg({
+                            'Open': 'first',
+                            'High': 'max',
+                            'Low': 'min',
+                            'Close': 'last',
+                            'Volume': 'sum'
+                        }).dropna()
+                    
+                    # Convert to TradingView format
+                    chart_data = []
+                    
+                    for index, row in hist.iterrows():
+                        chart_data.append({
+                            'time': int(index.timestamp()),
+                            'open': round(float(row['Open']), 2),
+                            'high': round(float(row['High']), 2),
+                            'low': round(float(row['Low']), 2),
+                            'close': round(float(row['Close']), 2),
+                            'volume': int(row['Volume']) if row['Volume'] > 0 else 0
+                        })
+                    
+                    # Sort by time
+                    chart_data.sort(key=lambda x: x['time'])
+                    
+                    results[symbol] = {
+                        'success': True,
+                        'data': chart_data,
+                        'symbol': symbol,
+                        'bars_count': len(chart_data),
+                        'timeframe': timeframe,
+                        'period': f'{lookback_days} days'
+                    }
+                    
+                except Exception as e:
+                    print(f"Error fetching chart data for {symbol}: {str(e)}")
+                    results[symbol] = {
+                        'success': False,
+                        'error': str(e)
+                    }
+                    continue
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'symbols_processed': len(results)
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in chart data fetch: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+
+# ================================
+# MEAN REVERSION ANALYSIS ENDPOINT
+# ================================
+@csrf_exempt
+def mss_mean_reversion_regime_detector_v2(request):
+    """
+    Detects mean reversion characteristics and current regime for assets.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbols = data.get('symbols', [])
+            lookback_days = data.get('lookback_days', 100)
+            
+            if not symbols:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbols required'
+                }, status=400)
+            
+            if isinstance(symbols, str):
+                symbols = [symbols]
+            
+            results = []
+            errors = []  # Track errors for debugging
+            
+            for symbol in symbols:
+                try:
+                    # Fetch data
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period=f"{lookback_days + 250}d", interval='1d')  # Increased buffer
+
+                    
+                    if len(hist) < 30:
+                        errors.append(f"{symbol}: Insufficient data (only {len(hist)} days)")
+                        continue
+                    
+                    # Calculate moving averages
+                    hist['SMA_20'] = hist['Close'].rolling(window=20).mean()
+                    hist['SMA_50'] = hist['Close'].rolling(window=50).mean()
+                    hist['SMA_100'] = hist['Close'].rolling(window=100).mean()
+                    hist['SMA_200'] = hist['Close'].rolling(window=200).mean()
+                    
+                    # Calculate Bollinger Bands (20-day, 2 std)
+                    hist['BB_Middle'] = hist['Close'].rolling(window=20).mean()
+                    hist['BB_Std'] = hist['Close'].rolling(window=20).std()
+                    hist['BB_Upper'] = hist['BB_Middle'] + (hist['BB_Std'] * 2)
+                    hist['BB_Lower'] = hist['BB_Middle'] - (hist['BB_Std'] * 2)
+                    
+                    # Calculate RSI (14-day)
+                    delta = hist['Close'].diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                    
+                    # Avoid division by zero
+                    rs = gain / loss.replace(0, 0.0001)
+                    hist['RSI'] = 100 - (100 / (1 + rs))
+                    
+                    # Drop NaN values
+                    hist = hist.dropna()
+                    
+                    if len(hist) < 10:
+                        errors.append(f"{symbol}: Not enough valid data after calculations")
+                        continue
+                    
+                    # Current values
+                    current_price = float(hist['Close'].iloc[-1])
+                    current_rsi = float(hist['RSI'].iloc[-1])
+                    
+                    # === DISTANCE FROM MOVING AVERAGES ===
+                    sma_20_distance = ((current_price - hist['SMA_20'].iloc[-1]) / hist['SMA_20'].iloc[-1]) * 100
+                    sma_50_distance = ((current_price - hist['SMA_50'].iloc[-1]) / hist['SMA_50'].iloc[-1]) * 100
+                    sma_100_distance = ((current_price - hist['SMA_100'].iloc[-1]) / hist['SMA_100'].iloc[-1]) * 100
+                    sma_200_distance = ((current_price - hist['SMA_200'].iloc[-1]) / hist['SMA_200'].iloc[-1]) * 100
+                    
+                    # === BOLLINGER BAND POSITION ===
+                    bb_upper = float(hist['BB_Upper'].iloc[-1])
+                    bb_lower = float(hist['BB_Lower'].iloc[-1])
+                    bb_middle = float(hist['BB_Middle'].iloc[-1])
+                    
+                    bb_range = bb_upper - bb_lower
+                    if bb_range > 0:
+                        bb_position_pct = ((current_price - bb_lower) / bb_range) * 100
+                    else:
+                        bb_position_pct = 50
+                    
+                    bb_middle_distance = ((current_price - bb_middle) / bb_middle) * 100
+                    
+                    # === RECENT EXTREMES ===
+                    recent_high = float(hist['High'].tail(20).max())
+                    recent_low = float(hist['Low'].tail(20).min())
+                    
+                    recent_range = recent_high - recent_low
+                    if recent_range > 0:
+                        position_in_range = ((current_price - recent_low) / recent_range) * 100
+                    else:
+                        position_in_range = 50
+                    
+                    distance_from_high = ((current_price - recent_high) / recent_high) * 100
+                    distance_from_low = ((current_price - recent_low) / recent_low) * 100
+                    
+                    # === MEAN REVERSION SIGNALS ===
+                    mean_reversion_signals = []
+                    mean_reversion_score = 0
+                    
+                    if abs(sma_20_distance) > 5:
+                        mean_reversion_signals.append(f"{'Above' if sma_20_distance > 0 else 'Below'} 20-day MA by {abs(sma_20_distance):.1f}%")
+                        mean_reversion_score += 20
+                    
+                    if bb_position_pct > 95:
+                        mean_reversion_signals.append("Near upper Bollinger Band - overbought")
+                        mean_reversion_score += 25
+                    elif bb_position_pct < 5:
+                        mean_reversion_signals.append("Near lower Bollinger Band - oversold")
+                        mean_reversion_score += 25
+                    
+                    if current_rsi > 70:
+                        mean_reversion_signals.append(f"RSI overbought ({current_rsi:.1f})")
+                        mean_reversion_score += 25
+                    elif current_rsi < 30:
+                        mean_reversion_signals.append(f"RSI oversold ({current_rsi:.1f})")
+                        mean_reversion_score += 25
+                    
+                    if position_in_range > 95:
+                        mean_reversion_signals.append("At 20-day high - potential reversal")
+                        mean_reversion_score += 15
+                    elif position_in_range < 5:
+                        mean_reversion_signals.append("At 20-day low - potential reversal")
+                        mean_reversion_score += 15
+                    
+                    if abs(sma_200_distance) > 15:
+                        mean_reversion_signals.append(f"Far from 200-day MA ({sma_200_distance:+.1f}%)")
+                        mean_reversion_score += 15
+                    
+                    # === REGIME DETECTION ===
+                    ma_alignment = 0
+                    if hist['SMA_20'].iloc[-1] > hist['SMA_50'].iloc[-1]:
+                        ma_alignment += 1
+                    if hist['SMA_50'].iloc[-1] > hist['SMA_100'].iloc[-1]:
+                        ma_alignment += 1
+                    if hist['SMA_100'].iloc[-1] > hist['SMA_200'].iloc[-1]:
+                        ma_alignment += 1
+                    
+                    ma_spread = abs(hist['SMA_20'].iloc[-1] - hist['SMA_200'].iloc[-1]) / hist['SMA_200'].iloc[-1] * 100
+                    
+                    ma_crosses = 0
+                    for i in range(-20, -1):
+                        try:
+                            if (hist['Close'].iloc[i] > hist['SMA_20'].iloc[i] and hist['Close'].iloc[i+1] < hist['SMA_20'].iloc[i+1]) or \
+                               (hist['Close'].iloc[i] < hist['SMA_20'].iloc[i] and hist['Close'].iloc[i+1] > hist['SMA_20'].iloc[i+1]):
+                                ma_crosses += 1
+                        except:
+                            continue
+                    
+                    if ma_alignment == 3 and ma_spread > 3 and ma_crosses < 3:
+                        regime = 'strong_uptrend'
+                        regime_label = '🚀 STRONG UPTREND'
+                        regime_color = '#10b981'
+                        regime_description = 'Strong trending regime - avoid mean reversion trades'
+                    elif ma_alignment == 0 and ma_spread > 3 and ma_crosses < 3:
+                        regime = 'strong_downtrend'
+                        regime_label = '📉 STRONG DOWNTREND'
+                        regime_color = '#ef4444'
+                        regime_description = 'Strong trending regime - avoid mean reversion trades'
+                    elif ma_spread < 2 or ma_crosses >= 5:
+                        regime = 'mean_reverting'
+                        regime_label = '🔄 MEAN REVERTING'
+                        regime_color = '#8b5cf6'
+                        regime_description = 'Ranging/mean-reverting regime - good for MR trades'
+                    elif ma_alignment >= 2:
+                        regime = 'weak_uptrend'
+                        regime_label = '📈 WEAK UPTREND'
+                        regime_color = '#3b82f6'
+                        regime_description = 'Weak trend - some mean reversion possible'
+                    else:
+                        regime = 'weak_downtrend'
+                        regime_label = '📊 WEAK DOWNTREND'
+                        regime_color = '#f59e0b'
+                        regime_description = 'Weak trend - some mean reversion possible'
+                    
+                    if regime in ['mean_reverting']:
+                        mean_reversion_score += 30
+                    elif regime in ['strong_uptrend', 'strong_downtrend']:
+                        mean_reversion_score -= 20
+                    
+                    mean_reversion_score = max(0, min(100, mean_reversion_score))
+                    
+                    if mean_reversion_score >= 70:
+                        mr_category = 'high'
+                        mr_label = '🎯 HIGH PROBABILITY'
+                        mr_color = '#10b981'
+                    elif mean_reversion_score >= 40:
+                        mr_category = 'moderate'
+                        mr_label = '📊 MODERATE PROBABILITY'
+                        mr_color = '#f59e0b'
+                    else:
+                        mr_category = 'low'
+                        mr_label = '⚠️ LOW PROBABILITY'
+                        mr_color = '#ef4444'
+                    
+                    reversion_targets = {
+                        'sma_20': round(float(hist['SMA_20'].iloc[-1]), 2),
+                        'sma_50': round(float(hist['SMA_50'].iloc[-1]), 2),
+                        'bb_middle': round(bb_middle, 2),
+                        'recent_range_midpoint': round((recent_high + recent_low) / 2, 2)
+                    }
+                    
+                    if abs(sma_20_distance) < abs(sma_50_distance):
+                        primary_target = reversion_targets['sma_20']
+                        primary_target_name = '20-day MA'
+                    else:
+                        primary_target = reversion_targets['sma_50']
+                        primary_target_name = '50-day MA'
+                    
+                    expected_move = ((primary_target - current_price) / current_price) * 100
+                    
+                    if mean_reversion_score >= 70 and regime in ['mean_reverting', 'weak_uptrend', 'weak_downtrend']:
+                        if bb_position_pct > 80:
+                            recommendation = f"🔴 SELL - Strong mean reversion setup (target: {primary_target_name} @ ${primary_target})"
+                        elif bb_position_pct < 20:
+                            recommendation = f"🟢 BUY - Strong mean reversion setup (target: {primary_target_name} @ ${primary_target})"
+                        else:
+                            recommendation = "⚪ WAIT - Not at extreme yet"
+                    elif regime in ['strong_uptrend', 'strong_downtrend']:
+                        recommendation = "⚠️ AVOID - Strong trend, not suitable for mean reversion"
+                    else:
+                        recommendation = "⚪ NEUTRAL - Insufficient mean reversion signals"
+                    
+                    results.append({
+                        'symbol': symbol,
+                        'current_price': round(current_price, 2),
+                        'regime': regime,
+                        'regime_label': regime_label,
+                        'regime_color': regime_color,
+                        'regime_description': regime_description,
+                        'ma_alignment': int(ma_alignment),
+                        'ma_spread_pct': round(float(ma_spread), 2),
+                        'ma_crosses_20d': int(ma_crosses),
+                        'mean_reversion_score': round(float(mean_reversion_score), 1),
+                        'mean_reversion_category': mr_category,
+                        'mean_reversion_label': mr_label,
+                        'mean_reversion_color': mr_color,
+                        'mean_reversion_signals': mean_reversion_signals,
+                        'sma_20_distance_pct': round(float(sma_20_distance), 2),
+                        'sma_50_distance_pct': round(float(sma_50_distance), 2),
+                        'sma_100_distance_pct': round(float(sma_100_distance), 2),
+                        'sma_200_distance_pct': round(float(sma_200_distance), 2),
+                        'bb_position_pct': round(float(bb_position_pct), 1),
+                        'bb_middle_distance_pct': round(float(bb_middle_distance), 2),
+                        'bb_upper': round(bb_upper, 2),
+                        'bb_middle': round(bb_middle, 2),
+                        'bb_lower': round(bb_lower, 2),
+                        'rsi': round(float(current_rsi), 1),
+                        'recent_high_20d': round(recent_high, 2),
+                        'recent_low_20d': round(recent_low, 2),
+                        'position_in_range_pct': round(float(position_in_range), 1),
+                        'distance_from_high_pct': round(float(distance_from_high), 2),
+                        'distance_from_low_pct': round(float(distance_from_low), 2),
+                        'reversion_targets': reversion_targets,
+                        'primary_target': primary_target,
+                        'primary_target_name': primary_target_name,
+                        'expected_move_pct': round(float(expected_move), 2),
+                        'recommendation': recommendation
+                    })
+                    
+                except Exception as e:
+                    errors.append(f"{symbol}: {str(e)}")
+                    import traceback
+                    print(f"Error processing {symbol}: {traceback.format_exc()}")
+                    continue
+            
+            if not results:
+                error_msg = 'No valid mean reversion data calculated'
+                if errors:
+                    error_msg += f'. Errors: {"; ".join(errors[:3])}'  # Show first 3 errors
+                return JsonResponse({
+                    'success': False,
+                    'error': error_msg,
+                    'details': errors
+                }, status=400)
+            
+            results.sort(key=lambda x: x['mean_reversion_score'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'data': results,
+                'timestamp': datetime.now().isoformat(),
+                'assets_analyzed': len(results),
+                'errors': errors if errors else None
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in mean reversion analysis: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+    
+# ================================
+# SECTOR PEERS NORMALIZED INDEX
+# ================================
+@csrf_exempt
+def mss_sector_peers_normalized_index_v2(request):
+    """
+    Creates a normalized index of all stocks in the same sector.
+    Useful for comparing individual stock performance against sector peers.
+    All stocks start at 100 and move relative to their starting point.
+    Uses SECTOR_MAPPINGS for accurate sector identification.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            lookback_days = data.get('lookback_days', 60)
+            
+            if not symbol:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbol required'
+                }, status=400)
+            
+            # Get sector from SECTOR_MAPPINGS
+            sector = SECTOR_MAPPINGS.get(symbol)
+            
+            if not sector:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Sector not found for {symbol}. Available symbols: {len(SECTOR_MAPPINGS)}'
+                }, status=400)
+            
+            # Get all peers in same sector
+            sector_peers = [s for s, sec in SECTOR_MAPPINGS.items() if sec == sector and s != symbol]
+            
+            if not sector_peers:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'No sector peers found for {sector}'
+                }, status=400)
+            
+            # Limit to 15 most liquid peers for performance
+            sector_peers = sector_peers[:15]
+            
+            # Fetch data for all peers
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days + 10)
+            
+            normalized_data = []
+            peer_performance = []
+            
+            for peer in sector_peers:
+                try:
+                    peer_ticker = yf.Ticker(peer)
+                    peer_hist = peer_ticker.history(start=start_date, end=end_date, interval='1d')
+                    
+                    if len(peer_hist) < 10:
+                        continue
+                    
+                    # Normalize to 100 at start
+                    base_price = peer_hist['Close'].iloc[0]
+                    peer_hist['Normalized'] = (peer_hist['Close'] / base_price) * 100
+                    
+                    for index, row in peer_hist.iterrows():
+                        normalized_data.append({
+                            'symbol': peer,
+                            'date': index.strftime('%Y-%m-%d'),
+                            'normalized_value': round(row['Normalized'], 2),
+                            'actual_price': round(row['Close'], 2)
+                        })
+                    
+                    # Calculate total return
+                    total_return = ((peer_hist['Close'].iloc[-1] - base_price) / base_price) * 100
+                    peer_performance.append({
+                        'symbol': peer,
+                        'total_return': round(total_return, 2)
+                    })
+                    
+                except Exception as e:
+                    print(f"Error fetching {peer}: {str(e)}")
+                    continue
+            
+            # Calculate sector average index
+            from collections import defaultdict
+            date_values = defaultdict(list)
+            
+            for entry in normalized_data:
+                date_values[entry['date']].append(entry['normalized_value'])
+            
+            sector_index = []
+            for date, values in sorted(date_values.items()):
+                sector_index.append({
+                    'date': date,
+                    'index_value': round(sum(values) / len(values), 2),
+                    'num_stocks': len(values)
+                })
+            
+            # Get target stock performance
+            target_ticker = yf.Ticker(symbol)
+            target_hist = target_ticker.history(start=start_date, end=end_date, interval='1d')
+            
+            if len(target_hist) < 10:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Insufficient data for {symbol}'
+                }, status=400)
+            
+            target_base = target_hist['Close'].iloc[0]
+            target_normalized = []
+            for index, row in target_hist.iterrows():
+                normalized_val = (row['Close'] / target_base) * 100
+                target_normalized.append({
+                    'date': index.strftime('%Y-%m-%d'),
+                    'value': round(normalized_val, 2)
+                })
+            
+            target_performance = ((target_hist['Close'].iloc[-1] - target_base) / target_base) * 100
+            
+            # Compare to sector average
+            sector_avg_return = sum(p['total_return'] for p in peer_performance) / len(peer_performance) if peer_performance else 0
+            outperformance = target_performance - sector_avg_return
+            
+            return JsonResponse({
+                'success': True,
+                'symbol': symbol,
+                'sector': sector,
+                'sector_index': sector_index,
+                'target_normalized': target_normalized,
+                'peer_performance': peer_performance,
+                'target_stock_return': round(target_performance, 2),
+                'sector_avg_return': round(sector_avg_return, 2),
+                'outperformance': round(outperformance, 2),
+                'peers_analyzed': len(peer_performance)
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in sector peers analysis: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+# ================================
+# ENHANCED CHART DATA FOR AI CONTEXT
+# ================================
+@csrf_exempt
+def mss_generate_chart_context_for_ai_v2(request):
+    """
+    Generates detailed chart context for AI analysis.
+    Provides comprehensive data about price action, indicators, and patterns
+    that AI can use for informed analysis without actually seeing the chart.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            timeframe = data.get('timeframe', '1h')
+            lookback_days = data.get('lookback_days', 60)
+            
+            if not symbol:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbol required'
+                }, status=400)
+            
+            # Fetch chart data
+            ticker = yf.Ticker(symbol)
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days + 10)
+            
+            interval_map = {
+                '1h': '1h',
+                '4h': '1h',
+                '1d': '1d',
+                '1w': '1wk'
+            }
+            
+            interval = interval_map.get(timeframe, '1h')
+            hist = ticker.history(start=start_date, end=end_date, interval=interval)
+            
+            if hist.empty:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'No data available for {symbol}'
+                }, status=400)
+            
+            # Aggregate for 4h if needed
+            if timeframe == '4h' and interval == '1h':
+                hist = hist.resample('4H').agg({
+                    'Open': 'first',
+                    'High': 'max',
+                    'Low': 'min',
+                    'Close': 'last',
+                    'Volume': 'sum'
+                }).dropna()
+            
+            # Calculate indicators
+            hist['SMA_20'] = hist['Close'].rolling(window=20).mean()
+            hist['SMA_50'] = hist['Close'].rolling(window=50).mean()
+            hist['EMA_12'] = hist['Close'].ewm(span=12, adjust=False).mean()
+            hist['EMA_26'] = hist['Close'].ewm(span=26, adjust=False).mean()
+            
+            # RSI
+            delta = hist['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            hist['RSI'] = 100 - (100 / (1 + rs))
+            
+            # Bollinger Bands
+            hist['BB_Middle'] = hist['Close'].rolling(window=20).mean()
+            hist['BB_Std'] = hist['Close'].rolling(window=20).std()
+            hist['BB_Upper'] = hist['BB_Middle'] + (hist['BB_Std'] * 2)
+            hist['BB_Lower'] = hist['BB_Middle'] - (hist['BB_Std'] * 2)
+            
+            hist = hist.dropna()
+            
+            if len(hist) < 10:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Insufficient data for analysis'
+                }, status=400)
+            
+            # Current values
+            current_price = hist['Close'].iloc[-1]
+            current_rsi = hist['RSI'].iloc[-1]
+            
+            # Price action summary
+            recent_high = hist['High'].tail(20).max()
+            recent_low = hist['Low'].tail(20).min()
+            price_change_pct = ((current_price - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
+            
+            # Trend detection
+            if hist['SMA_20'].iloc[-1] > hist['SMA_50'].iloc[-1]:
+                trend = 'uptrend'
+            elif hist['SMA_20'].iloc[-1] < hist['SMA_50'].iloc[-1]:
+                trend = 'downtrend'
+            else:
+                trend = 'ranging'
+            
+            # Volume analysis
+            avg_volume = hist['Volume'].mean()
+            current_volume = hist['Volume'].iloc[-1]
+            volume_ratio = current_volume / avg_volume if avg_volume > 0 else 0
+            
+            # Support/Resistance levels
+            recent_data = hist.tail(50)
+            support_levels = []
+            resistance_levels = []
+            
+            # Find local minima (support)
+            for i in range(2, len(recent_data) - 2):
+                if recent_data['Low'].iloc[i] < recent_data['Low'].iloc[i-1] and \
+                   recent_data['Low'].iloc[i] < recent_data['Low'].iloc[i+1]:
+                    support_levels.append(round(recent_data['Low'].iloc[i], 2))
+            
+            # Find local maxima (resistance)
+            for i in range(2, len(recent_data) - 2):
+                if recent_data['High'].iloc[i] > recent_data['High'].iloc[i-1] and \
+                   recent_data['High'].iloc[i] > recent_data['High'].iloc[i+1]:
+                    resistance_levels.append(round(recent_data['High'].iloc[i], 2))
+            
+            # Get top 3 support/resistance
+            support_levels = sorted(set(support_levels))[-3:]
+            resistance_levels = sorted(set(resistance_levels), reverse=True)[-3:]
+            
+            # Recent candles summary (last 10)
+            recent_candles = []
+            for i in range(-10, 0):
+                candle_type = 'bullish' if hist['Close'].iloc[i] > hist['Open'].iloc[i] else 'bearish'
+                candle_size = abs(hist['Close'].iloc[i] - hist['Open'].iloc[i])
+                recent_candles.append({
+                    'type': candle_type,
+                    'size': round(candle_size, 2)
+                })
+            
+            # Create comprehensive context
+            chart_context = f"""
+CHART ANALYSIS FOR {symbol} ({timeframe} timeframe):
+
+CURRENT MARKET STATE:
+- Current Price: ${round(current_price, 2)}
+- Trend: {trend.upper()}
+- Price Change: {price_change_pct:+.2f}% over {len(hist)} periods
+- 20-day High: ${round(recent_high, 2)}
+- 20-day Low: ${round(recent_low, 2)}
+
+TECHNICAL INDICATORS:
+- RSI (14): {round(current_rsi, 2)} {'(Overbought)' if current_rsi > 70 else '(Oversold)' if current_rsi < 30 else '(Neutral)'}
+- Price vs SMA(20): {((current_price - hist['SMA_20'].iloc[-1]) / hist['SMA_20'].iloc[-1] * 100):+.2f}%
+- Price vs SMA(50): {((current_price - hist['SMA_50'].iloc[-1]) / hist['SMA_50'].iloc[-1] * 100):+.2f}%
+- Bollinger Band Position: {((current_price - hist['BB_Lower'].iloc[-1]) / (hist['BB_Upper'].iloc[-1] - hist['BB_Lower'].iloc[-1]) * 100):.1f}%
+
+VOLUME ANALYSIS:
+- Current Volume: {int(current_volume):,}
+- Average Volume: {int(avg_volume):,}
+- Volume Ratio: {volume_ratio:.2f}x average
+
+SUPPORT LEVELS: {', '.join([f'${s}' for s in support_levels]) if support_levels else 'None identified'}
+RESISTANCE LEVELS: {', '.join([f'${r}' for r in resistance_levels]) if resistance_levels else 'None identified'}
+
+RECENT PRICE ACTION:
+{len([c for c in recent_candles if c['type'] == 'bullish'])}/10 recent candles are bullish
+Average candle size: ${sum([c['size'] for c in recent_candles]) / len(recent_candles):.2f}
+
+MOVING AVERAGES:
+- SMA(20): ${round(hist['SMA_20'].iloc[-1], 2)}
+- SMA(50): ${round(hist['SMA_50'].iloc[-1], 2)}
+- EMA(12): ${round(hist['EMA_12'].iloc[-1], 2)}
+- EMA(26): ${round(hist['EMA_26'].iloc[-1], 2)}
+"""
+            
+            return JsonResponse({
+                'success': True,
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'chart_context': chart_context,
+                'raw_data': {
+                    'current_price': round(current_price, 2),
+                    'trend': trend,
+                    'rsi': round(current_rsi, 2),
+                    'volume_ratio': round(volume_ratio, 2),
+                    'price_change_pct': round(price_change_pct, 2),
+                    'support_levels': support_levels,
+                    'resistance_levels': resistance_levels
+                }
+            })
+            
+        except Exception as e:
+            import traceback
+            print(f"Error generating chart context: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'POST method required'
+    }, status=405)
+
+
+# ================================
+# ALL ASSET CLASS MAPPINGS 
+# 591 Total Assets: 541 Stocks + 24 Indices + 18 Commodities + 8 Bonds
+# ================================
+
+ALL_ASSET_MAPPINGS = {
+    # ========== STOCKS (541 from SECTOR_MAPPINGS) ==========
+    
+    # Tech Giants & Semiconductors (30)
+    'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
+    'AMZN': 'Consumer Cyclical', 'NVDA': 'Technology', 'TSLA': 'Consumer Cyclical',
+    'META': 'Technology', 'AMD': 'Technology', 'INTC': 'Technology', 'ORCL': 'Technology',
+    'CSCO': 'Technology', 'ADBE': 'Technology', 'CRM': 'Technology', 'AVGO': 'Technology',
+    'QCOM': 'Technology', 'TXN': 'Technology', 'AMAT': 'Technology', 'LRCX': 'Technology',
+    'KLAC': 'Technology', 'SNPS': 'Technology', 'CDNS': 'Technology', 'MRVL': 'Technology',
+    'NXPI': 'Technology', 'MU': 'Technology', 'ADI': 'Technology', 'MPWR': 'Technology',
+    'SWKS': 'Technology', 'QRVO': 'Technology', 'ON': 'Technology',
+    
+    # Financial Services & Banks (73)
+    'JPM': 'Financial', 'BAC': 'Financial', 'WFC': 'Financial', 'C': 'Financial',
+    'GS': 'Financial', 'MS': 'Financial', 'BLK': 'Financial', 'SCHW': 'Financial',
+    'AXP': 'Financial', 'SPGI': 'Financial', 'CME': 'Financial', 'ICE': 'Financial',
+    'MCO': 'Financial', 'BK': 'Financial', 'USB': 'Financial', 'PNC': 'Financial',
+    'TFC': 'Financial', 'COF': 'Financial', 'V': 'Financial', 'MA': 'Financial',
+    'PYPL': 'Financial', 'ADP': 'Financial', 'FISV': 'Financial', 'FIS': 'Financial',
+    'AFL': 'Financial', 'AMG': 'Financial', 'AON': 'Financial', 'AJG': 'Financial',
+    'AMP': 'Financial', 'BEN': 'Financial', 'CBOE': 'Financial', 'CINF': 'Financial',
+    'DFS': 'Financial', 'ERIE': 'Financial', 'FITB': 'Financial', 'FRC': 'Financial',
+    'GL': 'Financial', 'HBAN': 'Financial', 'HIG': 'Financial', 'IVZ': 'Financial',
+    'JKHY': 'Financial', 'KEY': 'Financial', 'L': 'Financial', 'LNC': 'Financial',
+    'MTB': 'Financial', 'NTRS': 'Financial', 'NDAQ': 'Financial', 'PFG': 'Financial',
+    'RF': 'Financial', 'RJF': 'Financial', 'SIVB': 'Financial', 'STT': 'Financial',
+    'SYF': 'Financial', 'TROW': 'Financial', 'WRB': 'Financial', 'ZION': 'Financial',
+    'CFG': 'Financial', 'CMA': 'Financial', 'FHN': 'Financial', 'EWBC': 'Financial',
+    'WAL': 'Financial', 'WBS': 'Financial', 'ALLY': 'Financial',
+    'BRK-B': 'Financial', 'PGR': 'Financial', 'ALL': 'Financial', 'TRV': 'Financial',
+    'AIG': 'Financial', 'MET': 'Financial', 'PRU': 'Financial',
+    
+    # Healthcare & Pharma (67)
+    'JNJ': 'Healthcare', 'LLY': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare',
+    'ABBV': 'Healthcare', 'MRK': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
+    'DHR': 'Healthcare', 'BMY': 'Healthcare', 'AMGN': 'Healthcare', 'GILD': 'Healthcare',
+    'CVS': 'Healthcare', 'CI': 'Healthcare', 'ELV': 'Healthcare', 'HUM': 'Healthcare',
+    'VRTX': 'Healthcare', 'REGN': 'Healthcare', 'ISRG': 'Healthcare', 'BIIB': 'Healthcare',
+    'MRNA': 'Healthcare', 'BNTX': 'Healthcare', 'SGEN': 'Healthcare', 'ALNY': 'Healthcare',
+    'BGNE': 'Healthcare', 'MCK': 'Healthcare', 'CAH': 'Healthcare', 'COR': 'Healthcare',
+    'IDXX': 'Healthcare', 'A': 'Healthcare', 'WAT': 'Healthcare',
+    'ALGN': 'Healthcare', 'ATRC': 'Healthcare', 'BAX': 'Healthcare', 'BDX': 'Healthcare',
+    'BIO': 'Healthcare', 'BSX': 'Healthcare', 'CERN': 'Healthcare', 'DXCM': 'Healthcare',
+    'EW': 'Healthcare', 'EXAS': 'Healthcare', 'HOLX': 'Healthcare', 'HSIC': 'Healthcare',
+    'ILMN': 'Healthcare', 'INCY': 'Healthcare', 'IQV': 'Healthcare', 'LH': 'Healthcare',
+    'MDT': 'Healthcare', 'MOH': 'Healthcare', 'NBIX': 'Healthcare', 'PKI': 'Healthcare',
+    'PODD': 'Healthcare', 'RMD': 'Healthcare', 'STE': 'Healthcare', 'SYK': 'Healthcare',
+    'TFX': 'Healthcare', 'UHS': 'Healthcare', 'WST': 'Healthcare',
+    'XRAY': 'Healthcare', 'ZBH': 'Healthcare', 'ZTS': 'Healthcare', 'TDOC': 'Healthcare',
+    'DOCS': 'Healthcare', 'VEEV': 'Healthcare', 'HALO': 'Healthcare', 'NVAX': 'Healthcare',
+    'IONS': 'Healthcare', 'Jazz': 'Healthcare', 'UTHR': 'Healthcare',
+    
+    # Consumer Cyclical (78)
+    'HD': 'Consumer Cyclical', 'MCD': 'Consumer Cyclical', 'NKE': 'Consumer Cyclical',
+    'SBUX': 'Consumer Cyclical', 'TJX': 'Consumer Cyclical', 'LOW': 'Consumer Cyclical',
+    'BKNG': 'Consumer Cyclical', 'MAR': 'Consumer Cyclical', 'CMG': 'Consumer Cyclical',
+    'F': 'Consumer Cyclical', 'GM': 'Consumer Cyclical', 'ABNB': 'Consumer Cyclical',
+    'SHOP': 'Consumer Cyclical', 'MELI': 'Consumer Cyclical', 'EBAY': 'Consumer Cyclical',
+    'ETSY': 'Consumer Cyclical', 'TGT': 'Consumer Cyclical', 'ROST': 'Consumer Cyclical',
+    'YUM': 'Consumer Cyclical', 'DPZ': 'Consumer Cyclical', 'QSR': 'Consumer Cyclical',
+    'AAL': 'Consumer Cyclical', 'DAL': 'Consumer Cyclical', 'UAL': 'Consumer Cyclical',
+    'LUV': 'Consumer Cyclical', 'CCL': 'Consumer Cyclical', 'RCL': 'Consumer Cyclical',
+    'EA': 'Consumer Cyclical', 'TTWO': 'Consumer Cyclical', 'RBLX': 'Consumer Cyclical',
+    'U': 'Consumer Cyclical', 'RIVN': 'Consumer Cyclical', 'LCID': 'Consumer Cyclical',
+    'AZO': 'Consumer Cyclical', 'BBY': 'Consumer Cyclical', 'BURL': 'Consumer Cyclical',
+    'CPRT': 'Consumer Cyclical', 'DHI': 'Consumer Cyclical', 'DRI': 'Consumer Cyclical',
+    'EXPE': 'Consumer Cyclical', 'GPC': 'Consumer Cyclical', 'GRMN': 'Consumer Cyclical',
+    'HAS': 'Consumer Cyclical', 'HLT': 'Consumer Cyclical', 'KMX': 'Consumer Cyclical',
+    'LEN': 'Consumer Cyclical', 'LVS': 'Consumer Cyclical', 'MGM': 'Consumer Cyclical',
+    'MHK': 'Consumer Cyclical', 'NVR': 'Consumer Cyclical', 'ORLY': 'Consumer Cyclical',
+    'PHM': 'Consumer Cyclical', 'POOL': 'Consumer Cyclical', 'RL': 'Consumer Cyclical',
+    'TSCO': 'Consumer Cyclical', 'TPR': 'Consumer Cyclical', 'ULTA': 'Consumer Cyclical',
+    'VFC': 'Consumer Cyclical', 'WHR': 'Consumer Cyclical', 'WYNN': 'Consumer Cyclical',
+    'APTV': 'Consumer Cyclical', 'BWA': 'Consumer Cyclical', 'DG': 'Consumer Cyclical',
+    'DLTR': 'Consumer Cyclical', 'DDS': 'Consumer Cyclical', 'FIVE': 'Consumer Cyclical',
+    'FL': 'Consumer Cyclical', 'FOXA': 'Consumer Cyclical', 'FOX': 'Consumer Cyclical',
+    'GPS': 'Consumer Cyclical', 'GT': 'Consumer Cyclical', 'HBI': 'Consumer Cyclical',
+    'LAD': 'Consumer Cyclical', 'LKQ': 'Consumer Cyclical', 'M': 'Consumer Cyclical',
+    'NCLH': 'Consumer Cyclical', 'NWL': 'Consumer Cyclical', 'PVH': 'Consumer Cyclical',
+    'JD': 'Consumer Cyclical', 'PDD': 'Consumer Cyclical', 'NIO': 'Consumer Cyclical', 
+    'XPEV': 'Consumer Cyclical', 'LI': 'Consumer Cyclical',
+    
+    # Consumer Defensive (26)
+    'WMT': 'Consumer Defensive', 'PG': 'Consumer Defensive', 'KO': 'Consumer Defensive',
+    'PEP': 'Consumer Defensive', 'COST': 'Consumer Defensive', 'PM': 'Consumer Defensive',
+    'MO': 'Consumer Defensive', 'MDLZ': 'Consumer Defensive', 'CL': 'Consumer Defensive',
+    'KMB': 'Consumer Defensive', 'GIS': 'Consumer Defensive', 'KHC': 'Consumer Defensive',
+    'STZ': 'Consumer Defensive', 'ADM': 'Consumer Defensive', 'BF-B': 'Consumer Defensive', 
+    'CAG': 'Consumer Defensive', 'CHD': 'Consumer Defensive', 'CLX': 'Consumer Defensive', 
+    'CPB': 'Consumer Defensive', 'EL': 'Consumer Defensive', 'HSY': 'Consumer Defensive',
+    'K': 'Consumer Defensive', 'KDP': 'Consumer Defensive', 'KR': 'Consumer Defensive',
+    'KVUE': 'Consumer Defensive', 'MKC': 'Consumer Defensive', 'MNST': 'Consumer Defensive',
+    'SJM': 'Consumer Defensive', 'SYY': 'Consumer Defensive', 'TAP': 'Consumer Defensive',
+    'TSN': 'Consumer Defensive', 'WBA': 'Consumer Defensive', 'BGS': 'Consumer Defensive',
+    'BG': 'Consumer Defensive', 'COKE': 'Consumer Defensive', 'FLO': 'Consumer Defensive',
+    'HRL': 'Consumer Defensive', 'LANC': 'Consumer Defensive', 'POST': 'Consumer Defensive',
+    
+    # Energy (27)
+    'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy', 'EOG': 'Energy', 'SLB': 'Energy',
+    'MPC': 'Energy', 'PSX': 'Energy', 'VLO': 'Energy', 'OXY': 'Energy', 'HAL': 'Energy',
+    'DVN': 'Energy', 'HES': 'Energy', 'BKR': 'Energy', 'APA': 'Energy', 'CTRA': 'Energy', 
+    'FANG': 'Energy', 'KMI': 'Energy', 'LNG': 'Energy', 'MRO': 'Energy', 'NOV': 'Energy', 
+    'OKE': 'Energy', 'TRGP': 'Energy', 'WMB': 'Energy', 'EQT': 'Energy', 'AR': 'Energy',
+    'CLR': 'Energy', 'CNX': 'Energy', 'CQP': 'Energy', 'EXE': 'Energy', 'FTI': 'Energy', 
+    'HP': 'Energy', 'MTDR': 'Energy', 'NBL': 'Energy', 'OVV': 'Energy', 'PBF': 'Energy', 
+    'PR': 'Energy', 'RIG': 'Energy', 'SM': 'Energy', 'VAL': 'Energy', 'XEC': 'Energy',
+    
+    # Industrials (50)
+    'BA': 'Industrials', 'HON': 'Industrials', 'UNP': 'Industrials', 'CAT': 'Industrials',
+    'GE': 'Industrials', 'RTX': 'Industrials', 'LMT': 'Industrials', 'UPS': 'Industrials',
+    'DE': 'Industrials', 'MMM': 'Industrials', 'GD': 'Industrials', 'NOC': 'Industrials',
+    'FDX': 'Industrials', 'CSX': 'Industrials', 'HWM': 'Industrials', 'TDG': 'Industrials',
+    'HEI': 'Industrials', 'LHX': 'Industrials', 'TXT': 'Industrials',
+    'AOS': 'Industrials', 'CARR': 'Industrials', 'CHRW': 'Industrials', 'CMI': 'Industrials',
+    'DOV': 'Industrials', 'EMR': 'Industrials', 'ETN': 'Industrials', 'EXPD': 'Industrials',
+    'FAST': 'Industrials', 'FTV': 'Industrials', 'GNRC': 'Industrials', 'GWW': 'Industrials',
+    'IEX': 'Industrials', 'IR': 'Industrials', 'ITW': 'Industrials', 'J': 'Industrials',
+    'JBHT': 'Industrials', 'JCI': 'Industrials', 'LDOS': 'Industrials', 'MAS': 'Industrials',
+    'NSC': 'Industrials', 'ODFL': 'Industrials', 'OTIS': 'Industrials', 'PCAR': 'Industrials',
+    'PH': 'Industrials', 'PWR': 'Industrials', 'ROK': 'Industrials', 'ROL': 'Industrials',
+    'RSG': 'Industrials', 'SNA': 'Industrials', 'SWK': 'Industrials', 'TT': 'Industrials', 
+    'URI': 'Industrials', 'VRSK': 'Industrials', 'WAB': 'Industrials', 'WM': 'Industrials', 
+    'XYL': 'Industrials', 'ALK': 'Industrials', 'JBLU': 'Industrials', 'SAVE': 'Industrials',
+    
+    # Communication Services (16)
+    'T': 'Communication', 'VZ': 'Communication', 'CMCSA': 'Communication',
+    'NFLX': 'Communication', 'DIS': 'Communication', 'TMUS': 'Communication',
+    'CHTR': 'Communication', 'LYV': 'Communication', 'MTCH': 'Communication', 
+    'NWSA': 'Communication', 'NWS': 'Communication', 'OMC': 'Communication', 
+    'PARA': 'Communication', 'WBD': 'Communication', 'IPG': 'Communication', 
+    'DISH': 'Communication',
+    
+    # Real Estate (23)
+    'AMT': 'Real Estate', 'PLD': 'Real Estate', 'CCI': 'Real Estate',
+    'EQIX': 'Real Estate', 'PSA': 'Real Estate', 'SPG': 'Real Estate', 'O': 'Real Estate',
+    'AVB': 'Real Estate', 'ARE': 'Real Estate', 'BXP': 'Real Estate', 'CBRE': 'Real Estate',
+    'DLR': 'Real Estate', 'EQR': 'Real Estate', 'ESS': 'Real Estate', 'EXR': 'Real Estate',
+    'FRT': 'Real Estate', 'HST': 'Real Estate', 'IRM': 'Real Estate', 'KIM': 'Real Estate',
+    'MAA': 'Real Estate', 'REG': 'Real Estate', 'SBAC': 'Real Estate', 'SLG': 'Real Estate',
+    'UDR': 'Real Estate', 'VTR': 'Real Estate', 'WELL': 'Real Estate', 'WY': 'Real Estate',
+    'INVH': 'Real Estate', 'PEAK': 'Real Estate', 'VNO': 'Real Estate',
+    
+    # Materials (33)
+    'LIN': 'Materials', 'APD': 'Materials', 'SHW': 'Materials', 'ECL': 'Materials',
+    'DD': 'Materials', 'NEM': 'Materials', 'FCX': 'Materials', 'DOW': 'Materials',
+    'LYB': 'Materials', 'CE': 'Materials', 'ALB': 'Materials', 'EMN': 'Materials',
+    'SQM': 'Materials', 'AMCR': 'Materials', 'BALL': 'Materials', 'CF': 'Materials', 
+    'CLF': 'Materials', 'CTVA': 'Materials', 'FMC': 'Materials', 'IP': 'Materials', 
+    'MLM': 'Materials', 'MOS': 'Materials', 'NUE': 'Materials', 'PKG': 'Materials', 
+    'PPG': 'Materials', 'SEE': 'Materials', 'STLD': 'Materials', 'SW': 'Materials', 
+    'VMC': 'Materials', 'AVY': 'Materials', 'AA': 'Materials', 'MP': 'Materials', 
+    'RS': 'Materials',
+    
+    # Utilities (24)
+    'NEE': 'Utilities', 'DUK': 'Utilities', 'SO': 'Utilities', 'D': 'Utilities',
+    'AEP': 'Utilities', 'EXC': 'Utilities', 'SRE': 'Utilities', 'AEE': 'Utilities', 
+    'AES': 'Utilities', 'AWK': 'Utilities', 'CMS': 'Utilities', 'CNP': 'Utilities', 
+    'DTE': 'Utilities', 'ED': 'Utilities', 'EIX': 'Utilities', 'ES': 'Utilities', 
+    'ETR': 'Utilities', 'EVRG': 'Utilities', 'FE': 'Utilities', 'LNT': 'Utilities', 
+    'NI': 'Utilities', 'NRG': 'Utilities', 'PCG': 'Utilities', 'PEG': 'Utilities', 
+    'PNW': 'Utilities', 'PPL': 'Utilities', 'VST': 'Utilities', 'WEC': 'Utilities', 
+    'XEL': 'Utilities', 'CEG': 'Utilities',
+    
+    # Additional Technology (66)
+    'IBM': 'Technology', 'AAOI': 'Technology', 'ACLS': 'Technology', 'ACN': 'Technology',
+    'ADSK': 'Technology', 'AKAM': 'Technology', 'ANSS': 'Technology', 'APH': 'Technology',
+    'ANET': 'Technology', 'ASML': 'Technology', 'AVAV': 'Technology', 'KEYS': 'Technology',
+    'MCHP': 'Technology', 'MTSI': 'Technology', 'MSI': 'Technology', 'MDB': 'Technology',
+    'NTAP': 'Technology', 'NTNX': 'Technology', 'PAYC': 'Technology',
+    'PTC': 'Technology', 'ROP': 'Technology', 'SAP': 'Technology', 'SLAB': 'Technology',
+    'STX': 'Technology', 'TER': 'Technology', 'TSM': 'Technology', 'TYL': 'Technology',
+    'UMC': 'Technology', 'VRSN': 'Technology', 'WDC': 'Technology', 'XLNX': 'Technology',
+    'ZBRA': 'Technology', 'ZM': 'Technology', 'DOCU': 'Technology', 'TWLO': 'Technology',
+    'SQ': 'Technology', 'UBER': 'Technology', 'LYFT': 'Technology', 'DASH': 'Technology',
+    'PINS': 'Technology', 'SNAP': 'Technology', 'SPOT': 'Technology', 'ROKU': 'Technology',
+    'Z': 'Technology', 'ZG': 'Technology', 'AFRM': 'Technology', 'COIN': 'Technology',
+    'HOOD': 'Technology', 'ASTS': 'Technology',
+    'NOW': 'Technology', 'INTU': 'Technology', 'WDAY': 'Technology', 'PANW': 'Technology',
+    'CRWD': 'Technology', 'ZS': 'Technology', 'DDOG': 'Technology', 'NET': 'Technology',
+    'SNOW': 'Technology', 'PLTR': 'Technology', 'TEAM': 'Technology', 'FTNT': 'Technology',
+    'OKTA': 'Technology', 'S': 'Technology', 'CYBR': 'Technology',
+    'BABA': 'Technology', 'BIDU': 'Technology',
+    
+    # ========== INDICES (24) ==========
+    # US Indices (5)
+    '^GSPC': 'Technology',  # S&P 500
+    '^DJI': 'Technology',   # Dow Jones Industrial Average
+    '^IXIC': 'Technology',  # NASDAQ Composite
+    '^RUT': 'Technology',   # Russell 2000
+    '^VIX': 'Technology',   # CBOE Volatility Index
+    
+    # European Indices (8)
+    '^FTSE': 'Technology',   # FTSE 100
+    '^GDAXI': 'Technology',  # DAX
+    '^FCHI': 'Technology',   # CAC 40
+    '^IBEX': 'Technology',   # IBEX 35
+    '^AEX': 'Technology',    # AEX
+    '^SSMI': 'Technology',   # Swiss Market Index
+    '^OMXS30': 'Technology', # OMX Stockholm 30
+    '^BFX': 'Technology',    # BEL 20
+    
+    # Asian Indices (8)
+    '^N225': 'Technology',      # Nikkei 225
+    '^HSI': 'Technology',       # Hang Seng Index
+    '000001.SS': 'Technology',  # Shanghai Composite
+    '^STI': 'Technology',       # Straits Times Index
+    '^BSESN': 'Technology',     # BSE SENSEX
+    '^NSEI': 'Technology',      # NIFTY 50
+    '^KS11': 'Technology',      # KOSPI Composite Index
+    '^TWII': 'Technology',      # Taiwan Weighted Index
+    '^JKSE': 'Technology',      # Jakarta Composite Index
+    
+    # Other Global Indices (5)
+    '^AXJO': 'Technology',   # S&P/ASX 200
+    '^GSPTSE': 'Technology', # S&P/TSX Composite Index
+    '^MXX': 'Technology',    # IPC Mexico
+    '^BVSP': 'Technology',   # IBOVESPA
+    '^MERV': 'Technology',   # MERVAL
+    
+    # ========== COMMODITIES (18) ==========
+    # Precious Metals (4)
+    'GC=F': 'Materials',  # Gold Futures
+    'SI=F': 'Materials',  # Silver Futures
+    'PL=F': 'Materials',  # Platinum Futures
+    'PA=F': 'Materials',  # Palladium Futures
+    
+    # Energy Commodities (5)
+    'CL=F': 'Energy',  # Crude Oil WTI Futures
+    'BZ=F': 'Energy',  # Brent Crude Oil Futures
+    'NG=F': 'Energy',  # Natural Gas Futures
+    'RB=F': 'Energy',  # RBOB Gasoline Futures
+    'HO=F': 'Energy',  # Heating Oil Futures
+    
+    # Base Metals (2)
+    'HG=F': 'Materials',  # Copper Futures
+    'ALI=F': 'Materials', # Aluminum Futures
+    
+    # Agricultural Commodities (8)
+    'ZC=F': 'Materials',  # Corn Futures
+    'ZW=F': 'Materials',  # Wheat Futures
+    'ZS=F': 'Materials',  # Soybeans Futures
+    'KC=F': 'Materials',  # Coffee Futures
+    'SB=F': 'Materials',  # Sugar Futures
+    'CT=F': 'Materials',  # Cotton Futures
+    'CC=F': 'Materials',  # Cocoa Futures
+    'LBS=F': 'Materials', # Lumber Futures
+    
+    # ========== BONDS & YIELDS (8) ==========
+    # US Treasury Yields (4)
+    '^TNX': 'Bonds and Yields',  # 10-Year Treasury Yield
+    '^TYX': 'Bonds and Yields',  # 30-Year Treasury Yield
+    '^FVX': 'Bonds and Yields',  # 5-Year Treasury Yield
+    '^IRX': 'Bonds and Yields',  # 13-Week Treasury Bill Yield
+    
+    # Treasury Futures (4)
+    'ZN=F': 'Bonds and Yields',  # 10-Year T-Note Futures
+    'ZB=F': 'Bonds and Yields',  # 30-Year T-Bond Futures
+    'ZT=F': 'Bonds and Yields',  # 2-Year T-Note Futures
+    'ZF=F': 'Bonds and Yields',  # 5-Year T-Note Futures
+}
+
+
+from datetime import datetime, timedelta, time
+from django.utils import timezone
+from sklearn.linear_model import LinearRegression
+import pytz
+
+# ================================
+# TRADING STRATEGIES
+# ================================
+
+UPTREND_CODE = """
+# 2-Layer Elite Uptrend Strategy
+set_take_profit(number=8, type_of_setting='PERCENTAGE')
+set_stop_loss(number=4, type_of_setting='PERCENTAGE')
+
+if num_positions == 0:
+    if is_uptrend(data=dataset, lookback_days=30):
+        if is_bullish_market_retracement(data=dataset, lookback_period=20):
+            return_statement = 'buy'
+"""
+
+DOWNTREND_CODE = """
+# 2-Layer Elite Downtrend Strategy
+set_take_profit(number=8, type_of_setting='PERCENTAGE')
+set_stop_loss(number=4, type_of_setting='PERCENTAGE')
+
+if num_positions == 0:
+    if is_downtrend(data=dataset, lookback_days=30):
+        if is_bearish_market_retracement(data=dataset, lookback_period=20):
+            return_statement = 'sell'
+"""
+
+
+# ================================
+# STEP 1: DAILY SCAN FOR HIGH R² ASSETS
+# ================================
+
+def snowai_scan_high_r_squared_assets():
+    """
+    Scans all assets from ALL_ASSET_MAPPINGS for high trend scores.
+    Runs once per day and stores results in SnowAIAllEncompassingDailyStock.
+    """
+    print("🔍 Starting daily trend score scan for all asset classes (excluding Forex)...")
+    
+    today = timezone.now().date()
+    all_symbols = list(ALL_ASSET_MAPPINGS.keys())
+    
+    high_trend_score_assets = []
+    
+    for symbol in all_symbols:
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="60d")
+            
+            if hist.empty or len(hist) < 20:
+                continue
+            
+            # Calculate trend score components (from _calculate_mss logic)
+            prices = hist['Close'].values
+            X = np.arange(len(prices)).reshape(-1, 1)
+            y = prices.reshape(-1, 1)
+            
+            model = LinearRegression()
+            model.fit(X, y)
+            r_squared = model.score(X, y)
+            r_squared = max(0, min(r_squared, 1.0))
+            
+            # Calculate returns and trend consistency
+            hist['returns'] = hist['Close'].pct_change()
+            returns = hist['returns'].dropna()
+            
+            if len(returns) > 0:
+                positive_days = (returns > 0).sum()
+                trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
+            else:
+                trend_consistency = 0
+            
+            # Calculate trend strength (magnitude of slope relative to price)
+            if len(prices) > 0 and prices[0] != 0:
+                slope_per_day = model.coef_[0][0]
+                avg_price = np.mean(prices)
+                trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
+                trend_strength = min(trend_strength, 1.0)
+            else:
+                trend_strength = 0
+            
+            # Calculate trend score (0-100)
+            trend_score = (
+                r_squared * 0.5 +
+                trend_consistency * 0.3 +
+                trend_strength * 0.2
+            ) * 100
+            
+            # Only keep assets with trend_score >= 60 (strong trend)
+            if trend_score >= 60:
+                # Determine trend direction
+                slope = model.coef_[0][0]
+                if slope > 0:
+                    trend = 'uptrend'
+                elif slope < 0:
+                    trend = 'downtrend'
+                else:
+                    trend = 'ranging'
+                
+                # Calculate volatility for MSS
+                volatility = returns.std() if len(returns) > 0 else 0
+                normalized_volatility = min(volatility / 0.05, 1.0)
+                stability_factor = (1 - normalized_volatility) ** 0.6
+                
+                # Calculate liquidity factor
+                if 'Volume' in hist.columns:
+                    avg_volume = hist['Volume'].mean()
+                    
+                    if avg_volume > 10000000:
+                        liquidity_factor = 1.2
+                    elif avg_volume > 1000000:
+                        liquidity_factor = 1.0
+                    elif avg_volume > 100000:
+                        liquidity_factor = 0.9
+                    else:
+                        liquidity_factor = 0.8
+                else:
+                    liquidity_factor = 1.0
+                
+                # Calculate full MSS
+                mss = trend_score * stability_factor * liquidity_factor
+                mss = min(max(mss, 0), 100)
+                
+                current_price = hist['Close'].iloc[-1]
+                sector = ALL_ASSET_MAPPINGS.get(symbol, 'Unknown')
+                
+                high_trend_score_assets.append({
+                    'symbol': symbol,
+                    'r_squared': r_squared,
+                    'trend_score': trend_score,
+                    'trend_consistency': trend_consistency,
+                    'trend_strength': trend_strength,
+                    'trend': trend,
+                    'mss': mss,
+                    'current_price': current_price,
+                    'sector': sector
+                })
+                
+        except Exception as e:
+            print(f"Error scanning {symbol}: {str(e)}")
+            continue
+    
+    # Sort by trend_score descending (primary) and MSS (secondary)
+    high_trend_score_assets.sort(key=lambda x: (x['trend_score'], x['mss']), reverse=True)
+    
+    # Store ALL qualifying assets in database
+    for asset in high_trend_score_assets:
+        SnowAIAllEncompassingDailyStock.objects.update_or_create(
+            date=today,
+            asset=asset['symbol'],
+            defaults={
+                'sector': asset['sector'],
+                'r_squared': asset['r_squared'],
+                'mss': asset['mss'],
+                'current_trend': asset['trend'],
+                'current_price': asset['current_price'],
+                'is_active': True,
+                'has_open_position': False
+            }
+        )
+    
+    print(f"✅ Scan complete! Found and stored {len(high_trend_score_assets)} high trend score assets (>= 60).")
+    if len(high_trend_score_assets) > 0:
+        print(f"📊 Trend score range: {high_trend_score_assets[0]['trend_score']:.2f} - {high_trend_score_assets[-1]['trend_score']:.2f}")
+    return len(high_trend_score_assets)
+
+# ================================
+# STEP 2: EXECUTE TRADES ON HIGH R² ASSETS
+# ================================
+
+def snowai_execute_all_encompassing_world_trades():
+    """
+    Executes trades for all active high R² assets.
+    Checks positions, manages risk, and logs trades.
+    """
+    print("🌍 Executing SnowAI All Encompassing World Model trades...")
+    
+    # Get or create account
+    account, created = Account.objects.get_or_create(
+        account_name='SnowAI All Encompassing World Model',
+        defaults={
+            'main_assets': 'Global Markets',
+            'initial_capital': 100000.0
+        }
+    )
+    
+    if created:
+        print("✅ Created SnowAI All Encompassing World Model account")
+    
+    # Get today's active assets
+    today = timezone.now().date()
+    active_assets = SnowAIAllEncompassingDailyStock.objects.filter(
+        date=today,
+        is_active=True
+    )
+    
+    print(f"Found {active_assets.count()} active assets for today")
+    
+    for asset_record in active_assets:
+        try:
+            # Get market data
+            dataset = get_market_data(asset_record.asset, '1d')
+            
+            if dataset is None or len(dataset) == 0:
+                continue
+            
+            current_price = dataset['Close'].iloc[-1]
+            
+            # Check existing position
+            if asset_record.has_open_position:
+                # Check TP/SL
+                snowai_check_and_close_position(asset_record, current_price, account)
+                continue
+            
+            # Determine which strategy to use
+            if asset_record.current_trend == 'uptrend':
+                strategy_code = UPTREND_CODE
+                expected_direction = 'BUY'
+            elif asset_record.current_trend == 'downtrend':
+                strategy_code = DOWNTREND_CODE
+                expected_direction = 'SELL'
+            else:
+                continue  # Skip ranging markets
+            
+            # Prepare namespace
+            namespace = snowai_prepare_namespace(asset_record, dataset)
+            
+            # Execute strategy
+            exec(strategy_code, namespace)
+            
+            return_statement = namespace.get('return_statement', None)
+            
+            if return_statement in ['buy', 'sell']:
+                # Get TP/SL from namespace
+                tp_value = namespace.get('_take_profit', 8)
+                sl_value = namespace.get('_stop_loss', 4)
+                
+                # Calculate TP/SL prices
+                if return_statement == 'buy':
+                    tp_price = current_price * (1 + tp_value / 100)
+                    sl_price = current_price * (1 - sl_value / 100)
+                    position_type = 'BUY'
+                else:
+                    tp_price = current_price * (1 - tp_value / 100)
+                    sl_price = current_price * (1 + sl_value / 100)
+                    position_type = 'SELL'
+                
+                # Open position
+                asset_record.has_open_position = True
+                asset_record.position_type = position_type
+                asset_record.entry_price = current_price
+                asset_record.take_profit_price = tp_price
+                asset_record.stop_loss_price = sl_price
+                asset_record.entry_time = timezone.now()
+                asset_record.save()
+                
+                print(f"✅ Opened {position_type} position for {asset_record.asset} at ${current_price}")
+                
+        except Exception as e:
+            print(f"Error trading {asset_record.asset}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            continue
+
+
+# ================================
+# STEP 3: CHECK AND CLOSE POSITIONS
+# ================================
+
+def snowai_check_and_close_position(asset_record, current_price, account):
+    """
+    Checks if TP or SL has been hit and closes position.
+    Logs trade to AccountTrades.
+    """
+    should_close = False
+    hit_tp = False
+    
+    if asset_record.position_type == 'BUY':
+        if current_price >= asset_record.take_profit_price:
+            should_close = True
+            hit_tp = True
+        elif current_price <= asset_record.stop_loss_price:
+            should_close = True
+            hit_tp = False
+    
+    elif asset_record.position_type == 'SELL':
+        if current_price <= asset_record.take_profit_price:
+            should_close = True
+            hit_tp = True
+        elif current_price >= asset_record.stop_loss_price:
+            should_close = True
+            hit_tp = False
+    
+    if should_close:
+        # Calculate P&L
+        if asset_record.position_type == 'BUY':
+            pnl_pct = ((current_price - asset_record.entry_price) / asset_record.entry_price) * 100
+        else:  # SELL
+            pnl_pct = ((asset_record.entry_price - current_price) / asset_record.entry_price) * 100
+        
+        # Assume $10,000 per position (adjust as needed)
+        position_size = 10000
+        pnl_dollars = position_size * (pnl_pct / 100)
+        
+        # Determine outcome
+        outcome = 'Profit' if pnl_dollars > 0 else 'Loss'
+        
+        # Get current time info
+        now = timezone.now()
+        day_closed = now.strftime('%A')
+        
+        # Determine trading session
+        us_eastern = pytz.timezone('US/Eastern')
+        current_time_us = now.astimezone(us_eastern).time()
+        
+        if time(9, 30) <= current_time_us <= time(16, 0):
+            session_closed = 'NY'
+        else:
+            session_closed = 'After Hours'
+        
+        # Log trade to AccountTrades
+        AccountTrades.objects.create(
+            account=account,
+            asset=asset_record.asset,
+            sector=asset_record.sector,
+            order_type=asset_record.position_type,
+            strategy='RE',
+            day_of_week_entered=asset_record.entry_time.strftime('%A'),
+            day_of_week_closed=day_closed,
+            trading_session_entered='NY',
+            trading_session_closed=session_closed,
+            outcome=outcome,
+            amount=pnl_dollars,
+            date_entered=asset_record.entry_time,
+            reflection=f"R²: {asset_record.r_squared:.3f}, Trend: {asset_record.current_trend}, {'TP Hit' if hit_tp else 'SL Hit'}"
+        )
+        
+        # Reset position
+        asset_record.has_open_position = False
+        asset_record.position_type = None
+        asset_record.entry_price = None
+        asset_record.take_profit_price = None
+        asset_record.stop_loss_price = None
+        asset_record.entry_time = None
+        asset_record.save()
+        
+        print(f"{'✅' if outcome == 'Profit' else '❌'} Closed {asset_record.position_type} for {asset_record.asset}: {outcome} ${pnl_dollars:.2f}")
+
+
+# ================================
+# HELPER FUNCTIONS
+# ================================
+
+def snowai_prepare_namespace(asset_record, dataset):
+    """Prepare namespace for strategy execution"""
+    
+    def set_take_profit(number, type_of_setting='PERCENTAGE'):
+        namespace['_take_profit'] = number
+    
+    def set_stop_loss(number, type_of_setting='PERCENTAGE'):
+        namespace['_stop_loss'] = number
+    
+    namespace = {
+        'num_positions': 1 if asset_record.has_open_position else 0,
+        'dataset': dataset,
+        'asset': asset_record.asset,
+        'set_take_profit': set_take_profit,
+        'set_stop_loss': set_stop_loss,
+        '_take_profit': 4,
+        '_stop_loss': 2,
+        # All your trading functions (same as ActiveForwardTestModel)
+        'is_uptrend': is_uptrend,
+        'is_downtrend': is_downtrend,
+        'is_bullish_market_retracement': is_bullish_market_retracement,
+        'is_bearish_market_retracement': is_bearish_market_retracement,
+        'average_retracement': average_retracement,
+        # Add all other trading functions from your prepare_namespace
+    }
+    
+    return namespace
+
+
+# ================================
+# SCHEDULER JOBS
+# ================================
+
+# Job 1: Scan for high R² assets once per day, 2 minutes after market open (9:32 AM ET)
+scheduler.add_job(
+    snowai_scan_high_r_squared_assets,
+    trigger='cron',
+    hour=9,
+    minute=32,
+    timezone='US/Eastern',
+    id='snowai_world_daily_scan',
+    name='SnowAI All Encompassing World Daily High R² Asset Scanner',
+    replace_existing=True
+)
+
+# Job 2: Execute trades every 25 minutes during market hours
+scheduler.add_job(
+    snowai_execute_all_encompassing_world_trades,
+    trigger='cron',
+    hour='9-16',
+    minute='*/25',
+    day_of_week='mon-fri',
+    timezone='US/Eastern',
+    id='snowai_world_trades',
+    name='SnowAI All Encompassing World Trade Execution',
+    replace_existing=True
+)
+
+
+import json
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, timedelta
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+
+# ============================================================
+# SHARED HELPER: 1h data fetcher
+# yfinance caps interval='1h' at ~60 calendar days lookback.
+# We convert the requested hours into a safe 'period' in days.
+# ============================================================
+
+def fetch_1h(ticker, lookback_hours=720):
+    """
+    Fetch 1h OHLCV for a ticker.
+    Default 720h ≈ 30 trading days of 1h bars.
+    Returns a DataFrame or None on failure.
+    """
+    try:
+        days = int(lookback_hours / 6.5) + 5   # 1 trading day ≈ 6.5h
+        days = min(days, 59)                    # yfinance 1h hard cap
+        hist = yf.Ticker(ticker).history(period=f'{days}d', interval='1h')
+        if hist.empty:
+            return None
+        if isinstance(hist.columns, pd.MultiIndex):
+            hist.columns = hist.columns.get_level_values(0)
+        return hist
+    except Exception:
+        return None
+
+
+# ============================================================
+# SHARED HELPER: Sector Sentiment Scorer
+#
+# Scores a basket of 1h Close series into:
+#   BULLISH / BEARISH / CHOPPY
+#
+# Five sub-scores (each 0–100, then weighted):
+#   1. Momentum  — EMA(9) vs EMA(21) crossover gap
+#   2. RSI       — 14-bar RSI on basket average
+#   3. Trend     — 20-bar EMA slope (positive = up-trend)
+#   4. Volatility— 14-bar return std (inverted: calm = high score)
+#   5. Breadth   — % of stocks up over the full lookback
+#
+# Confidence: High / Medium / Low based on sub-score agreement
+#             and volatility level.
+# ============================================================
+
+def compute_sector_sentiment(stock_close_df):
+    """
+    stock_close_df: DataFrame, columns = stock tickers, index = 1h timestamps.
+    Returns a dict with label, color, score, confidence, components, description.
+    """
+    n_bars = len(stock_close_df)
+    if n_bars < 30:
+        return {
+            'label': 'INSUFFICIENT DATA', 'color': '#6b7280', 'score': 50,
+            'confidence': 'Low', 'components': {},
+            'description': 'Not enough 1h bars to score sentiment.'
+        }
+
+    avg_close = stock_close_df.mean(axis=1)
+    scores = {}
+
+    # ─── 1. MOMENTUM ───
+    try:
+        ema9  = avg_close.ewm(span=9,  adjust=False).mean()
+        ema21 = avg_close.ewm(span=21, adjust=False).mean()
+        gap_pct = float((ema9.iloc[-1] - ema21.iloc[-1]) / ema21.iloc[-1] * 100)
+        scores['momentum'] = round(max(0, min(100, 50 + (gap_pct / 3.0) * 50)), 1)
+    except Exception:
+        scores['momentum'] = 50
+
+    # ─── 2. RSI (14-bar) ───
+    try:
+        delta = avg_close.diff()
+        gain  = delta.clip(lower=0).rolling(14).mean()
+        loss  = (-delta.clip(upper=0)).rolling(14).mean()
+        rs    = gain / loss.replace(0, np.nan)
+        rsi   = 100 - (100 / (1 + rs))
+        scores['rsi'] = round(float(rsi.iloc[-1]) if not np.isnan(rsi.iloc[-1]) else 50, 1)
+    except Exception:
+        scores['rsi'] = 50
+
+    # ─── 3. TREND (20-bar EMA slope) ───
+    try:
+        ema20 = avg_close.ewm(span=20, adjust=False).mean()
+        lookback = min(20, len(ema20) - 1)
+        slope_pct = float((ema20.iloc[-1] - ema20.iloc[-1 - lookback]) / ema20.iloc[-1 - lookback] * 100)
+        scores['trend'] = round(max(0, min(100, 50 + (slope_pct / 2.0) * 50)), 1)
+    except Exception:
+        scores['trend'] = 50
+
+    # ─── 4. VOLATILITY (inverted: calm = 100) ───
+    try:
+        returns  = avg_close.pct_change().dropna()
+        atr_pct  = float(returns.rolling(14).std().iloc[-1]) * 100
+        scores['volatility'] = round(max(0, min(100, 100 - (atr_pct / 3.0) * 100)), 1)
+    except Exception:
+        scores['volatility'] = 50
+
+    # ─── 5. BREADTH ───
+    try:
+        up = 0; total = 0
+        for col in stock_close_df.columns:
+            s = stock_close_df[col].dropna()
+            if len(s) < 2:
+                continue
+            total += 1
+            if s.iloc[-1] > s.iloc[0]:
+                up += 1
+        scores['breadth'] = round((up / total * 100) if total > 0 else 50, 1)
+    except Exception:
+        scores['breadth'] = 50
+
+    # ─── COMPOSITE (weighted) ───
+    W = {'momentum': 0.30, 'rsi': 0.20, 'trend': 0.25, 'volatility': 0.10, 'breadth': 0.15}
+    composite = round(sum(scores.get(k, 50) * w for k, w in W.items()), 1)
+
+    # ─── LABEL ───
+    if   composite >= 62: label, color = 'BULLISH', '#10b981'
+    elif composite <= 38: label, color = 'BEARISH', '#ef4444'
+    else:                 label, color = 'CHOPPY',  '#f59e0b'
+
+    # ─── CONFIDENCE ───
+    directional = [scores['momentum'], scores['trend'], scores['breadth']]
+    all_high = all(s >= 60 for s in directional)
+    all_low  = all(s <= 40 for s in directional)
+    if (all_high or all_low) and scores['volatility'] >= 40:
+        confidence = 'High'
+    elif scores['volatility'] < 30:
+        confidence = 'Low'
+    else:
+        confidence = 'Medium'
+
+    # ─── DESCRIPTION ───
+    parts = []
+    if scores['momentum'] >= 60: parts.append("short-term momentum is positive (EMA 9 > EMA 21)")
+    elif scores['momentum'] <= 40: parts.append("short-term momentum has rolled over")
+    if scores['trend'] >= 60: parts.append("medium-term 1h trend is intact")
+    elif scores['trend'] <= 40: parts.append("medium-term 1h trend is breaking down")
+    if scores['breadth'] >= 60: parts.append(f"{scores['breadth']:.0f}% of stocks advancing")
+    elif scores['breadth'] <= 40: parts.append(f"only {scores['breadth']:.0f}% of stocks advancing")
+    if scores['volatility'] < 35: parts.append("volatility is elevated — expect wide 1h swings")
+    description = "; ".join(parts) if parts else "Mixed signals across components."
+
+    return {
+        'label': label, 'color': color, 'score': composite,
+        'confidence': confidence, 'components': scores, 'description': description
+    }
+
+
+# ============================================================
+# SHARED HELPER: Trade Recommendation Generator
+#
+# Inputs: sector sentiment + per-stock correlation/alignment data
+# Output: concrete action (BUY / SELL / HOLD / TRIM / WATCH / WAIT)
+#         + rationale, entry guidance, risk/reward
+#
+# Decision matrix:
+#   BULLISH sector + stock lagging   → BUY  (catch-up)
+#   BULLISH sector + stock aligned   → HOLD (ride it)
+#   BULLISH sector + stock >6% ahead → TRIM (extended)
+#   BULLISH sector + stock 3-6% ahead→ HOLD (momentum)
+#   BEARISH sector + stock lagging   → SELL (double weakness)
+#   BEARISH sector + stock aligned   → SELL (follow down)
+#   BEARISH sector + stock leading   → HOLD (short-term resilience)
+#   CHOPPY sector  + any             → WAIT (no clean setup)
+#   Low confidence on any BUY/SELL   → WATCH (downgrade)
+# ============================================================
+
+def generate_trade_rec(symbol, sector_sentiment, stock_return, expected_return,
+                       return_gap, correlation, alignment_score, beta):
+    """Returns a trade recommendation dict."""
+    sent  = sector_sentiment['label']
+    conf  = sector_sentiment['confidence']
+
+    leading  = return_gap >  3
+    lagging  = return_gap < -3
+    aligned  = not leading and not lagging
+
+    if sent == 'CHOPPY':
+        action, color = 'WAIT', '#6b7280'
+        rationale = "Sector is choppy on 1h — no clean directional setup. Wait for EMA 9/21 crossover confirmation."
+        entry     = "Wait for 1h EMA 9 to cross EMA 21 with volume confirmation before entering."
+        rr        = "N/A — risk is elevated in choppy conditions. Capital preservation priority."
+
+    elif sent == 'BULLISH':
+        if lagging:
+            action, color = 'BUY', '#10b981'
+            rationale = (f"Sector is bullish but {symbol} lags by {abs(return_gap):.1f}% on 1h. "
+                         f"Classic catch-up — laggards converge when sector momentum holds.")
+            entry = f"Enter on pullback into the lag zone. Confirm with 1h RSI > 40 and price above EMA 21."
+            rr    = (f"Target: close the {abs(return_gap):.1f}% gap to sector expectations. "
+                     f"Stop: 1h close below recent support with volume spike.")
+        elif leading and return_gap > 6:
+            action, color = 'TRIM', '#f59e0b'
+            rationale = (f"{symbol} is {return_gap:.1f}% ahead of sector-justified levels on 1h. "
+                         f"Snap-back risk is rising — take partial profits.")
+            entry = "Scale out 30–50% at current levels. Hold remainder with trailing stop."
+            rr    = "Protect gains. Re-evaluate for re-entry if gap compresses to +3%."
+        elif leading:
+            action, color = 'HOLD', '#3b82f6'
+            rationale = (f"{symbol} leads sector by {return_gap:.1f}% — strong 1h relative momentum. "
+                         f"Sustainable at this level.")
+            entry = "Hold. Tighten stop to recent 1h support level."
+            rr    = "Target: continue outperformance while sector stays bullish. Stop: 1h close below EMA 21."
+        else:  # aligned
+            action, color = 'HOLD', '#3b82f6'
+            rationale = (f"{symbol} tracking the bullish sector cleanly (beta: {beta:.2f}). "
+                         f"Let it run on 1h.")
+            entry = "Hold. Add on any 1h pullback to EMA 9 support."
+            rr    = "Target: continue with sector. Stop: 1h close below EMA 21 or sentiment shift to CHOPPY."
+
+    elif sent == 'BEARISH':
+        if lagging:
+            action, color = 'SELL', '#ef4444'
+            rationale = (f"Sector is bearish AND {symbol} already lags by {abs(return_gap):.1f}% on 1h. "
+                         f"Double weakness — exit to protect capital.")
+            entry = "Exit at next 1h bar open. Do not wait for further confirmation."
+            rr    = "Capital preservation. Re-evaluate for long only after sector shows BULLISH confirmation."
+        elif leading:
+            action, color = 'HOLD', '#f59e0b'
+            rationale = (f"{symbol} holding up despite bearish sector (leads by {return_gap:.1f}%). "
+                         f"Short-term resilience, but sector drag will likely catch up.")
+            entry = "Hold with tight stop. Switch to SELL if 1h RSI < 35 or stock starts tracking sector down."
+            rr    = "Short-term: may continue outperforming. Medium-term: sector drag will likely catch up."
+        else:  # aligned
+            action, color = 'SELL', '#ef4444'
+            rationale = (f"Sector is bearish and {symbol} is tracking it (beta: {beta:.2f}). "
+                         f"Following sector lower — reduce or exit.")
+            entry = "Reduce 50%+ at current levels. Full exit if 1h RSI < 30."
+            rr    = "Protect against further downside. Re-enter only after sector flips to BULLISH."
+    else:
+        action, color = 'HOLD', '#94a3b8'
+        rationale = "Insufficient data for a confident recommendation."
+        entry = "Monitor."
+        rr    = "N/A"
+
+    # Downgrade BUY/SELL → WATCH if confidence is Low
+    if conf == 'Low' and action in ('BUY', 'SELL'):
+        action, color = 'WATCH', '#6b7280'
+        rationale += " (Downgraded to WATCH: sector confidence is Low due to elevated volatility.)"
+
+    return {
+        'symbol': symbol, 'action': action, 'action_color': color,
+        'rationale': rationale, 'entry': entry, 'risk_reward': rr,
+        'sector_sentiment': sent, 'sector_confidence': conf
+    }
+
+
+# ============================================================
+# ENDPOINT 1: BULK — Commodities vs Materials Sector  (1h)
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_commodity_vs_materials_analyzer(request):
+    try:
+        data = json.loads(request.body)
+        lookback_hours = data.get('lookback_hours', 720)
+
+        COMMODITY_TICKERS = ['GLD', 'SLV', 'USO', 'UNG', 'GCC', 'JJC']
+        materials_symbols = [sym for sym, sec in SECTOR_MAPPINGS.items() if sec == 'Materials']
+
+        # ── Fetch commodities (1h) ──
+        commodity_series = {}
+        for t in COMMODITY_TICKERS:
+            hist = fetch_1h(t, lookback_hours)
+            if hist is not None and len(hist) >= 10:
+                commodity_series[t] = hist['Close']
+
+        if len(commodity_series) < 2:
+            return JsonResponse({'success': False, 'error': 'Could not fetch enough commodity 1h data'})
+
+        # ── Equal-weight commodity index (base 100) ──
+        commodity_df   = pd.DataFrame(commodity_series).dropna()
+        comm_normalised = commodity_df.div(commodity_df.iloc[0]) * 100
+        commodity_index = comm_normalised.mean(axis=1)
+
+        # ── Fetch Materials stocks (1h) ──
+        stock_series = {}
+        stock_meta   = []
+        for sym in materials_symbols:
+            hist = fetch_1h(sym, lookback_hours)
+            if hist is None or len(hist) < 10:
+                continue
+            stock_series[sym] = hist['Close']
+            try:
+                info = yf.Ticker(sym).info
+                mcap = info.get('marketCap') or (float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean()))
+            except Exception:
+                mcap = float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean())
+            stock_meta.append({'symbol': sym, 'market_cap': mcap or 0})
+
+        if not stock_series:
+            return JsonResponse({'success': False, 'error': 'No Materials 1h stock data available'})
+
+        # ── Align to common 1h timestamps ──
+        stock_df        = pd.DataFrame(stock_series).dropna()
+        common_idx      = stock_df.index.intersection(commodity_index.index)
+        if len(common_idx) < 10:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping 1h bars'})
+        stock_df        = stock_df.loc[common_idx]
+        commodity_index = commodity_index.loc[common_idx]
+
+        # ── Market-cap weighted Materials index ──
+        total_mcap = sum(m['market_cap'] for m in stock_meta if m['symbol'] in stock_df.columns) or 1
+        stock_norm = stock_df.div(stock_df.iloc[0]) * 100
+        weights    = {m['symbol']: m['market_cap'] / total_mcap
+                      for m in stock_meta if m['symbol'] in stock_norm.columns}
+        materials_index = stock_norm.multiply(pd.Series(weights)).sum(axis=1)
+
+        # ── 1h returns → correlation / beta ──
+        comm_ret = commodity_index.pct_change().dropna()
+        mat_ret  = materials_index.pct_change().dropna()
+        common_ret = comm_ret.index.intersection(mat_ret.index)
+        comm_ret, mat_ret = comm_ret.loc[common_ret], mat_ret.loc[common_ret]
+
+        full_corr  = float(np.corrcoef(comm_ret.values, mat_ret.values)[0, 1])
+        cov_matrix = np.cov(mat_ret.values, comm_ret.values)
+        beta       = float(cov_matrix[0, 1] / cov_matrix[1, 1]) if cov_matrix[1, 1] != 0 else 0.0
+
+        # ── Rolling 48-bar correlation ──
+        window      = min(48, len(comm_ret) // 3)
+        rolling_corr = comm_ret.rolling(window).corr(mat_ret).dropna()
+        recent_corr  = float(rolling_corr.iloc[-1]) if len(rolling_corr) > 0 else full_corr
+        prev_corr    = float(rolling_corr.iloc[-window]) if len(rolling_corr) > window else full_corr
+        corr_trend   = ("rising" if recent_corr > prev_corr + 0.05
+                        else ("falling" if recent_corr < prev_corr - 0.05 else "stable"))
+
+        # ── Divergence ──
+        comm_norm       = (commodity_index / commodity_index.iloc[0]) * 100
+        mat_norm        = (materials_index / materials_index.iloc[0]) * 100
+        divergence_score = round(float(mat_norm.iloc[-1] - comm_norm.iloc[-1]), 2)
+
+        # ── Regime ──
+        if   recent_corr >= 0.6 and abs(divergence_score) < 5:
+            regime, regime_color = "ALIGNED", "#10b981"
+            regime_desc = "Materials tracking commodities on 1h. Sector-commodity linkage intact."
+        elif recent_corr >= 0.3 and abs(divergence_score) < 10:
+            regime, regime_color = "WEAKENING", "#f59e0b"
+            regime_desc = "1h correlation softening. Materials beginning to decouple — watch for follow-through."
+        elif abs(divergence_score) >= 10 or recent_corr < 0.2:
+            regime, regime_color = "DIVERGING", "#ef4444"
+            regime_desc = "Significant 1h divergence. Materials no longer tracking commodities — potential mispricing."
+        else:
+            regime, regime_color = "NOISY", "#6b7280"
+            regime_desc = "Mixed 1h signals. Stock-specific factors dominating over commodities."
+
+        # ── SECTOR SENTIMENT ──
+        sector_sentiment = compute_sector_sentiment(stock_df)
+
+        # ── PER-STOCK TRADE RECS ──
+        trade_recs = []
+        comm_total_ret = float(comm_norm.iloc[-1] - 100)
+        for sym in stock_df.columns:
+            sym_series = stock_df[sym].dropna()
+            if len(sym_series) < 10:
+                continue
+            sym_norm   = (sym_series / sym_series.iloc[0]) * 100
+            sym_return = round(float(sym_norm.iloc[-1] - 100), 2)
+
+            sym_ret      = sym_series.pct_change().dropna()
+            comm_aligned = comm_ret.loc[comm_ret.index.intersection(sym_ret.index)]
+            sym_aligned  = sym_ret.loc[sym_ret.index.intersection(comm_ret.index)]
+            if len(comm_aligned) < 5 or len(sym_aligned) < 5:
+                continue
+
+            cov_s    = np.cov(sym_aligned.values, comm_aligned.values)
+            sym_beta = float(cov_s[0, 1] / cov_s[1, 1]) if cov_s[1, 1] != 0 else 0.0
+            expected = round(sym_beta * comm_total_ret, 2)
+            gap      = round(sym_return - expected, 2)
+            sym_corr = float(np.corrcoef(sym_aligned.values, comm_aligned.values)[0, 1])
+            alignment = round(max(0, min(100, (1 - min(abs(gap)/20, 1)) * max(sym_corr, 0) * 100)), 1)
+
+            rec = generate_trade_rec(sym, sector_sentiment, sym_return, expected,
+                                     gap, round(sym_corr, 3), alignment, round(sym_beta, 3))
+            rec.update({'stock_return': sym_return, 'expected_return': expected,
+                        'return_gap': gap, 'correlation': round(sym_corr, 3),
+                        'alignment_score': alignment, 'beta': round(sym_beta, 3)})
+            trade_recs.append(rec)
+
+        action_order = {'BUY': 0, 'HOLD': 1, 'WATCH': 2, 'TRIM': 3, 'SELL': 4, 'WAIT': 5}
+        trade_recs.sort(key=lambda r: action_order.get(r['action'], 99))
+
+        # ── Per-commodity breakdown ──
+        commodity_breakdowns = []
+        for ticker, series in commodity_series.items():
+            try:
+                aligned = series.loc[series.index.intersection(mat_ret.index)]
+                t_ret   = aligned.pct_change().dropna()
+                common  = t_ret.index.intersection(mat_ret.index)
+                if len(common) < 5:
+                    continue
+                c = float(np.corrcoef(t_ret.loc[common].values, mat_ret.loc[common].values)[0, 1])
+                commodity_breakdowns.append({
+                    'ticker': ticker, 'correlation': round(c, 3),
+                    'period_return': round(float((series.iloc[-1] - series.iloc[0]) / series.iloc[0] * 100), 2)
+                })
+            except Exception:
+                continue
+        commodity_breakdowns.sort(key=lambda x: abs(x['correlation']), reverse=True)
+
+        # ── Timeseries (downsample for chart clarity) ──
+        step = max(1, len(common_idx) // 200)
+        timeseries = [{'date': common_idx[i].strftime('%Y-%m-%d %H:%M'),
+                       'commodities': round(float(comm_norm.loc[common_idx[i]]), 2),
+                       'materials':   round(float(mat_norm.loc[common_idx[i]]), 2)}
+                      for i in range(0, len(common_idx), step)]
+
+        # ── Insights ──
+        insights = []
+        insights.append(f"📊 Sector sentiment: {sector_sentiment['label']} "
+                        f"(score {sector_sentiment['score']:.0f}/100, confidence: {sector_sentiment['confidence']}). "
+                        f"{sector_sentiment['description'].capitalize()}.")
+
+        if regime == "DIVERGING":
+            insights.append(("📈 Materials outperforming commodities on 1h — equity premium or rotation."
+                             if divergence_score > 0
+                             else "📉 Materials lagging commodities on 1h — cost absorption or margin pressure."))
+            insights.append(f"⚡ Divergence: {abs(divergence_score):.1f} pts. Mean-reversion likely if sustained.")
+        elif regime == "WEAKENING":
+            insights.append("⚠️ 1h correlation eroding. Watch next 6–12h for follow-through or recovery.")
+        elif regime == "ALIGNED":
+            insights.append("✅ Commodity-materials linkage healthy on 1h.")
+            if beta > 1.2:
+                insights.append(f"📊 Beta {beta:.2f} — Materials amplifying commodity moves (margin leverage).")
+        if commodity_breakdowns:
+            top = commodity_breakdowns[0]
+            insights.append(f"🏆 Strongest 1h link: {top['ticker']} (corr {top['correlation']:.2f}).")
+
+        buys  = sum(1 for r in trade_recs if r['action'] == 'BUY')
+        sells = sum(1 for r in trade_recs if r['action'] == 'SELL')
+        if buys:  insights.append(f"💰 {buys} stock(s) flagged BUY — lagging the bullish sector on 1h.")
+        if sells: insights.append(f"🚨 {sells} stock(s) flagged SELL — tracking bearish weakness on 1h.")
+
+        return JsonResponse({
+            'success': True, 'timeframe': '1h',
+            'regime': regime, 'regime_color': regime_color, 'regime_description': regime_desc,
+            'full_correlation': round(full_corr, 3), 'recent_correlation': round(recent_corr, 3),
+            'correlation_trend': corr_trend, 'beta': round(beta, 3),
+            'divergence_score': divergence_score,
+            'sector_sentiment': sector_sentiment,
+            'trade_recommendations': trade_recs,
+            'timeseries': timeseries,
+            'commodity_breakdowns': commodity_breakdowns,
+            'insights': insights,
+            'materials_stocks_analyzed': len(stock_df.columns),
+            'commodities_analyzed': len(commodity_series),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# ENDPOINT 2: PER-STOCK — Individual Materials Stock (1h)
+# Now includes stock-level sentiment + trade recommendation.
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_individual_stock_commodity_alignment(request):
+    try:
+        data = json.loads(request.body)
+        symbol         = data.get('symbol')
+        lookback_hours = data.get('lookback_hours', 720)
+
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'})
+
+        sector = SECTOR_MAPPINGS.get(symbol)
+        if sector != 'Materials':
+            return JsonResponse({'success': False, 'error': f'{symbol} is not Materials (sector: {sector})'})
+
+        COMMODITY_TICKERS = ['GLD', 'SLV', 'USO', 'UNG', 'GCC', 'JJC']
+
+        # ── Fetch stock (1h) ──
+        stock_hist = fetch_1h(symbol, lookback_hours)
+        if stock_hist is None or len(stock_hist) < 10:
+            return JsonResponse({'success': False, 'error': f'No 1h data for {symbol}'})
+        stock_close = stock_hist['Close']
+
+        # ── Fetch commodities (1h) ──
+        commodity_series = {}
+        for t in COMMODITY_TICKERS:
+            hist = fetch_1h(t, lookback_hours)
+            if hist is not None and len(hist) >= 10:
+                commodity_series[t] = hist['Close']
+        if len(commodity_series) < 2:
+            return JsonResponse({'success': False, 'error': 'Could not fetch commodity 1h data'})
+
+        # ── Align ──
+        all_series = pd.DataFrame(commodity_series)
+        all_series[symbol] = stock_close
+        all_series = all_series.dropna()
+        if len(all_series) < 10:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping 1h bars'})
+
+        comm_cols = [c for c in all_series.columns if c != symbol]
+
+        # ── Indices ──
+        comm_norm       = all_series[comm_cols].div(all_series[comm_cols].iloc[0]) * 100
+        commodity_index = comm_norm.mean(axis=1)
+        stock_norm      = (all_series[symbol] / all_series[symbol].iloc[0]) * 100
+
+        # ── Returns ──
+        comm_ret  = commodity_index.pct_change().dropna()
+        stock_ret = stock_norm.pct_change().dropna()
+        common    = comm_ret.index.intersection(stock_ret.index)
+        comm_ret, stock_ret = comm_ret.loc[common], stock_ret.loc[common]
+
+        correlation = float(np.corrcoef(comm_ret.values, stock_ret.values)[0, 1])
+        cov_m       = np.cov(stock_ret.values, comm_ret.values)
+        beta        = float(cov_m[0, 1] / cov_m[1, 1]) if cov_m[1, 1] != 0 else 0.0
+
+        # ── Expected vs Actual ──
+        comm_total   = float(commodity_index.iloc[-1] - 100)
+        stock_total  = float(stock_norm.iloc[-1] - 100)
+        expected     = round(beta * comm_total, 2)
+        actual       = round(stock_total, 2)
+        gap          = round(actual - expected, 2)
+
+        # ── Alignment score ──
+        alignment = round(max(0, min(100, (1 - min(abs(gap)/20, 1)) * max(correlation, 0) * 100)), 1)
+
+        # ── Signal ──
+        if   gap >  3: signal, signal_color = "OUTPERFORMING", "#10b981"
+        elif gap < -3: signal, signal_color = "UNDERPERFORMING", "#ef4444"
+        else:          signal, signal_color = "ALIGNED", "#10b981"
+        signal_desc = (f"{symbol} gained {gap:.1f}% more than predicted on 1h."     if signal == "OUTPERFORMING"
+                  else f"{symbol} lagged expectations by {abs(gap):.1f}% on 1h."    if signal == "UNDERPERFORMING"
+                  else f"{symbol} tracking commodities within expected range on 1h.")
+
+        # ── Per-commodity correlations ──
+        per_commodity = []
+        for t in comm_cols:
+            try:
+                t_ret = all_series[t].pct_change().dropna()
+                s_ret = all_series[symbol].pct_change().dropna()
+                c_idx = t_ret.index.intersection(s_ret.index)
+                if len(c_idx) < 5: continue
+                c = float(np.corrcoef(t_ret.loc[c_idx].values, s_ret.loc[c_idx].values)[0, 1])
+                per_commodity.append({
+                    'ticker': t, 'correlation': round(c, 3),
+                    'period_return': round(float((all_series[t].iloc[-1] - all_series[t].iloc[0]) / all_series[t].iloc[0] * 100), 2)
+                })
+            except Exception:
+                continue
+        per_commodity.sort(key=lambda x: abs(x['correlation']), reverse=True)
+
+        # ── STOCK-LEVEL SENTIMENT ──
+        stock_sentiment = compute_sector_sentiment(pd.DataFrame({symbol: stock_close}))
+
+        # ── TRADE RECOMMENDATION ──
+        trade_rec = generate_trade_rec(symbol, stock_sentiment, actual, expected,
+                                       gap, round(correlation, 3), alignment, round(beta, 3))
+
+        # ── Implications (now trade-rec driven) ──
+        implications = [
+            f"🎯 Recommendation: {trade_rec['action']} — {trade_rec['rationale']}",
+            f"📍 Entry: {trade_rec['entry']}",
+            f"⚖️ Risk/Reward: {trade_rec['risk_reward']}"
+        ]
+
+        # ── Timeseries ──
+        step = max(1, len(all_series) // 200)
+        timeseries = [{'date': all_series.index[i].strftime('%Y-%m-%d %H:%M'),
+                       'commodities': round(float(commodity_index.loc[all_series.index[i]]), 2),
+                       'stock':       round(float(stock_norm.loc[all_series.index[i]]), 2)}
+                      for i in range(0, len(all_series), step)]
+
+        return JsonResponse({
+            'success': True, 'timeframe': '1h', 'symbol': symbol,
+            'alignment_score': alignment,
+            'correlation': round(correlation, 3), 'beta': round(beta, 3),
+            'expected_return': expected, 'actual_return': actual,
+            'return_gap': gap, 'signal': signal,
+            'signal_color': signal_color, 'signal_description': signal_desc,
+            'stock_sentiment': stock_sentiment,
+            'trade_recommendation': trade_rec,
+            'per_commodity_correlations': per_commodity,
+            'implications': implications,
+            'timeseries': timeseries,
+            'commodity_total_return': round(comm_total, 2),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# ENDPOINT 3: BULK — S&P 500 vs Technology Sector  (1h)
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_sp500_vs_tech_sector_analyzer(request):
+    try:
+        data = json.loads(request.body)
+        lookback_hours = data.get('lookback_hours', 720)
+
+        # ── Fetch S&P 500 (1h) ──
+        sp500_hist = fetch_1h('^GSPC', lookback_hours)
+        if sp500_hist is None or len(sp500_hist) < 10:
+            return JsonResponse({'success': False, 'error': 'Could not fetch S&P 500 1h data'})
+        sp500_close = sp500_hist['Close']
+
+        tech_symbols = [sym for sym, sec in SECTOR_MAPPINGS.items() if sec == 'Technology']
+
+        # ── Fetch Tech stocks (1h) ──
+        tech_series = {}
+        tech_data   = []
+        for sym in tech_symbols:
+            hist = fetch_1h(sym, lookback_hours)
+            if hist is None or len(hist) < 10:
+                continue
+            tech_series[sym] = hist['Close']
+            try:
+                info = yf.Ticker(sym).info
+                mcap = info.get('marketCap') or (float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean()))
+            except Exception:
+                mcap = float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean())
+            tech_data.append({'symbol': sym, 'market_cap': mcap or 0})
+
+        if not tech_series:
+            return JsonResponse({'success': False, 'error': 'No Technology 1h stock data available'})
+
+        # ── Align ──
+        tech_df  = pd.DataFrame(tech_series)
+        combined = tech_df.copy()
+        combined['SP500'] = sp500_close
+        combined = combined.dropna()
+        if len(combined) < 10:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping 1h bars'})
+
+        sp500_aligned = combined['SP500']
+        tech_cols     = [c for c in combined.columns if c != 'SP500']
+
+        # ── Market-cap weighted Tech index ──
+        total_mcap = sum(d['market_cap'] for d in tech_data if d['symbol'] in tech_cols) or 1
+        tech_norm  = combined[tech_cols].div(combined[tech_cols].iloc[0]) * 100
+        weights    = {d['symbol']: d['market_cap'] / total_mcap
+                      for d in tech_data if d['symbol'] in tech_norm.columns}
+        tech_index  = tech_norm.multiply(pd.Series(weights)).sum(axis=1)
+        sp500_norm  = (sp500_aligned / sp500_aligned.iloc[0]) * 100
+
+        # ── 1h returns ──
+        sp_ret   = sp500_norm.pct_change().dropna()
+        tech_ret = tech_index.pct_change().dropna()
+        common   = sp_ret.index.intersection(tech_ret.index)
+        sp_ret, tech_ret = sp_ret.loc[common], tech_ret.loc[common]
+
+        full_corr = float(np.corrcoef(sp_ret.values, tech_ret.values)[0, 1])
+        cov_m     = np.cov(tech_ret.values, sp_ret.values)
+        beta      = float(cov_m[0, 1] / cov_m[1, 1]) if cov_m[1, 1] != 0 else 0.0
+
+        # ── Rolling 48-bar correlation ──
+        window       = min(48, len(sp_ret) // 3)
+        rolling_corr = sp_ret.rolling(window).corr(tech_ret).dropna()
+        recent_corr  = float(rolling_corr.iloc[-1]) if len(rolling_corr) > 0 else full_corr
+        prev_corr    = float(rolling_corr.iloc[-window]) if len(rolling_corr) > window else full_corr
+        corr_trend   = ("rising" if recent_corr > prev_corr + 0.05
+                        else ("falling" if recent_corr < prev_corr - 0.05 else "stable"))
+
+        # ── Alpha / Divergence ──
+        sp_total   = float(sp500_norm.iloc[-1] - 100)
+        tech_total = float(tech_index.iloc[-1] - 100)
+        alpha      = round(tech_total - (beta * sp_total), 2)
+        divergence_score = round(tech_total - sp_total, 2)
+
+        # ── Regime ──
+        if   beta > 1.3 and divergence_score > 3:
+            regime, regime_color = "TECH LEADING", "#3b82f6"
+            regime_desc = "Tech amplifying S&P on 1h and pulling ahead. Risk-on, growth-favoured."
+        elif beta > 1.0 and abs(divergence_score) <= 5:
+            regime, regime_color = "ALIGNED (HIGH BETA)", "#10b981"
+            regime_desc = "Tech tracking S&P with expected 1h amplification. Normal risk-on."
+        elif abs(divergence_score) > 8:
+            regime, regime_color = "DIVERGING", "#ef4444"
+            regime_desc = "Tech and S&P diverging on 1h. Rotation or regime shift in progress."
+        elif beta < 0.7:
+            regime, regime_color = "TECH LAGGING", "#f59e0b"
+            regime_desc = "Tech underperforming S&P on 1h. Value rotation or rate pressure."
+        else:
+            regime, regime_color = "STABLE", "#6b7280"
+            regime_desc = "Normal 1h relationship between Tech and S&P."
+
+        # ── SECTOR SENTIMENT ──
+        sector_sentiment = compute_sector_sentiment(combined[tech_cols])
+
+        # ── PER-STOCK TRADE RECS ──
+        trade_recs = []
+        for sym in tech_cols:
+            sym_series = combined[sym].dropna()
+            if len(sym_series) < 10: continue
+            sym_norm   = (sym_series / sym_series.iloc[0]) * 100
+            sym_return = round(float(sym_norm.iloc[-1] - 100), 2)
+
+            sym_ret     = sym_series.pct_change().dropna()
+            sp_aligned  = sp_ret.loc[sp_ret.index.intersection(sym_ret.index)]
+            sym_aligned = sym_ret.loc[sym_ret.index.intersection(sp_ret.index)]
+            if len(sp_aligned) < 5 or len(sym_aligned) < 5: continue
+
+            cov_s    = np.cov(sym_aligned.values, sp_aligned.values)
+            sym_beta = float(cov_s[0, 1] / cov_s[1, 1]) if cov_s[1, 1] != 0 else 0.0
+            expected = round(sym_beta * sp_total, 2)
+            gap      = round(sym_return - expected, 2)
+            sym_corr = float(np.corrcoef(sym_aligned.values, sp_aligned.values)[0, 1])
+            alignment = round(max(0, min(100, (1 - min(abs(gap)/20, 1)) * max(sym_corr, 0) * 100)), 1)
+
+            rec = generate_trade_rec(sym, sector_sentiment, sym_return, expected,
+                                     gap, round(sym_corr, 3), alignment, round(sym_beta, 3))
+            rec.update({'stock_return': sym_return, 'expected_return': expected,
+                        'return_gap': gap, 'correlation': round(sym_corr, 3),
+                        'alignment_score': alignment, 'beta': round(sym_beta, 3),
+                        'index_weight': round(weights.get(sym, 0) * 100, 2)})
+            trade_recs.append(rec)
+
+        action_order = {'BUY': 0, 'HOLD': 1, 'WATCH': 2, 'TRIM': 3, 'SELL': 4, 'WAIT': 5}
+        trade_recs.sort(key=lambda r: action_order.get(r['action'], 99))
+
+        # ── Top contributors ──
+        top_contributors = sorted([
+            {'symbol': d['symbol'],
+             'weight': round(weights.get(d['symbol'], 0) * 100, 2),
+             'return': round(float((combined[d['symbol']].iloc[-1] - combined[d['symbol']].iloc[0]) / combined[d['symbol']].iloc[0] * 100), 2),
+             'contribution': round(weights.get(d['symbol'], 0) * float((combined[d['symbol']].iloc[-1] - combined[d['symbol']].iloc[0]) / combined[d['symbol']].iloc[0] * 100), 2)}
+            for d in tech_data if d['symbol'] in tech_cols
+        ], key=lambda x: abs(x['contribution']), reverse=True)[:7]
+
+        # ── Insights ──
+        insights = []
+        insights.append(f"📊 Tech sentiment: {sector_sentiment['label']} "
+                        f"(score {sector_sentiment['score']:.0f}/100, confidence: {sector_sentiment['confidence']}). "
+                        f"{sector_sentiment['description'].capitalize()}.")
+
+        if regime == "TECH LEADING":
+            insights.append("🚀 Tech in leadership on 1h — momentum strategies in top names favourable.")
+            if alpha > 2:
+                insights.append(f"⭐ Tech generating {alpha:.1f}% alpha on 1h — genuine outperformance.")
+        elif regime == "DIVERGING":
+            insights.append(("📈 Tech pulling ahead of S&P on 1h — growth rally or unsustainable divergence."
+                             if divergence_score > 0
+                             else "📉 Tech falling behind S&P on 1h — value rotation underway."))
+            insights.append("⚡ Large 1h divergences tend to compress. Monitor for mean-reversion.")
+        elif regime == "TECH LAGGING":
+            insights.append("⚠️ 1h Tech underperformance signals rate sensitivity or valuation pressure.")
+            insights.append("💡 Favour value, financials, energy on 1h.")
+
+        if   corr_trend == "falling": insights.append("📉 1h correlation declining — market internals weakening.")
+        elif corr_trend == "rising":  insights.append("📈 1h correlation increasing — market unifying.")
+
+        buys  = sum(1 for r in trade_recs if r['action'] == 'BUY')
+        sells = sum(1 for r in trade_recs if r['action'] == 'SELL')
+        if buys:  insights.append(f"💰 {buys} Tech stock(s) flagged BUY — lagging the bullish sector on 1h.")
+        if sells: insights.append(f"🚨 {sells} Tech stock(s) flagged SELL — tracking bearish weakness on 1h.")
+
+        # ── Timeseries ──
+        step = max(1, len(combined) // 200)
+        timeseries = [{'date': combined.index[i].strftime('%Y-%m-%d %H:%M'),
+                       'sp500':      round(float(sp500_norm.loc[combined.index[i]]), 2),
+                       'technology': round(float(tech_index.loc[combined.index[i]]), 2)}
+                      for i in range(0, len(combined), step)]
+
+        return JsonResponse({
+            'success': True, 'timeframe': '1h',
+            'regime': regime, 'regime_color': regime_color, 'regime_description': regime_desc,
+            'full_correlation': round(full_corr, 3), 'recent_correlation': round(recent_corr, 3),
+            'correlation_trend': corr_trend, 'beta': round(beta, 3), 'alpha': alpha,
+            'sp500_return': round(sp_total, 2), 'tech_return': round(tech_total, 2),
+            'divergence_score': divergence_score,
+            'sector_sentiment': sector_sentiment,
+            'trade_recommendations': trade_recs,
+            'timeseries': timeseries,
+            'top_contributors': top_contributors,
+            'insights': insights,
+            'tech_stocks_analyzed': len(tech_cols),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# TECHNOLOGY SUBSECTOR TAXONOMY
+# Maps every Technology stock to a granular subsector.
+# Used for intra-sector correlation analysis and peer comparison.
+# ============================================================
+
+TECH_SUBSECTOR_MAPPINGS = {
+    # ── SEMICONDUCTORS (Design & Manufacturing) ──
+    'NVDA': 'Semiconductors', 'AMD': 'Semiconductors', 'INTC': 'Semiconductors',
+    'QCOM': 'Semiconductors', 'TXN': 'Semiconductors', 'AVGO': 'Semiconductors',
+    'AMAT': 'Semiconductors', 'LRCX': 'Semiconductors', 'KLAC': 'Semiconductors',
+    'MU': 'Semiconductors', 'ADI': 'Semiconductors', 'NXPI': 'Semiconductors',
+    'MRVL': 'Semiconductors', 'MPWR': 'Semiconductors', 'SWKS': 'Semiconductors',
+    'QRVO': 'Semiconductors', 'ON': 'Semiconductors', 'MCHP': 'Semiconductors',
+    'MTSI': 'Semiconductors', 'SLAB': 'Semiconductors', 'XLNX': 'Semiconductors',
+    'TSM': 'Semiconductors', 'UMC': 'Semiconductors', 'ASML': 'Semiconductors',
+    'TER': 'Semiconductors', 'AAOI': 'Semiconductors',
+    
+    # ── CLOUD & INFRASTRUCTURE SOFTWARE ──
+    'MSFT': 'Cloud & Infrastructure', 'ORCL': 'Cloud & Infrastructure',
+    'CRM': 'Cloud & Infrastructure', 'NOW': 'Cloud & Infrastructure',
+    'SNOW': 'Cloud & Infrastructure', 'WDAY': 'Cloud & Infrastructure',
+    'TEAM': 'Cloud & Infrastructure', 'MDB': 'Cloud & Infrastructure',
+    'NTNX': 'Cloud & Infrastructure', 'NTAP': 'Cloud & Infrastructure',
+    'STX': 'Cloud & Infrastructure', 'WDC': 'Cloud & Infrastructure',
+    'NET': 'Cloud & Infrastructure', 'DDOG': 'Cloud & Infrastructure',
+    
+    # ── CYBERSECURITY ──
+    'PANW': 'Cybersecurity', 'CRWD': 'Cybersecurity', 'ZS': 'Cybersecurity',
+    'FTNT': 'Cybersecurity', 'OKTA': 'Cybersecurity', 'S': 'Cybersecurity',
+    'CYBR': 'Cybersecurity',
+    
+    # ── ENTERPRISE SOFTWARE & SaaS ──
+    'ADBE': 'Enterprise SaaS', 'INTU': 'Enterprise SaaS', 'ADSK': 'Enterprise SaaS',
+    'ANSS': 'Enterprise SaaS', 'CDNS': 'Enterprise SaaS', 'SNPS': 'Enterprise SaaS',
+    'PTC': 'Enterprise SaaS', 'TYL': 'Enterprise SaaS', 'ROP': 'Enterprise SaaS',
+    'PAYC': 'Enterprise SaaS', 'DOCU': 'Enterprise SaaS', 'ZM': 'Enterprise SaaS',
+    'VEEV': 'Enterprise SaaS',
+    
+    # ── NETWORKING & TELECOMMUNICATIONS EQUIPMENT ──
+    'CSCO': 'Networking', 'AKAM': 'Networking', 'ANET': 'Networking',
+    'MSI': 'Networking', 'KEYS': 'Networking', 'VRSN': 'Networking',
+    'ZBRA': 'Networking',
+    
+    # ── INTERNET & CONSUMER PLATFORMS ──
+    'GOOGL': 'Internet Platforms', 'GOOG': 'Internet Platforms',
+    'META': 'Internet Platforms', 'BABA': 'Internet Platforms',
+    'BIDU': 'Internet Platforms', 'SNAP': 'Internet Platforms',
+    'PINS': 'Internet Platforms', 'Z': 'Internet Platforms',
+    'ZG': 'Internet Platforms', 'ROKU': 'Internet Platforms',
+    'SPOT': 'Internet Platforms',
+    
+    # ── FINTECH & PAYMENTS ──
+    'SQ': 'Fintech', 'PYPL': 'Fintech', 'AFRM': 'Fintech',
+    'COIN': 'Fintech', 'HOOD': 'Fintech', 'SOFI': 'Fintech',
+    
+    # ── MOBILITY & RIDESHARE ──
+    'UBER': 'Mobility', 'LYFT': 'Mobility', 'DASH': 'Mobility',
+    
+    # ── SEMICONDUCTORS EQUIPMENT (separate from design/mfg) ──
+    # (Already covered under Semiconductors, but could split if needed)
+    
+    # ── IT SERVICES & CONSULTING ──
+    'IBM': 'IT Services', 'ACN': 'IT Services', 'ACLS': 'IT Services',
+    
+    # ── HARDWARE & DEVICES ──
+    'AAPL': 'Hardware & Devices', 'GRMN': 'Hardware & Devices',
+    'APH': 'Hardware & Devices', 'AVAV': 'Hardware & Devices',
+    
+    # ── DATA & ANALYTICS ──
+    'PLTR': 'Data & Analytics', 'TWLO': 'Data & Analytics',
+    
+    # ── SPACE & SATELLITE ──
+    'ASTS': 'Space & Satellite',
+    
+    # ── GAMING & METAVERSE ──
+    'RBLX': 'Gaming & Metaverse',
+    
+    # ── AUTOMATION & ROBOTICS ──
+    'SAP': 'Automation & ERP',
+}
+
+
+# ── SUBSECTOR METADATA ──
+# Characteristics of each subsector for contextual insights.
+
+SUBSECTOR_CHARACTERISTICS = {
+    'Semiconductors': {
+        'volatility': 'High',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['AI demand', 'datacenter buildouts', 'consumer electronics cycles', 'auto chip demand'],
+        'typical_beta_range': (1.2, 1.6),
+        'sentiment_indicators': ['Philadelphia Semiconductor Index', 'Taiwan Semi earnings', 'ASML bookings'],
+        'description': 'Capital-intensive, cyclical, levered to AI/datacenter mega-trends. High beta, sensitive to capex cycles.'
+    },
+    'Cloud & Infrastructure': {
+        'volatility': 'Medium',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['enterprise IT spend', 'cloud migration rates', 'subscription renewals', 'AI infra buildout'],
+        'typical_beta_range': (1.0, 1.3),
+        'sentiment_indicators': ['AWS/Azure revenue growth', 'enterprise software guidance', 'CIO surveys'],
+        'description': 'Recurring revenue models, sticky customers. Benefits from digital transformation and cloud adoption.'
+    },
+    'Cybersecurity': {
+        'volatility': 'Medium-High',
+        'cycle_sensitivity': 'Low',
+        'key_drivers': ['breach headlines', 'regulatory compliance mandates', 'zero-trust adoption', 'geopolitical tensions'],
+        'typical_beta_range': (1.1, 1.5),
+        'sentiment_indicators': ['breach frequency data', 'federal IT security budgets', 'insider threat trends'],
+        'description': 'Mission-critical, non-discretionary spend. Resilient to downturns, driven by threat landscape.'
+    },
+    'Enterprise SaaS': {
+        'volatility': 'Medium',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['SMB vs enterprise mix', 'seat expansion', 'pricing power', 'churn rates'],
+        'typical_beta_range': (1.0, 1.4),
+        'sentiment_indicators': ['RPO growth', 'net retention rates', 'free cash flow margins'],
+        'description': 'High gross margins, subscription-based. Sensitive to customer budget pressures in downturns.'
+    },
+    'Networking': {
+        'volatility': 'Medium',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['5G rollouts', 'enterprise network refresh cycles', 'datacenter interconnect demand'],
+        'typical_beta_range': (0.9, 1.2),
+        'description': 'Capex-driven, lumpy order patterns. Benefits from infrastructure upgrades and 5G.'
+    },
+    'Internet Platforms': {
+        'volatility': 'High',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['ad spend cycles', 'user growth metrics', 'regulatory risk', 'engagement trends'],
+        'typical_beta_range': (1.2, 1.7),
+        'sentiment_indicators': ['digital ad spend forecasts', 'DAU/MAU trends', 'ARPU growth'],
+        'description': 'Ad-revenue dependent (mostly), high regulatory scrutiny. Levered to consumer engagement and advertiser budgets.'
+    },
+    'Fintech': {
+        'volatility': 'Very High',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['transaction volumes', 'crypto market sentiment', 'interest rate environment', 'regulation'],
+        'typical_beta_range': (1.3, 2.0),
+        'sentiment_indicators': ['payment volumes', 'crypto prices', 'neobank account growth'],
+        'description': 'Disruptive models, high growth expectations. Extremely sensitive to rates, crypto, and consumer spending.'
+    },
+    'Mobility': {
+        'volatility': 'Very High',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['take rates', 'driver supply', 'autonomous vehicle progress', 'consumer discretionary spend'],
+        'typical_beta_range': (1.4, 2.0),
+        'description': 'Gig economy plays, thin margins. Sensitive to labor costs, fuel prices, consumer budgets.'
+    },
+    'IT Services': {
+        'volatility': 'Low',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['outsourcing trends', 'digital transformation budgets', 'consulting demand'],
+        'typical_beta_range': (0.8, 1.1),
+        'description': 'Steady, contract-based revenue. Lower beta, resilient to market swings.'
+    },
+    'Hardware & Devices': {
+        'volatility': 'Medium',
+        'cycle_sensitivity': 'High',
+        'key_drivers': ['iPhone cycles', 'wearables adoption', 'consumer upgrade cycles'],
+        'typical_beta_range': (1.0, 1.3),
+        'description': 'Consumer-driven, seasonal patterns. Apple dominates; others are niche or industrial.'
+    },
+    'Data & Analytics': {
+        'volatility': 'High',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['AI/ML adoption', 'data governance mandates', 'enterprise analytics spend'],
+        'typical_beta_range': (1.2, 1.6),
+        'description': 'High-growth, mission-critical. Benefits from AI tailwinds and data proliferation.'
+    },
+    'Space & Satellite': {
+        'volatility': 'Extreme',
+        'cycle_sensitivity': 'Low',
+        'key_drivers': ['constellation buildouts', 'government contracts', 'rural broadband mandates'],
+        'typical_beta_range': (1.5, 2.5),
+        'description': 'Speculative, early-stage. Extremely high risk/reward, driven by technological breakthroughs.'
+    },
+    'Gaming & Metaverse': {
+        'volatility': 'Very High',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['engagement metrics', 'monetization rates', 'metaverse hype cycles'],
+        'typical_beta_range': (1.3, 1.9),
+        'description': 'User engagement-driven, sensitive to content pipelines and platform dynamics.'
+    },
+    'Automation & ERP': {
+        'volatility': 'Low-Medium',
+        'cycle_sensitivity': 'Medium',
+        'key_drivers': ['enterprise modernization cycles', 'cloud ERP migrations'],
+        'typical_beta_range': (0.9, 1.2),
+        'description': 'Mission-critical backend systems. Sticky, long sales cycles, resilient revenue.'
+    },
+}
+
+
+# ── HELPER: Get subsector for a Technology stock ──
+def get_tech_subsector(symbol):
+    """Returns the subsector string for a Technology stock, or None if not found."""
+    return TECH_SUBSECTOR_MAPPINGS.get(symbol)
+
+
+def get_subsector_stocks(subsector):
+    """Returns a list of all stock symbols in a given subsector."""
+    return [sym for sym, sub in TECH_SUBSECTOR_MAPPINGS.items() if sub == subsector]
+
+
+def get_all_subsectors():
+    """Returns a sorted list of unique subsector names."""
+    return sorted(set(TECH_SUBSECTOR_MAPPINGS.values()))
+
+
+# ============================================================
+# NEW ENDPOINT 4: BULK — Technology Subsector Analysis (1h)
+#
+# Compares all Technology subsectors against each other:
+#   - Semiconductors vs Cloud vs Cybersecurity vs Fintech etc.
+#   - Per-subsector: sentiment, momentum, return, volatility
+#   - Relative strength ranking (which subsectors leading/lagging)
+#   - Cross-subsector correlation matrix
+#   - Sector rotation signals (money flowing into/out of subsectors)
+#   - Trade opportunities: which subsectors to overweight/underweight
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_tech_subsector_bulk_analyzer(request):
+    """
+    Bulk: Compare all Technology subsectors on 1h timeframe.
+    Returns per-subsector sentiment, momentum, returns, and rotation signals.
+    """
+    try:
+        
+        data = json.loads(request.body)
+        lookback_hours = data.get('lookback_hours', 720)
+        
+        subsectors = get_all_subsectors()
+        
+        # ── Fetch 1h data for all Tech stocks ──
+        subsector_series = {}  # { subsector: { symbol: Close Series } }
+        subsector_meta   = {}  # { subsector: [{ symbol, market_cap }, ...] }
+        
+        for subsector in subsectors:
+            stocks = get_subsector_stocks(subsector)
+            series_dict = {}
+            meta_list   = []
+            
+            for sym in stocks:
+                hist = fetch_1h(sym, lookback_hours)
+                if hist is None or len(hist) < 10:
+                    continue
+                series_dict[sym] = hist['Close']
+                try:
+                    info = yf.Ticker(sym).info
+                    mcap = info.get('marketCap') or (float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean()))
+                except Exception:
+                    mcap = float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean())
+                meta_list.append({'symbol': sym, 'market_cap': mcap or 0})
+            
+            if series_dict:
+                subsector_series[subsector] = series_dict
+                subsector_meta[subsector]   = meta_list
+        
+        if not subsector_series:
+            return JsonResponse({'success': False, 'error': 'No subsector data available'})
+        
+        # ── Build market-cap-weighted index for each subsector ──
+        subsector_indices = {}   # { subsector: normalised Series (base 100) }
+        subsector_returns = {}   # { subsector: return Series }
+        subsector_sentiments = {}
+        
+        for subsector, series_dict in subsector_series.items():
+            df = pd.DataFrame(series_dict).dropna()
+            if len(df) < 10:
+                continue
+            
+            # Market-cap weight
+            total_mcap = sum(m['market_cap'] for m in subsector_meta[subsector] if m['symbol'] in df.columns) or 1
+            norm = df.div(df.iloc[0]) * 100
+            weights = {m['symbol']: m['market_cap'] / total_mcap
+                       for m in subsector_meta[subsector] if m['symbol'] in norm.columns}
+            index = norm.multiply(pd.Series(weights)).sum(axis=1)
+            subsector_indices[subsector] = index
+            subsector_returns[subsector] = index.pct_change().dropna()
+            
+            # Sentiment
+            subsector_sentiments[subsector] = compute_sector_sentiment(df)
+        
+        # ── Align all subsector indices to common timestamps ──
+        # Find intersection of all indices
+        common_idx = None
+        for idx in subsector_indices.values():
+            if common_idx is None:
+                common_idx = idx.index
+            else:
+                common_idx = common_idx.intersection(idx.index)
+        
+        if len(common_idx) < 10:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping 1h bars across subsectors'})
+        
+        # Realign
+        for subsector in subsector_indices:
+            subsector_indices[subsector] = subsector_indices[subsector].loc[common_idx]
+            subsector_returns[subsector] = subsector_returns[subsector].loc[
+                subsector_returns[subsector].index.intersection(common_idx)
+            ]
+        
+        # ── Per-Subsector Metrics ──
+        subsector_stats = []
+        for subsector in sorted(subsector_indices.keys()):
+            idx = subsector_indices[subsector]
+            ret = subsector_returns[subsector]
+            sent = subsector_sentiments[subsector]
+            char = SUBSECTOR_CHARACTERISTICS.get(subsector, {})
+            
+            total_return = float(idx.iloc[-1] - 100)
+            volatility   = float(ret.std() * np.sqrt(252 * 6.5)) * 100  # annualised from 1h
+            sharpe_proxy = (total_return / volatility) if volatility > 0 else 0
+            
+            # Momentum score: 20-bar vs 50-bar EMA slope
+            ema20 = idx.ewm(span=20, adjust=False).mean()
+            ema50 = idx.ewm(span=50, adjust=False).mean()
+            if len(ema50) >= 50:
+                momentum_score = round(float((ema20.iloc[-1] - ema50.iloc[-1]) / ema50.iloc[-1] * 100), 2)
+            else:
+                momentum_score = 0.0
+            
+            # Relative strength vs median
+            subsector_stats.append({
+                'subsector': subsector,
+                'return': round(total_return, 2),
+                'volatility': round(volatility, 2),
+                'sharpe': round(sharpe_proxy, 2),
+                'momentum_score': momentum_score,
+                'sentiment_label': sent['label'],
+                'sentiment_score': sent['score'],
+                'sentiment_confidence': sent['confidence'],
+                'stocks_count': len(subsector_series[subsector]),
+                'characteristics': char.get('description', ''),
+                'key_drivers': char.get('key_drivers', []),
+                'typical_beta': char.get('typical_beta_range', (1.0, 1.0))
+            })
+        
+        # ── Rank subsectors by return ──
+        subsector_stats.sort(key=lambda x: x['return'], reverse=True)
+        
+        # Assign rank and relative strength
+        median_return = np.median([s['return'] for s in subsector_stats])
+        for i, s in enumerate(subsector_stats):
+            s['rank'] = i + 1
+            s['relative_strength'] = "LEADING" if s['return'] > median_return + 2 else \
+                                     ("LAGGING" if s['return'] < median_return - 2 else "NEUTRAL")
+        
+        # ── Rotation Signals ──
+        # Identify subsectors with momentum divergence from sentiment
+        rotation_signals = []
+        for s in subsector_stats:
+            if s['sentiment_label'] == 'BULLISH' and s['momentum_score'] < -1:
+                rotation_signals.append({
+                    'subsector': s['subsector'],
+                    'signal': 'ROLLING OVER',
+                    'description': f"{s['subsector']} sentiment is bullish but momentum is fading — potential rotation OUT."
+                })
+            elif s['sentiment_label'] == 'BEARISH' and s['momentum_score'] > 1:
+                rotation_signals.append({
+                    'subsector': s['subsector'],
+                    'signal': 'BOTTOMING',
+                    'description': f"{s['subsector']} sentiment is bearish but momentum is turning — potential rotation IN."
+                })
+            elif s['sentiment_label'] == 'BULLISH' and s['momentum_score'] > 2:
+                rotation_signals.append({
+                    'subsector': s['subsector'],
+                    'signal': 'ACCELERATING',
+                    'description': f"{s['subsector']} is bullish with strong momentum — continue overweighting."
+                })
+        
+        # ── Cross-Subsector Correlation Matrix (optional, compute top pairs) ──
+        # For brevity, we compute correlation between top 5 and bottom 5 subsectors
+        top5 = [s['subsector'] for s in subsector_stats[:5]]
+        bot5 = [s['subsector'] for s in subsector_stats[-5:]]
+        corr_pairs = []
+        for sub1 in top5:
+            for sub2 in bot5:
+                ret1 = subsector_returns[sub1]
+                ret2 = subsector_returns[sub2]
+                common = ret1.index.intersection(ret2.index)
+                if len(common) < 10:
+                    continue
+                c = float(np.corrcoef(ret1.loc[common].values, ret2.loc[common].values)[0, 1])
+                corr_pairs.append({
+                    'subsector1': sub1,
+                    'subsector2': sub2,
+                    'correlation': round(c, 3)
+                })
+        corr_pairs.sort(key=lambda x: abs(x['correlation']), reverse=True)
+        
+        # ── Trade Recommendations (subsector level) ──
+        # Overweight: BULLISH + LEADING
+        # Underweight: BEARISH + LAGGING
+        # Neutral: everything else
+        trade_recs = []
+        for s in subsector_stats:
+            if s['sentiment_label'] == 'BULLISH' and s['relative_strength'] == 'LEADING':
+                action = 'OVERWEIGHT'
+                color  = '#10b981'
+                rationale = f"{s['subsector']} is bullish with {s['return']:+.1f}% return, leading the pack. Momentum score {s['momentum_score']:+.1f}% confirms strength."
+            elif s['sentiment_label'] == 'BEARISH' and s['relative_strength'] == 'LAGGING':
+                action = 'UNDERWEIGHT'
+                color  = '#ef4444'
+                rationale = f"{s['subsector']} is bearish with {s['return']:+.1f}% return, lagging peers. Avoid or trim exposure."
+            elif s['sentiment_label'] == 'BULLISH' and s['relative_strength'] == 'LAGGING':
+                action = 'WATCH'
+                color  = '#f59e0b'
+                rationale = f"{s['subsector']} sentiment is bullish but lagging on returns — catch-up opportunity or warning sign."
+            elif s['sentiment_label'] == 'BEARISH' and s['relative_strength'] == 'LEADING':
+                action = 'WATCH'
+                color  = '#f59e0b'
+                rationale = f"{s['subsector']} is leading despite bearish sentiment — resilience or about to roll over."
+            else:
+                action = 'NEUTRAL'
+                color  = '#6b7280'
+                rationale = f"{s['subsector']} is in neutral territory. No strong signal to overweight or underweight."
+            
+            trade_recs.append({
+                'subsector': s['subsector'],
+                'action': action,
+                'action_color': color,
+                'rationale': rationale,
+                'return': s['return'],
+                'momentum': s['momentum_score'],
+                'sentiment': s['sentiment_label']
+            })
+        
+        # ── Insights ──
+        insights = []
+        top = subsector_stats[0]
+        bottom = subsector_stats[-1]
+        insights.append(f"🏆 Leading subsector: {top['subsector']} ({top['return']:+.1f}% on 1h, sentiment: {top['sentiment_label']}).")
+        insights.append(f"📉 Lagging subsector: {bottom['subsector']} ({bottom['return']:+.1f}% on 1h, sentiment: {bottom['sentiment_label']}).")
+        
+        bullish_count = sum(1 for s in subsector_stats if s['sentiment_label'] == 'BULLISH')
+        bearish_count = sum(1 for s in subsector_stats if s['sentiment_label'] == 'BEARISH')
+        insights.append(f"📊 Breadth: {bullish_count} subsectors bullish, {bearish_count} bearish out of {len(subsector_stats)} total.")
+        
+        if rotation_signals:
+            insights.append(f"🔄 {len(rotation_signals)} rotation signal(s) detected — check rotation_signals for details.")
+        
+        # ── Timeseries (top 3 subsectors for chart) ──
+        top3 = [s['subsector'] for s in subsector_stats[:3]]
+        step = max(1, len(common_idx) // 200)
+        timeseries = []
+        for i in range(0, len(common_idx), step):
+            date = common_idx[i]
+            point = {'date': date.strftime('%Y-%m-%d %H:%M')}
+            for sub in top3:
+                point[sub] = round(float(subsector_indices[sub].loc[date]), 2)
+            timeseries.append(point)
+        
+        return JsonResponse({
+            'success': True,
+            'timeframe': '1h',
+            'subsector_stats': subsector_stats,
+            'trade_recommendations': trade_recs,
+            'rotation_signals': rotation_signals,
+            'correlation_pairs': corr_pairs[:10],  # top 10
+            'timeseries': timeseries,
+            'top3_subsectors': top3,
+            'insights': insights,
+            'total_subsectors': len(subsector_stats),
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# NEW ENDPOINT 5: PER-STOCK — Individual Tech Stock vs
+#                              Its Subsector Peers (1h)
+#
+# For a single Technology stock (e.g. NVDA):
+#   - Identifies its subsector (e.g. Semiconductors)
+#   - Builds a peer index (all other stocks in that subsector)
+#   - Calculates expected vs actual return (beta-based)
+#   - Flags if stock is outperforming/underperforming its peers
+#   - Generates trade rec based on peer alignment + subsector sentiment
+#   - Shows which specific peers are leading/lagging
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_tech_stock_subsector_alignment(request):
+    """
+    Per-stock: How is this Tech stock performing vs its subsector peers on 1h?
+    Returns alignment score, peer comparison, subsector sentiment, trade rec.
+    """
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        lookback_hours = data.get('lookback_hours', 720)
+        
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'})
+        
+        # Verify it's a Technology stock
+        sector = SECTOR_MAPPINGS.get(symbol)
+        if sector != 'Technology':
+            return JsonResponse({'success': False, 'error': f'{symbol} is not a Technology stock (sector: {sector})'})
+        
+        subsector = get_tech_subsector(symbol)
+        if not subsector:
+            return JsonResponse({'success': False, 'error': f'{symbol} subsector mapping not found'})
+        
+        # ── Fetch the stock (1h) ──
+        stock_hist = fetch_1h(symbol, lookback_hours)
+        if stock_hist is None or len(stock_hist) < 10:
+            return JsonResponse({'success': False, 'error': f'No 1h data for {symbol}'})
+        stock_close = stock_hist['Close']
+        
+        # ── Fetch all peers in the same subsector (excluding this stock) ──
+        peers = [s for s in get_subsector_stocks(subsector) if s != symbol]
+        peer_series = {}
+        peer_meta   = []
+        for peer in peers:
+            hist = fetch_1h(peer, lookback_hours)
+            if hist is None or len(hist) < 10:
+                continue
+            peer_series[peer] = hist['Close']
+            try:
+                info = yf.Ticker(peer).info
+                mcap = info.get('marketCap') or (float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean()))
+            except Exception:
+                mcap = float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean())
+            peer_meta.append({'symbol': peer, 'market_cap': mcap or 0})
+        
+        if not peer_series:
+            return JsonResponse({'success': False, 'error': f'No peer data available for {subsector}'})
+        
+        # ── Build peer index (market-cap weighted, excluding target stock) ──
+        peer_df = pd.DataFrame(peer_series)
+        all_series = peer_df.copy()
+        all_series[symbol] = stock_close
+        all_series = all_series.dropna()
+        
+        if len(all_series) < 10:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping 1h bars'})
+        
+        # Peer index (without target stock)
+        total_mcap = sum(m['market_cap'] for m in peer_meta if m['symbol'] in peer_df.columns) or 1
+        peer_norm  = peer_df.loc[all_series.index].div(peer_df.loc[all_series.index].iloc[0]) * 100
+        weights    = {m['symbol']: m['market_cap'] / total_mcap
+                      for m in peer_meta if m['symbol'] in peer_norm.columns}
+        peer_index = peer_norm.multiply(pd.Series(weights)).sum(axis=1)
+        
+        # Stock normalised
+        stock_norm = (all_series[symbol] / all_series[symbol].iloc[0]) * 100
+        
+        # ── Returns ──
+        peer_ret  = peer_index.pct_change().dropna()
+        stock_ret = stock_norm.pct_change().dropna()
+        common    = peer_ret.index.intersection(stock_ret.index)
+        peer_ret, stock_ret = peer_ret.loc[common], stock_ret.loc[common]
+        
+        correlation = float(np.corrcoef(peer_ret.values, stock_ret.values)[0, 1])
+        
+        cov_m = np.cov(stock_ret.values, peer_ret.values)
+        beta  = float(cov_m[0, 1] / cov_m[1, 1]) if cov_m[1, 1] != 0 else 0.0
+        
+        # ── Expected vs Actual ──
+        peer_total_return  = float(peer_index.iloc[-1] - 100)
+        stock_total_return = float(stock_norm.iloc[-1] - 100)
+        expected_return    = round(beta * peer_total_return, 2)
+        actual_return      = round(stock_total_return, 2)
+        return_gap         = round(actual_return - expected_return, 2)
+        
+        # ── Alignment score ──
+        alignment = round(max(0, min(100, (1 - min(abs(return_gap)/20, 1)) * max(correlation, 0) * 100)), 1)
+        
+        # ── Signal ──
+        if   return_gap >  3: signal, signal_color = "OUTPERFORMING PEERS", "#10b981"
+        elif return_gap < -3: signal, signal_color = "UNDERPERFORMING PEERS", "#ef4444"
+        else:                 signal, signal_color = "ALIGNED WITH PEERS", "#10b981"
+        
+        signal_desc = (f"{symbol} gained {return_gap:.1f}% more than its {subsector} peers on 1h."  if return_gap > 3
+                  else f"{symbol} lagged its {subsector} peers by {abs(return_gap):.1f}% on 1h."     if return_gap < -3
+                  else f"{symbol} is tracking its {subsector} peers as expected on 1h.")
+        
+        # ── Subsector Sentiment ──
+        # Use the peer basket to compute subsector sentiment
+        subsector_sentiment = compute_sector_sentiment(peer_df.loc[all_series.index])
+        
+        # ── Per-Peer Comparison (top 5 peers by market cap) ──
+        peer_meta.sort(key=lambda x: x['market_cap'], reverse=True)
+        top_peers = []
+        for m in peer_meta[:5]:
+            p_sym = m['symbol']
+            if p_sym not in all_series.columns:
+                continue
+            p_norm = (all_series[p_sym] / all_series[p_sym].iloc[0]) * 100
+            p_ret  = float(p_norm.iloc[-1] - 100)
+            top_peers.append({
+                'symbol': p_sym,
+                'return': round(p_ret, 2),
+                'vs_target': round(p_ret - stock_total_return, 2)
+            })
+        
+        # ── Trade Recommendation (peer-relative) ──
+        # Use subsector sentiment + peer alignment
+        trade_rec = generate_trade_rec(
+            symbol=symbol,
+            sector_sentiment=subsector_sentiment,
+            stock_return=actual_return,
+            expected_return=expected_return,
+            return_gap=return_gap,
+            correlation=round(correlation, 3),
+            alignment_score=alignment,
+            beta=round(beta, 3)
+        )
+        
+        # Add subsector-specific context
+        char = SUBSECTOR_CHARACTERISTICS.get(subsector, {})
+        trade_rec['subsector'] = subsector
+        trade_rec['subsector_description'] = char.get('description', '')
+        trade_rec['key_drivers'] = char.get('key_drivers', [])
+        
+        # ── Implications ──
+        implications = [
+            f"🎯 Recommendation: {trade_rec['action']} — {trade_rec['rationale']}",
+            f"📍 Entry: {trade_rec['entry']}",
+            f"⚖️ Risk/Reward: {trade_rec['risk_reward']}",
+            f"🔍 Subsector: {subsector} ({char.get('description', 'N/A')})"
+        ]
+        
+        # ── Timeseries ──
+        step = max(1, len(all_series) // 200)
+        timeseries = []
+        for i in range(0, len(all_series), step):
+            date = all_series.index[i]
+            timeseries.append({
+                'date': date.strftime('%Y-%m-%d %H:%M'),
+                'peer_index': round(float(peer_index.loc[date]), 2),
+                'stock':      round(float(stock_norm.loc[date]), 2)
+            })
+        
+        # ── Insights ──
+        insights = []
+        insights.append(f"📊 {symbol} is in the {subsector} subsector with {len(peer_series)} peers.")
+        insights.append(f"🎭 Subsector sentiment: {subsector_sentiment['label']} (score {subsector_sentiment['score']}/100, confidence {subsector_sentiment['confidence']}).")
+        if return_gap > 0:
+            insights.append(f"🚀 {symbol} is outperforming peers by {return_gap:.1f}% — check for stock-specific catalysts.")
+        elif return_gap < 0:
+            insights.append(f"⚠️ {symbol} is underperforming peers by {abs(return_gap):.1f}% — investigate headwinds or lagging fundamentals.")
+        else:
+            insights.append(f"✅ {symbol} is moving in line with {subsector} peers — no divergence detected.")
+        
+        if top_peers:
+            best_peer = max(top_peers, key=lambda x: x['return'])
+            insights.append(f"🏆 Best peer: {best_peer['symbol']} ({best_peer['return']:+.1f}%).")
+        
+        return JsonResponse({
+            'success': True,
+            'timeframe': '1h',
+            'symbol': symbol,
+            'subsector': subsector,
+            'alignment_score': alignment,
+            'correlation': round(correlation, 3),
+            'beta': round(beta, 3),
+            'expected_return': expected_return,
+            'actual_return': actual_return,
+            'return_gap': return_gap,
+            'signal': signal,
+            'signal_color': signal_color,
+            'signal_description': signal_desc,
+            'subsector_sentiment': subsector_sentiment,
+            'trade_recommendation': trade_rec,
+            'top_peers': top_peers,
+            'peer_index_return': round(peer_total_return, 2),
+            'implications': implications,
+            'timeseries': timeseries,
+            'insights': insights,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+
+
+
+# ============================================================
+# NEW ENDPOINT 6: PER-ASSET — Institutional vs Retail
+#                              Influence Analysis (1h)
+#
+# Uses 6 observable market microstructure signals to infer
+# whether recent price action is driven by institutional or
+# retail participants:
+#
+#   1. Volume Profile (sustained vs spike)
+#   2. Order Flow Imbalance (price-volume correlation)
+#   3. Volatility Signature (efficiency ratio)
+#   4. Time-of-Day Weighting (institutional hours)
+#   5. Tape Speed (volume autocorrelation)
+#   6. Dark Pool Proxy (block trade detection)
+#
+# Returns:
+#   - Institutional Score (0-100)
+#   - Retail Score (0-100)
+#   - Confidence Level (High/Medium/Low)
+#   - Per-signal breakdown
+#   - Interpretation & trading implications
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_institutional_vs_retail_analyzer(request):
+    """
+    Infers institutional vs retail influence on recent price action.
+    Uses 1h OHLCV data to compute 6 microstructure signals.
+    """
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        lookback_hours = data.get('lookback_hours', 720)  # ~30 trading days
+        
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'})
+        
+        # ── Fetch 1h data ──
+        hist = fetch_1h(symbol, lookback_hours)
+        if hist is None or len(hist) < 50:
+            return JsonResponse({'success': False, 'error': f'Insufficient 1h data for {symbol}'})
+        
+        # We need OHLCV
+        if not all(col in hist.columns for col in ['Open', 'High', 'Low', 'Close', 'Volume']):
+            return JsonResponse({'success': False, 'error': 'Missing OHLCV columns'})
+        
+        df = hist[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+        df = df.dropna()
+        
+        if len(df) < 50:
+            return JsonResponse({'success': False, 'error': 'Insufficient clean bars'})
+        
+        # ── Analysis window: last 20 bars (recent ~3 trading days on 1h) ──
+        analysis_window = 20
+        recent_df = df.tail(analysis_window).copy()
+        
+        # For some signals we need historical context (full dataset)
+        
+        # ══════════════════════════════════════════════════════════
+        # SIGNAL 1: Volume Profile Analysis
+        # Institutions → sustained volume above average
+        # Retail → spiky volume (unsustainable bursts)
+        # ══════════════════════════════════════════════════════════
+        
+        vol_20d_avg = df['Volume'].tail(100).mean()  # 20-day average (approx 100 1h bars)
+        recent_avg_vol = recent_df['Volume'].mean()
+        
+        # Volume sustainability score
+        vol_bars_above_avg = (recent_df['Volume'] > vol_20d_avg).sum()
+        vol_sustainability = vol_bars_above_avg / len(recent_df)  # 0-1
+        
+        # High sustainability → institutional (sustained flow)
+        # Low sustainability with spikes → retail (FOMO/panic)
+        vol_coefficient_of_variation = recent_df['Volume'].std() / recent_df['Volume'].mean() if recent_df['Volume'].mean() > 0 else 0
+        
+        # Institutional: high sustainability, low CV (consistent volume)
+        # Retail: low sustainability, high CV (spiky volume)
+        vol_institutional_score = (vol_sustainability * 0.7 + (1 - min(vol_coefficient_of_variation, 1.0)) * 0.3) * 100
+        vol_institutional_score = max(0, min(100, vol_institutional_score))
+        
+        # ══════════════════════════════════════════════════════════
+        # SIGNAL 2: Order Flow Imbalance (Volume-Price Correlation)
+        # Price up on high volume → institutional accumulation
+        # Price up on low volume → retail buying (weak hands)
+        # ══════════════════════════════════════════════════════════
+        
+        recent_df['price_change'] = recent_df['Close'].pct_change()
+        recent_df['vol_norm'] = (recent_df['Volume'] - recent_df['Volume'].mean()) / recent_df['Volume'].std() if recent_df['Volume'].std() > 0 else 0
+        
+        # Correlation between price change and normalized volume
+        price_vol_corr = recent_df[['price_change', 'vol_norm']].corr().iloc[0, 1]
+        if np.isnan(price_vol_corr):
+            price_vol_corr = 0
+        
+        # Positive correlation → institutional (volume confirms direction)
+        # Negative correlation → retail (buying tops, selling bottoms)
+        order_flow_institutional_score = max(0, min(100, (price_vol_corr + 1) / 2 * 100))
+        
+        # ══════════════════════════════════════════════════════════
+        # SIGNAL 3: Volatility Signature (Efficiency Ratio)
+        # Institutions → smooth directional moves (high efficiency)
+        # Retail → choppy, wide ranges (low efficiency)
+        # ══════════════════════════════════════════════════════════
+        
+        recent_df['range'] = recent_df['High'] - recent_df['Low']
+        recent_df['net_move'] = abs(recent_df['Close'] - recent_df['Open'])
+        
+        # Efficiency Ratio = net directional movement / total range
+        # High = smooth (institutional), Low = choppy (retail)
+        recent_df['efficiency'] = recent_df['net_move'] / recent_df['range']
+        recent_df['efficiency'] = recent_df['efficiency'].replace([np.inf, -np.inf], np.nan).fillna(0)
+        
+        avg_efficiency = recent_df['efficiency'].mean()
+        efficiency_institutional_score = avg_efficiency * 100
+        efficiency_institutional_score = max(0, min(100, efficiency_institutional_score))
+        
+        # ══════════════════════════════════════════════════════════
+        # SIGNAL 4: Time-of-Day Weighting
+        # Institutions trade during market hours (9:30am-4pm ET)
+        # Retail more uniform, or concentrated during news spikes
+        # ══════════════════════════════════════════════════════════
+        
+        # Extract hour in ET (assuming data is already in ET or we convert)
+        # For simplicity, we'll check if the index is timezone-aware
+        try:
+            if recent_df.index.tz is None:
+                # Assume UTC, convert to ET
+                recent_df.index = recent_df.index.tz_localize('UTC').tz_convert('America/New_York')
+            elif str(recent_df.index.tz) != 'America/New_York':
+                recent_df.index = recent_df.index.tz_convert('America/New_York')
+            
+            recent_df['hour'] = recent_df.index.hour
+            
+            # Institutional hours: 9-16 (9am-4pm ET)
+            # Peak hours: 9-11 (open), 15-16 (close)
+            def institutional_hour_weight(hour):
+                if 9 <= hour <= 11 or 15 <= hour <= 16:
+                    return 1.0  # peak institutional
+                elif 11 < hour < 15:
+                    return 0.7  # midday (still institutional but less)
+                else:
+                    return 0.2  # pre/post market (mostly retail/international)
+            
+            recent_df['inst_hour_weight'] = recent_df['hour'].apply(institutional_hour_weight)
+            
+            # Volume-weighted average of institutional hour weights
+            tod_institutional_score = (recent_df['Volume'] * recent_df['inst_hour_weight']).sum() / recent_df['Volume'].sum() * 100 if recent_df['Volume'].sum() > 0 else 50
+            tod_institutional_score = max(0, min(100, tod_institutional_score))
+        except Exception:
+            # If timezone handling fails, default to neutral
+            tod_institutional_score = 50
+        
+        # ══════════════════════════════════════════════════════════
+        # SIGNAL 5: Tape Speed (Volume Autocorrelation)
+        # Institutions → sustained activity (positive autocorrelation)
+        # Retail → mean-reverting bursts (negative autocorrelation)
+        # ══════════════════════════════════════════════════════════
+        
+        # Lag-1 autocorrelation of volume
+        vol_series = recent_df['Volume']
+        if len(vol_series) > 2:
+            vol_lag1 = vol_series.autocorr(lag=1)
+            if np.isnan(vol_lag1):
+                vol_lag1 = 0
+        else:
+            vol_lag1 = 0
+        
+        # Positive autocorr → institutional (sustained)
+        # Negative autocorr → retail (spike then fade)
+        tape_speed_institutional_score = max(0, min(100, (vol_lag1 + 1) / 2 * 100))
+        
+        # ══════════════════════════════════════════════════════════
+        # SIGNAL 6: Dark Pool Proxy (Block Trade Detection)
+        # Large net moves with tight ranges → off-exchange blocks
+        # ══════════════════════════════════════════════════════════
+        
+        # Flag bars where abs(close - open) / (high - low) > 0.7
+        recent_df['block_candidate'] = (recent_df['net_move'] / recent_df['range']) > 0.7
+        recent_df['block_candidate'] = recent_df['block_candidate'].fillna(False)
+        
+        block_bar_count = recent_df['block_candidate'].sum()
+        block_ratio = block_bar_count / len(recent_df)
+        
+        # More block candidates → more institutional
+        dark_pool_institutional_score = block_ratio * 100
+        dark_pool_institutional_score = max(0, min(100, dark_pool_institutional_score))
+        
+        # ══════════════════════════════════════════════════════════
+        # COMPOSITE SCORING
+        # Weight each signal (some are stronger predictors)
+        # ══════════════════════════════════════════════════════════
+        
+        weights = {
+            'volume_profile': 0.20,
+            'order_flow': 0.25,      # strong signal
+            'efficiency': 0.20,
+            'time_of_day': 0.10,     # weaker (not all assets trade 9-4 ET)
+            'tape_speed': 0.15,
+            'dark_pool': 0.10
+        }
+        
+        institutional_score = (
+            vol_institutional_score * weights['volume_profile'] +
+            order_flow_institutional_score * weights['order_flow'] +
+            efficiency_institutional_score * weights['efficiency'] +
+            tod_institutional_score * weights['time_of_day'] +
+            tape_speed_institutional_score * weights['tape_speed'] +
+            dark_pool_institutional_score * weights['dark_pool']
+        )
+        institutional_score = round(institutional_score, 1)
+        
+        retail_score = round(100 - institutional_score, 1)
+        
+        # ══════════════════════════════════════════════════════════
+        # CONFIDENCE LEVEL
+        # High confidence: signals agree (std dev of scores is low)
+        # Low confidence: signals conflict (high std dev)
+        # ══════════════════════════════════════════════════════════
+        
+        signal_scores = [
+            vol_institutional_score,
+            order_flow_institutional_score,
+            efficiency_institutional_score,
+            tod_institutional_score,
+            tape_speed_institutional_score,
+            dark_pool_institutional_score
+        ]
+        
+        score_std = np.std(signal_scores)
+        
+        if score_std < 15:
+            confidence = 'High'
+            confidence_color = '#10b981'
+        elif score_std < 30:
+            confidence = 'Medium'
+            confidence_color = '#f59e0b'
+        else:
+            confidence = 'Low'
+            confidence_color = '#ef4444'
+        
+        # ══════════════════════════════════════════════════════════
+        # INTERPRETATION
+        # ══════════════════════════════════════════════════════════
+        
+        if institutional_score >= 70:
+            interpretation = f"Current price action for {symbol} is **{institutional_score:.0f}% likely driven by institutions**. "
+            interpretation += "Sustained volume, efficient execution, and block trade signatures detected. "
+            interpretation += "**High reliability** — institutional moves tend to be directional and persistent."
+            reliability = "HIGH"
+            reliability_color = "#10b981"
+        elif institutional_score >= 50:
+            interpretation = f"Price action for {symbol} shows **mixed participation** ({institutional_score:.0f}% institutional). "
+            interpretation += "Some institutional flow present, but retail activity is also significant. "
+            interpretation += "**Moderate reliability** — monitor for follow-through."
+            reliability = "MODERATE"
+            reliability_color = "#f59e0b"
+        else:
+            interpretation = f"Current price action for {symbol} is **{retail_score:.0f}% likely driven by retail traders**. "
+            interpretation += "Spiky volume, choppy execution, and low institutional signatures. "
+            interpretation += "**Low reliability** — retail-driven moves often reverse quickly."
+            reliability = "LOW"
+            reliability_color = "#ef4444"
+        
+        # ══════════════════════════════════════════════════════════
+        # TRADING IMPLICATIONS
+        # ══════════════════════════════════════════════════════════
+        
+        implications = []
+        
+        if institutional_score >= 70 and confidence == 'High':
+            implications.append("✅ **High-conviction setup** — institutions are present. If trend aligns with MSS, this is a strong signal.")
+            implications.append("💡 Consider larger position size or holding through minor pullbacks.")
+        elif institutional_score >= 70 and confidence != 'High':
+            implications.append("⚠️ Institutional score is high, but signals conflict. Wait for confirmation before committing.")
+        elif retail_score >= 70 and confidence == 'High':
+            implications.append("🚨 **Retail-driven move** — high risk of reversal. Avoid chasing or use tight stops.")
+            implications.append("💡 Consider fading the move if it extends too far from value.")
+        elif retail_score >= 70 and confidence != 'High':
+            implications.append("⚠️ Likely retail-driven, but signals are mixed. Stay cautious.")
+        else:
+            implications.append("📊 Mixed participation. Look for additional confirmation (MSS, sector sentiment, peer alignment) before trading.")
+        
+        # Flag specific signals that are firing strong
+        if order_flow_institutional_score >= 75:
+            implications.append("🔥 Strong order flow imbalance detected — volume is confirming price direction.")
+        if dark_pool_institutional_score >= 60:
+            implications.append("🏢 Block trade signatures detected — likely large institutional prints.")
+        if efficiency_institutional_score >= 80:
+            implications.append("📈 Highly efficient price action — smooth directional move, minimal noise.")
+        if vol_institutional_score <= 30:
+            implications.append("⚡ Volume is spiky and unsustainable — characteristic of retail FOMO/panic.")
+        
+        # ══════════════════════════════════════════════════════════
+        # SIGNAL BREAKDOWN (for transparency)
+        # ══════════════════════════════════════════════════════════
+        
+        signal_breakdown = {
+            'volume_profile': {
+                'score': round(vol_institutional_score, 1),
+                'interpretation': 'Sustained volume' if vol_institutional_score >= 60 else 'Spiky volume',
+                'weight': weights['volume_profile']
+            },
+            'order_flow': {
+                'score': round(order_flow_institutional_score, 1),
+                'interpretation': 'Volume confirms direction' if order_flow_institutional_score >= 60 else 'Volume conflicts with direction',
+                'weight': weights['order_flow']
+            },
+            'efficiency': {
+                'score': round(efficiency_institutional_score, 1),
+                'interpretation': 'Smooth execution' if efficiency_institutional_score >= 60 else 'Choppy price action',
+                'weight': weights['efficiency']
+            },
+            'time_of_day': {
+                'score': round(tod_institutional_score, 1),
+                'interpretation': 'Active during institutional hours' if tod_institutional_score >= 60 else 'Off-hours activity',
+                'weight': weights['time_of_day']
+            },
+            'tape_speed': {
+                'score': round(tape_speed_institutional_score, 1),
+                'interpretation': 'Sustained activity' if tape_speed_institutional_score >= 60 else 'Burst activity',
+                'weight': weights['tape_speed']
+            },
+            'dark_pool': {
+                'score': round(dark_pool_institutional_score, 1),
+                'interpretation': f'{block_bar_count} block trade candidate(s) detected' if block_bar_count > 0 else 'No block signatures',
+                'weight': weights['dark_pool']
+            }
+        }
+        
+        # ══════════════════════════════════════════════════════════
+        # HISTORICAL CONTEXT (last 5 days for comparison)
+        # ══════════════════════════════════════════════════════════
+        
+        # Compute institutional score for previous 20-bar window
+        if len(df) >= 40:
+            prev_window = df.tail(40).head(20)
+            # Quick institutional score for comparison (simplified)
+            prev_vol_avg = prev_window['Volume'].mean()
+            prev_inst_score_approx = 50  # placeholder — full calc would repeat all signals
+            # For simplicity, just flag if current is higher or lower
+            inst_score_trend = "INCREASING" if institutional_score > 50 else "DECREASING"
+        else:
+            inst_score_trend = "INSUFFICIENT DATA"
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'timeframe': '1h',
+            'analysis_period': f'Last {analysis_window} bars (~{analysis_window / 6.5:.1f} trading days)',
+            'institutional_score': institutional_score,
+            'retail_score': retail_score,
+            'confidence': confidence,
+            'confidence_color': confidence_color,
+            'reliability': reliability,
+            'reliability_color': reliability_color,
+            'interpretation': interpretation,
+            'implications': implications,
+            'signal_breakdown': signal_breakdown,
+            'institutional_trend': inst_score_trend,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# ============================================================
+# NEW ENDPOINT 7: BULK — Sector Deep Dive Analysis (1h)
+#
+# For any chosen sector (Technology, Materials, Healthcare, etc.):
+#   - Sector health score (sentiment + momentum + breadth)
+#   - Top 10 / Bottom 10 performers by return
+#   - Index drivers (stocks ranked by market cap weight × return impact)
+#   - Sector rotation signals (money flowing in/out)
+#   - Best buy/sell opportunities (correlation divergence + sector sentiment)
+#   - Concentration risk (how much is driven by top 5 stocks)
+#   - Sector vs SPY performance comparison
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_sector_deep_dive_analyzer(request):
+    """
+    Deep analysis of a single sector on 1h timeframe.
+    Returns health metrics, top/bottom performers, index drivers, and trade opportunities.
+    """
+    try:
+        data = json.loads(request.body)
+        sector_name = data.get('sector')
+        lookback_hours = data.get('lookback_hours', 720)
+        
+        if not sector_name:
+            return JsonResponse({'success': False, 'error': 'Sector name required'})
+        
+        # Get all stocks in this sector from SECTOR_MAPPINGS
+        sector_stocks = [sym for sym, sec in SECTOR_MAPPINGS.items() if sec == sector_name]
+        
+        if not sector_stocks:
+            return JsonResponse({'success': False, 'error': f'No stocks found for sector: {sector_name}'})
+        
+        # ── Fetch 1h data for all stocks in sector ──
+        stock_data = {}  # { symbol: { hist, mcap } }
+        failed = []
+        
+        for sym in sector_stocks:
+            hist = fetch_1h(sym, lookback_hours)
+            if hist is None or len(hist) < 10:
+                failed.append(sym)
+                continue
+            
+            # Get market cap
+            try:
+                info = yf.Ticker(sym).info
+                mcap = info.get('marketCap') or (float(hist['Close'].iloc[-1]) * info.get('sharesOutstanding', 1000000))
+            except Exception:
+                mcap = float(hist['Close'].iloc[-1]) * float(hist['Volume'].mean())
+            
+            stock_data[sym] = {
+                'hist': hist,
+                'mcap': mcap or 0,
+                'close': hist['Close']
+            }
+        
+        if len(stock_data) < 3:
+            return JsonResponse({'success': False, 'error': f'Insufficient data for {sector_name} (only {len(stock_data)} stocks with data)'})
+        
+        # ── Build sector index (market-cap weighted) ──
+        close_df = pd.DataFrame({sym: d['close'] for sym, d in stock_data.items()})
+        close_df = close_df.dropna()
+        
+        if len(close_df) < 10:
+            return JsonResponse({'success': False, 'error': 'Insufficient overlapping bars'})
+        
+        total_mcap = sum(d['mcap'] for d in stock_data.values())
+        weights = {sym: stock_data[sym]['mcap'] / total_mcap for sym in close_df.columns}
+        
+        # Normalized to 100
+        norm_df = close_df.div(close_df.iloc[0]) * 100
+        sector_index = norm_df.multiply(pd.Series(weights)).sum(axis=1)
+        
+        # ── Fetch SPY for comparison ──
+        spy_hist = fetch_1h('SPY', lookback_hours)
+        if spy_hist is not None and len(spy_hist) >= 10:
+            spy_close = spy_hist['Close']
+            spy_norm = (spy_close / spy_close.iloc[0]) * 100
+            # Align to sector index
+            spy_aligned = spy_norm.reindex(sector_index.index, method='ffill')
+        else:
+            spy_aligned = None
+        
+        # ── Sector Health Score ──
+        sector_sentiment = compute_sector_sentiment(close_df)
+        
+        # Additional health metrics
+        sector_return = float(sector_index.iloc[-1] - 100)
+        sector_volatility = float(close_df.pct_change().std().mean() * np.sqrt(252 * 6.5) * 100)  # annualized
+        
+        # Breadth: % of stocks positive over lookback
+        stocks_positive = (close_df.iloc[-1] > close_df.iloc[0]).sum()
+        breadth_pct = round(stocks_positive / len(close_df) * 100, 1)
+        
+        # Momentum: 20-bar vs 50-bar EMA slope
+        ema20 = sector_index.ewm(span=20, adjust=False).mean()
+        ema50 = sector_index.ewm(span=50, adjust=False).mean()
+        if len(ema50) >= 50:
+            momentum_score = round(float((ema20.iloc[-1] - ema50.iloc[-1]) / ema50.iloc[-1] * 100), 2)
+        else:
+            momentum_score = 0.0
+        
+        health_score = round(
+            sector_sentiment['score'] * 0.4 +
+            (50 + min(max(sector_return, -10), 10) * 5) * 0.3 +  # return component
+            breadth_pct * 0.3,
+            1
+        )
+        
+        if health_score >= 70:
+            health_label = "STRONG"
+            health_color = "#10b981"
+        elif health_score >= 50:
+            health_label = "NEUTRAL"
+            health_color = "#f59e0b"
+        else:
+            health_label = "WEAK"
+            health_color = "#ef4444"
+        
+        # ── Per-Stock Performance ──
+        stock_performance = []
+        for sym in close_df.columns:
+            closes = close_df[sym]
+            total_ret = float((closes.iloc[-1] - closes.iloc[0]) / closes.iloc[0] * 100)
+            mcap = stock_data[sym]['mcap']
+            weight = weights[sym]
+            
+            # Contribution to index return
+            contribution = round(total_ret * weight, 2)
+            
+            # Correlation with sector index
+            ret_series = closes.pct_change().dropna()
+            idx_ret = sector_index.pct_change().dropna()
+            common_idx = ret_series.index.intersection(idx_ret.index)
+            if len(common_idx) >= 10:
+                corr = float(np.corrcoef(ret_series.loc[common_idx], idx_ret.loc[common_idx])[0, 1])
+            else:
+                corr = 0.0
+            
+            stock_performance.append({
+                'symbol': sym,
+                'return': round(total_ret, 2),
+                'mcap': mcap,
+                'weight': round(weight * 100, 2),
+                'contribution': contribution,
+                'correlation': round(corr, 3)
+            })
+        
+        # Sort by return
+        stock_performance.sort(key=lambda x: x['return'], reverse=True)
+        
+        # ── Index Drivers (by contribution) ──
+        index_drivers = sorted(stock_performance, key=lambda x: abs(x['contribution']), reverse=True)[:10]
+        
+        # ── Top 10 / Bottom 10 ──
+        top_10 = stock_performance[:10]
+        bottom_10 = stock_performance[-10:]
+        
+        # ── Concentration Risk ──
+        top5_contribution = sum(abs(s['contribution']) for s in stock_performance[:5])
+        concentration_pct = round(top5_contribution / abs(sector_return) * 100 if sector_return != 0 else 0, 1)
+        
+        # ── Trade Opportunities (Trend-Based + Institutional Flow) ──
+        # New methodology:
+        # 1. Assess trend quality (clean vs choppy)
+        # 2. Detect regime (trending vs mean-reverting)
+        # 3. Measure trend elasticity (responsiveness)
+        # 4. Infer institutional participation (micro-structure signals)
+        # 5. Generate context-aware signals (trend-following + institutional confirmation)
+        
+        sector_median_return = np.median([s['return'] for s in stock_performance])
+        
+        trade_opportunities = []
+        for s in stock_performance:
+            sym = s['symbol']
+            closes = close_df[sym]
+            hist = stock_data[sym]['hist']
+            
+            # ── 1. TREND QUALITY (MSS-style calculation) ──
+            # Uses R² + trend consistency + trend strength
+            # More accurate than simple efficiency ratio
+            
+            try:
+                from sklearn.linear_model import LinearRegression
+                
+                # Calculate returns
+                returns = closes.pct_change().dropna()
+                
+                # R² (trend clarity from linear regression)
+                prices = closes.values
+                X = np.arange(len(prices)).reshape(-1, 1)
+                y = prices.reshape(-1, 1)
+                
+                model = LinearRegression()
+                model.fit(X, y)
+                r_squared = float(model.score(X, y))
+                
+                # Trend consistency (directional strength)
+                if len(returns) > 0:
+                    positive_days = (returns > 0).sum()
+                    trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
+                else:
+                    trend_consistency = 0
+                
+                # Trend strength (magnitude of slope relative to price)
+                if len(prices) > 0 and prices[0] != 0:
+                    slope_per_bar = model.coef_[0][0]
+                    avg_price = np.mean(prices)
+                    trend_strength = abs(slope_per_bar * len(prices)) / avg_price if avg_price != 0 else 0
+                    trend_strength = min(trend_strength, 1.0)
+                else:
+                    trend_strength = 0
+                
+                # Composite trend quality (0-100 scale)
+                trend_quality = (
+                    r_squared * 0.5 +
+                    trend_consistency * 0.3 +
+                    trend_strength * 0.2
+                )
+                trend_quality = float(min(max(trend_quality, 0), 1))
+                
+            except Exception as e:
+                # Fallback to simple efficiency if sklearn fails
+                net_move = abs(closes.iloc[-1] - closes.iloc[0])
+                total_move = closes.diff().abs().sum()
+                trend_quality = net_move / total_move if total_move > 0 else 0
+                trend_quality = float(trend_quality)
+            
+            # ── 2. REGIME DETECTION (ADX proxy) ──
+            # Trending: price consistently making new highs/lows
+            # Mean-reverting: price oscillating around mean
+            lookback = min(20, len(closes))
+            highs = closes.rolling(lookback).max()
+            lows = closes.rolling(lookback).min()
+            ranges = highs - lows
+            current_range = ranges.iloc[-1] if len(ranges) > 0 else 0
+            avg_range = ranges.mean() if len(ranges) > 0 else 1
+            
+            # If current range expanding (breakout) → trending
+            # If current range contracting (compression) → mean-reverting
+            range_expansion = float(current_range / avg_range) if avg_range > 0 else 1
+            is_trending = range_expansion > 1.2  # expanding range = trending
+            
+            # ── 3. TREND ELASTICITY (responsiveness to directional moves) ──
+            # Correlation with sector + beta to sector
+            ret_series = closes.pct_change().dropna()
+            idx_ret = sector_index.pct_change().dropna()
+            common_idx = ret_series.index.intersection(idx_ret.index)
+            
+            if len(common_idx) >= 10:
+                cov_m = np.cov(ret_series.loc[common_idx], idx_ret.loc[common_idx])
+                elasticity = float(cov_m[0, 1] / cov_m[1, 1]) if cov_m[1, 1] != 0 else 1.0
+            else:
+                elasticity = 1.0
+            
+            # High elasticity (>1.2) = amplifies sector moves (high beta)
+            # Low elasticity (<0.8) = dampens sector moves (defensive)
+            
+            # ── 4. INSTITUTIONAL FLOW SIGNALS (6-signal model from inst/retail analyzer) ──
+            # Volume Profile: sustained vs spiky
+            vol_20d_avg = hist['Volume'].tail(100).mean() if len(hist) >= 100 else hist['Volume'].mean()
+            recent_vol = hist['Volume'].tail(20)
+            vol_bars_above_avg = (recent_vol > vol_20d_avg).sum()
+            vol_sustainability = vol_bars_above_avg / len(recent_vol)
+            vol_cv = recent_vol.std() / recent_vol.mean() if recent_vol.mean() > 0 else 0
+            vol_score = (vol_sustainability * 0.7 + (1 - min(vol_cv, 1.0)) * 0.3) * 100
+            
+            # Order Flow: price-volume correlation
+            recent_hist = hist.tail(20).copy()
+            recent_hist['price_change'] = recent_hist['Close'].pct_change()
+            recent_hist['vol_norm'] = (recent_hist['Volume'] - recent_hist['Volume'].mean()) / recent_hist['Volume'].std() if recent_hist['Volume'].std() > 0 else 0
+            pv_corr = recent_hist[['price_change', 'vol_norm']].corr().iloc[0, 1] if not recent_hist['price_change'].isna().all() else 0
+            pv_corr = 0 if np.isnan(pv_corr) else pv_corr
+            order_flow_score = max(0, min(100, (pv_corr + 1) / 2 * 100))
+            
+            # Efficiency: smooth vs choppy execution
+            recent_hist['range'] = recent_hist['High'] - recent_hist['Low']
+            recent_hist['net_move'] = abs(recent_hist['Close'] - recent_hist['Open'])
+            recent_hist['efficiency'] = recent_hist['net_move'] / recent_hist['range']
+            recent_hist['efficiency'] = recent_hist['efficiency'].replace([np.inf, -np.inf], np.nan).fillna(0)
+            efficiency_score = recent_hist['efficiency'].mean() * 100
+            
+            # Time-of-Day (institutional hours weighting)
+            try:
+                if recent_hist.index.tz is None:
+                    recent_hist.index = recent_hist.index.tz_localize('UTC').tz_convert('America/New_York')
+                elif str(recent_hist.index.tz) != 'America/New_York':
+                    recent_hist.index = recent_hist.index.tz_convert('America/New_York')
+                
+                recent_hist['hour'] = recent_hist.index.hour
+                
+                def inst_hour_weight(hour):
+                    if 9 <= hour <= 11 or 15 <= hour <= 16:
+                        return 1.0
+                    elif 11 < hour < 15:
+                        return 0.7
+                    else:
+                        return 0.2
+                
+                recent_hist['inst_weight'] = recent_hist['hour'].apply(inst_hour_weight)
+                tod_score = (recent_hist['Volume'] * recent_hist['inst_weight']).sum() / recent_hist['Volume'].sum() * 100 if recent_hist['Volume'].sum() > 0 else 50
+            except Exception:
+                tod_score = 50
+            
+            # Tape Speed: volume autocorrelation
+            vol_autocorr = recent_vol.autocorr(lag=1) if len(recent_vol) > 2 else 0
+            vol_autocorr = 0 if np.isnan(vol_autocorr) else vol_autocorr
+            tape_score = max(0, min(100, (vol_autocorr + 1) / 2 * 100))
+            
+            # Dark Pool Proxy: block trade detection
+            block_candidates = (recent_hist['net_move'] / recent_hist['range']) > 0.7
+            block_ratio = block_candidates.sum() / len(recent_hist)
+            dark_pool_score = block_ratio * 100
+            
+            # Composite institutional score (weighted)
+            inst_score = (
+                vol_score * 0.20 +
+                order_flow_score * 0.25 +
+                efficiency_score * 0.20 +
+                tod_score * 0.10 +
+                tape_score * 0.15 +
+                dark_pool_score * 0.10
+            )
+            inst_score = round(inst_score, 1)
+            
+            # ── 5. SIGNAL GENERATION ──
+            gap = s['return'] - sector_median_return
+            
+            # Lower thresholds — we want to catch MORE opportunities, not fewer
+            # Trend quality > 0.3 = acceptable (was 0.5)
+            # Inst score > 40 = acceptable (was 60)
+            # Focus on TREND FIRST, institutions second
+            
+            # ═══ PRIMARY BUY CONDITIONS ═══
+            
+            # BUY 1: Strong trend with any institutional presence
+            if (trend_quality > 0.4 and inst_score > 40 and s['return'] > 0):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} trending up (quality {trend_quality:.2f}) with institutional flow ({inst_score:.0f}/100)."
+                if elasticity > 1.2:
+                    rationale += f" High beta ({elasticity:.2f}x)."
+            
+            # BUY 2: Trending regime + positive return (ignore institutional score if trend is strong)
+            elif (is_trending and trend_quality > 0.35 and s['return'] > 1):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} in trending regime (quality {trend_quality:.2f}), up {s['return']:+.1f}%. Follow the trend."
+            
+            # BUY 3: Sector bullish + stock positive + decent trend
+            elif (sector_sentiment['label'] == 'BULLISH' and s['return'] > 0 and trend_quality > 0.3):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} up {s['return']:+.1f}% in bullish sector. Trend quality {trend_quality:.2f}."
+            
+            # BUY 4: Catch-up trade (lagging but good trend + correlation)
+            elif (gap < -3 and s['correlation'] > 0.5 and trend_quality > 0.3 and 
+                  sector_sentiment['label'] in ['BULLISH', 'CHOPPY']):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} lagging sector by {abs(gap):.1f}% but decent trend ({trend_quality:.2f}). Catch-up opportunity."
+            
+            # BUY 5: High institutional + positive (any trend)
+            elif (inst_score > 65 and s['return'] > 0):
+                action = 'BUY'
+                action_color = '#10b981'
+                rationale = f"{sym} strong institutional backing ({inst_score:.0f}/100), up {s['return']:+.1f}%."
+            
+            # ═══ HOLD CONDITIONS ═══
+            
+            # HOLD 1: Already trending + profitable
+            elif (is_trending and s['return'] > 2 and trend_quality > 0.4):
+                action = 'HOLD'
+                action_color = '#3b82f6'
+                rationale = f"{sym} in trend (quality {trend_quality:.2f}), up {s['return']:+.1f}%. Ride momentum."
+            
+            # HOLD 2: Good institutional flow + positive
+            elif (inst_score > 60 and s['return'] > 1):
+                action = 'HOLD'
+                action_color = '#3b82f6'
+                rationale = f"{sym} institutional support ({inst_score:.0f}/100). Hold position."
+            
+            # ═══ SELL CONDITIONS ═══
+            
+            # SELL 1: Downtrend confirmed
+            elif (is_trending and s['return'] < -2 and trend_quality > 0.35):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} confirmed downtrend (quality {trend_quality:.2f}), down {s['return']:.1f}%."
+            
+            # SELL 2: Weak trend + negative
+            elif (trend_quality < 0.25 and s['return'] < -1):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} choppy (quality {trend_quality:.2f}), down {s['return']:.1f}%. No conviction."
+            
+            # SELL 3: Bearish sector + stock negative
+            elif (sector_sentiment['label'] == 'BEARISH' and s['return'] < -1):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} down {s['return']:.1f}% in bearish sector. Exit."
+            
+            # SELL 4: Poor institutional + negative
+            elif (inst_score < 35 and s['return'] < -1.5):
+                action = 'SELL'
+                action_color = '#ef4444'
+                rationale = f"{sym} weak flow ({inst_score:.0f}/100), down {s['return']:.1f}%. Retail dumping."
+            
+            # ═══ TRIM CONDITIONS ═══
+            
+            # TRIM 1: Extended in choppy regime
+            elif (not is_trending and gap > 6 and trend_quality < 0.35):
+                action = 'TRIM'
+                action_color = '#f59e0b'
+                rationale = f"{sym} extended ({gap:+.1f}% vs sector) in choppy regime. Take profits."
+            
+            # TRIM 2: Way ahead of sector
+            elif (gap > 10):
+                action = 'TRIM'
+                action_color = '#f59e0b'
+                rationale = f"{sym} leading sector by {gap:.1f}%. Consider profit-taking."
+            
+            # ═══ WATCH CONDITIONS ═══
+            
+            # WATCH 1: Building trend
+            elif (trend_quality > 0.35 and abs(s['return']) < 2):
+                action = 'WATCH'
+                action_color = '#6b7280'
+                rationale = f"{sym} decent trend forming (quality {trend_quality:.2f}). Wait for confirmation."
+            
+            # WATCH 2: Decent institutional but flat
+            elif (inst_score > 55 and abs(s['return']) < 1.5):
+                action = 'WATCH'
+                action_color = '#6b7280'
+                rationale = f"{sym} institutional interest ({inst_score:.0f}/100) but no clear direction yet."
+            
+            else:
+                continue  # No clear opportunity
+            
+            trade_opportunities.append({
+                'symbol': s['symbol'],
+                'action': action,
+                'action_color': action_color,
+                'rationale': rationale,
+                'return': s['return'],
+                'gap_vs_sector': round(gap, 2),
+                'correlation': s['correlation'],
+                'weight': s['weight'],
+                'trend_quality': round(trend_quality, 2),
+                'is_trending': is_trending,
+                'elasticity': round(elasticity, 2),
+                'inst_score': inst_score
+            })
+        
+        # Sort by action priority
+        action_priority = {'BUY': 0, 'HOLD': 1, 'WATCH': 2, 'TRIM': 3, 'SELL': 4}
+        trade_opportunities.sort(key=lambda x: (action_priority[x['action']], -abs(x['gap_vs_sector'])))
+        
+        # ── Sector vs SPY ──
+        if spy_aligned is not None:
+            spy_return = float(spy_aligned.iloc[-1] - 100)
+            relative_strength = round(sector_return - spy_return, 2)
+            if relative_strength > 2:
+                vs_spy_label = "OUTPERFORMING"
+                vs_spy_color = "#10b981"
+            elif relative_strength < -2:
+                vs_spy_label = "UNDERPERFORMING"
+                vs_spy_color = "#ef4444"
+            else:
+                vs_spy_label = "INLINE"
+                vs_spy_color = "#f59e0b"
+        else:
+            spy_return = None
+            relative_strength = None
+            vs_spy_label = "N/A"
+            vs_spy_color = "#6b7280"
+        
+        # ── Rotation Signals ──
+        rotation_signals = []
+        
+        if sector_sentiment['label'] == 'BULLISH' and momentum_score < -1:
+            rotation_signals.append({
+                'signal': 'ROLLING OVER',
+                'description': f"{sector_name} sentiment is bullish but momentum fading — potential rotation OUT."
+            })
+        elif sector_sentiment['label'] == 'BEARISH' and momentum_score > 1:
+            rotation_signals.append({
+                'signal': 'BOTTOMING',
+                'description': f"{sector_name} sentiment is bearish but momentum turning — potential rotation IN."
+            })
+        elif sector_sentiment['label'] == 'BULLISH' and momentum_score > 2 and breadth_pct > 70:
+            rotation_signals.append({
+                'signal': 'ACCELERATING',
+                'description': f"{sector_name} is bullish with strong momentum and breadth — continue overweighting."
+            })
+        
+        if vs_spy_label == "UNDERPERFORMING" and sector_sentiment['label'] == 'BULLISH':
+            rotation_signals.append({
+                'signal': 'LAGGING SPY',
+                'description': f"{sector_name} is bullish but underperforming SPY — watch for catch-up or sector-specific headwind."
+            })
+        elif vs_spy_label == "OUTPERFORMING" and sector_sentiment['label'] == 'BEARISH':
+            rotation_signals.append({
+                'signal': 'RESILIENT',
+                'description': f"{sector_name} is bearish but still outperforming SPY — relative strength may indicate bottoming."
+            })
+        
+        # ── Insights ──
+        insights = []
+        insights.append(f"📊 {sector_name} Health: {health_label} (score {health_score}/100, sentiment {sector_sentiment['label']}).")
+        insights.append(f"📈 Sector return: {sector_return:+.2f}% on 1h. Breadth: {breadth_pct}% stocks positive.")
+        insights.append(f"🎯 Top performer: {top_10[0]['symbol']} ({top_10[0]['return']:+.2f}%). Bottom: {bottom_10[-1]['symbol']} ({bottom_10[-1]['return']:+.2f}%).")
+        insights.append(f"⚖️ Concentration: Top 5 stocks drive {concentration_pct}% of sector move.")
+        
+        if spy_return is not None:
+            insights.append(f"🆚 vs SPY: {vs_spy_label} ({relative_strength:+.2f}% relative).")
+        
+        if rotation_signals:
+            insights.append(f"🔄 {len(rotation_signals)} rotation signal(s) detected.")
+        
+        insights.append(f"💡 {len(trade_opportunities)} trade opportunities identified.")
+        
+        # ── Timeseries (sector index + SPY) ──
+        step = max(1, len(sector_index) // 200)
+        timeseries = []
+        for i in range(0, len(sector_index), step):
+            date = sector_index.index[i]
+            point = {
+                'date': date.strftime('%Y-%m-%d %H:%M'),
+                'sector': round(float(sector_index.iloc[i]), 2)
+            }
+            if spy_aligned is not None and date in spy_aligned.index:
+                point['spy'] = round(float(spy_aligned.loc[date]), 2)
+            timeseries.append(point)
+        
+        return JsonResponse({
+            'success': True,
+            'timeframe': '1h',
+            'sector_name': sector_name,
+            'total_stocks': len(stock_data),
+            'failed_stocks': failed,
+            'health_score': health_score,
+            'health_label': health_label,
+            'health_color': health_color,
+            'sector_return': round(sector_return, 2),
+            'sector_volatility': round(sector_volatility, 2),
+            'breadth_pct': breadth_pct,
+            'momentum_score': momentum_score,
+            'sector_sentiment': sector_sentiment,
+            'spy_return': round(spy_return, 2) if spy_return is not None else None,
+            'relative_strength': relative_strength,
+            'vs_spy_label': vs_spy_label,
+            'vs_spy_color': vs_spy_color,
+            'concentration_pct': concentration_pct,
+            'top_10': top_10,
+            'bottom_10': bottom_10,
+            'index_drivers': index_drivers,
+            'trade_opportunities': trade_opportunities,
+            'rotation_signals': rotation_signals,
+            'timeseries': timeseries,
+            'insights': insights,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# ENDPOINT 1: Toggle Asset of Interest
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_toggle_asset_of_interest(request):
+    """
+    Toggle an asset as 'of interest' for the current trading day.
+    """
+    try:
+        from .models import AssetOfInterest  # Adjust import based on your structure
+        
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        asset_class = data.get('asset_class')
+        sector = data.get('sector')
+        
+        if not symbol or not asset_class:
+            return JsonResponse({'success': False, 'error': 'Symbol and asset_class required'})
+        
+        is_saved, message = AssetOfInterest.toggle_asset(symbol, asset_class, sector)
+        
+        return JsonResponse({
+            'success': True,
+            'is_saved': is_saved,
+            'message': message,
+            'trading_date': str(AssetOfInterest.get_current_trading_date())
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# ENDPOINT 2: Get Today's Assets of Interest
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_get_todays_assets(request):
+    """
+    Get all assets marked as 'of interest' for the current trading day.
+    """
+    try:
+        from .models import AssetOfInterest
+        
+        data = json.loads(request.body)
+        asset_class = data.get('asset_class')  # Optional filter
+        
+        symbols = list(AssetOfInterest.get_todays_assets(asset_class))
+        trading_date = AssetOfInterest.get_current_trading_date()
+        
+        return JsonResponse({
+            'success': True,
+            'symbols': symbols,
+            'count': len(symbols),
+            'trading_date': str(trading_date),
+            'asset_class': asset_class
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# ENDPOINT 3: Check if Asset is Saved Today
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_check_asset_saved(request):
+    """
+    Check if a specific asset is saved for today.
+    """
+    try:
+        from .models import AssetOfInterest
+        
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'})
+        
+        is_saved = AssetOfInterest.is_saved_today(symbol)
+        
+        return JsonResponse({
+            'success': True,
+            'is_saved': is_saved,
+            'symbol': symbol,
+            'trading_date': str(AssetOfInterest.get_current_trading_date())
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================
+# ENDPOINT 4: Stock Popularity Analyzer (OpenAI)
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_stock_popularity_analyzer(request):
+    """
+    Analyzes how well-known a stock is using OpenAI + yfinance data.
+    Returns popularity score, recognition factors, and trading implications.
+    """
+    try:
+        import openai
+        import os
+        
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'})
+        
+        # ── Fetch stock data ──
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            
+            # Extract key info
+            company_name = info.get('longName') or info.get('shortName') or symbol
+            sector = info.get('sector', 'N/A')
+            industry = info.get('industry', 'N/A')
+            market_cap = info.get('marketCap', 0)
+            employees = info.get('fullTimeEmployees', 'N/A')
+            description = info.get('longBusinessSummary', 'No description available')
+            website = info.get('website', 'N/A')
+            exchange = info.get('exchange', 'N/A')
+            
+            # Format market cap
+            if market_cap > 0:
+                if market_cap >= 1e12:
+                    mcap_str = f"${market_cap/1e12:.2f}T"
+                elif market_cap >= 1e9:
+                    mcap_str = f"${market_cap/1e9:.2f}B"
+                elif market_cap >= 1e6:
+                    mcap_str = f"${market_cap/1e6:.2f}M"
+                else:
+                    mcap_str = f"${market_cap:,.0f}"
+            else:
+                mcap_str = "N/A"
+            
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': f'Failed to fetch stock data: {str(e)}'})
+        
+        # ── Build OpenAI prompt ──
+        prompt = f"""You are a stock market analyst. Analyze how well-known and recognizable the following company is to the general public and retail traders.
+
+Company: {company_name} ({symbol})
+Sector: {sector}
+Industry: {industry}
+Market Cap: {mcap_str}
+Employees: {employees}
+Exchange: {exchange}
+Description: {description[:500]}...
+
+Rate the company's popularity/recognition on these dimensions:
+
+1. **Brand Recognition** (0-10): How recognizable is the brand to average consumers?
+2. **Retail Trader Awareness** (0-10): How well-known is this stock among retail traders?
+3. **Media Coverage** (0-10): How frequently does this company appear in financial news?
+4. **Social Media Presence** (0-10): How actively discussed is this stock on social platforms?
+5. **Institutional Coverage** (0-10): How much analyst coverage does it receive?
+
+Provide:
+- Overall Popularity Score (0-100)
+- Popularity Level: "Mega-Cap Household Name", "Well-Known Blue Chip", "Mid-Tier Recognized", "Niche/Specialist", or "Obscure/Unknown"
+- Key Recognition Factors (3-5 bullet points explaining what makes it known/unknown)
+- Trading Implications (2-3 sentences on liquidity, volatility expectations, and retail vs institutional interest)
+
+Be honest but slightly generous in your assessment. Focus on factual recognition rather than subjective quality judgments.
+
+Return ONLY valid JSON in this exact format:
+{{
+  "popularity_score": 75,
+  "popularity_level": "Well-Known Blue Chip",
+  "brand_recognition": 8,
+  "retail_awareness": 7,
+  "media_coverage": 8,
+  "social_presence": 6,
+  "institutional_coverage": 9,
+  "recognition_factors": [
+    "Major player in tech sector with consumer-facing products",
+    "Frequently mentioned in CNBC and Bloomberg coverage",
+    "Strong institutional ownership suggests professional interest"
+  ],
+  "trading_implications": "High liquidity stock with tight spreads. Expect moderate volatility during earnings. Strong institutional base provides support, while retail interest can amplify momentum moves."
+}}"""
+        
+        # ── Call OpenAI ──
+        try:
+            openai.api_key = os.getenv('OPENAI_API_KEY')
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a financial analyst specializing in stock market popularity analysis. Return only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=800
+            )
+            
+            # Parse response
+            response_text = response.choices[0].message.content.strip()
+            
+            # Remove markdown code fences if present
+            if response_text.startswith('```'):
+                response_text = response_text.split('```')[1]
+                if response_text.startswith('json'):
+                    response_text = response_text[4:]
+                response_text = response_text.strip()
+            
+            analysis = json.loads(response_text)
+            
+        except json.JSONDecodeError as e:
+            return JsonResponse({'success': False, 'error': f'Failed to parse AI response: {str(e)}'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': f'OpenAI API error: {str(e)}'})
+        
+        # ── Add metadata ──
+        analysis['symbol'] = symbol
+        analysis['company_name'] = company_name
+        analysis['market_cap'] = mcap_str
+        analysis['sector'] = sector
+        analysis['industry'] = industry
+        
+        return JsonResponse({
+            'success': True,
+            'analysis': analysis,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+from decimal import Decimal
+import json
+import uuid
+from datetime import datetime, timedelta
+import pytz
+
+# Import the models (adjust the import path based on your project structure)
+# from .models import SnowAITradeOrderExecutionRecord, SnowAIPaperTradingBacktestSession, SnowAITradingPerformanceSnapshot
+
+
+@csrf_exempt
+def snowai_execute_trade_order_placement(request):
+    """
+    Execute a new trade order (buy or sell)
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            # Generate unique trade ID
+            trade_id = f"TRADE_{uuid.uuid4().hex[:12].upper()}"
+            
+            # Extract data
+            asset_symbol = data.get('asset_symbol')
+            asset_name = data.get('asset_name')
+            asset_class = data.get('asset_class')
+            order_type = data.get('order_type')  # BUY or SELL
+            entry_price = Decimal(str(data.get('entry_price')))
+            quantity = Decimal(str(data.get('quantity', 1.0)))
+            stop_loss = Decimal(str(data.get('stop_loss'))) if data.get('stop_loss') else None
+            take_profit = Decimal(str(data.get('take_profit'))) if data.get('take_profit') else None
+            timezone_str = data.get('timezone', 'UTC')
+            notes = data.get('notes', '')
+            is_paper_trade = data.get('is_paper_trade', True)
+            
+            # Get current time in user's timezone
+            user_tz = pytz.timezone(timezone_str)
+            entry_timestamp = timezone.now().astimezone(user_tz)
+            
+            # Create trade order
+            trade = SnowAITradeOrderExecutionRecord.objects.create(
+                trade_id=trade_id,
+                asset_symbol=asset_symbol,
+                asset_name=asset_name,
+                asset_class=asset_class,
+                order_type=order_type,
+                entry_price=entry_price,
+                quantity=quantity,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                entry_timestamp=entry_timestamp,
+                entry_timezone=timezone_str,
+                notes=notes,
+                is_paper_trade=is_paper_trade,
+                status='OPEN'
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'trade_id': trade_id,
+                'message': f'{order_type} order placed for {asset_symbol}',
+                'trade_data': {
+                    'trade_id': trade.trade_id,
+                    'asset_symbol': trade.asset_symbol,
+                    'order_type': trade.order_type,
+                    'entry_price': float(trade.entry_price),
+                    'quantity': float(trade.quantity),
+                    'stop_loss': float(trade.stop_loss) if trade.stop_loss else None,
+                    'take_profit': float(trade.take_profit) if trade.take_profit else None,
+                    'entry_timestamp': entry_timestamp.isoformat(),
+                    'status': trade.status
+                }
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_close_trade_order_execution(request):
+    """
+    Close an open trade order
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            trade_id = data.get('trade_id')
+            exit_price = Decimal(str(data.get('exit_price')))
+            exit_reason = data.get('exit_reason', 'MANUAL')  # MANUAL, TAKE_PROFIT, STOP_LOSS
+            timezone_str = data.get('timezone', 'UTC')
+            
+            # Get the trade
+            trade = SnowAITradeOrderExecutionRecord.objects.get(trade_id=trade_id, status='OPEN')
+            
+            # Get current time in user's timezone
+            user_tz = pytz.timezone(timezone_str)
+            exit_timestamp = timezone.now().astimezone(user_tz)
+            
+            # Update trade
+            trade.exit_price = exit_price
+            trade.exit_reason = exit_reason
+            trade.exit_timestamp = exit_timestamp
+            trade.exit_timezone = timezone_str
+            trade.status = 'CLOSED'
+            
+            # Calculate P&L
+            pnl, pnl_pct = trade.calculate_pnl()
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Trade {trade_id} closed',
+                'trade_data': {
+                    'trade_id': trade.trade_id,
+                    'asset_symbol': trade.asset_symbol,
+                    'order_type': trade.order_type,
+                    'entry_price': float(trade.entry_price),
+                    'exit_price': float(trade.exit_price),
+                    'profit_loss': float(trade.profit_loss) if trade.profit_loss else 0,
+                    'profit_loss_percentage': float(trade.profit_loss_percentage) if trade.profit_loss_percentage else 0,
+                    'exit_reason': trade.exit_reason,
+                    'entry_timestamp': trade.entry_timestamp.isoformat(),
+                    'exit_timestamp': exit_timestamp.isoformat(),
+                    'status': trade.status
+                }
+            })
+            
+        except SnowAITradeOrderExecutionRecord.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Trade not found or already closed'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_fetch_trade_history_for_asset(request):
+    """
+    Fetch all trade history for a specific asset
+    """
+    if request.method == 'GET':
+        try:
+            asset_symbol = request.GET.get('asset_symbol')
+            status_filter = request.GET.get('status', 'ALL')  # ALL, OPEN, CLOSED
+            
+            # Build query
+            query = SnowAITradeOrderExecutionRecord.objects.filter(asset_symbol=asset_symbol)
+            
+            if status_filter != 'ALL':
+                query = query.filter(status=status_filter)
+            
+            # Get trades
+            trades = query.all()
+            
+            # Calculate statistics
+            total_trades = trades.count()
+            closed_trades = trades.filter(status='CLOSED')
+            winning_trades = closed_trades.filter(profit_loss__gt=0).count()
+            losing_trades = closed_trades.filter(profit_loss__lt=0).count()
+            
+            total_profit = sum([float(t.profit_loss) for t in closed_trades if t.profit_loss and t.profit_loss > 0])
+            total_loss = sum([float(t.profit_loss) for t in closed_trades if t.profit_loss and t.profit_loss < 0])
+            
+            win_rate = (winning_trades / closed_trades.count() * 100) if closed_trades.count() > 0 else 0
+            
+            # Prepare trade data
+            trades_data = []
+            for trade in trades:
+                trades_data.append({
+                    'trade_id': trade.trade_id,
+                    'order_type': trade.order_type,
+                    'entry_price': float(trade.entry_price),
+                    'exit_price': float(trade.exit_price) if trade.exit_price else None,
+                    'quantity': float(trade.quantity),
+                    'stop_loss': float(trade.stop_loss) if trade.stop_loss else None,
+                    'take_profit': float(trade.take_profit) if trade.take_profit else None,
+                    'profit_loss': float(trade.profit_loss) if trade.profit_loss else None,
+                    'profit_loss_percentage': float(trade.profit_loss_percentage) if trade.profit_loss_percentage else None,
+                    'status': trade.status,
+                    'exit_reason': trade.exit_reason,
+                    'entry_timestamp': trade.entry_timestamp.isoformat(),
+                    'exit_timestamp': trade.exit_timestamp.isoformat() if trade.exit_timestamp else None,
+                    'entry_timezone': trade.entry_timezone,
+                    'notes': trade.notes,
+                    'is_paper_trade': trade.is_paper_trade
+                })
+            
+            return JsonResponse({
+                'success': True,
+                'asset_symbol': asset_symbol,
+                'total_trades': total_trades,
+                'statistics': {
+                    'closed_trades': closed_trades.count(),
+                    'winning_trades': winning_trades,
+                    'losing_trades': losing_trades,
+                    'win_rate': round(win_rate, 2),
+                    'total_profit': round(total_profit, 2),
+                    'total_loss': round(total_loss, 2),
+                    'net_profit': round(total_profit + total_loss, 2)
+                },
+                'trades': trades_data
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_fetch_overall_trading_performance(request):
+    """
+    Fetch overall trading performance across all assets
+    """
+    if request.method == 'GET':
+        try:
+            # Get all trades
+            all_trades = SnowAITradeOrderExecutionRecord.objects.all()
+            closed_trades = all_trades.filter(status='CLOSED')
+            
+            # Overall statistics
+            total_trades = all_trades.count()
+            total_closed = closed_trades.count()
+            total_open = all_trades.filter(status='OPEN').count()
+            
+            winning_trades = closed_trades.filter(profit_loss__gt=0).count()
+            losing_trades = closed_trades.filter(profit_loss__lt=0).count()
+            
+            total_profit = sum([float(t.profit_loss) for t in closed_trades if t.profit_loss and t.profit_loss > 0])
+            total_loss = sum([float(t.profit_loss) for t in closed_trades if t.profit_loss and t.profit_loss < 0])
+            net_profit = total_profit + total_loss
+            
+            win_rate = (winning_trades / total_closed * 100) if total_closed > 0 else 0
+            
+            # Best and worst trades
+            best_trade = closed_trades.order_by('-profit_loss').first()
+            worst_trade = closed_trades.order_by('profit_loss').first()
+            
+            # Per asset class breakdown
+            asset_classes = ['Crypto', 'Stocks', 'Forex', 'Indices', 'Commodities']
+            asset_class_stats = {}
+            
+            for asset_class in asset_classes:
+                class_trades = closed_trades.filter(asset_class=asset_class)
+                class_count = class_trades.count()
+                
+                if class_count > 0:
+                    class_wins = class_trades.filter(profit_loss__gt=0).count()
+                    class_losses = class_trades.filter(profit_loss__lt=0).count()
+                    class_profit = sum([float(t.profit_loss) for t in class_trades if t.profit_loss and t.profit_loss > 0])
+                    class_loss = sum([float(t.profit_loss) for t in class_trades if t.profit_loss and t.profit_loss < 0])
+                    
+                    asset_class_stats[asset_class] = {
+                        'total_trades': class_count,
+                        'winning_trades': class_wins,
+                        'losing_trades': class_losses,
+                        'win_rate': round((class_wins / class_count * 100), 2),
+                        'total_profit': round(class_profit, 2),
+                        'total_loss': round(class_loss, 2),
+                        'net_profit': round(class_profit + class_loss, 2)
+                    }
+            
+            # Per asset breakdown
+            assets = all_trades.values_list('asset_symbol', flat=True).distinct()
+            asset_stats = []
+            
+            for asset in assets:
+                asset_trades = closed_trades.filter(asset_symbol=asset)
+                asset_count = asset_trades.count()
+                
+                if asset_count > 0:
+                    asset_wins = asset_trades.filter(profit_loss__gt=0).count()
+                    asset_losses = asset_trades.filter(profit_loss__lt=0).count()
+                    asset_profit = sum([float(t.profit_loss) for t in asset_trades if t.profit_loss and t.profit_loss > 0])
+                    asset_loss = sum([float(t.profit_loss) for t in asset_trades if t.profit_loss and t.profit_loss < 0])
+                    
+                    asset_info = all_trades.filter(asset_symbol=asset).first()
+                    
+                    asset_stats.append({
+                        'asset_symbol': asset,
+                        'asset_name': asset_info.asset_name,
+                        'asset_class': asset_info.asset_class,
+                        'total_trades': asset_count,
+                        'winning_trades': asset_wins,
+                        'losing_trades': asset_losses,
+                        'win_rate': round((asset_wins / asset_count * 100), 2),
+                        'total_profit': round(asset_profit, 2),
+                        'total_loss': round(asset_loss, 2),
+                        'net_profit': round(asset_profit + asset_loss, 2)
+                    })
+            
+            # Sort by net profit
+            asset_stats.sort(key=lambda x: x['net_profit'], reverse=True)
+            
+            return JsonResponse({
+                'success': True,
+                'overall_statistics': {
+                    'total_trades': total_trades,
+                    'closed_trades': total_closed,
+                    'open_positions': total_open,
+                    'winning_trades': winning_trades,
+                    'losing_trades': losing_trades,
+                    'win_rate': round(win_rate, 2),
+                    'total_profit': round(total_profit, 2),
+                    'total_loss': round(total_loss, 2),
+                    'net_profit': round(net_profit, 2),
+                    'profit_factor': round(abs(total_profit / total_loss), 2) if total_loss != 0 else 0,
+                    'best_trade': {
+                        'trade_id': best_trade.trade_id,
+                        'asset_symbol': best_trade.asset_symbol,
+                        'profit_loss': float(best_trade.profit_loss)
+                    } if best_trade else None,
+                    'worst_trade': {
+                        'trade_id': worst_trade.trade_id,
+                        'asset_symbol': worst_trade.asset_symbol,
+                        'profit_loss': float(worst_trade.profit_loss)
+                    } if worst_trade else None
+                },
+                'asset_class_breakdown': asset_class_stats,
+                'asset_breakdown': asset_stats
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_start_paper_trading_backtest(request):
+    """
+    Start a paper trading backtest session
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            session_id = f"BACKTEST_{uuid.uuid4().hex[:12].upper()}"
+            
+            asset_symbol = data.get('asset_symbol')
+            asset_name = data.get('asset_name')
+            timeframe = data.get('timeframe')
+            start_date = datetime.fromisoformat(data.get('start_date'))
+            end_date = datetime.fromisoformat(data.get('end_date'))
+            initial_balance = Decimal(str(data.get('initial_balance', 10000)))
+            
+            # Create backtest session
+            session = SnowAIPaperTradingBacktestSession.objects.create(
+                session_id=session_id,
+                asset_symbol=asset_symbol,
+                asset_name=asset_name,
+                timeframe=timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                initial_balance=initial_balance,
+                final_balance=initial_balance,
+                status='IN_PROGRESS'
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'session_id': session_id,
+                'message': f'Backtest session started for {asset_symbol}',
+                'session_data': {
+                    'session_id': session.session_id,
+                    'asset_symbol': session.asset_symbol,
+                    'timeframe': session.timeframe,
+                    'start_date': session.start_date.isoformat(),
+                    'end_date': session.end_date.isoformat(),
+                    'initial_balance': float(session.initial_balance),
+                    'status': session.status
+                }
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_add_trade_to_backtest_session(request):
+    """
+    Add a trade to an ongoing backtest session
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            session_id = data.get('session_id')
+            trade_data = data.get('trade_data')
+            
+            # Get session
+            session = SnowAIPaperTradingBacktestSession.objects.get(session_id=session_id)
+            
+            # Add trade to session
+            trades_list = session.trades_data
+            trades_list.append(trade_data)
+            session.trades_data = trades_list
+            
+            # Update session statistics
+            session.total_trades += 1
+            
+            if trade_data.get('profit_loss'):
+                pnl = Decimal(str(trade_data['profit_loss']))
+                session.final_balance += pnl
+                
+                if pnl > 0:
+                    session.winning_trades += 1
+                    session.total_profit += pnl
+                    if pnl > session.largest_win:
+                        session.largest_win = pnl
+                else:
+                    session.losing_trades += 1
+                    session.total_loss += pnl
+                    if pnl < session.largest_loss:
+                        session.largest_loss = pnl
+            
+            # Update equity curve
+            equity_data = session.equity_curve
+            equity_data.append({
+                'timestamp': trade_data.get('timestamp'),
+                'balance': float(session.final_balance)
+            })
+            session.equity_curve = equity_data
+            
+            session.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Trade added to backtest session',
+                'current_balance': float(session.final_balance),
+                'total_trades': session.total_trades
+            })
+            
+        except SnowAIPaperTradingBacktestSession.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Backtest session not found'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_complete_backtest_session(request):
+    """
+    Complete a backtest session and calculate final metrics
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            session_id = data.get('session_id')
+            
+            # Get session
+            session = SnowAIPaperTradingBacktestSession.objects.get(session_id=session_id)
+            
+            # Calculate final metrics
+            session.calculate_metrics()
+            session.status = 'COMPLETED'
+            session.completed_at = timezone.now()
+            session.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Backtest session completed',
+                'session_results': {
+                    'session_id': session.session_id,
+                    'asset_symbol': session.asset_symbol,
+                    'initial_balance': float(session.initial_balance),
+                    'final_balance': float(session.final_balance),
+                    'total_return': float(session.final_balance - session.initial_balance),
+                    'total_return_percentage': float(((session.final_balance - session.initial_balance) / session.initial_balance) * 100),
+                    'total_trades': session.total_trades,
+                    'winning_trades': session.winning_trades,
+                    'losing_trades': session.losing_trades,
+                    'win_rate': float(session.win_rate) if session.win_rate else 0,
+                    'profit_factor': float(session.profit_factor) if session.profit_factor else 0,
+                    'average_win': float(session.average_win) if session.average_win else 0,
+                    'average_loss': float(session.average_loss) if session.average_loss else 0,
+                    'largest_win': float(session.largest_win),
+                    'largest_loss': float(session.largest_loss),
+                    'trades': session.trades_data,
+                    'equity_curve': session.equity_curve
+                }
+            })
+            
+        except SnowAIPaperTradingBacktestSession.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Backtest session not found'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_fetch_all_backtest_sessions(request):
+    """
+    Fetch all backtest sessions
+    """
+    if request.method == 'GET':
+        try:
+            sessions = SnowAIPaperTradingBacktestSession.objects.all()
+            
+            sessions_data = []
+            for session in sessions:
+                sessions_data.append({
+                    'session_id': session.session_id,
+                    'asset_symbol': session.asset_symbol,
+                    'asset_name': session.asset_name,
+                    'timeframe': session.timeframe,
+                    'start_date': session.start_date.isoformat(),
+                    'end_date': session.end_date.isoformat(),
+                    'initial_balance': float(session.initial_balance),
+                    'final_balance': float(session.final_balance) if session.final_balance else None,
+                    'total_return': float(session.final_balance - session.initial_balance) if session.final_balance else None,
+                    'total_trades': session.total_trades,
+                    'win_rate': float(session.win_rate) if session.win_rate else None,
+                    'status': session.status,
+                    'created_at': session.created_at.isoformat(),
+                    'completed_at': session.completed_at.isoformat() if session.completed_at else None
+                })
+            
+            return JsonResponse({
+                'success': True,
+                'sessions': sessions_data,
+                'total_sessions': len(sessions_data)
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_check_and_execute_stop_loss_take_profit(request):
+    """
+    Check open positions and auto-execute stop loss or take profit
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            current_prices = data.get('current_prices', {})  # Dict of asset_symbol: current_price
+            timezone_str = data.get('timezone', 'UTC')
+            
+            executed_trades = []
+            
+            # Get all open trades
+            open_trades = SnowAITradeOrderExecutionRecord.objects.filter(status='OPEN')
+            
+            for trade in open_trades:
+                if trade.asset_symbol not in current_prices:
+                    continue
+                
+                current_price = Decimal(str(current_prices[trade.asset_symbol]))
+                
+                should_close = False
+                exit_reason = None
+                
+                # Check stop loss
+                if trade.stop_loss:
+                    if trade.order_type == 'BUY' and current_price <= trade.stop_loss:
+                        should_close = True
+                        exit_reason = 'STOP_LOSS'
+                    elif trade.order_type == 'SELL' and current_price >= trade.stop_loss:
+                        should_close = True
+                        exit_reason = 'STOP_LOSS'
+                
+                # Check take profit
+                if trade.take_profit and not should_close:
+                    if trade.order_type == 'BUY' and current_price >= trade.take_profit:
+                        should_close = True
+                        exit_reason = 'TAKE_PROFIT'
+                    elif trade.order_type == 'SELL' and current_price <= trade.take_profit:
+                        should_close = True
+                        exit_reason = 'TAKE_PROFIT'
+                
+                # Execute closure
+                if should_close:
+                    user_tz = pytz.timezone(timezone_str)
+                    exit_timestamp = timezone.now().astimezone(user_tz)
+                    
+                    trade.exit_price = current_price
+                    trade.exit_reason = exit_reason
+                    trade.exit_timestamp = exit_timestamp
+                    trade.exit_timezone = timezone_str
+                    trade.status = 'CLOSED'
+                    
+                    pnl, pnl_pct = trade.calculate_pnl()
+                    
+                    executed_trades.append({
+                        'trade_id': trade.trade_id,
+                        'asset_symbol': trade.asset_symbol,
+                        'exit_reason': exit_reason,
+                        'exit_price': float(current_price),
+                        'profit_loss': float(pnl) if pnl else 0,
+                        'profit_loss_percentage': float(pnl_pct) if pnl_pct else 0
+                    })
+            
+            return JsonResponse({
+                'success': True,
+                'executed_count': len(executed_trades),
+                'executed_trades': executed_trades
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_delete_trade_order(request):
+    """
+    Delete a trade order (for testing/cleanup)
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            trade_id = data.get('trade_id')
+            
+            trade = SnowAITradeOrderExecutionRecord.objects.get(trade_id=trade_id)
+            trade.delete()
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Trade {trade_id} deleted'
+            })
+            
+        except SnowAITradeOrderExecutionRecord.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Trade not found'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_fetch_stock_info(request):
+    """
+    Fetch detailed stock information from yfinance
+    """
+    if request.method == 'POST':
+        try:
+            import yfinance as yf
+            
+            data = json.loads(request.body)
+            symbol = data.get('symbol')
+            
+            if not symbol:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Symbol is required'
+                }, status=400)
+            
+            # Fetch stock info
+            stock = yf.Ticker(symbol)
+            info = stock.info
+            
+            # Extract relevant information
+            stock_data = {
+                'symbol': symbol,
+                'longName': info.get('longName'),
+                'currentPrice': info.get('currentPrice') or info.get('regularMarketPrice'),
+                'marketCap': info.get('marketCap'),
+                'peRatio': info.get('trailingPE') or info.get('forwardPE'),
+                'dividendYield': info.get('dividendYield'),
+                'sector': info.get('sector'),
+                'industry': info.get('industry'),
+                'website': info.get('website'),
+                'summary': info.get('longBusinessSummary'),
+                'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
+                'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow'),
+                'volume': info.get('volume'),
+                'averageVolume': info.get('averageVolume'),
+                'beta': info.get('beta'),
+                'earningsPerShare': info.get('trailingEps'),
+                'bookValue': info.get('bookValue'),
+                'priceToBook': info.get('priceToBook'),
+                'returnOnEquity': info.get('returnOnEquity'),
+                'debtToEquity': info.get('debtToEquity'),
+            }
+            
+            return JsonResponse({
+                'success': True,
+                'data': stock_data
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+
+# ============================================================
+# ENDPOINT: Execute Trade Order
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_execute_trade_order(request):
+    """
+    Create a new trade execution record.
+    Validates inputs and stores in SnowAITradeOrderExecutionRecord model.
+    """
+    try:
+        from decimal import Decimal, InvalidOperation
+        import uuid
+        
+        data = json.loads(request.body)
+        
+        # ── Required fields ──
+        asset_symbol = data.get('asset_symbol')
+        order_type = data.get('order_type')  # BUY or SELL
+        entry_price = data.get('entry_price')
+        
+        if not all([asset_symbol, order_type, entry_price]):
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing required fields: asset_symbol, order_type, entry_price'
+            }, status=400)
+        
+        # Validate order_type
+        if order_type not in ['BUY', 'SELL']:
+            return JsonResponse({
+                'success': False,
+                'error': 'order_type must be BUY or SELL'
+            }, status=400)
+        
+        # ── Optional fields ──
+        asset_name = data.get('asset_name', asset_symbol)
+        asset_class = data.get('asset_class', 'Stocks')
+        quantity = data.get('quantity', '1.0')
+        stop_loss = data.get('stop_loss')
+        take_profit = data.get('take_profit')
+        notes = data.get('notes', '')
+        is_paper_trade = data.get('is_paper_trade', True)
+        entry_timezone = data.get('entry_timezone', 'America/New_York')
+        
+        # ── Convert to Decimal ──
+        try:
+            entry_price_decimal = Decimal(str(entry_price))
+            quantity_decimal = Decimal(str(quantity))
+            
+            stop_loss_decimal = Decimal(str(stop_loss)) if stop_loss else None
+            take_profit_decimal = Decimal(str(take_profit)) if take_profit else None
+            
+        except (InvalidOperation, ValueError) as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'Invalid number format: {str(e)}'
+            }, status=400)
+        
+        # ── Validation ──
+        if entry_price_decimal <= 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Entry price must be greater than 0'
+            }, status=400)
+        
+        if quantity_decimal <= 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Quantity must be greater than 0'
+            }, status=400)
+        
+        if stop_loss_decimal and stop_loss_decimal <= 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Stop loss must be greater than 0'
+            }, status=400)
+        
+        if take_profit_decimal and take_profit_decimal <= 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Take profit must be greater than 0'
+            }, status=400)
+        
+        # Validate SL/TP logic
+        if order_type == 'BUY':
+            if stop_loss_decimal and stop_loss_decimal >= entry_price_decimal:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'For BUY orders, stop loss must be below entry price'
+                }, status=400)
+            if take_profit_decimal and take_profit_decimal <= entry_price_decimal:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'For BUY orders, take profit must be above entry price'
+                }, status=400)
+        else:  # SELL
+            if stop_loss_decimal and stop_loss_decimal <= entry_price_decimal:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'For SELL orders, stop loss must be above entry price'
+                }, status=400)
+            if take_profit_decimal and take_profit_decimal >= entry_price_decimal:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'For SELL orders, take profit must be below entry price'
+                }, status=400)
+        
+        # ── Generate unique trade_id ──
+        trade_id = f"{asset_symbol}_{order_type}_{int(timezone.now().timestamp())}_{str(uuid.uuid4())[:8]}"
+        
+        # ── Create record ──
+        trade = SnowAITradeOrderExecutionRecord.objects.create(
+            trade_id=trade_id,
+            asset_symbol=asset_symbol,
+            asset_name=asset_name,
+            asset_class=asset_class,
+            order_type=order_type,
+            entry_price=entry_price_decimal,
+            quantity=quantity_decimal,
+            stop_loss=stop_loss_decimal,
+            take_profit=take_profit_decimal,
+            status='OPEN',
+            entry_timestamp=timezone.now(),
+            entry_timezone=entry_timezone,
+            notes=notes,
+            is_paper_trade=is_paper_trade
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'{order_type} order executed successfully',
+            'trade': {
+                'trade_id': trade.trade_id,
+                'asset_symbol': trade.asset_symbol,
+                'order_type': trade.order_type,
+                'entry_price': float(trade.entry_price),
+                'quantity': float(trade.quantity),
+                'stop_loss': float(trade.stop_loss) if trade.stop_loss else None,
+                'take_profit': float(trade.take_profit) if trade.take_profit else None,
+                'entry_timestamp': trade.entry_timestamp.isoformat(),
+                'is_paper_trade': trade.is_paper_trade
+            }
+        })
+    
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status=500)
+
+
+# ============================================================
+# ENDPOINT: Get Open Trades for Asset
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_get_open_trades(request):
+    """
+    Get all open trades for a specific asset.
+    """
+    try:
+        
+        data = json.loads(request.body)
+        asset_symbol = data.get('asset_symbol')
+        
+        if not asset_symbol:
+            return JsonResponse({'success': False, 'error': 'asset_symbol required'}, status=400)
+        
+        trades = SnowAITradeOrderExecutionRecord.objects.filter(
+            asset_symbol=asset_symbol,
+            status='OPEN'
+        ).order_by('-entry_timestamp')
+        
+        trades_data = [{
+            'trade_id': t.trade_id,
+            'order_type': t.order_type,
+            'entry_price': float(t.entry_price),
+            'quantity': float(t.quantity),
+            'stop_loss': float(t.stop_loss) if t.stop_loss else None,
+            'take_profit': float(t.take_profit) if t.take_profit else None,
+            'entry_timestamp': t.entry_timestamp.isoformat(),
+            'notes': t.notes
+        } for t in trades]
+        
+        return JsonResponse({
+            'success': True,
+            'trades': trades_data,
+            'count': len(trades_data)
+        })
+    
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+def snowai_edit_trade_order(request):
+    """
+    Edit the properties of an open (not yet closed) trade order.
+    Allows updating: order_type, entry_price, quantity, stop_loss, take_profit, notes.
+    """
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            trade_id = data.get('trade_id')
+
+            # Only allow editing OPEN trades
+            trade = SnowAITradeOrderExecutionRecord.objects.get(trade_id=trade_id, status='OPEN')
+
+            # Apply updates — only update fields that were sent
+            if 'order_type' in data and data['order_type'] in ['BUY', 'SELL']:
+                trade.order_type = data['order_type']
+
+            if 'entry_price' in data and data['entry_price'] is not None:
+                trade.entry_price = Decimal(str(data['entry_price']))
+
+            if 'quantity' in data and data['quantity'] is not None:
+                trade.quantity = Decimal(str(data['quantity']))
+
+            # stop_loss and take_profit can be explicitly nulled out by passing null
+            if 'stop_loss' in data:
+                trade.stop_loss = Decimal(str(data['stop_loss'])) if data['stop_loss'] else None
+
+            if 'take_profit' in data:
+                trade.take_profit = Decimal(str(data['take_profit'])) if data['take_profit'] else None
+
+            if 'notes' in data:
+                trade.notes = data['notes']
+
+            trade.save()
+
+            return JsonResponse({
+                'success': True,
+                'message': f'Trade {trade_id} updated successfully',
+                'trade_data': {
+                    'trade_id': trade.trade_id,
+                    'order_type': trade.order_type,
+                    'entry_price': float(trade.entry_price),
+                    'quantity': float(trade.quantity),
+                    'stop_loss': float(trade.stop_loss) if trade.stop_loss else None,
+                    'take_profit': float(trade.take_profit) if trade.take_profit else None,
+                    'notes': trade.notes,
+                    'status': trade.status
+                }
+            })
+
+        except SnowAITradeOrderExecutionRecord.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Trade not found or already closed'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def snowai_fetch_all_open_positions(request):
+    """
+    Fetch all currently open (not closed/cancelled) trade positions across all assets.
+    Used by the frontend "Open Positions" panel.
+    """
+    if request.method == 'GET':
+        try:
+            open_trades = SnowAITradeOrderExecutionRecord.objects.filter(
+                status='OPEN'
+            ).order_by('-entry_timestamp')
+
+            positions = []
+            for trade in open_trades:
+                positions.append({
+                    'trade_id': trade.trade_id,
+                    'asset_symbol': trade.asset_symbol,
+                    'asset_name': trade.asset_name,
+                    'asset_class': trade.asset_class,
+                    'order_type': trade.order_type,
+                    'entry_price': float(trade.entry_price),
+                    'quantity': float(trade.quantity),
+                    'stop_loss': float(trade.stop_loss) if trade.stop_loss else None,
+                    'take_profit': float(trade.take_profit) if trade.take_profit else None,
+                    'entry_timestamp': trade.entry_timestamp.isoformat(),
+                    'entry_timezone': trade.entry_timezone,
+                    'notes': trade.notes,
+                    'is_paper_trade': trade.is_paper_trade,
+                    'status': trade.status,
+                })
+
+            return JsonResponse({
+                'success': True,
+                'open_positions': positions,
+                'total': len(positions)
+            })
+
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+import json
+import types
+import traceback
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import requests as http_requests
+
+from decimal import Decimal
+from datetime import datetime
+from django.utils import timezone
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+
+from .models import (
+    SnowAITradingModel,
+    SnowAIModelTrade,
+    SnowAITradeOrderExecutionRecord,   # your existing manual-trade model
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HELPER — fetch OHLC as a pandas DataFrame
+# ═══════════════════════════════════════════════════════════════════════════════
+
+TIMEFRAME_MAP = {
+    '1M':  ('1m',  '1d'),
+    '5M':  ('5m',  '5d'),
+    '15M': ('15m', '1mo'),
+    '1H':  ('1h',  '3mo'),
+    '4H':  ('4h',  '6mo'),
+    '1D':  ('1d',  '1y'),
+    '1W':  ('1wk', '5y'),
+}
+
+def _fetch_ohlc_df(symbol: str, timeframe: str = '1H') -> pd.DataFrame:
+    """Returns a DataFrame with columns: open, high, low, close, volume, timestamp."""
+    interval, period = TIMEFRAME_MAP.get(timeframe, ('1h', '3mo'))
+    ticker = yf.Ticker(symbol)
+    df = ticker.history(period=period, interval=interval)
+    if df.empty:
+        return pd.DataFrame()
+    df = df.rename(columns={
+        'Open': 'open', 'High': 'high', 'Low': 'low',
+        'Close': 'close', 'Volume': 'volume'
+    })
+    df['timestamp'] = df.index
+    df = df[['open', 'high', 'low', 'close', 'volume', 'timestamp']].reset_index(drop=True)
+    return df
+
+
+def _run_signal_function(model: SnowAITradingModel, df: pd.DataFrame) -> bool:
+    """
+    Executes the model's code in a sandboxed namespace and calls function_name(df).
+    Returns True/False. Raises on syntax/runtime errors.
+    """
+    namespace = {
+        'pd': pd,
+        'np': np,
+        '__builtins__': {
+            'len': len, 'range': range, 'enumerate': enumerate,
+            'zip': zip, 'map': map, 'filter': filter,
+            'min': min, 'max': max, 'sum': sum, 'abs': abs,
+            'int': int, 'float': float, 'bool': bool, 'str': str,
+            'list': list, 'dict': dict, 'tuple': tuple,
+            'print': print, 'isinstance': isinstance,
+        }
+    }
+    exec(compile(model.code, f'<model:{model.id}>', 'exec'), namespace)
+    fn = namespace.get(model.function_name)
+    if fn is None:
+        raise ValueError(f"Function '{model.function_name}' not found in model code")
+    result = fn(df)
+    if not isinstance(result, bool):
+        raise TypeError(f"Function must return bool, got {type(result).__name__}")
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 1. AI MODEL CRUD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def snowai_save_trading_model(request):
+    """
+    POST — Save an AI-generated trading model (from the AI Model Builder).
+    Body: { name, description, plain_english, function_name, code,
+            asset_symbol, asset_name, asset_class, timeframe,
+            direction, take_profit_pct, stop_loss_pct, position_size }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+        model = SnowAITradingModel.objects.create(
+            name            = data['name'],
+            description     = data.get('description', ''),
+            plain_english   = data.get('plain_english', ''),
+            function_name   = data['function_name'],
+            code            = data['code'],
+            asset_symbol    = data['asset_symbol'],
+            asset_name      = data.get('asset_name', ''),
+            asset_class     = data.get('asset_class', ''),
+            timeframe       = data.get('timeframe', '1H'),
+            direction       = data.get('direction', 'BUY'),
+            take_profit_pct = Decimal(str(data.get('take_profit_pct', 8))),
+            stop_loss_pct   = Decimal(str(data.get('stop_loss_pct', 4))),
+            position_size   = Decimal(str(data.get('position_size', 1000))),
+            status          = 'DRAFT',
+        )
+        return JsonResponse({'success': True, 'model_id': str(model.id), 'name': model.name})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+def snowai_list_trading_models(request):
+    """GET — List all trading models."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    models_qs = SnowAITradingModel.objects.all()
+    data = []
+    for m in models_qs:
+        open_trades  = m.trades.filter(outcome='OPEN').count()
+        total_trades = m.trades.count()
+        total_pnl    = sum(float(t.profit_loss or 0) for t in m.trades.exclude(profit_loss=None))
+        data.append({
+            'id':             str(m.id),
+            'name':           m.name,
+            'description':    m.description,
+            'function_name':  m.function_name,
+            'asset_symbol':   m.asset_symbol,
+            'asset_name':     m.asset_name,
+            'asset_class':    m.asset_class,
+            'timeframe':      m.timeframe,
+            'direction':      m.direction,
+            'take_profit_pct':float(m.take_profit_pct),
+            'stop_loss_pct':  float(m.stop_loss_pct),
+            'position_size':  float(m.position_size),
+            'status':         m.status,
+            'last_run_at':    m.last_run_at.isoformat() if m.last_run_at else None,
+            'last_signal':    m.last_signal,
+            'error_log':      m.error_log,
+            'open_trades':    open_trades,
+            'total_trades':   total_trades,
+            'total_pnl':      round(total_pnl, 2),
+            'created_at':     m.created_at.isoformat(),
+        })
+    return JsonResponse({'success': True, 'models': data})
+
+
+@csrf_exempt
+def snowai_update_model_status(request):
+    """
+    POST — Activate, pause, or archive a model.
+    Body: { model_id, status }   status ∈ DRAFT | ACTIVE | PAUSED | ARCHIVED
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data     = json.loads(request.body)
+        model    = SnowAITradingModel.objects.get(id=data['model_id'])
+        model.status = data['status']
+        model.save(update_fields=['status', 'updated_at'])
+        return JsonResponse({'success': True, 'status': model.status})
+    except SnowAITradingModel.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Model not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+def snowai_delete_trading_model(request):
+    """POST — Delete a model and all its trades. Body: { model_id }"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data  = json.loads(request.body)
+        model = SnowAITradingModel.objects.get(id=data['model_id'])
+        model.delete()
+        return JsonResponse({'success': True})
+    except SnowAITradingModel.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Model not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+def snowai_get_model_trades(request):
+    """GET — /api/snowai-get-model-trades/?model_id=<uuid>"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    model_id = request.GET.get('model_id')
+    try:
+        model  = SnowAITradingModel.objects.get(id=model_id)
+        trades = model.trades.all()
+        data   = []
+        for t in trades:
+            data.append({
+                'id':               str(t.id),
+                'asset_symbol':     t.asset_symbol,
+                'order_type':       t.order_type,
+                'entry_price':      float(t.entry_price),
+                'exit_price':       float(t.exit_price) if t.exit_price else None,
+                'take_profit_price':float(t.take_profit_price),
+                'stop_loss_price':  float(t.stop_loss_price),
+                'quantity':         float(t.quantity),
+                'profit_loss':      float(t.profit_loss) if t.profit_loss else None,
+                'profit_loss_pct':  float(t.profit_loss_pct) if t.profit_loss_pct else None,
+                'outcome':          t.outcome,
+                'entry_timestamp':  t.entry_timestamp.isoformat(),
+                'exit_timestamp':   t.exit_timestamp.isoformat() if t.exit_timestamp else None,
+            })
+        return JsonResponse({'success': True, 'trades': data, 'model_name': model.name})
+    except SnowAITradingModel.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Model not found'}, status=404)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 2. SCHEDULER JOBS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def snowai_run_all_active_models():
+    """
+    Runs every 5 minutes via scheduler.
+    For each ACTIVE model:
+      1. Fetch OHLC for its asset + timeframe
+      2. Run its signal function
+      3. If signal is True AND no open trade → open a position
+    """
+    print("🤖 Running all active SnowAI models...")
+    active_models = SnowAITradingModel.objects.filter(status='ACTIVE')
+
+    for model in active_models:
+        try:
+            df = _fetch_ohlc_df(model.asset_symbol, model.timeframe)
+            if df.empty or len(df) < 5:
+                continue
+
+            signal = _run_signal_function(model, df)
+            model.last_signal  = signal
+            model.last_run_at  = timezone.now()
+            model.error_log    = ''
+            model.save(update_fields=['last_signal', 'last_run_at', 'error_log', 'updated_at'])
+
+            # Only open if signal fired AND no open trade for this model
+            has_open = model.trades.filter(outcome='OPEN').exists()
+            if signal and not has_open:
+                current_price = float(df['close'].iloc[-1])
+                tp_mult = float(model.take_profit_pct) / 100
+                sl_mult = float(model.stop_loss_pct)   / 100
+                order   = model.direction if model.direction != 'BOTH' else 'BUY'
+
+                if order == 'BUY':
+                    tp_price = current_price * (1 + tp_mult)
+                    sl_price = current_price * (1 - sl_mult)
+                else:
+                    tp_price = current_price * (1 - tp_mult)
+                    sl_price = current_price * (1 + sl_mult)
+
+                qty = float(model.position_size) / current_price
+
+                SnowAIModelTrade.objects.create(
+                    model             = model,
+                    asset_symbol      = model.asset_symbol,
+                    order_type        = order,
+                    entry_price       = Decimal(str(current_price)),
+                    take_profit_price = Decimal(str(tp_price)),
+                    stop_loss_price   = Decimal(str(sl_price)),
+                    quantity          = Decimal(str(round(qty, 6))),
+                    outcome           = 'OPEN',
+                )
+                print(f"  ✅ Opened {order} {model.asset_symbol} @ {current_price:.4f} for model '{model.name}'")
+
+        except Exception as e:
+            model.error_log   = traceback.format_exc()
+            model.last_run_at = timezone.now()
+            model.save(update_fields=['error_log', 'last_run_at', 'updated_at'])
+            print(f"  ❌ Error running model '{model.name}': {e}")
+
+
+def snowai_check_all_tp_sl():
+    """
+    Runs every 1 minute via scheduler.
+    Checks ALL open positions (both manual trades and model trades) against TP/SL.
+    """
+    print("🔍 Checking TP/SL for all open positions...")
+    now = timezone.now()
+
+    # ── 1. Manual trades (SnowAITradeOrderExecutionRecord) ──────────────────
+    open_manual = SnowAITradeOrderExecutionRecord.objects.filter(
+        status='OPEN'
+    ).exclude(take_profit=None, stop_loss=None)
+
+    for trade in open_manual:
+        try:
+            ticker = yf.Ticker(trade.asset_symbol)
+            hist   = ticker.history(period='1d', interval='1m')
+            if hist.empty:
+                continue
+            price = float(hist['Close'].iloc[-1])
+
+            hit_tp = hit_sl = False
+
+            if trade.take_profit:
+                tp = float(trade.take_profit)
+                hit_tp = (trade.order_type == 'BUY'  and price >= tp) or \
+                         (trade.order_type == 'SELL' and price <= tp)
+
+            if trade.stop_loss:
+                sl = float(trade.stop_loss)
+                hit_sl = (trade.order_type == 'BUY'  and price <= sl) or \
+                         (trade.order_type == 'SELL' and price >= sl)
+
+            if hit_tp or hit_sl:
+                ep   = float(trade.entry_price)
+                qty  = float(trade.quantity)
+                pl   = (price - ep) * qty if trade.order_type == 'BUY' else (ep - price) * qty
+                plp  = ((price - ep) / ep * 100) if trade.order_type == 'BUY' else ((ep - price) / ep * 100)
+
+                trade.status               = 'CLOSED'
+                trade.exit_price           = Decimal(str(price))
+                trade.exit_timestamp       = now
+                trade.exit_reason          = 'TP' if hit_tp else 'SL'
+                trade.profit_loss          = Decimal(str(round(pl, 6)))
+                trade.profit_loss_percentage = Decimal(str(round(plp, 4)))
+                trade.save()
+                print(f"  {'✅ TP' if hit_tp else '❌ SL'} hit: manual trade {trade.trade_id} ({trade.asset_symbol}) @ {price:.4f}, PnL ${pl:.2f}")
+
+        except Exception as e:
+            print(f"  Error checking manual trade {getattr(trade, 'trade_id', '?')}: {e}")
+
+    # ── 2. Model trades (SnowAIModelTrade) ──────────────────────────────────
+    open_model_trades = SnowAIModelTrade.objects.filter(outcome='OPEN')
+
+    for trade in open_model_trades:
+        try:
+            ticker = yf.Ticker(trade.asset_symbol)
+            hist   = ticker.history(period='1d', interval='1m')
+            if hist.empty:
+                continue
+            price = float(hist['Close'].iloc[-1])
+
+            tp    = float(trade.take_profit_price)
+            sl    = float(trade.stop_loss_price)
+
+            hit_tp = (trade.order_type == 'BUY'  and price >= tp) or \
+                     (trade.order_type == 'SELL' and price <= tp)
+            hit_sl = (trade.order_type == 'BUY'  and price <= sl) or \
+                     (trade.order_type == 'SELL' and price >= sl)
+
+            if hit_tp or hit_sl:
+                ep  = float(trade.entry_price)
+                qty = float(trade.quantity)
+                pl  = (price - ep) * qty if trade.order_type == 'BUY' else (ep - price) * qty
+                plp = ((price - ep) / ep * 100) if trade.order_type == 'BUY' else ((ep - price) / ep * 100)
+
+                trade.outcome        = 'TP_HIT' if hit_tp else 'SL_HIT'
+                trade.exit_price     = Decimal(str(price))
+                trade.exit_timestamp = now
+                trade.profit_loss    = Decimal(str(round(pl, 6)))
+                trade.profit_loss_pct= Decimal(str(round(plp, 4)))
+                trade.save()
+                print(f"  {'✅ TP' if hit_tp else '❌ SL'} hit: model trade {trade.id} ({trade.asset_symbol}) @ {price:.4f}, PnL ${pl:.2f}")
+
+        except Exception as e:
+            print(f"  Error checking model trade {getattr(trade, 'id', '?')}: {e}")
+
+    print("✅ TP/SL check complete.")
+
+
+scheduler.add_job(
+        snowai_check_all_tp_sl,
+        trigger='interval',
+        minutes=1,
+        id='snowai_tp_sl_monitor',
+        name='SnowAI TP/SL Monitor (all open positions)',
+        replace_existing=True,
+        misfire_grace_time=30,
+)
+
+scheduler.add_job(
+        snowai_run_all_active_models,
+        trigger='interval',
+        minutes=5,
+        id='snowai_model_runner',
+        name='SnowAI Active Model Signal Runner',
+        replace_existing=True,
+        misfire_grace_time=60,
+)
+
+# print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REGISTER SCHEDULER JOBS  (call this from your apps.py ready() method)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# def register_snowai_scheduler_jobs(scheduler):
+#     """
+#     Call this once from apps.py:
+#         from .views import register_snowai_scheduler_jobs
+#         register_snowai_scheduler_jobs(scheduler)
+
+#     Adds:
+#       • snowai_check_all_tp_sl      → every 1 minute, 24/7
+#       • snowai_run_all_active_models → every 5 minutes, 24/7
+#     """
+#     scheduler.add_job(
+#         snowai_check_all_tp_sl,
+#         trigger='interval',
+#         minutes=1,
+#         id='snowai_tp_sl_monitor',
+#         name='SnowAI TP/SL Monitor (all open positions)',
+#         replace_existing=True,
+#         misfire_grace_time=30,
+#     )
+
+#     scheduler.add_job(
+#         snowai_run_all_active_models,
+#         trigger='interval',
+#         minutes=5,
+#         id='snowai_model_runner',
+#         name='SnowAI Active Model Signal Runner',
+#         replace_existing=True,
+#         misfire_grace_time=60,
+#     )
+
+#     print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
+
+
+        
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
