@@ -39153,6 +39153,30 @@ def _run_signal_function(model: SnowAITradingModel, df: pd.DataFrame) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @csrf_exempt
+def snowai_update_model_code(request):
+    """
+    POST — Replace a model's code (used by the AI Improve / raw edit flow).
+    Body: { model_id, code, function_name? }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data  = json.loads(request.body)
+        model = SnowAITradingModel.objects.get(id=data['model_id'])
+        model.code = data['code']
+        if 'function_name' in data:
+            model.function_name = data['function_name']
+        # Clear any previous error log so we can see if the new code has fresh errors
+        model.error_log = ''
+        model.save(update_fields=['code', 'function_name', 'error_log', 'updated_at'])
+        return JsonResponse({'success': True})
+    except SnowAITradingModel.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Model not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
 def snowai_save_trading_model(request):
     """
     POST — Save an AI-generated trading model (from the AI Model Builder).
@@ -39449,7 +39473,7 @@ scheduler.add_job(
         name='SnowAI TP/SL Monitor (all open positions)',
         replace_existing=True,
         misfire_grace_time=30,
-)
+    )
 
 scheduler.add_job(
         snowai_run_all_active_models,
@@ -39459,14 +39483,14 @@ scheduler.add_job(
         name='SnowAI Active Model Signal Runner',
         replace_existing=True,
         misfire_grace_time=60,
-)
+    )
 
-# print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
+    # print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# REGISTER SCHEDULER JOBS  (call this from your apps.py ready() method)
-# ═══════════════════════════════════════════════════════════════════════════════
+# # ═══════════════════════════════════════════════════════════════════════════════
+# # REGISTER SCHEDULER JOBS  (call this from your apps.py ready() method)
+# # ═══════════════════════════════════════════════════════════════════════════════
 
 # def register_snowai_scheduler_jobs(scheduler):
 #     """
