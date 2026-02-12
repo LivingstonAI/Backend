@@ -39224,7 +39224,9 @@ def snowai_list_trading_models(request):
             'id':             str(m.id),
             'name':           m.name,
             'description':    m.description,
+            'plain_english':  m.plain_english,
             'function_name':  m.function_name,
+            'code':           m.code,
             'asset_symbol':   m.asset_symbol,
             'asset_name':     m.asset_name,
             'asset_class':    m.asset_class,
@@ -39475,6 +39477,7 @@ scheduler.add_job(
         misfire_grace_time=30,
     )
 
+
 scheduler.add_job(
         snowai_run_all_active_models,
         trigger='interval',
@@ -39485,7 +39488,43 @@ scheduler.add_job(
         misfire_grace_time=60,
     )
 
-    # print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
+
+# # ═══════════════════════════════════════════════════════════════════════════════
+# # REGISTER SCHEDULER JOBS  (call this from your apps.py ready() method)
+# # ═══════════════════════════════════════════════════════════════════════════════
+
+# def register_snowai_scheduler_jobs(scheduler):
+#     """
+#     Call this once from apps.py:
+#         from .views import register_snowai_scheduler_jobs
+#         register_snowai_scheduler_jobs(scheduler)
+
+#     Adds:
+#       • snowai_check_all_tp_sl      → every 1 minute, 24/7
+#       • snowai_run_all_active_models → every 5 minutes, 24/7
+#     """
+#     scheduler.add_job(
+#         snowai_check_all_tp_sl,
+#         trigger='interval',
+#         minutes=1,
+#         id='snowai_tp_sl_monitor',
+#         name='SnowAI TP/SL Monitor (all open positions)',
+#         replace_existing=True,
+#         misfire_grace_time=30,
+#     )
+
+#     scheduler.add_job(
+#         snowai_run_all_active_models,
+#         trigger='interval',
+#         minutes=5,
+#         id='snowai_model_runner',
+#         name='SnowAI Active Model Signal Runner',
+#         replace_existing=True,
+#         misfire_grace_time=60,
+#     )
+
+#     print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
+
 
 
 # # ═══════════════════════════════════════════════════════════════════════════════
