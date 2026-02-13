@@ -39467,26 +39467,26 @@ def snowai_check_all_tp_sl():
     print("✅ TP/SL check complete.")
 
 
-scheduler.add_job(
-        snowai_check_all_tp_sl,
-        trigger='interval',
-        minutes=1,
-        id='snowai_tp_sl_monitor',
-        name='SnowAI TP/SL Monitor (all open positions)',
-        replace_existing=True,
-        misfire_grace_time=30,
-    )
+# scheduler.add_job(
+#         snowai_check_all_tp_sl,
+#         trigger='interval',
+#         minutes=1,
+#         id='snowai_tp_sl_monitor',
+#         name='SnowAI TP/SL Monitor (all open positions)',
+#         replace_existing=True,
+#         misfire_grace_time=30,
+#     )
 
 
-scheduler.add_job(
-        snowai_run_all_active_models,
-        trigger='interval',
-        minutes=5,
-        id='snowai_model_runner',
-        name='SnowAI Active Model Signal Runner',
-        replace_existing=True,
-        misfire_grace_time=60,
-    )
+# scheduler.add_job(
+#         snowai_run_all_active_models,
+#         trigger='interval',
+#         minutes=5,
+#         id='snowai_model_runner',
+#         name='SnowAI Active Model Signal Runner',
+#         replace_existing=True,
+#         misfire_grace_time=60,
+#     )
 
 
 def _build_namespace(dataset_df, num_positions=0):
@@ -40033,195 +40033,3 @@ def mss_trend_age_estimator_single(request):
             'error': str(e),
             'traceback': traceback.format_exc()
         }, status=500)
-
-
-# # ═══════════════════════════════════════════════════════════════════════════════
-# # REGISTER SCHEDULER JOBS  (call this from your apps.py ready() method)
-# # ═══════════════════════════════════════════════════════════════════════════════
-
-# def register_snowai_scheduler_jobs(scheduler):
-#     """
-#     Call this once from apps.py:
-#         from .views import register_snowai_scheduler_jobs
-#         register_snowai_scheduler_jobs(scheduler)
-
-#     Adds:
-#       • snowai_check_all_tp_sl      → every 1 minute, 24/7
-#       • snowai_run_all_active_models → every 5 minutes, 24/7
-#     """
-#     scheduler.add_job(
-#         snowai_check_all_tp_sl,
-#         trigger='interval',
-#         minutes=1,
-#         id='snowai_tp_sl_monitor',
-#         name='SnowAI TP/SL Monitor (all open positions)',
-#         replace_existing=True,
-#         misfire_grace_time=30,
-#     )
-
-#     scheduler.add_job(
-#         snowai_run_all_active_models,
-#         trigger='interval',
-#         minutes=5,
-#         id='snowai_model_runner',
-#         name='SnowAI Active Model Signal Runner',
-#         replace_existing=True,
-#         misfire_grace_time=60,
-#     )
-
-#     print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
-
-
-
-# # ═══════════════════════════════════════════════════════════════════════════════
-# # REGISTER SCHEDULER JOBS  (call this from your apps.py ready() method)
-# # ═══════════════════════════════════════════════════════════════════════════════
-
-# def register_snowai_scheduler_jobs(scheduler):
-#     """
-#     Call this once from apps.py:
-#         from .views import register_snowai_scheduler_jobs
-#         register_snowai_scheduler_jobs(scheduler)
-
-#     Adds:
-#       • snowai_check_all_tp_sl      → every 1 minute, 24/7
-#       • snowai_run_all_active_models → every 5 minutes, 24/7
-#     """
-#     scheduler.add_job(
-#         snowai_check_all_tp_sl,
-#         trigger='interval',
-#         minutes=1,
-#         id='snowai_tp_sl_monitor',
-#         name='SnowAI TP/SL Monitor (all open positions)',
-#         replace_existing=True,
-#         misfire_grace_time=30,
-#     )
-
-#     scheduler.add_job(
-#         snowai_run_all_active_models,
-#         trigger='interval',
-#         minutes=5,
-#         id='snowai_model_runner',
-#         name='SnowAI Active Model Signal Runner',
-#         replace_existing=True,
-#         misfire_grace_time=60,
-#     )
-
-#     print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
-
-
-        
-# LEGODI BACKEND CODE
-def send_simple_message():
-    # Replace with your Mailgun domain and API key
-    domain = os.environ['MAILGUN_DOMAIN']
-    api_key = os.environ['MAILGUN_API_KEY']
-
-    # Mailgun API endpoint for sending messages
-    url = f"https://api.mailgun.net/v3/{domain}/messages"
-
-    # Email details
-    sender = f"Excited User <postmaster@{domain}>"
-    recipients = ["motingwetlotlo@yahoo.com"]
-    subject = "Hello from Mailgun"
-    text = "Testing some Mailgun awesomeness!"
-
-    # Send the email
-    response = requests.post(url, auth=("api", api_key), data={
-        "from": sender,
-        "to": recipients,
-        "subject": subject,
-        "text": text
-    })
-
-    # Return the response content as a JSON object
-    return {
-        "status_code": response.status_code,
-        "response_content": response.content.decode("utf-8")
-    }
-
-
-def contact_us(request):
-    if request.method == "POST":
-        # Get form data from request body
-        data = json.loads(request.body)
-        first_name = data.get("firstName")
-        last_name = data.get("lastName")
-        email = data.get("email")
-        message = data.get("message")
-        
-        # Save form data to the ContactUs model
-        contact_us_entry = ContactUs.objects.create(
-            first_name=first_name,
-            last_name=last_name,
-            email=email,
-            message=message
-        )
-        return JsonResponse({"message": "Email sent successfully and saved to database!"})
-    else:
-        return JsonResponse({"error": "Method not allowed"}, status=405)
-
-
-def book_order(request):
-    if request.method == "POST":
-        # Get form data from request body
-        try:
-            data = json.loads(request.body)
-            first_name = data.get("first_name")
-            last_name = data.get("last_name")
-            email = data.get("email")
-            interested_product = data.get("interested_product")
-            number_of_units = int(data.get("number_of_units"))
-            phone_number = data.get("phone_number")
-
-            # Save form data to the BookOrder model
-            book_order_entry = BookOrder.objects.create(
-                first_name=first_name,
-                last_name=last_name,
-                email=email,
-                interested_product=interested_product,
-                phone_number=phone_number,
-                number_of_units=number_of_units
-            )
-            return JsonResponse({"message": "Order booked successfully!"})
-        except Exception as e:
-            print(f'Exception occured: {e}')
-            return JsonResponse({'error': str(e)})
-    else:
-        return JsonResponse({"error": "Method not allowed"}, status=405)
-
-# Legodi Tech Registration and Login
-from rest_framework import generics
-
-class UserRegistrationView(generics.CreateAPIView):
-    queryset = CustomUser.objects.all()
-    serializer_class = CustomUserSerializer
-
-
-def user_login(request):
-    if request.method == 'POST':
-        email = request.POST.get('email')
-        password = request.POST.get('password')
-
-        user = authenticate(request, username=email, password=password)
-        if user:
-            # User is authenticated
-            login(request, user)
-            # Generate and return an authentication token (e.g., JWT)
-            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
-        else:
-            return JsonResponse({'message': 'Invalid credentials'}, status=400)
-    else:
-        return JsonResponse({'message': 'Invalid request method'}, status=405)
-
-
-from django.middleware.csrf import get_token
-from django.http import JsonResponse
-
-def get_csrf_token(request):
-    try:
-        csrf_token = get_token(request)
-        return JsonResponse({'csrfToken': csrf_token})
-    except Exception as e:
-        return JsonResponse({'error': str(e)})
-

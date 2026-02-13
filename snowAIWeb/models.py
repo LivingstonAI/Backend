@@ -1655,6 +1655,61 @@ class SnowAIForwardTestingModel(models.Model):
         return f"Model {self.model_id} - {self.created_at.strftime('%Y-%m-%d %H:%M')}"
 
 
+from django.db import models
+from django.utils import timezone
+
+
+class BacktestWatchlist(models.Model):
+    """
+    Stores assets of interest for backtesting.
+    Each entry is a single tradeable asset the user wants quick access to.
+    """
+    ASSET_CLASS_CHOICES = [
+        ('Stocks',      'Stocks'),
+        ('Crypto',      'Crypto'),
+        ('Forex',       'Forex'),
+        ('ETF',         'ETF'),
+        ('Commodities', 'Commodities'),
+        ('Indices',     'Indices'),
+        ('Other',       'Other'),
+    ]
+
+    symbol = models.CharField(
+        max_length=30,
+        unique=True,
+        help_text="Ticker symbol used for charting (e.g. AAPL, BTC-USD, EURUSD=X)"
+    )
+    name = models.CharField(
+        max_length=120,
+        help_text="Human-readable asset name (e.g. Apple Inc.)"
+    )
+    asset_class = models.CharField(
+        max_length=20,
+        choices=ASSET_CLASS_CHOICES,
+        default='Stocks',
+    )
+    yfinance_symbol = models.CharField(
+        max_length=30,
+        blank=True,
+        null=True,
+        help_text="yFinance-specific symbol if different from display symbol"
+    )
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Optional notes about why this asset is on the watchlist"
+    )
+    added_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['asset_class', 'symbol']
+        verbose_name = "Backtest Watchlist Asset"
+        verbose_name_plural = "Backtest Watchlist Assets"
+
+    def __str__(self):
+        return f"{self.symbol} ({self.asset_class}) — {self.name}"
+
+
 class FeedbackForm(models.Model): 
     feedback = models.TextField()
 

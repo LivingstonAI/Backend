@@ -643,6 +643,27 @@ urlpatterns = [
      # Single asset detailed trend age analysis
      path('api/mss-trend-age-estimator-single/', views.mss_trend_age_estimator_single, name='mss-trend-age-estimator-single'),
 
+     # List all watchlist assets
+     path(
+          'api/backtest-watchlist/',
+          views.backtest_watchlist_list,
+          name='backtest_watchlist_list',
+     ),
+
+     # Add (or update) an asset
+     path(
+          'api/backtest-watchlist/add/',
+          views.backtest_watchlist_add,
+          name='backtest_watchlist_add',
+     ),
+
+     # Delete by primary key
+     path(
+          'api/backtest-watchlist/delete/<int:asset_id>/',
+          views.backtest_watchlist_delete,
+          name='backtest_watchlist_delete',
+     ),
+
 
 
 
