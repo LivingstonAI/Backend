@@ -40033,3 +40033,297 @@ def mss_trend_age_estimator_single(request):
             'error': str(e),
             'traceback': traceback.format_exc()
         }, status=500)
+
+
+# ─── LIST ────────────────────────────────────────────────────────────────────
+@csrf_exempt
+def backtest_watchlist_list(request):
+    """
+    GET /api/backtest-watchlist/
+    Returns all watchlist assets grouped by asset_class.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET required'}, status=405)
+    try:
+        assets = BacktestWatchlist.objects.all()
+        data = [{
+            'id':              a.id,
+            'symbol':          a.symbol,
+            'name':            a.name,
+            'asset_class':     a.asset_class,
+            'yfinance_symbol': a.yfinance_symbol or a.symbol,
+            'notes':           a.notes or '',
+            'added_at':        a.added_at.isoformat(),
+        } for a in assets]
+        return JsonResponse({'success': True, 'assets': data, 'count': len(data)})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─── ADD ─────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+def backtest_watchlist_add(request):
+    """
+    POST /api/backtest-watchlist/add/
+    Body: { symbol, name, asset_class, yfinance_symbol?, notes? }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    try:
+        body        = json.loads(request.body)
+        symbol      = body.get('symbol', '').strip().upper()
+        name        = body.get('name', '').strip()
+        asset_class = body.get('asset_class', 'Stocks')
+        yf_symbol   = body.get('yfinance_symbol', '').strip() or symbol
+        notes       = body.get('notes', '').strip()
+
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'symbol is required'}, status=400)
+        if not name:
+            return JsonResponse({'success': False, 'error': 'name is required'}, status=400)
+
+        asset, created = BacktestWatchlist.objects.get_or_create(
+            symbol=symbol,
+            defaults={
+                'name':            name,
+                'asset_class':     asset_class,
+                'yfinance_symbol': yf_symbol,
+                'notes':           notes,
+            }
+        )
+
+        if not created:
+            # Update if already exists
+            asset.name            = name
+            asset.asset_class     = asset_class
+            asset.yfinance_symbol = yf_symbol
+            asset.notes           = notes
+            asset.save()
+
+        return JsonResponse({
+            'success': True,
+            'created': created,
+            'asset': {
+                'id':              asset.id,
+                'symbol':          asset.symbol,
+                'name':            asset.name,
+                'asset_class':     asset.asset_class,
+                'yfinance_symbol': asset.yfinance_symbol or asset.symbol,
+                'notes':           asset.notes or '',
+                'added_at':        asset.added_at.isoformat(),
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─── DELETE ───────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+def backtest_watchlist_delete(request, asset_id):
+    """
+    DELETE /api/backtest-watchlist/delete/<asset_id>/
+    """
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'DELETE required'}, status=405)
+    try:
+        asset = BacktestWatchlist.objects.get(id=asset_id)
+        symbol = asset.symbol
+        asset.delete()
+        return JsonResponse({'success': True, 'deleted_symbol': symbol})
+    except BacktestWatchlist.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Asset not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# # ═══════════════════════════════════════════════════════════════════════════════
+# # REGISTER SCHEDULER JOBS  (call this from your apps.py ready() method)
+# # ═══════════════════════════════════════════════════════════════════════════════
+
+# def register_snowai_scheduler_jobs(scheduler):
+#     """
+#     Call this once from apps.py:
+#         from .views import register_snowai_scheduler_jobs
+#         register_snowai_scheduler_jobs(scheduler)
+
+#     Adds:
+#       • snowai_check_all_tp_sl      → every 1 minute, 24/7
+#       • snowai_run_all_active_models → every 5 minutes, 24/7
+#     """
+#     scheduler.add_job(
+#         snowai_check_all_tp_sl,
+#         trigger='interval',
+#         minutes=1,
+#         id='snowai_tp_sl_monitor',
+#         name='SnowAI TP/SL Monitor (all open positions)',
+#         replace_existing=True,
+#         misfire_grace_time=30,
+#     )
+
+#     scheduler.add_job(
+#         snowai_run_all_active_models,
+#         trigger='interval',
+#         minutes=5,
+#         id='snowai_model_runner',
+#         name='SnowAI Active Model Signal Runner',
+#         replace_existing=True,
+#         misfire_grace_time=60,
+#     )
+
+#     print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
+
+
+
+# # ═══════════════════════════════════════════════════════════════════════════════
+# # REGISTER SCHEDULER JOBS  (call this from your apps.py ready() method)
+# # ═══════════════════════════════════════════════════════════════════════════════
+
+# def register_snowai_scheduler_jobs(scheduler):
+#     """
+#     Call this once from apps.py:
+#         from .views import register_snowai_scheduler_jobs
+#         register_snowai_scheduler_jobs(scheduler)
+
+#     Adds:
+#       • snowai_check_all_tp_sl      → every 1 minute, 24/7
+#       • snowai_run_all_active_models → every 5 minutes, 24/7
+#     """
+#     scheduler.add_job(
+#         snowai_check_all_tp_sl,
+#         trigger='interval',
+#         minutes=1,
+#         id='snowai_tp_sl_monitor',
+#         name='SnowAI TP/SL Monitor (all open positions)',
+#         replace_existing=True,
+#         misfire_grace_time=30,
+#     )
+
+#     scheduler.add_job(
+#         snowai_run_all_active_models,
+#         trigger='interval',
+#         minutes=5,
+#         id='snowai_model_runner',
+#         name='SnowAI Active Model Signal Runner',
+#         replace_existing=True,
+#         misfire_grace_time=60,
+#     )
+
+#     print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
+
+
+        
+# LEGODI BACKEND CODE
+def send_simple_message():
+    # Replace with your Mailgun domain and API key
+    domain = os.environ['MAILGUN_DOMAIN']
+    api_key = os.environ['MAILGUN_API_KEY']
+
+    # Mailgun API endpoint for sending messages
+    url = f"https://api.mailgun.net/v3/{domain}/messages"
+
+    # Email details
+    sender = f"Excited User <postmaster@{domain}>"
+    recipients = ["motingwetlotlo@yahoo.com"]
+    subject = "Hello from Mailgun"
+    text = "Testing some Mailgun awesomeness!"
+
+    # Send the email
+    response = requests.post(url, auth=("api", api_key), data={
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "text": text
+    })
+
+    # Return the response content as a JSON object
+    return {
+        "status_code": response.status_code,
+        "response_content": response.content.decode("utf-8")
+    }
+
+
+def contact_us(request):
+    if request.method == "POST":
+        # Get form data from request body
+        data = json.loads(request.body)
+        first_name = data.get("firstName")
+        last_name = data.get("lastName")
+        email = data.get("email")
+        message = data.get("message")
+        
+        # Save form data to the ContactUs model
+        contact_us_entry = ContactUs.objects.create(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            message=message
+        )
+        return JsonResponse({"message": "Email sent successfully and saved to database!"})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
