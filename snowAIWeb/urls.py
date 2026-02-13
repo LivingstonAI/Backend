@@ -633,6 +633,16 @@ urlpatterns = [
           views.snowai_run_backtest_model_signal,
           name='snowai_run_backtest_model_signal'),
 
+     # ============================================================
+     # URL ROUTES — Trend Age Estimator
+     # ============================================================
+
+     # Bulk trend age analysis (multi-asset)
+     path('api/mss-trend-age-estimator-bulk/', views.mss_trend_age_estimator_bulk, name='mss-trend-age-estimator-bulk'),
+
+     # Single asset detailed trend age analysis
+     path('api/mss-trend-age-estimator-single/', views.mss_trend_age_estimator_single, name='mss-trend-age-estimator-single'),
+
 
 
 

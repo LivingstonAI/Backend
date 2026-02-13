@@ -39751,6 +39751,290 @@ def snowai_run_backtest_model_signal(request):
         return JsonResponse({'success': False, 'error': traceback.format_exc(), 'signal': None}, status=200)
 
 
+# ============================================================
+# ENDPOINT: Trend Age Estimator (Multi-Timeframe R² Analysis)
+# ============================================================
+# 
+# Logic:
+# - High R² on short timeframe (20d) + Low R² on long timeframe (90d) = NEW TREND
+# - High R² across all timeframes = ESTABLISHED TREND
+# - Low R² on short but high on long = TREND WEAKENING
+# - Low R² across all timeframes = NO TREND / CHOPPY
+#
+# ============================================================
+
+from sklearn.linear_model import LinearRegression
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_trend_age_estimator_bulk(request):
+    """
+    Analyze trend age/maturity for multiple assets using R² comparison across timeframes.
+    Returns estimated trend age and classification.
+    """
+    try:
+        data = json.loads(request.body)
+        symbols = data.get('symbols', [])
+        
+        if not symbols or not isinstance(symbols, list):
+            return JsonResponse({'success': False, 'error': 'Valid symbols list required'}, status=400)
+        
+        # Timeframes to analyze (days)
+        timeframes = [20, 30, 60, 90]
+        
+        results = []
+        failed_symbols = []
+        
+        for symbol in symbols:
+            try:
+                # Fetch historical data (need max timeframe + buffer)
+                ticker = yf.Ticker(symbol)
+                hist = ticker.history(period='120d')  # 90d + buffer
+                
+                if hist.empty or len(hist) < 20:
+                    failed_symbols.append(symbol)
+                    continue
+                
+                # Calculate R² for each timeframe
+                r_squared_values = {}
+                trend_strengths = {}
+                
+                for tf in timeframes:
+                    # Get data for this timeframe
+                    tf_data = hist.tail(min(tf, len(hist)))
+                    
+                    if len(tf_data) < 10:
+                        continue
+                    
+                    # Calculate R² using linear regression
+                    prices = tf_data['Close'].values
+                    X = np.arange(len(prices)).reshape(-1, 1)
+                    y = prices.reshape(-1, 1)
+                    
+                    model = LinearRegression()
+                    model.fit(X, y)
+                    r_squared = max(0, min(model.score(X, y), 1.0))
+                    
+                    # Calculate trend direction (positive slope = uptrend)
+                    slope = model.coef_[0][0]
+                    
+                    # Trend strength (slope magnitude relative to price)
+                    avg_price = np.mean(prices)
+                    if avg_price > 0:
+                        strength = abs(slope * len(prices)) / avg_price
+                    else:
+                        strength = 0
+                    
+                    r_squared_values[f'{tf}d'] = round(r_squared, 4)
+                    trend_strengths[f'{tf}d'] = {
+                        'slope': round(slope, 6),
+                        'strength': round(strength, 4),
+                        'direction': 'UP' if slope > 0 else 'DOWN'
+                    }
+                
+                # ── Trend Age Classification ──
+                
+                r20 = r_squared_values.get('20d', 0)
+                r30 = r_squared_values.get('30d', 0)
+                r60 = r_squared_values.get('60d', 0)
+                r90 = r_squared_values.get('90d', 0)
+                
+                # Calculate R² gradient (how R² changes across timeframes)
+                # Positive gradient = R² increasing with time (established trend)
+                # Negative gradient = R² decreasing with time (new trend)
+                r_gradient = (r90 - r20) if (r90 and r20) else 0
+                
+                # Estimate trend age in days
+                # Logic:
+                # - If R² high on 20d but low on 90d → trend is ~20-30 days old
+                # - If R² high across all → trend is 90+ days old
+                # - If R² increases with timeframe → older trend
+                
+                if r20 >= 0.7 and r30 >= 0.7 and r60 >= 0.7 and r90 >= 0.7:
+                    trend_age_days = 90
+                    trend_classification = "ESTABLISHED"
+                    classification_color = "#3b82f6"
+                    description = "Strong trend across all timeframes — well-established, mature trend."
+                
+                elif r20 >= 0.6 and r30 >= 0.6 and r60 < 0.5:
+                    trend_age_days = 25
+                    trend_classification = "NEW"
+                    classification_color = "#10b981"
+                    description = "High R² on short timeframes, low on long — fresh trend forming."
+                
+                elif r20 >= 0.6 and r60 >= 0.6 and r90 < 0.5:
+                    trend_age_days = 50
+                    trend_classification = "DEVELOPING"
+                    classification_color = "#06b6d4"
+                    description = "Trend has been developing for 1-2 months, gaining consistency."
+                
+                elif r20 < 0.5 and r60 >= 0.6:
+                    trend_age_days = 70
+                    trend_classification = "WEAKENING"
+                    classification_color = "#f59e0b"
+                    description = "Long-term trend weakening — recent choppiness detected."
+                
+                elif r20 < 0.4 and r30 < 0.4 and r60 < 0.4:
+                    trend_age_days = 0
+                    trend_classification = "NO TREND"
+                    classification_color = "#6b7280"
+                    description = "Choppy price action across all timeframes — no clear trend."
+                
+                else:
+                    # Use gradient-based estimate
+                    if r_gradient > 0.2:
+                        trend_age_days = 80
+                        trend_classification = "MATURE"
+                        classification_color = "#8b5cf6"
+                    elif r_gradient < -0.2:
+                        trend_age_days = 15
+                        trend_classification = "EMERGING"
+                        classification_color = "#22c55e"
+                    else:
+                        trend_age_days = 40
+                        trend_classification = "MID-STAGE"
+                        classification_color = "#14b8a6"
+                    description = f"R² gradient: {r_gradient:.2f} — trend in transition phase."
+                
+                # Get current price info
+                current_price = float(hist['Close'].iloc[-1])
+                price_20d_ago = float(hist['Close'].iloc[-20]) if len(hist) >= 20 else current_price
+                price_change_20d = ((current_price - price_20d_ago) / price_20d_ago * 100) if price_20d_ago != 0 else 0
+                
+                # Determine dominant trend direction
+                short_term_dir = trend_strengths.get('20d', {}).get('direction', 'FLAT')
+                long_term_dir = trend_strengths.get('90d', {}).get('direction', 'FLAT')
+                
+                if short_term_dir == long_term_dir:
+                    trend_alignment = "ALIGNED"
+                    alignment_color = "#10b981"
+                else:
+                    trend_alignment = "DIVERGING"
+                    alignment_color = "#ef4444"
+                
+                results.append({
+                    'symbol': symbol,
+                    'trend_age_days': trend_age_days,
+                    'trend_classification': trend_classification,
+                    'classification_color': classification_color,
+                    'description': description,
+                    'r_squared': r_squared_values,
+                    'r_gradient': round(r_gradient, 4),
+                    'trend_strengths': trend_strengths,
+                    'trend_alignment': trend_alignment,
+                    'alignment_color': alignment_color,
+                    'current_price': round(current_price, 2),
+                    'price_change_20d': round(price_change_20d, 2)
+                })
+            
+            except Exception as e:
+                print(f"Error processing {symbol}: {str(e)}")
+                failed_symbols.append(symbol)
+                continue
+        
+        if not results:
+            return JsonResponse({
+                'success': False,
+                'error': 'No valid data for any symbols'
+            }, status=400)
+        
+        # Sort by trend age (shortest first by default)
+        results.sort(key=lambda x: x['trend_age_days'])
+        
+        return JsonResponse({
+            'success': True,
+            'results': results,
+            'total_analyzed': len(results),
+            'failed_symbols': failed_symbols,
+            'timeframes_analyzed': timeframes,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mss_trend_age_estimator_single(request):
+    """
+    Detailed trend age analysis for a single asset.
+    Returns R² progression chart data and detailed breakdown.
+    """
+    try:
+        data = json.loads(request.body)
+        symbol = data.get('symbol')
+        
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'Symbol required'}, status=400)
+        
+        # Fetch data
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period='120d')
+        
+        if hist.empty or len(hist) < 20:
+            return JsonResponse({
+                'success': False,
+                'error': f'Insufficient data for {symbol}'
+            }, status=400)
+        
+        # Calculate R² for multiple timeframes (more granular)
+        timeframes = [10, 15, 20, 25, 30, 40, 50, 60, 75, 90]
+        r_squared_progression = []
+        
+        for tf in timeframes:
+            tf_data = hist.tail(min(tf, len(hist)))
+            
+            if len(tf_data) < 10:
+                continue
+            
+            prices = tf_data['Close'].values
+            X = np.arange(len(prices)).reshape(-1, 1)
+            y = prices.reshape(-1, 1)
+            
+            model = LinearRegression()
+            model.fit(X, y)
+            r_squared = max(0, min(model.score(X, y), 1.0))
+            
+            r_squared_progression.append({
+                'timeframe': tf,
+                'r_squared': round(r_squared, 4)
+            })
+        
+        # Run bulk analyzer for classification
+        bulk_data = {'symbols': [symbol]}
+        bulk_response = mss_trend_age_estimator_bulk(
+            type('Request', (), {'method': 'POST', 'body': json.dumps(bulk_data).encode()})()
+        )
+        bulk_result = json.loads(bulk_response.content)
+        
+        if bulk_result['success']:
+            classification_data = bulk_result['results'][0]
+        else:
+            classification_data = {}
+        
+        return JsonResponse({
+            'success': True,
+            'symbol': symbol,
+            'r_squared_progression': r_squared_progression,
+            'classification': classification_data,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status=500)
+
+
 # # ═══════════════════════════════════════════════════════════════════════════════
 # # REGISTER SCHEDULER JOBS  (call this from your apps.py ready() method)
 # # ═══════════════════════════════════════════════════════════════════════════════
