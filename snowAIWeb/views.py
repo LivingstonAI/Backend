@@ -39489,6 +39489,268 @@ scheduler.add_job(
     )
 
 
+def _build_namespace(dataset_df, num_positions=0):
+    """
+    Build the full exec namespace used by SnowAIForwardTestingModel code.
+    The model code style is:
+        set_take_profit(number=4, type_of_setting='PERCENTAGE')
+        set_stop_loss(number=2, type_of_setting='PERCENTAGE')
+        if num_positions == 0:
+            if is_uptrend(data=dataset, lookback_days=30):
+                ...
+                    return_statement = 'buy'
+    """
+    # Use a dict that the closures can write into
+    _tp_sl = {'tp': 8, 'tp_type': 'PERCENTAGE', 'sl': 4, 'sl_type': 'PERCENTAGE'}
+
+    def set_take_profit(number, type_of_setting='PERCENTAGE'):
+        _tp_sl['tp']      = number
+        _tp_sl['tp_type'] = type_of_setting
+
+    def set_stop_loss(number, type_of_setting='PERCENTAGE'):
+        _tp_sl['sl']      = number
+        _tp_sl['sl_type'] = type_of_setting
+
+    _ns = {
+        # ── context ──────────────────────────────────────────────
+        'num_positions':    num_positions,
+        'dataset':          dataset_df,   # model code does: is_uptrend(data=dataset, ...)
+        'return_statement': None,
+        # ── TP / SL helpers (model calls these directly) ─────────
+        'set_take_profit':    set_take_profit,
+        'set_stop_loss':      set_stop_loss,
+        # expose tp_sl dict so we can read values back after exec
+        '_tp_sl':             _tp_sl,
+        # ── trend / structure ────────────────────────────────────
+        'is_support_level':             is_support_level,
+        'is_resistance_level':          is_resistance_level,
+        'is_uptrend':                   is_uptrend,
+        'is_downtrend':                 is_downtrend,
+        'is_ranging_market':            is_ranging_market,
+        # ── candlestick patterns ─────────────────────────────────
+        'is_bullish_candle':            is_bullish_candle,
+        'is_bearish_candle':            is_bearish_candle,
+        'is_bullish_engulfing':         is_bullish_engulfing,
+        'is_bearish_engulfing':         is_bearish_engulfing,
+        'is_morning_star':              is_morning_star,
+        'is_evening_star':              is_evening_star,
+        'is_three_white_soldiers':      is_three_white_soldiers,
+        'is_three_black_crows':         is_three_black_crows,
+        'is_morning_doji_star':         is_morning_doji_star,
+        'is_evening_doji_star':         is_evening_doji_star,
+        'is_rising_three_methods':      is_rising_three_methods,
+        'is_falling_three_methods':     is_falling_three_methods,
+        'is_hammer':                    is_hammer,
+        'is_hanging_man':               is_hanging_man,
+        'is_inverted_hammer':           is_inverted_hammer,
+        'is_shooting_star':             is_shooting_star,
+        'is_bullish_kicker':            is_bullish_kicker,
+        'is_bearish_kicker':            is_bearish_kicker,
+        'is_bullish_harami':            is_bullish_harami,
+        'is_bearish_harami':            is_bearish_harami,
+        'is_bullish_three_line_strike': is_bullish_three_line_strike,
+        'is_bearish_three_line_strike': is_bearish_three_line_strike,
+        # ── indicators ───────────────────────────────────────────
+        'moving_average':               moving_average,
+        'bbands':                       bbands,
+        'momentum':                     momentum,
+        'rsi':                          rsi,
+        # ── SMC / ICT ────────────────────────────────────────────
+        'is_asian_range_buy':           is_asian_range_buy,
+        'is_asian_range_sell':          is_asian_range_sell,
+        'is_fibonacci_level':           is_fibonacci_level,
+        'is_ote_buy':                   is_ote_buy,
+        'is_ote_sell':                  is_ote_sell,
+        'is_bullish_orderblock':        is_bullish_orderblock,
+        'is_bearish_orderblock':        is_bearish_orderblock,
+        'is_bullish_weekly_profile':    is_bullish_weekly_profile,
+        'is_bearish_weekly_profile':    is_bearish_weekly_profile,
+        # ── bias / session ───────────────────────────────────────
+        'buy_hold':                     buy_hold,
+        'sell_hold':                    sell_hold,
+        'buy_hold_regime':              buy_hold_regime,
+        'is_bullish_bias':              is_bullish_bias,
+        'is_bearish_bias':              is_bearish_bias,
+        'new_york_session':             new_york_session,
+        'london_session':               london_session,
+        'asian_session':                asian_session,
+        # ── volume ───────────────────────────────────────────────
+        'is_high_volume':               is_high_volume,
+        'is_low_volume':                is_low_volume,
+        # ── regime ───────────────────────────────────────────────
+        'is_stable_market':             is_stable_market,
+        'is_choppy_market':             is_choppy_market,
+        'is_volatile_market':           is_volatile_market,
+        # ── proprietary strategies ───────────────────────────────
+        'snow_alpha_buy':               snow_alpha_buy,
+        'snow_alpha_short':             snow_alpha_short,
+        'ice_beta_buy':                 ice_beta_buy,
+        'ice_beta_short':               ice_beta_short,
+        'frost_gamma_buy':              frost_gamma_buy,
+        'frost_gamma_short':            frost_gamma_short,
+        'glacier_x_buy':                glacier_x_buy,
+        'glacier_x_short':              glacier_x_short,
+        'avalanche_z_buy':              avalanche_z_buy,
+        'avalanche_z_short':            avalanche_z_short,
+        'polar_prime_buy':              polar_prime_buy,
+        'polar_prime_short':            polar_prime_short,
+        'blizzard_omega_buy':           blizzard_omega_buy,
+        'blizzard_omega_short':         blizzard_omega_short,
+        'tundra_sigma_buy':             tundra_sigma_buy,
+        'tundra_sigma_short':           tundra_sigma_short,
+        'arctic_delta_buy':             arctic_delta_buy,
+        'arctic_delta_short':           arctic_delta_short,
+        'permafrost_theta_buy':         permafrost_theta_buy,
+        'permafrost_theta_short':       permafrost_theta_short,
+        # ── retracement / elasticity ─────────────────────────────
+        'is_bullish_market_retracement': is_bullish_market_retracement,
+        'is_bearish_market_retracement': is_bearish_market_retracement,
+        'average_retracement':           average_retracement,
+        # ── statistical / predictive ─────────────────────────────
+        'is_monte_carlo_bullish_prediction': is_monte_carlo_bullish_prediction,
+        'is_monte_carlo_bearish_prediction': is_monte_carlo_bearish_prediction,
+        'is_high_r_squared':                 is_high_r_squared,
+        # ── MSS / trend elasticity ───────────────────────────────
+        'is_high_trend_elasticity':     is_high_trend_elasticity,
+        'get_mss_value':                get_mss_value,
+        'calculate_trend_elasticity':   calculate_trend_elasticity,
+        # ── safe builtins ────────────────────────────────────────
+        '__builtins__': {
+            'len': len, 'range': range, 'enumerate': enumerate,
+            'zip': zip, 'map': map, 'filter': filter,
+            'min': min, 'max': max, 'sum': sum, 'abs': abs,
+            'int': int, 'float': float, 'bool': bool, 'str': str,
+            'list': list, 'dict': dict, 'tuple': tuple,
+            'print': print, 'isinstance': isinstance, 'hasattr': hasattr,
+            'True': True, 'False': False, 'None': None,
+        },
+        'pd': pd,
+        'np': np,
+    }
+    return _ns
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VIEW 1 — List all SnowAIForwardTestingModel records
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def snowai_list_forward_test_models(request):
+    """GET /api/snowai-list-forward-test-models/"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET required'}, status=405)
+    try:
+        models = SnowAIForwardTestingModel.objects.all()
+        data = [{
+            'model_id':           m.model_id,
+            'cleaned_model_code': m.cleaned_model_code,
+            'notes':              m.notes or '',
+            'created_at':         m.created_at.isoformat(),
+            'last_updated':       m.last_updated.isoformat(),
+        } for m in models]
+        return JsonResponse({'success': True, 'models': data, 'count': len(data)})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VIEW 2 — Run one candle's worth of model code and return signal
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def snowai_run_backtest_model_signal(request):
+    """
+    POST /api/snowai-run-backtest-model-signal/
+
+    Body:
+    {
+        "code":         "<cleaned_model_code string>",
+        "dataset":      [ { time, open, high, low, close, volume }, ... ],
+        "take_profit":  8,     // % override (optional — code can also call set_take_profit)
+        "stop_loss":    4,     // % override (optional)
+        "num_positions": 0     // 1 if a position is already open
+    }
+
+    Response:
+    {
+        "success": true,
+        "signal": "buy" | "sell" | null,
+        "take_profit": 8,
+        "stop_loss": 4,
+        "take_profit_type": "PERCENTAGE",
+        "stop_loss_type": "PERCENTAGE"
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    try:
+        body         = json.loads(request.body)
+        code         = body.get('code', '')
+        raw_dataset  = body.get('dataset', [])
+        tp_override  = body.get('take_profit', None)
+        sl_override  = body.get('stop_loss',   None)
+        num_pos      = int(body.get('num_positions', 0))
+
+        if not code:
+            return JsonResponse({'success': False, 'error': 'No code provided'}, status=400)
+        if not raw_dataset:
+            return JsonResponse({'success': False, 'error': 'No dataset provided'}, status=400)
+
+        # Build DataFrame from the OHLCV list sent from the frontend
+        df = pd.DataFrame(raw_dataset)
+
+        # Normalise column names — frontend sends lowercase, functions expect Title case
+        rename = {'open':'Open','high':'High','low':'Low','close':'Close','volume':'Volume'}
+        df = df.rename(columns={k:v for k,v in rename.items() if k in df.columns})
+
+        # Keep lowercase copies too so any code using df['close'] also works
+        for lc, tc in rename.items():
+            if tc in df.columns and lc not in df.columns:
+                df[lc] = df[tc]
+
+        if 'time' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['time'], unit='s', utc=True)
+            df = df.set_index('timestamp')
+
+        # Build namespace — tp/sl defaults come from the UI sliders,
+        # but the model code can override them by calling set_take_profit() / set_stop_loss()
+        ns = _build_namespace(df, num_positions=num_pos)
+        # Seed the mutable dict with UI overrides as fallback defaults
+        if tp_override is not None:
+            ns['_tp_sl']['tp'] = float(tp_override)
+        if sl_override is not None:
+            ns['_tp_sl']['sl'] = float(sl_override)
+
+        # Execute the strategy code
+        exec(compile(code, '<backtest_model>', 'exec'), ns)
+
+        signal = ns.get('return_statement', None)
+
+        # Normalise: accept 'buy'/'sell' or 'BUY'/'SELL'
+        if isinstance(signal, str):
+            signal = signal.lower()
+            if signal not in ('buy', 'sell'):
+                signal = None
+
+        # Read TP/SL that the model code may have set via set_take_profit() / set_stop_loss()
+        tp_sl = ns['_tp_sl']
+
+        return JsonResponse({
+            'success':           True,
+            'signal':            signal,
+            'take_profit':       tp_sl['tp'],
+            'stop_loss':         tp_sl['sl'],
+            'take_profit_type':  tp_sl['tp_type'],
+            'stop_loss_type':    tp_sl['sl_type'],
+        })
+
+    except SyntaxError as e:
+        return JsonResponse({'success': False, 'error': f'Syntax error in model code: {e}', 'signal': None}, status=200)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': traceback.format_exc(), 'signal': None}, status=200)
+
+
 # # ═══════════════════════════════════════════════════════════════════════════════
 # # REGISTER SCHEDULER JOBS  (call this from your apps.py ready() method)
 # # ═══════════════════════════════════════════════════════════════════════════════

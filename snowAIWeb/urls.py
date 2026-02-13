@@ -623,6 +623,16 @@ urlpatterns = [
           views.snowai_fetch_all_open_positions,
           name='snowai_fetch_all_open_positions'),
 
+     # List all SnowAIForwardTestingModel records (for the backtest model picker)
+     path('api/snowai-list-forward-test-models/',
+          views.snowai_list_forward_test_models,
+          name='snowai_list_forward_test_models'),
+
+     # Execute one candle of model code and return 'buy'/'sell'/None
+     path('api/snowai-run-backtest-model-signal/',
+          views.snowai_run_backtest_model_signal,
+          name='snowai_run_backtest_model_signal'),
+
 
 
 
