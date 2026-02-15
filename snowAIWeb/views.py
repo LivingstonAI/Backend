@@ -124,7 +124,7 @@ def asian_session():
     return (datetime_time(8, 0) <= tokyo_now <= datetime_time(17, 0)) or (datetime_time(8, 0) <= hong_kong_now <= datetime_time(17, 0))
 
 
-def is_high_r_squared(data, lookback_period=15, timeframe='1h', threshold=0.7, market_type='stocks'):
+def is_high_r_squared(data, lookback_period=10, timeframe='1h', threshold=0.7, market_type='stocks'):
     """
     Check if the asset has a high R² value indicating a strong trend.
     Works with both backtesting OHLC datasets and yfinance data.
