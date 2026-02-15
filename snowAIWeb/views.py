@@ -182,23 +182,41 @@ def is_high_r_squared(data, lookback_period=20, threshold=0.7):
     return r_squared >= threshold
 
 
-def is_bullish_market_retracement(data, lookback_period=12):
+
+def is_bullish_market_retracement(data, lookback_period=15, timeframe='1h'):
     """
     Check if market is in a bullish retracement - suitable for buying dips in uptrends
     Optimized for granular timeframes with quick dip detection
     
     Args:
         data (pd.DataFrame): DataFrame with OHLC data
-        lookback_period (int): Period to analyze for retracement (default 12)
+        lookback_period (int): Number of days to look back (default 15)
+        timeframe (str): Timeframe of the data ('1m', '5m', '15m', '1h', '4h', '1d', etc.)
         
     Returns:
         bool: True if suitable bullish retracement detected
     """
     try:
-        if len(data) < lookback_period + 10:
+        # Convert lookback_period (days) to number of candles based on timeframe
+        timeframe_to_candles_per_day = {
+            '1m': 1440,    # 24 * 60
+            '5m': 288,     # 24 * 12
+            '15m': 96,     # 24 * 4
+            '30m': 48,     # 24 * 2
+            '1h': 24,      # 24 hours
+            '2h': 12,
+            '4h': 6,
+            '1d': 1,
+            '1w': 1/7,
+        }
+        
+        candles_per_day = timeframe_to_candles_per_day.get(timeframe, 24)
+        actual_lookback = int(lookback_period * candles_per_day)
+        
+        if len(data) < actual_lookback + 10:
             return False
         
-        recent = data.iloc[-lookback_period:]
+        recent = data.iloc[-actual_lookback:]
         current_price = data['Close'].iloc[-1]
         
         # Find the highest high in lookback period
@@ -223,7 +241,7 @@ def is_bullish_market_retracement(data, lookback_period=12):
         else:
             # Fallback: check if recent average is above earlier average
             recent_avg = recent['Close'].mean()
-            earlier_avg = data.iloc[-lookback_period*2:-lookback_period]['Close'].mean()
+            earlier_avg = data.iloc[-actual_lookback*2:-actual_lookback]['Close'].mean()
             in_uptrend = recent_avg > earlier_avg
         
         # QUICK DIP DETECTION - catch 1-3 red candles
@@ -257,7 +275,7 @@ def is_bullish_market_retracement(data, lookback_period=12):
         
         if result:
             trigger_type = "Quick Dip" if quick_dip else "Retracement"
-            print(f"[Bullish {trigger_type}] ✅ Retraced {retracement_pct:.1f}% from high ${period_high:.2f}, current ${current_price:.2f}, position: {position_in_range:.1f}%")
+            print(f"[Bullish {trigger_type}] ✅ Retraced {retracement_pct:.1f}% from high ${period_high:.2f}, current ${current_price:.2f}, position: {position_in_range:.1f}% (lookback: {actual_lookback} candles)")
         
         return result
         
@@ -266,23 +284,40 @@ def is_bullish_market_retracement(data, lookback_period=12):
         return False
 
 
-def is_bearish_market_retracement(data, lookback_period=12):
+def is_bearish_market_retracement(data, lookback_period=15, timeframe='1h'):
     """
     Check if market is in a bearish retracement - suitable for selling rallies in downtrends
     Optimized for granular timeframes with quick bounce detection
     
     Args:
         data (pd.DataFrame): DataFrame with OHLC data
-        lookback_period (int): Period to analyze for retracement (default 12)
+        lookback_period (int): Number of days to look back (default 15)
+        timeframe (str): Timeframe of the data ('1m', '5m', '15m', '1h', '4h', '1d', etc.)
         
     Returns:
         bool: True if suitable bearish retracement detected
     """
     try:
-        if len(data) < lookback_period + 10:
+        # Convert lookback_period (days) to number of candles based on timeframe
+        timeframe_to_candles_per_day = {
+            '1m': 1440,    # 24 * 60
+            '5m': 288,     # 24 * 12
+            '15m': 96,     # 24 * 4
+            '30m': 48,     # 24 * 2
+            '1h': 24,      # 24 hours
+            '2h': 12,
+            '4h': 6,
+            '1d': 1,
+            '1w': 1/7,
+        }
+        
+        candles_per_day = timeframe_to_candles_per_day.get(timeframe, 24)
+        actual_lookback = int(lookback_period * candles_per_day)
+        
+        if len(data) < actual_lookback + 10:
             return False
         
-        recent = data.iloc[-lookback_period:]
+        recent = data.iloc[-actual_lookback:]
         current_price = data['Close'].iloc[-1]
         
         # Find the highest high and lowest low in lookback period
@@ -307,7 +342,7 @@ def is_bearish_market_retracement(data, lookback_period=12):
         else:
             # Fallback: check if recent average is below earlier average
             recent_avg = recent['Close'].mean()
-            earlier_avg = data.iloc[-lookback_period*2:-lookback_period]['Close'].mean()
+            earlier_avg = data.iloc[-actual_lookback*2:-actual_lookback]['Close'].mean()
             in_downtrend = recent_avg < earlier_avg
         
         # QUICK BOUNCE DETECTION - catch 1-3 green candles
@@ -341,13 +376,14 @@ def is_bearish_market_retracement(data, lookback_period=12):
         
         if result:
             trigger_type = "Quick Bounce" if quick_bounce else "Retracement"
-            print(f"[Bearish {trigger_type}] ✅ Retraced {retracement_pct:.1f}% from low ${period_low:.2f}, current ${current_price:.2f}, position: {position_in_range:.1f}%")
+            print(f"[Bearish {trigger_type}] ✅ Retraced {retracement_pct:.1f}% from low ${period_low:.2f}, current ${current_price:.2f}, position: {position_in_range:.1f}% (lookback: {actual_lookback} candles)")
         
         return result
         
     except Exception as e:
         print(f"[Bearish Retracement] Error: {e}")
         return False
+
 
 
 @csrf_exempt
@@ -34980,7 +35016,7 @@ set_stop_loss(number=4, type_of_setting='PERCENTAGE')
 
 if num_positions == 0:
     if is_uptrend(data=dataset, lookback_days=30):
-        if is_bullish_market_retracement(data=dataset, lookback_period=20):
+        if is_bullish_market_retracement(data=dataset, lookback_period=15, timeframe='1d'):
             return_statement = 'buy'
 """
 
@@ -34991,7 +35027,7 @@ set_stop_loss(number=4, type_of_setting='PERCENTAGE')
 
 if num_positions == 0:
     if is_downtrend(data=dataset, lookback_days=30):
-        if is_bearish_market_retracement(data=dataset, lookback_period=20):
+        if is_bearish_market_retracement(data=dataset, lookback_period=15, timeframe='1d'):
             return_statement = 'sell'
 """
 
@@ -35002,15 +35038,15 @@ if num_positions == 0:
 
 def snowai_scan_high_r_squared_assets():
     """
-    Scans all assets from ALL_ASSET_MAPPINGS for high trend scores.
+    Scans all assets from ALL_ASSET_MAPPINGS for high R² values.
     Runs once per day and stores results in SnowAIAllEncompassingDailyStock.
     """
-    print("🔍 Starting daily trend score scan for all asset classes (excluding Forex)...")
+    print("🔍 Starting daily R² scan for all asset classes (excluding Forex)...")
     
     today = timezone.now().date()
     all_symbols = list(ALL_ASSET_MAPPINGS.keys())
     
-    high_trend_score_assets = []
+    high_r_squared_assets = []
     
     for symbol in all_symbols:
         try:
@@ -35020,7 +35056,7 @@ def snowai_scan_high_r_squared_assets():
             if hist.empty or len(hist) < 20:
                 continue
             
-            # Calculate trend score components (from _calculate_mss logic)
+            # Calculate R² from linear regression
             prices = hist['Close'].values
             X = np.arange(len(prices)).reshape(-1, 1)
             y = prices.reshape(-1, 1)
@@ -35030,34 +35066,8 @@ def snowai_scan_high_r_squared_assets():
             r_squared = model.score(X, y)
             r_squared = max(0, min(r_squared, 1.0))
             
-            # Calculate returns and trend consistency
-            hist['returns'] = hist['Close'].pct_change()
-            returns = hist['returns'].dropna()
-            
-            if len(returns) > 0:
-                positive_days = (returns > 0).sum()
-                trend_consistency = abs(positive_days / len(returns) - 0.5) * 2
-            else:
-                trend_consistency = 0
-            
-            # Calculate trend strength (magnitude of slope relative to price)
-            if len(prices) > 0 and prices[0] != 0:
-                slope_per_day = model.coef_[0][0]
-                avg_price = np.mean(prices)
-                trend_strength = abs(slope_per_day * len(prices)) / avg_price if avg_price != 0 else 0
-                trend_strength = min(trend_strength, 1.0)
-            else:
-                trend_strength = 0
-            
-            # Calculate trend score (0-100)
-            trend_score = (
-                r_squared * 0.5 +
-                trend_consistency * 0.3 +
-                trend_strength * 0.2
-            ) * 100
-            
-            # Only keep assets with trend_score >= 60 (strong trend)
-            if trend_score >= 60:
+            # Only keep assets with R² >= 0.70 (strong linear trend)
+            if r_squared >= 0.70:
                 # Determine trend direction
                 slope = model.coef_[0][0]
                 if slope > 0:
@@ -35067,10 +35077,12 @@ def snowai_scan_high_r_squared_assets():
                 else:
                     trend = 'ranging'
                 
-                # Calculate volatility for MSS
+                # Calculate returns for additional metrics
+                hist['returns'] = hist['Close'].pct_change()
+                returns = hist['returns'].dropna()
+                
+                # Calculate volatility
                 volatility = returns.std() if len(returns) > 0 else 0
-                normalized_volatility = min(volatility / 0.05, 1.0)
-                stability_factor = (1 - normalized_volatility) ** 0.6
                 
                 # Calculate liquidity factor
                 if 'Volume' in hist.columns:
@@ -35087,21 +35099,15 @@ def snowai_scan_high_r_squared_assets():
                 else:
                     liquidity_factor = 1.0
                 
-                # Calculate full MSS
-                mss = trend_score * stability_factor * liquidity_factor
-                mss = min(max(mss, 0), 100)
-                
                 current_price = hist['Close'].iloc[-1]
                 sector = ALL_ASSET_MAPPINGS.get(symbol, 'Unknown')
                 
-                high_trend_score_assets.append({
+                high_r_squared_assets.append({
                     'symbol': symbol,
                     'r_squared': r_squared,
-                    'trend_score': trend_score,
-                    'trend_consistency': trend_consistency,
-                    'trend_strength': trend_strength,
                     'trend': trend,
-                    'mss': mss,
+                    'volatility': volatility,
+                    'liquidity_factor': liquidity_factor,
                     'current_price': current_price,
                     'sector': sector
                 })
@@ -35110,18 +35116,18 @@ def snowai_scan_high_r_squared_assets():
             print(f"Error scanning {symbol}: {str(e)}")
             continue
     
-    # Sort by trend_score descending (primary) and MSS (secondary)
-    high_trend_score_assets.sort(key=lambda x: (x['trend_score'], x['mss']), reverse=True)
+    # Sort by R² descending
+    high_r_squared_assets.sort(key=lambda x: x['r_squared'], reverse=True)
     
     # Store ALL qualifying assets in database
-    for asset in high_trend_score_assets:
+    for asset in high_r_squared_assets:
         SnowAIAllEncompassingDailyStock.objects.update_or_create(
             date=today,
             asset=asset['symbol'],
             defaults={
                 'sector': asset['sector'],
                 'r_squared': asset['r_squared'],
-                'mss': asset['mss'],
+                'mss': asset['r_squared'] * 100,  # Store R² as percentage for consistency
                 'current_trend': asset['trend'],
                 'current_price': asset['current_price'],
                 'is_active': True,
@@ -35129,10 +35135,10 @@ def snowai_scan_high_r_squared_assets():
             }
         )
     
-    print(f"✅ Scan complete! Found and stored {len(high_trend_score_assets)} high trend score assets (>= 60).")
-    if len(high_trend_score_assets) > 0:
-        print(f"📊 Trend score range: {high_trend_score_assets[0]['trend_score']:.2f} - {high_trend_score_assets[-1]['trend_score']:.2f}")
-    return len(high_trend_score_assets)
+    print(f"✅ Scan complete! Found and stored {len(high_r_squared_assets)} high R² assets (>= 0.70).")
+    if len(high_r_squared_assets) > 0:
+        print(f"📊 R² range: {high_r_squared_assets[0]['r_squared']:.4f} - {high_r_squared_assets[-1]['r_squared']:.4f}")
+    return len(high_r_squared_assets)
 
 # ================================
 # STEP 2: EXECUTE TRADES ON HIGH R² ASSETS
@@ -35231,91 +35237,7 @@ def snowai_execute_all_encompassing_world_trades():
             import traceback
             traceback.print_exc()
             continue
-
-
-# ================================
-# STEP 3: CHECK AND CLOSE POSITIONS
-# ================================
-
-def snowai_check_and_close_position(asset_record, current_price, account):
-    """
-    Checks if TP or SL has been hit and closes position.
-    Logs trade to AccountTrades.
-    """
-    should_close = False
-    hit_tp = False
-    
-    if asset_record.position_type == 'BUY':
-        if current_price >= asset_record.take_profit_price:
-            should_close = True
-            hit_tp = True
-        elif current_price <= asset_record.stop_loss_price:
-            should_close = True
-            hit_tp = False
-    
-    elif asset_record.position_type == 'SELL':
-        if current_price <= asset_record.take_profit_price:
-            should_close = True
-            hit_tp = True
-        elif current_price >= asset_record.stop_loss_price:
-            should_close = True
-            hit_tp = False
-    
-    if should_close:
-        # Calculate P&L
-        if asset_record.position_type == 'BUY':
-            pnl_pct = ((current_price - asset_record.entry_price) / asset_record.entry_price) * 100
-        else:  # SELL
-            pnl_pct = ((asset_record.entry_price - current_price) / asset_record.entry_price) * 100
-        
-        # Assume $10,000 per position (adjust as needed)
-        position_size = 10000
-        pnl_dollars = position_size * (pnl_pct / 100)
-        
-        # Determine outcome
-        outcome = 'Profit' if pnl_dollars > 0 else 'Loss'
-        
-        # Get current time info
-        now = timezone.now()
-        day_closed = now.strftime('%A')
-        
-        # Determine trading session
-        us_eastern = pytz.timezone('US/Eastern')
-        current_time_us = now.astimezone(us_eastern).time()
-        
-        if time(9, 30) <= current_time_us <= time(16, 0):
-            session_closed = 'NY'
-        else:
-            session_closed = 'After Hours'
-        
-        # Log trade to AccountTrades
-        AccountTrades.objects.create(
-            account=account,
-            asset=asset_record.asset,
-            sector=asset_record.sector,
-            order_type=asset_record.position_type,
-            strategy='RE',
-            day_of_week_entered=asset_record.entry_time.strftime('%A'),
-            day_of_week_closed=day_closed,
-            trading_session_entered='NY',
-            trading_session_closed=session_closed,
-            outcome=outcome,
-            amount=pnl_dollars,
-            date_entered=asset_record.entry_time,
-            reflection=f"R²: {asset_record.r_squared:.3f}, Trend: {asset_record.current_trend}, {'TP Hit' if hit_tp else 'SL Hit'}"
-        )
-        
-        # Reset position
-        asset_record.has_open_position = False
-        asset_record.position_type = None
-        asset_record.entry_price = None
-        asset_record.take_profit_price = None
-        asset_record.stop_loss_price = None
-        asset_record.entry_time = None
-        asset_record.save()
-        
-        print(f"{'✅' if outcome == 'Profit' else '❌'} Closed {asset_record.position_type} for {asset_record.asset}: {outcome} ${pnl_dollars:.2f}")
-
+            
 
 # ================================
 # HELPER FUNCTIONS
