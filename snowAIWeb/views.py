@@ -124,21 +124,54 @@ def asian_session():
     return (datetime_time(8, 0) <= tokyo_now <= datetime_time(17, 0)) or (datetime_time(8, 0) <= hong_kong_now <= datetime_time(17, 0))
 
 
-def is_high_r_squared(data, lookback_period=20, threshold=0.7):
+def is_high_r_squared(data, lookback_period=15, timeframe='1h', threshold=0.7, market_type='stocks'):
     """
     Check if the asset has a high R² value indicating a strong trend.
     Works with both backtesting OHLC datasets and yfinance data.
     
     Args:
         data: OHLC dataset (pandas DataFrame or similar)
-        lookback_period: Number of periods to analyze (default: 20)
+        lookback_period: Number of days to look back (default: 15)
+        timeframe: Timeframe of the data ('1m', '5m', '15m', '1h', '4h', '1d', etc.)
         threshold: R² threshold to consider as "high" (default: 0.7)
+        market_type: 'stocks' (6.5 hrs/day) or 'crypto' (24 hrs/day) - default: 'stocks'
     
     Returns:
         bool: True if R² >= threshold, False otherwise
     """
     import numpy as np
     from scipy import stats
+    
+    # Convert lookback_period (days) to number of candles based on timeframe and market type
+    if market_type == 'stocks':
+        # Stock market: ~6.5 hours per day (9:30 AM - 4:00 PM ET)
+        timeframe_to_candles_per_day = {
+            '1m': 390,     # 6.5 * 60
+            '5m': 78,      # 6.5 * 12
+            '15m': 26,     # 6.5 * 4
+            '30m': 13,     # 6.5 * 2
+            '1h': 7,       # ~6.5 hours (rounded to 7)
+            '2h': 3,
+            '4h': 2,
+            '1d': 1,
+            '1w': 1/5,     # 5 trading days per week
+        }
+    else:  # crypto
+        # Crypto market: 24 hours per day
+        timeframe_to_candles_per_day = {
+            '1m': 1440,    # 24 * 60
+            '5m': 288,     # 24 * 12
+            '15m': 96,     # 24 * 4
+            '30m': 48,     # 24 * 2
+            '1h': 24,      # 24 hours
+            '2h': 12,
+            '4h': 6,
+            '1d': 1,
+            '1w': 1/7,
+        }
+    
+    candles_per_day = timeframe_to_candles_per_day.get(timeframe, 7 if market_type == 'stocks' else 24)
+    actual_lookback = int(lookback_period * candles_per_day)
     
     # Handle different data structures
     # Try to get Close prices from various column name formats
@@ -162,11 +195,11 @@ def is_high_r_squared(data, lookback_period=20, threshold=0.7):
         else:
             return False  # Can't extract close prices
     
-    # Get the last lookback_period values
-    if len(close_prices) < lookback_period:
+    # Get the last actual_lookback values
+    if len(close_prices) < actual_lookback:
         return False  # Not enough data
     
-    recent_prices = close_prices[-lookback_period:]
+    recent_prices = close_prices[-actual_lookback:]
     
     # Calculate R² (coefficient of determination)
     # This measures how well prices fit a linear trend
@@ -183,34 +216,50 @@ def is_high_r_squared(data, lookback_period=20, threshold=0.7):
 
 
 
-def is_bullish_market_retracement(data, lookback_period=15, timeframe='1h'):
+def is_bullish_market_retracement(data, lookback_period=3, timeframe='1h', market_type='stocks'):
     """
     Check if market is in a bullish retracement - suitable for buying dips in uptrends
     Optimized for granular timeframes with quick dip detection
     
     Args:
         data (pd.DataFrame): DataFrame with OHLC data
-        lookback_period (int): Number of days to look back (default 15)
+        lookback_period (int): Number of days to look back (default 3)
         timeframe (str): Timeframe of the data ('1m', '5m', '15m', '1h', '4h', '1d', etc.)
+        market_type (str): 'stocks' (6.5 hrs/day) or 'crypto' (24 hrs/day) - default: 'stocks'
         
     Returns:
         bool: True if suitable bullish retracement detected
     """
     try:
-        # Convert lookback_period (days) to number of candles based on timeframe
-        timeframe_to_candles_per_day = {
-            '1m': 1440,    # 24 * 60
-            '5m': 288,     # 24 * 12
-            '15m': 96,     # 24 * 4
-            '30m': 48,     # 24 * 2
-            '1h': 24,      # 24 hours
-            '2h': 12,
-            '4h': 6,
-            '1d': 1,
-            '1w': 1/7,
-        }
+        # Convert lookback_period (days) to number of candles based on timeframe and market type
+        if market_type == 'stocks':
+            # Stock market: ~6.5 hours per day (9:30 AM - 4:00 PM ET)
+            timeframe_to_candles_per_day = {
+                '1m': 390,     # 6.5 * 60
+                '5m': 78,      # 6.5 * 12
+                '15m': 26,     # 6.5 * 4
+                '30m': 13,     # 6.5 * 2
+                '1h': 7,       # ~6.5 hours (rounded to 7)
+                '2h': 3,
+                '4h': 2,
+                '1d': 1,
+                '1w': 1/5,     # 5 trading days per week
+            }
+        else:  # crypto
+            # Crypto market: 24 hours per day
+            timeframe_to_candles_per_day = {
+                '1m': 1440,    # 24 * 60
+                '5m': 288,     # 24 * 12
+                '15m': 96,     # 24 * 4
+                '30m': 48,     # 24 * 2
+                '1h': 24,      # 24 hours
+                '2h': 12,
+                '4h': 6,
+                '1d': 1,
+                '1w': 1/7,
+            }
         
-        candles_per_day = timeframe_to_candles_per_day.get(timeframe, 24)
+        candles_per_day = timeframe_to_candles_per_day.get(timeframe, 7 if market_type == 'stocks' else 24)
         actual_lookback = int(lookback_period * candles_per_day)
         
         if len(data) < actual_lookback + 10:
@@ -284,34 +333,50 @@ def is_bullish_market_retracement(data, lookback_period=15, timeframe='1h'):
         return False
 
 
-def is_bearish_market_retracement(data, lookback_period=15, timeframe='1h'):
+def is_bearish_market_retracement(data, lookback_period=3, timeframe='1h', market_type='stocks'):
     """
     Check if market is in a bearish retracement - suitable for selling rallies in downtrends
     Optimized for granular timeframes with quick bounce detection
     
     Args:
         data (pd.DataFrame): DataFrame with OHLC data
-        lookback_period (int): Number of days to look back (default 15)
+        lookback_period (int): Number of days to look back (default 3)
         timeframe (str): Timeframe of the data ('1m', '5m', '15m', '1h', '4h', '1d', etc.)
+        market_type (str): 'stocks' (6.5 hrs/day) or 'crypto' (24 hrs/day) - default: 'stocks'
         
     Returns:
         bool: True if suitable bearish retracement detected
     """
     try:
-        # Convert lookback_period (days) to number of candles based on timeframe
-        timeframe_to_candles_per_day = {
-            '1m': 1440,    # 24 * 60
-            '5m': 288,     # 24 * 12
-            '15m': 96,     # 24 * 4
-            '30m': 48,     # 24 * 2
-            '1h': 24,      # 24 hours
-            '2h': 12,
-            '4h': 6,
-            '1d': 1,
-            '1w': 1/7,
-        }
+        # Convert lookback_period (days) to number of candles based on timeframe and market type
+        if market_type == 'stocks':
+            # Stock market: ~6.5 hours per day (9:30 AM - 4:00 PM ET)
+            timeframe_to_candles_per_day = {
+                '1m': 390,     # 6.5 * 60
+                '5m': 78,      # 6.5 * 12
+                '15m': 26,     # 6.5 * 4
+                '30m': 13,     # 6.5 * 2
+                '1h': 7,       # ~6.5 hours (rounded to 7)
+                '2h': 3,
+                '4h': 2,
+                '1d': 1,
+                '1w': 1/5,     # 5 trading days per week
+            }
+        else:  # crypto
+            # Crypto market: 24 hours per day
+            timeframe_to_candles_per_day = {
+                '1m': 1440,    # 24 * 60
+                '5m': 288,     # 24 * 12
+                '15m': 96,     # 24 * 4
+                '30m': 48,     # 24 * 2
+                '1h': 24,      # 24 hours
+                '2h': 12,
+                '4h': 6,
+                '1d': 1,
+                '1w': 1/7,
+            }
         
-        candles_per_day = timeframe_to_candles_per_day.get(timeframe, 24)
+        candles_per_day = timeframe_to_candles_per_day.get(timeframe, 7 if market_type == 'stocks' else 24)
         actual_lookback = int(lookback_period * candles_per_day)
         
         if len(data) < actual_lookback + 10:
@@ -383,7 +448,6 @@ def is_bearish_market_retracement(data, lookback_period=15, timeframe='1h'):
     except Exception as e:
         print(f"[Bearish Retracement] Error: {e}")
         return False
-
 
 
 @csrf_exempt
