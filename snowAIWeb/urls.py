@@ -667,29 +667,36 @@ urlpatterns = [
     # Once-off: create the SnowAI_Backtest account
     path(
         'api/backtest-create-snowai-account/',
-        views.backtest_create_snowai_account,
+        views_batch_backtest.backtest_create_snowai_account,
         name='backtest_create_snowai_account',
     ),
 
     # Once-off: seed watchlist with ~100 popular stocks
     path(
         'api/backtest-bulk-fill-watchlist/',
-        views.backtest_bulk_fill_watchlist,
+        views_batch_backtest.backtest_bulk_fill_watchlist,
         name='backtest_bulk_fill_watchlist',
     ),
 
     # Per-trade save: called after each model trade closes during batch test
     path(
         'api/backtest-save-account-trade/',
-        views.backtest_save_account_trade,
+        views_batch_backtest.backtest_save_account_trade,
         name='backtest_save_account_trade',
     ),
 
     # Summary: get all AccountTrades for SnowAI_Backtest, aggregated per asset
     path(
         'api/backtest-account-summary/',
-        views.backtest_get_account_summary,
+        views_batch_backtest.backtest_get_account_summary,
         name='backtest_get_account_summary',
+    ),
+
+    # Wipe all AccountTrades for SnowAI_Backtest (clean slate before fresh run)
+    path(
+        'api/backtest-delete-all-trades/',
+        views_batch_backtest.backtest_delete_all_trades,
+        name='backtest_delete_all_trades',
     ),
 
   path('api/snowai-check-and-close-position/', views.snowai_check_and_close_position, name='check and close'),
