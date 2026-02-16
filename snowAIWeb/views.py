@@ -40474,7 +40474,7 @@ def backtest_save_account_trade(request):
             day_of_week_closed=     '',
             trading_session_entered='',
             trading_session_closed= '',
-            outcome=                body.get('outcome', 'Profit'),
+            outcome=                body.get('outcome', 'Win'),   # 'Win' or 'Loss'
             amount=                 float(body.get('amount', 0)),
             emotional_bias=         '',
             reflection=             notes,
@@ -40529,7 +40529,7 @@ def backtest_get_account_summary(request):
                 asset_summary[t.asset] = {'trades': 0, 'wins': 0, 'losses': 0, 'total_pl': 0.0}
             asset_summary[t.asset]['trades'] += 1
             asset_summary[t.asset]['total_pl'] += t.amount
-            if t.outcome == 'Profit':
+            if t.outcome == 'Win':
                 asset_summary[t.asset]['wins'] += 1
             else:
                 asset_summary[t.asset]['losses'] += 1
@@ -40552,6 +40552,32 @@ def backtest_get_account_summary(request):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+
+# ─── Delete all AccountTrades for SnowAI_Backtest + re-seed watchlist ─────────
+
+@csrf_exempt
+def backtest_delete_all_trades(request):
+    """
+    DELETE /api/backtest-delete-all-trades/
+    Wipes every AccountTrades row for the SnowAI_Backtest account.
+    Safe to call before a fresh batch run.
+    """
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'DELETE required'}, status=405)
+    try:
+        try:
+            account = Account.objects.get(account_name=SNOWAI_BACKTEST_ACCOUNT_NAME)
+        except Account.DoesNotExist:
+            return JsonResponse({'success': True, 'deleted': 0, 'message': 'Account does not exist yet'})
+
+        deleted, _ = AccountTrades.objects.filter(account=account).delete()
+        return JsonResponse({
+            'success': True,
+            'deleted': deleted,
+            'message': f'Deleted {deleted} trade(s) from {SNOWAI_BACKTEST_ACCOUNT_NAME}',
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 @csrf_exempt
 def snowai_check_and_close_position(request):
