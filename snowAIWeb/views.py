@@ -40211,6 +40211,347 @@ def backtest_watchlist_delete(request, asset_id):
 #     print("✅ SnowAI scheduler jobs registered: TP/SL monitor (1 min) + model runner (5 min)")
 
 
+"""
+views_batch_backtest.py
+
+Endpoints:
+  POST /api/backtest-save-account-trade/       — save one closed backtest trade to AccountTrades
+  POST /api/backtest-create-snowai-account/    — once-off: create the SnowAI test Account
+  POST /api/backtest-bulk-fill-watchlist/      — once-off: fill BacktestWatchlist with all S&P500 / popular stocks
+  DELETE /api/backtest-watchlist/delete/<id>/  — already in views_watchlist.py
+"""
+
+from datetime import datetime
+from django.utils import timezone as dj_timezone
+
+
+# ─── Constants ────────────────────────────────────────────────────────────────
+
+SNOWAI_BACKTEST_ACCOUNT_NAME = "SnowAI_Backtest"
+
+# All stocks from the asset lists function — (symbol, display_name, yfinance_symbol)
+# Name = symbol for simplicity; yfinance_symbol = symbol (they're already yFinance format)
+SEED_STOCKS = [s for s in [
+    # Tech Giants & Semiconductors
+    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA",
+    "TSLA", "META", "AMD", "INTC", "ORCL", "CSCO",
+    "ADBE", "CRM", "AVGO", "QCOM", "TXN", "AMAT",
+    "LRCX", "KLAC", "SNPS", "CDNS", "MRVL", "NXPI",
+    "MU", "ADI", "MPWR", "SWKS", "QRVO", "ON",
+    "IBM", "AAOI", "ACLS", "ACN", "ADSK", "AKAM",
+    "ANSS", "APH", "ANET", "ASML", "AVAV", "KEYS",
+    "MCHP", "MTSI", "MSI", "MDB", "NTAP", "NTNX",
+    "PAYC", "PTC", "ROP", "SAP", "SLAB", "STX",
+    "TER", "TSM", "TYL", "UMC", "VRSN", "WDC",
+    "XLNX", "ZBRA",
+    # Software & Cloud
+    "NOW", "INTU", "WDAY", "PANW", "CRWD", "ZS",
+    "DDOG", "NET", "SNOW", "PLTR", "TEAM", "FTNT",
+    "OKTA", "S", "CYBR",
+    # Fintech & Payments
+    "V", "MA", "PYPL", "ADP", "FISV", "FIS",
+    "ZM", "DOCU", "TWLO", "SQ", "UBER", "LYFT",
+    "DASH", "PINS", "SNAP", "SPOT", "ROKU", "Z",
+    "ZG", "AFRM", "COIN", "HOOD", "SOFI", "RBLX",
+    "ASTS",
+    # Financial Services & Banks
+    "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK",
+    "SCHW", "AXP", "SPGI", "CME", "ICE", "MCO",
+    "BK", "USB", "PNC", "TFC", "COF",
+    "AFL", "AMG", "AON", "AJG", "AMP", "BEN",
+    "CBOE", "CINF", "DFS", "ERIE", "FITB", "FRC",
+    "GL", "HBAN", "HIG", "IVZ", "JKHY", "KEY",
+    "L", "LNC", "MTB", "NTRS", "NDAQ", "PFG",
+    "RF", "RJF", "SIVB", "STT", "SYF", "TROW",
+    "WRB", "ZION", "CFG", "CMA", "FHN", "EWBC",
+    "WAL", "WBS", "ALLY",
+    # Insurance
+    "BRK-B", "PGR", "ALL", "TRV", "AIG", "MET", "PRU",
+    # Healthcare & Pharma
+    "JNJ", "LLY", "UNH", "PFE", "ABBV", "MRK", "TMO",
+    "ABT", "DHR", "BMY", "AMGN", "GILD", "CVS",
+    "CI", "ELV", "HUM", "VRTX", "REGN", "ISRG",
+    "BIIB", "MRNA", "BNTX", "SGEN", "ALNY", "BGNE",
+    "MCK", "CAH", "COR", "IDXX", "A", "WAT",
+    "ALGN", "ATRC", "BAX", "BDX", "BIO", "BSX",
+    "CERN", "DXCM", "EW", "EXAS", "HOLX", "HSIC",
+    "ILMN", "INCY", "IQV", "LH", "MDT", "MOH",
+    "NBIX", "PKI", "PODD", "RMD", "STE", "SYK",
+    "TFX", "UHS", "WST", "XRAY", "ZBH", "ZTS",
+    "TDOC", "DOCS", "VEEV", "HALO", "NVAX", "IONS",
+    "UTHR",
+    # Consumer Discretionary & Retail
+    "HD", "MCD", "NKE", "SBUX", "TJX", "LOW",
+    "BKNG", "MAR", "CMG", "F", "GM", "ABNB",
+    "SHOP", "MELI", "EBAY", "ETSY", "TGT", "ROST",
+    "YUM", "DPZ", "QSR", "AAL", "DAL", "UAL",
+    "LUV", "CCL", "RCL", "EA", "TTWO",
+    "U", "RIVN", "LCID",
+    "AZO", "BBY", "BURL", "CPRT", "DHI", "DRI",
+    "EXPE", "GPC", "GRMN", "HAS", "HLT", "KMX",
+    "LEN", "LVS", "MGM", "MHK", "NVR", "ORLY",
+    "PHM", "POOL", "RL", "TSCO", "TPR", "ULTA",
+    "VFC", "WHR", "WYNN", "APTV", "BWA", "DG",
+    "DLTR", "DDS", "FIVE", "FL", "FOXA", "FOX",
+    "GPS", "GT", "HBI", "LAD", "LKQ", "M",
+    "NCLH", "NWL", "PVH",
+    # Consumer Staples
+    "WMT", "PG", "KO", "PEP", "COST", "PM", "MO",
+    "MDLZ", "CL", "KMB", "GIS", "KHC", "STZ",
+    "ADM", "BF-B", "CAG", "CHD", "CLX", "CPB",
+    "EL", "HSY", "K", "KDP", "KR", "KVUE",
+    "MKC", "MNST", "SJM", "SYY", "TAP", "TSN",
+    "WBA", "BGS", "BG", "COKE", "FLO", "HRL",
+    "LANC", "POST",
+    # Energy
+    "XOM", "CVX", "COP", "EOG", "SLB", "MPC", "PSX",
+    "VLO", "OXY", "HAL", "DVN", "HES", "BKR",
+    "APA", "CTRA", "FANG", "KMI", "LNG", "MRO",
+    "NOV", "OKE", "TRGP", "WMB", "EQT", "AR",
+    "CLR", "CNX", "CQP", "EXE", "FTI", "HP",
+    "MTDR", "OVV", "PBF", "PR", "RIG",
+    "SM", "VAL", "XEC",
+    # Industrials
+    "BA", "HON", "UNP", "CAT", "GE", "RTX", "LMT",
+    "UPS", "DE", "MMM", "GD", "NOC", "FDX", "CSX",
+    "HWM", "TDG", "HEI", "LHX", "TXT",
+    "AOS", "CARR", "CHRW", "CMI", "DOV", "EMR",
+    "ETN", "EXPD", "FAST", "FTV", "GNRC", "GWW",
+    "IEX", "IR", "ITW", "J", "JBHT", "JCI",
+    "LDOS", "MAS", "NSC", "ODFL", "OTIS", "PCAR",
+    "PH", "PWR", "ROK", "ROL", "RSG", "SNA",
+    "SWK", "TT", "URI", "VRSK", "WAB", "WM",
+    "XYL", "ALK", "JBLU", "SAVE",
+    # Communication Services & Media
+    "T", "VZ", "CMCSA", "NFLX", "DIS", "TMUS", "CHTR",
+    "LYV", "MTCH", "NWSA", "NWS", "OMC", "PARA",
+    "WBD", "IPG", "DISH",
+    # Real Estate & REITs
+    "AMT", "PLD", "CCI", "EQIX", "PSA", "SPG", "O",
+    "AVB", "ARE", "BXP", "CBRE", "DLR", "EQR",
+    "ESS", "EXR", "FRT", "HST", "IRM", "KIM",
+    "MAA", "REG", "SBAC", "SLG", "UDR", "VTR",
+    "WELL", "WY", "INVH", "PEAK", "VNO",
+    # Materials & Chemicals
+    "LIN", "APD", "SHW", "ECL", "DD", "NEM", "FCX",
+    "DOW", "LYB", "CE", "ALB", "EMN", "SQM",
+    "AMCR", "BALL", "CF", "CLF", "CTVA", "FMC",
+    "IP", "MLM", "MOS", "NUE", "PKG", "PPG",
+    "SEE", "STLD", "SW", "VMC", "AVY", "AA",
+    "MP", "RS",
+    # Utilities
+    "NEE", "DUK", "SO", "D", "AEP", "EXC", "SRE",
+    "AEE", "AES", "AWK", "CMS", "CNP", "DTE",
+    "ED", "EIX", "ES", "ETR", "EVRG", "FE",
+    "LNT", "NI", "NRG", "PCG", "PEG", "PNW",
+    "PPL", "VST", "WEC", "XEL", "CEG",
+    # Chinese ADRs
+    "BABA", "JD", "PDD", "BIDU", "NIO", "XPEV", "LI",
+]]
+
+
+# ─── Create SnowAI backtest account (once-off) ────────────────────────────────
+
+@csrf_exempt
+def backtest_create_snowai_account(request):
+    """
+    POST /api/backtest-create-snowai-account/
+    Creates the SnowAI_Backtest account if it doesn't exist.
+    Safe to call multiple times — idempotent.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    try:
+        account, created = Account.objects.get_or_create(
+            account_name=SNOWAI_BACKTEST_ACCOUNT_NAME,
+            defaults={
+                'main_assets': 'Stocks, ETF, Crypto, Forex',
+                'initial_capital': 10000.0,
+            }
+        )
+        return JsonResponse({
+            'success': True,
+            'created': created,
+            'account_id': account.id,
+            'account_name': account.account_name,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─── Bulk fill watchlist with stocks ─────────────────────────────────────────
+
+@csrf_exempt
+def backtest_bulk_fill_watchlist(request):
+    """
+    POST /api/backtest-bulk-fill-watchlist/
+    Seeds BacktestWatchlist with SEED_STOCKS.
+    Skips symbols already present. Safe to call multiple times.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    try:
+        added, skipped = 0, 0
+        for symbol in SEED_STOCKS:
+            _, created = BacktestWatchlist.objects.get_or_create(
+                symbol=symbol,
+                defaults={
+                    'name':            symbol,   # symbol IS the name — no separate mapping
+                    'asset_class':     'Stocks',
+                    'yfinance_symbol': symbol,
+                    'notes':           'Auto-seeded from full stock universe',
+                }
+            )
+            if created:
+                added += 1
+            else:
+                skipped += 1
+        return JsonResponse({
+            'success': True,
+            'added':   added,
+            'skipped': skipped,
+            'total':   BacktestWatchlist.objects.filter(asset_class='Stocks').count(),
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─── Save one closed backtest trade to AccountTrades ─────────────────────────
+
+@csrf_exempt
+def backtest_save_account_trade(request):
+    """
+    POST /api/backtest-save-account-trade/
+    Body: {
+        asset, order_type, strategy,
+        outcome, amount, profit_loss_percentage,
+        entry_price, exit_price, take_profit, stop_loss,
+        tp_pct, sl_pct, exit_reason,
+        day_of_week_entered, date_entered
+    }
+    Saves to the SnowAI_Backtest Account → AccountTrades.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    try:
+        body = json.loads(request.body)
+
+        # Get or create the backtest account
+        account, _ = Account.objects.get_or_create(
+            account_name=SNOWAI_BACKTEST_ACCOUNT_NAME,
+            defaults={
+                'main_assets':     'Stocks, ETF, Crypto, Forex',
+                'initial_capital': 10000.0,
+            }
+        )
+
+        # Parse entry date
+        date_entered = None
+        if body.get('date_entered'):
+            try:
+                date_entered = datetime.fromisoformat(
+                    body['date_entered'].replace('Z', '+00:00')
+                )
+            except Exception:
+                date_entered = None
+
+        # Build notes with backtest metadata
+        notes = (
+            f"[BACKTEST] TP={body.get('tp_pct', '')}% SL={body.get('sl_pct', '')}% "
+            f"Entry=${body.get('entry_price', '')} Exit=${body.get('exit_price', '')} "
+            f"ExitReason={body.get('exit_reason', '')} "
+            f"PnL%={body.get('profit_loss_percentage', '')}"
+        )
+
+        trade = AccountTrades.objects.create(
+            account=                account,
+            asset=                  body.get('asset', ''),
+            order_type=             body.get('order_type', 'Buy'),
+            strategy=               body.get('strategy', 'SnowAI Model'),
+            sector=                 body.get('sector', 'Unknown'),
+            day_of_week_entered=    body.get('day_of_week_entered', ''),
+            day_of_week_closed=     '',
+            trading_session_entered='',
+            trading_session_closed= '',
+            outcome=                body.get('outcome', 'Profit'),
+            amount=                 float(body.get('amount', 0)),
+            emotional_bias=         '',
+            reflection=             notes,
+            date_entered=           date_entered,
+        )
+
+        return JsonResponse({
+            'success':  True,
+            'trade_id': trade.id,
+            'asset':    trade.asset,
+            'amount':   trade.amount,
+            'outcome':  trade.outcome,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─── Get AccountTrades summary for SnowAI_Backtest account ───────────────────
+
+@csrf_exempt
+def backtest_get_account_summary(request):
+    """
+    GET /api/backtest-account-summary/
+    Returns aggregated stats per asset from AccountTrades for SnowAI_Backtest.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET required'}, status=405)
+    try:
+        try:
+            account = Account.objects.get(account_name=SNOWAI_BACKTEST_ACCOUNT_NAME)
+        except Account.DoesNotExist:
+            return JsonResponse({'success': True, 'trades': [], 'summary': {}})
+
+        trades = AccountTrades.objects.filter(account=account).order_by('-date_entered')
+        trade_list = []
+        asset_summary = {}
+
+        for t in trades:
+            trade_list.append({
+                'id':                   t.id,
+                'asset':                t.asset,
+                'order_type':           t.order_type,
+                'strategy':             t.strategy,
+                'outcome':              t.outcome,
+                'amount':               t.amount,
+                'day_of_week_entered':  t.day_of_week_entered,
+                'reflection':           t.reflection or '',
+                'date_entered':         t.date_entered.isoformat() if t.date_entered else '',
+            })
+            # Aggregate per asset
+            if t.asset not in asset_summary:
+                asset_summary[t.asset] = {'trades': 0, 'wins': 0, 'losses': 0, 'total_pl': 0.0}
+            asset_summary[t.asset]['trades'] += 1
+            asset_summary[t.asset]['total_pl'] += t.amount
+            if t.outcome == 'Profit':
+                asset_summary[t.asset]['wins'] += 1
+            else:
+                asset_summary[t.asset]['losses'] += 1
+
+        # Win rate per asset
+        for asset in asset_summary:
+            n = asset_summary[asset]['trades']
+            asset_summary[asset]['win_rate'] = round(
+                (asset_summary[asset]['wins'] / n) * 100, 1
+            ) if n else 0
+
+        return JsonResponse({
+            'success':       True,
+            'account_name':  account.account_name,
+            'trades':        trade_list,
+            'asset_summary': asset_summary,
+            'total_trades':  len(trade_list),
+            'total_pl':      round(sum(t.amount for t in trades), 4),
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
