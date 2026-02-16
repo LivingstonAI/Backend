@@ -692,6 +692,8 @@ urlpatterns = [
         name='backtest_get_account_summary',
     ),
 
+  path('api/snowai-check-and-close-position/', views.snowai_check_and_close_position, name='check and close'),
+
 
 
 
