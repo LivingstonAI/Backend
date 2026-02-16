@@ -40552,6 +40552,23 @@ def backtest_get_account_summary(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+@csrf_exempt
+def snowai_check_and_close_position(request):
+    """
+    POST /api/snowai-check-and-close-position/
+    On-demand trigger for the TP/SL monitor.
+    Can also be called by the scheduler — the function itself is idempotent.
+    """
+    if request.method not in ('POST', 'GET'):
+        return JsonResponse({'error': 'POST or GET required'}, status=405)
+    try:
+        snowai_check_all_tp_sl()
+        return JsonResponse({'success': True, 'message': 'TP/SL check completed'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
