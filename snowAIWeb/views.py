@@ -125,7 +125,7 @@ def asian_session():
     return (datetime_time(8, 0) <= tokyo_now <= datetime_time(17, 0)) or (datetime_time(8, 0) <= hong_kong_now <= datetime_time(17, 0))
 
 
-def is_high_r_squared(data, lookback_period=10, timeframe='1h', threshold=0.7, market_type='stocks'):
+def is_high_r_squared(data, lookback_period=15, timeframe='1h', threshold=0.8, market_type='stocks'):
     """
     Check if the asset has a high R² value indicating a strong trend.
     Works with both backtesting OHLC datasets and yfinance data.
@@ -217,14 +217,14 @@ def is_high_r_squared(data, lookback_period=10, timeframe='1h', threshold=0.7, m
 
 
 
-def is_bullish_market_retracement(data, lookback_period=3, timeframe='1h', market_type='stocks'):
+def is_bullish_market_retracement(data, lookback_period=5, timeframe='1h', market_type='stocks'):
     """
     Check if market is in a bullish retracement - suitable for buying dips in uptrends
     Optimized for granular timeframes with quick dip detection
     
     Args:
         data (pd.DataFrame): DataFrame with OHLC data
-        lookback_period (int): Number of days to look back (default 3)
+        lookback_period (int): Number of days to look back (default 5)
         timeframe (str): Timeframe of the data ('1m', '5m', '15m', '1h', '4h', '1d', etc.)
         market_type (str): 'stocks' (6.5 hrs/day) or 'crypto' (24 hrs/day) - default: 'stocks'
         
@@ -294,33 +294,34 @@ def is_bullish_market_retracement(data, lookback_period=3, timeframe='1h', marke
             earlier_avg = data.iloc[-actual_lookback*2:-actual_lookback]['Close'].mean()
             in_uptrend = recent_avg > earlier_avg
         
-        # QUICK DIP DETECTION - catch 1-3 red candles
-        last_3 = data.iloc[-3:]
-        red_candles = (last_3['Close'] < last_3['Open']).sum()
-        quick_dip = red_candles >= 1 and in_uptrend
+        # QUICK DIP DETECTION - catch 2-4 red candles (not just 1)
+        last_5 = data.iloc[-5:]
+        red_candles = (last_5['Close'] < last_5['Open']).sum()
+        quick_dip = red_candles >= 2 and in_uptrend
         
-        # More forgiving retracement zone: 10% to 60%
-        in_retracement_zone = 10 <= retracement_pct <= 60
+        # Balanced retracement zone: 15% to 55%
+        in_retracement_zone = 15 <= retracement_pct <= 55
         
-        # Price should be in lower 60% of range
+        # Price should be in lower 55% of range (tighter than before)
         distance_from_low = current_price - period_low
         position_in_range = (distance_from_low / swing_range) * 100
-        near_support = position_in_range <= 60
+        near_support = position_in_range <= 55
         
         # Not in a freefall - check recent momentum
         recent_5 = data.iloc[-5:]
-        momentum_stable = recent_5['Close'].min() > period_low * 0.98
+        momentum_stable = recent_5['Close'].min() > period_low * 0.97  # Tighter: 3% buffer instead of 2%
         
-        # Volume confirmation (if available)
+        # Volume confirmation (if available) - stricter
         volume_ok = True
         if 'Volume' in data.columns and len(recent) > 5:
             avg_volume = recent['Volume'].mean()
             recent_volume = data['Volume'].iloc[-3:].mean()
-            volume_ok = 0.3 * avg_volume <= recent_volume <= 2.5 * avg_volume
+            # Volume should be more reasonable - not dead or panicky
+            volume_ok = 0.4 * avg_volume <= recent_volume <= 2.0 * avg_volume
         
-        # Trigger on EITHER condition
+        # More conservative: require BOTH conditions (retracement zone AND near support) OR a clear quick dip
         result = in_uptrend and volume_ok and momentum_stable and (
-            (in_retracement_zone and near_support) or quick_dip
+            (in_retracement_zone and near_support) or (quick_dip and retracement_pct >= 10)
         )
         
         if result:
@@ -334,14 +335,14 @@ def is_bullish_market_retracement(data, lookback_period=3, timeframe='1h', marke
         return False
 
 
-def is_bearish_market_retracement(data, lookback_period=3, timeframe='1h', market_type='stocks'):
+def is_bearish_market_retracement(data, lookback_period=5, timeframe='1h', market_type='stocks'):
     """
     Check if market is in a bearish retracement - suitable for selling rallies in downtrends
     Optimized for granular timeframes with quick bounce detection
     
     Args:
         data (pd.DataFrame): DataFrame with OHLC data
-        lookback_period (int): Number of days to look back (default 3)
+        lookback_period (int): Number of days to look back (default 5)
         timeframe (str): Timeframe of the data ('1m', '5m', '15m', '1h', '4h', '1d', etc.)
         market_type (str): 'stocks' (6.5 hrs/day) or 'crypto' (24 hrs/day) - default: 'stocks'
         
@@ -411,33 +412,34 @@ def is_bearish_market_retracement(data, lookback_period=3, timeframe='1h', marke
             earlier_avg = data.iloc[-actual_lookback*2:-actual_lookback]['Close'].mean()
             in_downtrend = recent_avg < earlier_avg
         
-        # QUICK BOUNCE DETECTION - catch 1-3 green candles
-        last_3 = data.iloc[-3:]
-        green_candles = (last_3['Close'] > last_3['Open']).sum()
-        quick_bounce = green_candles >= 1 and in_downtrend
+        # QUICK BOUNCE DETECTION - catch 2-4 green candles (not just 1)
+        last_5 = data.iloc[-5:]
+        green_candles = (last_5['Close'] > last_5['Open']).sum()
+        quick_bounce = green_candles >= 2 and in_downtrend
         
-        # More forgiving retracement zone: 10% to 60%
-        in_retracement_zone = 10 <= retracement_pct <= 60
+        # Balanced retracement zone: 15% to 55%
+        in_retracement_zone = 15 <= retracement_pct <= 55
         
-        # Price should be in upper 60% of range
+        # Price should be in upper 55% of range (tighter than before)
         distance_from_low = current_price - period_low
         position_in_range = (distance_from_low / swing_range) * 100
-        near_resistance = position_in_range >= 40
+        near_resistance = position_in_range >= 45
         
         # Not in a moon shot - check recent momentum
         recent_5 = data.iloc[-5:]
-        momentum_stable = recent_5['Close'].max() < period_high * 1.02
+        momentum_stable = recent_5['Close'].max() < period_high * 1.03  # Tighter: 3% buffer instead of 2%
         
-        # Volume confirmation (if available)
+        # Volume confirmation (if available) - stricter
         volume_ok = True
         if 'Volume' in data.columns and len(recent) > 5:
             avg_volume = recent['Volume'].mean()
             recent_volume = data['Volume'].iloc[-3:].mean()
-            volume_ok = 0.3 * avg_volume <= recent_volume <= 2.5 * avg_volume
+            # Volume should be more reasonable - not dead or euphoric
+            volume_ok = 0.4 * avg_volume <= recent_volume <= 2.0 * avg_volume
         
-        # Trigger on EITHER condition
+        # More conservative: require BOTH conditions (retracement zone AND near resistance) OR a clear quick bounce
         result = in_downtrend and volume_ok and momentum_stable and (
-            (in_retracement_zone and near_resistance) or quick_bounce
+            (in_retracement_zone and near_resistance) or (quick_bounce and retracement_pct <= 90)
         )
         
         if result:
@@ -449,6 +451,7 @@ def is_bearish_market_retracement(data, lookback_period=3, timeframe='1h', marke
     except Exception as e:
         print(f"[Bearish Retracement] Error: {e}")
         return False
+
 
 
 @csrf_exempt
