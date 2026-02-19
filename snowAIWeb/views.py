@@ -40582,6 +40582,45 @@ def backtest_delete_all_trades(request):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+
+# ─── ONCE-OFF: Fix existing Loss trades to positive amounts ──────────────────
+
+@csrf_exempt
+def backtest_fix_loss_positives(request):
+    """
+    POST /api/backtest-fix-loss-positives/
+    One-time repair: finds all AccountTrades with outcome='Loss' and amount < 0,
+    flips them to positive (equity curve logic elsewhere handles the negation).
+    Returns count of fixed rows.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    try:
+        account = Account.objects.get(account_name=SNOWAI_BACKTEST_ACCOUNT_NAME)
+        broken_trades = AccountTrades.objects.filter(
+            account=account,
+            outcome='Loss',
+            amount__lt=0
+        )
+        fixed_count = 0
+        for trade in broken_trades:
+            trade.amount = abs(trade.amount)
+            trade.save()
+            fixed_count += 1
+        
+        return JsonResponse({
+            'success': True,
+            'fixed':   fixed_count,
+            'message': f'Flipped {fixed_count} Loss trades to positive amounts',
+        })
+    except Account.DoesNotExist:
+        return JsonResponse({'success': True, 'fixed': 0, 'message': 'Account does not exist'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        
+
+
+
 @csrf_exempt
 def snowai_check_and_close_position(request):
     """
