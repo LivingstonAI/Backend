@@ -664,7 +664,7 @@ urlpatterns = [
           name='backtest_watchlist_delete',
      ),
 
-    # Once-off: create the SnowAI_Backtest account
+        # Once-off: create the SnowAI_Backtest account
     path(
         'api/backtest-create-snowai-account/',
         views.backtest_create_snowai_account,
@@ -698,6 +698,14 @@ urlpatterns = [
         views.backtest_delete_all_trades,
         name='backtest_delete_all_trades',
     ),
+
+    # ONCE-OFF: Fix existing Loss trades to have positive amounts
+    path(
+        'api/backtest-fix-loss-positives/',
+        views.backtest_fix_loss_positives,
+        name='backtest_fix_loss_positives',
+    ),
+ 
 
   path('api/snowai-check-and-close-position/', views.snowai_check_and_close_position, name='check and close'),
 
