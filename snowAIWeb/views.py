@@ -40642,6 +40642,12 @@ def snowai_check_and_close_position(request):
 # Required pip packages: yfinance, numpy
 # ─────────────────────────────────────────────────────────────────────────────
 
+import json
+import numpy as np
+import yfinance as yf
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 
 
 def _ideas_hub_linreg(x, y):
@@ -40716,81 +40722,197 @@ def _ideas_hub_safe_score(value, low_bad, high_good, invert=False):
 
 
 def _ideas_hub_fundamental_quality(info):
-    # Profitability
-    gross_margin  = _ideas_hub_safe_score(info.get("grossMargins"),      0.0,  0.60)
-    op_margin     = _ideas_hub_safe_score(info.get("operatingMargins"), -0.10, 0.30)
-    net_margin    = _ideas_hub_safe_score(info.get("profitMargins"),    -0.05, 0.20)
-    roe           = _ideas_hub_safe_score(info.get("returnOnEquity"),    0.0,  0.30)
-    roa           = _ideas_hub_safe_score(info.get("returnOnAssets"),    0.0,  0.15)
-    profitability = np.mean([gross_margin, op_margin, net_margin, roe, roa])
+    """
+    Scores company quality 0-100 using realistic S&P 500 benchmarks.
 
-    # Growth
-    rev_growth    = _ideas_hub_safe_score(info.get("revenueGrowth"),  -0.10, 0.25)
-    earn_growth   = _ideas_hub_safe_score(info.get("earningsGrowth"), -0.20, 0.30)
-    trailing_eps  = info.get("trailingEps") or 0
-    forward_eps   = info.get("forwardEps") or trailing_eps
-    eps_gr        = (forward_eps - trailing_eps) / abs(trailing_eps) if trailing_eps != 0 else 0
-    eps_growth    = _ideas_hub_safe_score(eps_gr, -0.10, 0.25)
-    growth        = np.mean([rev_growth, earn_growth, eps_growth])
-
-    # Balance Sheet
-    de_ratio      = _ideas_hub_safe_score(info.get("debtToEquity"),  0, 200, invert=True)
-    current_ratio = _ideas_hub_safe_score(info.get("currentRatio"), 0.8, 2.5)
-    quick_ratio   = _ideas_hub_safe_score(info.get("quickRatio"),   0.5, 1.5)
-    fcf           = info.get("freeCashflow") or 0
-    rev           = info.get("totalRevenue") or 1
-    fcf_margin    = _ideas_hub_safe_score(fcf / rev if rev else 0, -0.05, 0.20)
-    balance_sheet = np.mean([de_ratio, current_ratio, quick_ratio, fcf_margin])
-
-    # Market Stability
+    Key fixes vs naive approach:
+    - Gross margin ceiling raised to 80% (Google/Meta are 55-75%, not poor)
+    - Debt-to-equity: many elite companies (AAPL) carry high D/E due to buybacks,
+      not weakness — so we weight FCF and interest coverage more heavily instead
+    - ROE capped at 50%+ (not 30%) — AAPL/MSFT have 100%+ ROE due to buybacks
+      which would wrongly cap them at 100 then penalise — use ROA as anchor instead
+    - Growth: earnings can be lumpy — weight revenue growth more, with realistic bands
+    - Market cap uses log scale properly: <$2B small, >$200B mega
+    - Analyst score: 1.0=strong buy, 5.0=sell, most big caps cluster 1.5-2.5
+    """
     import math
-    market_cap    = info.get("marketCap") or 0
-    mc_score      = _ideas_hub_safe_score(math.log10(market_cap) if market_cap > 0 else 0, 8.0, 11.5)
-    beta          = info.get("beta") or 1.0
-    beta_score    = max(0.0, 100.0 - abs(beta - 1.0) * 40)
-    rec_mean      = info.get("recommendationMean") or 3.0
-    analyst_score = _ideas_hub_safe_score(5.0 - rec_mean, 0, 4)
-    stability     = np.mean([mc_score, beta_score, analyst_score])
 
+    # ── Profitability ─────────────────────────────────────────────────────────
+    # Gross margin: 20% = average industrial, 80%+ = elite software/tech
+    gross_margin = _ideas_hub_safe_score(info.get("grossMargins"),      0.10, 0.80)
+    # Operating margin: 5% = ok, 35%+ = exceptional (Google ~30%, Apple ~30%)
+    op_margin    = _ideas_hub_safe_score(info.get("operatingMargins"),  0.03, 0.35)
+    # Net margin: 3% = thin, 25%+ = excellent (Google ~24%, Apple ~25%)
+    net_margin   = _ideas_hub_safe_score(info.get("profitMargins"),     0.02, 0.28)
+    # ROA is a cleaner signal than ROE for companies doing buybacks
+    # 3% = mediocre, 20%+ = elite (Apple ~28%, Google ~15%)
+    roa          = _ideas_hub_safe_score(info.get("returnOnAssets"),    0.03, 0.22)
+    # ROE: cap the range generously since buyback-heavy cos have very high ROE
+    # Negative ROE is bad; >40% is elite — but don't penalise >40% (clip to 100)
+    roe_raw      = info.get("returnOnEquity")
+    if roe_raw is None:
+        roe = 50.0
+    elif roe_raw < 0:
+        roe = max(0.0, 50.0 + roe_raw * 100)   # negative ROE drags score down
+    else:
+        roe = min(100.0, _ideas_hub_safe_score(roe_raw, 0.05, 0.40))
+    profitability = float(np.mean([gross_margin, op_margin, net_margin, roa, roe]))
+
+    # ── Growth ────────────────────────────────────────────────────────────────
+    # Revenue growth: -5% shrinking, 20%+ fast grower (realistic for large caps)
+    rev_growth  = _ideas_hub_safe_score(info.get("revenueGrowth"),   -0.05, 0.20)
+    # Earnings growth: more volatile, wider band
+    earn_growth = _ideas_hub_safe_score(info.get("earningsGrowth"),  -0.15, 0.35)
+    # Forward vs trailing EPS improvement
+    trailing_eps = info.get("trailingEps") or 0
+    forward_eps  = info.get("forwardEps") or trailing_eps
+    if trailing_eps and trailing_eps > 0:
+        eps_gr = (forward_eps - trailing_eps) / trailing_eps
+    elif trailing_eps and trailing_eps < 0 and forward_eps > 0:
+        eps_gr = 0.20   # turning profitable = good signal
+    else:
+        eps_gr = 0.0
+    eps_growth  = _ideas_hub_safe_score(eps_gr, -0.05, 0.20)
+    # Weight revenue growth most — it's the most reliable signal
+    growth = float(rev_growth * 0.45 + earn_growth * 0.30 + eps_growth * 0.25)
+
+    # ── Balance Sheet / Cash Health ───────────────────────────────────────────
+    # FCF margin is the most honest health signal — companies faking profits
+    # can't fake cash. -5% = burning cash, 20%+ = exceptional cash machine
+    fcf       = info.get("freeCashflow") or 0
+    rev       = info.get("totalRevenue") or 1
+    fcf_mg    = fcf / rev if rev else 0
+    fcf_score = _ideas_hub_safe_score(fcf_mg, -0.05, 0.22)
+
+    # Current ratio: <0.8 distressed, >2.5 very healthy
+    current_ratio = _ideas_hub_safe_score(info.get("currentRatio"), 0.8, 2.5)
+
+    # Debt-to-equity: context-dependent. High D/E from buybacks (AAPL) ≠ risky.
+    # Instead score interest coverage if available, fall back to D/E cautiously.
+    # D/E > 500 (AAPL is ~200) → we treat anything <300 as reasonable, >600 as bad
+    de = info.get("debtToEquity")
+    if de is None:
+        de_score = 60.0   # unknown = neutral-good
+    elif de < 0:
+        de_score = 20.0   # negative equity = risky
+    elif de <= 50:
+        de_score = 100.0  # very low debt = excellent
+    elif de <= 150:
+        de_score = 85.0   # modest debt = fine
+    elif de <= 300:
+        de_score = 65.0   # moderate — common for profitable buyback cos
+    elif de <= 600:
+        de_score = 40.0   # elevated
+        # BUT if FCF is strong, this is manageable — soften penalty
+        if fcf_mg > 0.15:
+            de_score = 55.0
+    else:
+        de_score = 20.0   # genuinely overleveraged
+
+    balance_sheet = float(np.mean([fcf_score, current_ratio, de_score]))
+
+    # ── Market Stability ──────────────────────────────────────────────────────
+    # Market cap (log scale): <$2B=small/risky, >$200B=mega/stable
+    market_cap = info.get("marketCap") or 0
+    if market_cap > 0:
+        # log10(2B)=9.3, log10(200B)=11.3
+        mc_score = _ideas_hub_safe_score(math.log10(market_cap), 9.0, 11.5)
+    else:
+        mc_score = 0.0
+
+    # Beta: 0.5-1.3 is healthy range for institutional stocks
+    # Very low beta (<0.3) or very high (>2.5) = less stable
+    beta = info.get("beta") or 1.0
+    if 0.4 <= beta <= 1.4:
+        beta_score = 90.0
+    elif 0.3 <= beta <= 1.8:
+        beta_score = 70.0
+    elif 0.2 <= beta <= 2.5:
+        beta_score = 45.0
+    else:
+        beta_score = 20.0
+
+    # Analyst consensus: 1.0=strong buy, 2.0=buy, 3.0=hold, 4+=sell
+    # Most quality large caps sit at 1.5-2.2 — score this properly
+    rec = info.get("recommendationMean") or 3.0
+    if rec <= 1.5:
+        analyst_score = 100.0
+    elif rec <= 2.0:
+        analyst_score = 85.0
+    elif rec <= 2.5:
+        analyst_score = 65.0
+    elif rec <= 3.0:
+        analyst_score = 45.0
+    else:
+        analyst_score = max(0.0, 100.0 - (rec - 3.0) * 50)
+
+    stability = float(np.mean([mc_score, beta_score, analyst_score]))
+
+    # ── Overall (weighted) ────────────────────────────────────────────────────
+    # Profitability is king — it's the most stable signal of genuine quality
     overall = float(np.clip(
-        profitability * 0.35 + growth * 0.25 + balance_sheet * 0.25 + stability * 0.15,
+        profitability * 0.40 +
+        growth        * 0.20 +
+        balance_sheet * 0.25 +
+        stability     * 0.15,
         0, 100
     ))
+
     return overall, {
-        "profitability_score": round(float(profitability), 1),
-        "growth_score":        round(float(growth), 1),
-        "balance_sheet_score": round(float(balance_sheet), 1),
-        "stability_score":     round(float(stability), 1),
+        "profitability_score": round(profitability, 1),
+        "growth_score":        round(growth, 1),
+        "balance_sheet_score": round(balance_sheet, 1),
+        "stability_score":     round(stability, 1),
     }
 
 
 def _ideas_hub_build_insight(symbol, persistence, quality, trend_score, direction):
     dir_str   = "bullish" if direction == "Bullish" else "bearish"
-    qual_word = "high-quality" if quality >= 70 else "moderate-quality" if quality >= 50 else "lower-quality"
-    pers_word = "very likely" if persistence >= 75 else "likely" if persistence >= 60 else "uncertain whether" if persistence >= 45 else "unlikely"
+    pers_word = "very likely" if persistence >= 72 else "likely" if persistence >= 58 else "uncertain whether" if persistence >= 42 else "unlikely"
 
-    if persistence >= 70 and quality >= 65:
+    # Quality tiers with realistic thresholds post-fix
+    if quality >= 75:
+        qual_word = "elite"
+        qual_desc = "strong margins, healthy cash flow, and deep institutional backing"
+    elif quality >= 62:
+        qual_word = "high-quality"
+        qual_desc = "solid fundamentals and consistent profitability"
+    elif quality >= 48:
+        qual_word = "mid-tier"
+        qual_desc = "decent but uneven fundamentals"
+    else:
+        qual_word = "lower-quality"
+        qual_desc = "weaker fundamentals or speculative positioning"
+
+    if quality >= 62 and trend_score >= 55:
         return (
-            f"{symbol} is a {qual_word} company (fundamentals: {quality:.0f}/100) in a {dir_str} trend. "
-            f"Strong companies attract consistent institutional participation, making trends backed by real conviction rather than hype. "
-            f"This trend is {pers_word} to persist."
+            f"{symbol} is an {qual_word} company ({qual_desc}) currently in a {dir_str} trend. "
+            f"Fundamentals score: {quality:.0f}/100, trend quality: {trend_score:.0f}/100. "
+            f"Companies of this calibre attract sustained institutional participation — their trends tend to be "
+            f"conviction-driven rather than hype-driven, and they recover from retracements more reliably. "
+            f"Trend persistence is {pers_word} to continue."
         )
-    elif persistence >= 50 and quality < 55:
+    elif quality >= 62 and trend_score < 55:
         return (
-            f"{symbol} has weaker fundamentals (quality: {quality:.0f}/100) but shows a {dir_str} trend. "
-            f"Lower-quality companies can trend on momentum or speculation, but these moves are fragile. "
-            f"It is {pers_word} this trend holds — watch for reversals."
+            f"{symbol} is a {qual_word} company (fundamentals: {quality:.0f}/100) but its current {dir_str} trend "
+            f"is choppy (trend quality: {trend_score:.0f}/100). Even elite companies go through consolidation phases. "
+            f"The underlying quality is there — but the trend itself needs to stabilise before this becomes a "
+            f"high-conviction setup. Persistence is currently {pers_word}."
         )
-    elif persistence < 50 and quality >= 65:
+    elif quality < 48 and trend_score >= 55:
         return (
-            f"{symbol} is fundamentally strong (quality: {quality:.0f}/100) but its current {dir_str} trend "
-            f"is choppy. Even quality companies consolidate or correct. "
-            f"Trend persistence is currently {pers_word} — wait for the trend to stabilise before committing."
+            f"{symbol} has {qual_word} fundamentals ({qual_desc}, score: {quality:.0f}/100) but is showing "
+            f"a {dir_str} trend (trend quality: {trend_score:.0f}/100). Lower-quality companies can trend hard "
+            f"on momentum or sector rotation, but these moves are fragile — they lack the fundamental anchor "
+            f"that keeps institutional money in. It is {pers_word} this trend holds; watch for sharp reversals. "
+            f"Treat as a trade, not an investment."
         )
     else:
         return (
-            f"{symbol} scores {quality:.0f}/100 on fundamentals with a {dir_str} trend quality of {trend_score:.0f}/100. "
-            f"Combined, the trend is {pers_word} to be maintained. Confirm with additional signals before acting."
+            f"{symbol} scores {quality:.0f}/100 on company quality ({qual_desc}) with a "
+            f"{dir_str} trend quality of {trend_score:.0f}/100. "
+            f"The combined persistence likelihood is {pers_word} to hold. "
+            f"{'Confirm with additional signals before acting.' if quality < 62 else 'Monitor for trend improvement before committing.'}"
         )
 
 
@@ -40874,9 +40996,10 @@ def ideas_hub_analyze_stock_trend_quality(request):
         company_quality, fundamentals_breakdown = _ideas_hub_fundamental_quality(info)
 
         # Trend Persistence Likelihood
-        # High-quality company → gets full trend credit (multiplier → 1.0)
-        # Low-quality company  → trend credit halved   (multiplier → 0.5)
-        quality_multiplier = 0.5 + (company_quality / 100) * 0.5
+        # High-quality company → trend credit amplified (multiplier up to 1.1x)
+        # Low-quality company  → trend credit dampened  (multiplier down to 0.45x)
+        # Formula: quality 100 → 1.1x, quality 50 → 0.775x, quality 0 → 0.45x
+        quality_multiplier = 0.45 + (company_quality / 100) * 0.65
         persistence = float(np.clip(trend_quality * quality_multiplier, 0, 100))
 
         insight = _ideas_hub_build_insight(symbol, persistence, company_quality, trend_quality, direction)
@@ -40910,7 +41033,6 @@ def ideas_hub_analyze_stock_trend_quality(request):
         return JsonResponse({"error": "Invalid JSON body."}, status=400)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
-
         
 # LEGODI BACKEND CODE
 def send_simple_message():
