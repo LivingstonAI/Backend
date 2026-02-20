@@ -708,6 +708,12 @@ urlpatterns = [
  
 
   path('api/snowai-check-and-close-position/', views.snowai_check_and_close_position, name='check and close'),
+ 
+  path(
+         'ideas_hub_analyze_stock_trend_quality',
+         views.ideas_hub_analyze_stock_trend_quality,
+         name='ideas_hub_analyze_stock_trend_quality'
+     ),
 
 
 
