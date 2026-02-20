@@ -40637,141 +40637,162 @@ def snowai_check_and_close_position(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
-from scipy import stats
-import math
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD TO views.py — replaces the previous ideas_hub_analyze_stock_trend_quality
+# Required pip packages: yfinance, numpy
+# ─────────────────────────────────────────────────────────────────────────────
 
-# ─── Helper: Linear Regression without scipy ─────────────────────────────────
 
-def _ideas_hub_linear_regression(x, y):
-    """
-    Returns (slope, intercept, r_squared) using pure numpy.
-    Named with prefix to avoid any collision in a 50k-LOC codebase.
-    """
-    x = np.array(x, dtype=float)
-    y = np.array(y, dtype=float)
+
+def _ideas_hub_linreg(x, y):
+    x, y = np.array(x, dtype=float), np.array(y, dtype=float)
     n = len(x)
     if n < 2:
         return 0.0, 0.0, 0.0
-    x_mean, y_mean = x.mean(), y.mean()
-    ss_xy = np.sum((x - x_mean) * (y - y_mean))
-    ss_xx = np.sum((x - x_mean) ** 2)
+    xm, ym = x.mean(), y.mean()
+    ss_xy = ((x - xm) * (y - ym)).sum()
+    ss_xx = ((x - xm) ** 2).sum()
     if ss_xx == 0:
-        return 0.0, y_mean, 0.0
+        return 0.0, ym, 0.0
     slope = ss_xy / ss_xx
-    intercept = y_mean - slope * x_mean
+    intercept = ym - slope * xm
     y_pred = slope * x + intercept
-    ss_res = np.sum((y - y_pred) ** 2)
-    ss_tot = np.sum((y - y_mean) ** 2)
-    r2 = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
-    return slope, intercept, r2
+    ss_res = ((y - y_pred) ** 2).sum()
+    ss_tot = ((y - ym) ** 2).sum()
+    r2 = 1 - ss_res / ss_tot if ss_tot != 0 else 0.0
+    return slope, intercept, float(max(r2, 0))
 
 
-# ─── Helper: Average Directional Index (ADX) approximation ───────────────────
-
-def _ideas_hub_compute_adx(high, low, close, period=14):
-    """
-    Computes a simplified ADX value (0-100) indicating trend strength.
-    Higher = stronger trend regardless of direction.
-    """
-    high = np.array(high, dtype=float)
-    low  = np.array(low,  dtype=float)
-    close = np.array(close, dtype=float)
-
+def _ideas_hub_adx(high, low, close, period=14):
+    high, low, close = np.array(high), np.array(low), np.array(close)
     n = len(close)
     if n < period + 2:
-        return 20.0  # neutral fallback
-
-    # True Range
+        return 20.0
     tr = np.zeros(n)
+    plus_dm = np.zeros(n)
+    minus_dm = np.zeros(n)
     for i in range(1, n):
         hl = high[i] - low[i]
         hc = abs(high[i] - close[i - 1])
-        lc = abs(low[i]  - close[i - 1])
+        lc = abs(low[i] - close[i - 1])
         tr[i] = max(hl, hc, lc)
-
-    # Directional Movement
-    plus_dm  = np.zeros(n)
-    minus_dm = np.zeros(n)
-    for i in range(1, n):
-        up   = high[i] - high[i - 1]
-        down = low[i - 1] - low[i]
-        if up > down and up > 0:
+        up = high[i] - high[i - 1]
+        dn = low[i - 1] - low[i]
+        if up > dn and up > 0:
             plus_dm[i] = up
-        if down > up and down > 0:
-            minus_dm[i] = down
+        if dn > up and dn > 0:
+            minus_dm[i] = dn
 
-    # Smoothed via Wilder's method
-    def wilder_smooth(arr, p):
+    def _wilder(arr, p):
         out = np.zeros(len(arr))
-        out[p] = arr[1:p+1].sum()
+        out[p] = arr[1:p + 1].sum()
         for i in range(p + 1, len(arr)):
-            out[i] = out[i - 1] - (out[i - 1] / p) + arr[i]
+            out[i] = out[i - 1] - out[i - 1] / p + arr[i]
         return out
 
-    atr      = wilder_smooth(tr, period)
-    plus_di  = wilder_smooth(plus_dm, period)
-    minus_di = wilder_smooth(minus_dm, period)
-
-    # DX
+    atr = _wilder(tr, period)
+    pdi = _wilder(plus_dm, period)
+    mdi = _wilder(minus_dm, period)
     dx = np.zeros(n)
     for i in range(period, n):
-        denom = (plus_di[i] / atr[i] * 100 + minus_di[i] / atr[i] * 100) if atr[i] != 0 else 0
+        denom = (pdi[i] + mdi[i]) / atr[i] * 100 if atr[i] != 0 else 0
         if denom != 0:
-            dx[i] = abs((plus_di[i] - minus_di[i]) / atr[i] * 100) / denom * 100 \
-                    if atr[i] != 0 else 0
-
-    # ADX = smoothed DX
-    if len(dx[period:]) < period:
-        return 20.0
-    adx_vals = wilder_smooth(dx, period)
-    adx = adx_vals[-1]
-    return float(np.clip(adx, 0, 100))
+            dx[i] = abs(pdi[i] - mdi[i]) / atr[i] * 100 / denom * 100
+    adx_vals = _wilder(dx, period)
+    return float(np.clip(adx_vals[-1], 0, 100))
 
 
-# ─── Helper: Build human-readable insight ────────────────────────────────────
+def _ideas_hub_safe_score(value, low_bad, high_good, invert=False):
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return 50.0
+    if invert:
+        value = -value
+        low_bad, high_good = -high_good, -low_bad
+    if value <= low_bad:
+        return 0.0
+    if value >= high_good:
+        return 100.0
+    return float((value - low_bad) / (high_good - low_bad) * 100)
 
-def _ideas_hub_build_trend_insight(symbol, score, direction, r2, adx_score,
-                                   low_vol_score, drawdown_score, mom_score,
-                                   period_return):
-    grade_map = {
-        (90, 101): "exceptional",
-        (80,  90): "excellent",
-        (70,  80): "strong",
-        (60,  70): "decent",
-        (50,  60): "moderate",
-        (40,  50): "weak",
-        (0,   40): "poor",
+
+def _ideas_hub_fundamental_quality(info):
+    # Profitability
+    gross_margin  = _ideas_hub_safe_score(info.get("grossMargins"),      0.0,  0.60)
+    op_margin     = _ideas_hub_safe_score(info.get("operatingMargins"), -0.10, 0.30)
+    net_margin    = _ideas_hub_safe_score(info.get("profitMargins"),    -0.05, 0.20)
+    roe           = _ideas_hub_safe_score(info.get("returnOnEquity"),    0.0,  0.30)
+    roa           = _ideas_hub_safe_score(info.get("returnOnAssets"),    0.0,  0.15)
+    profitability = np.mean([gross_margin, op_margin, net_margin, roe, roa])
+
+    # Growth
+    rev_growth    = _ideas_hub_safe_score(info.get("revenueGrowth"),  -0.10, 0.25)
+    earn_growth   = _ideas_hub_safe_score(info.get("earningsGrowth"), -0.20, 0.30)
+    trailing_eps  = info.get("trailingEps") or 0
+    forward_eps   = info.get("forwardEps") or trailing_eps
+    eps_gr        = (forward_eps - trailing_eps) / abs(trailing_eps) if trailing_eps != 0 else 0
+    eps_growth    = _ideas_hub_safe_score(eps_gr, -0.10, 0.25)
+    growth        = np.mean([rev_growth, earn_growth, eps_growth])
+
+    # Balance Sheet
+    de_ratio      = _ideas_hub_safe_score(info.get("debtToEquity"),  0, 200, invert=True)
+    current_ratio = _ideas_hub_safe_score(info.get("currentRatio"), 0.8, 2.5)
+    quick_ratio   = _ideas_hub_safe_score(info.get("quickRatio"),   0.5, 1.5)
+    fcf           = info.get("freeCashflow") or 0
+    rev           = info.get("totalRevenue") or 1
+    fcf_margin    = _ideas_hub_safe_score(fcf / rev if rev else 0, -0.05, 0.20)
+    balance_sheet = np.mean([de_ratio, current_ratio, quick_ratio, fcf_margin])
+
+    # Market Stability
+    import math
+    market_cap    = info.get("marketCap") or 0
+    mc_score      = _ideas_hub_safe_score(math.log10(market_cap) if market_cap > 0 else 0, 8.0, 11.5)
+    beta          = info.get("beta") or 1.0
+    beta_score    = max(0.0, 100.0 - abs(beta - 1.0) * 40)
+    rec_mean      = info.get("recommendationMean") or 3.0
+    analyst_score = _ideas_hub_safe_score(5.0 - rec_mean, 0, 4)
+    stability     = np.mean([mc_score, beta_score, analyst_score])
+
+    overall = float(np.clip(
+        profitability * 0.35 + growth * 0.25 + balance_sheet * 0.25 + stability * 0.15,
+        0, 100
+    ))
+    return overall, {
+        "profitability_score": round(float(profitability), 1),
+        "growth_score":        round(float(growth), 1),
+        "balance_sheet_score": round(float(balance_sheet), 1),
+        "stability_score":     round(float(stability), 1),
     }
-    grade_word = "unremarkable"
-    for (lo, hi), word in grade_map.items():
-        if lo <= score < hi:
-            grade_word = word
-            break
-
-    weakest = min(
-        ("trend linearity (R²)", r2 * 100),
-        ("ADX trend strength", adx_score),
-        ("volatility control", low_vol_score),
-        ("drawdown recovery", drawdown_score),
-        ("momentum persistence", mom_score),
-        key=lambda x: x[1]
-    )
-
-    direction_str = "bullish" if direction == "Bullish" else "bearish"
-    ret_str = f"+{period_return:.1f}%" if period_return >= 0 else f"{period_return:.1f}%"
-
-    insight = (
-        f"{symbol} shows {grade_word} trend quality with an overall score of {score:.0f}/100. "
-        f"The {direction_str} move of {ret_str} over the selected period "
-        f"{'was maintained with consistency' if score >= 65 else 'showed notable choppiness and reversals'}. "
-        f"The weakest dimension is {weakest[0]} ({weakest[1]:.1f}), which "
-        f"{'slightly tempers' if weakest[1] >= 50 else 'significantly drags'} the overall quality. "
-        f"{'Stocks scoring above 70 tend to respect their trend and recover drawdowns efficiently.' if score >= 70 else 'Lower-scoring stocks often exhibit whipsaw behavior – proceed with caution.'}"
-    )
-    return insight
 
 
-# ─── Main View ───────────────────────────────────────────────────────────────
+def _ideas_hub_build_insight(symbol, persistence, quality, trend_score, direction):
+    dir_str   = "bullish" if direction == "Bullish" else "bearish"
+    qual_word = "high-quality" if quality >= 70 else "moderate-quality" if quality >= 50 else "lower-quality"
+    pers_word = "very likely" if persistence >= 75 else "likely" if persistence >= 60 else "uncertain whether" if persistence >= 45 else "unlikely"
+
+    if persistence >= 70 and quality >= 65:
+        return (
+            f"{symbol} is a {qual_word} company (fundamentals: {quality:.0f}/100) in a {dir_str} trend. "
+            f"Strong companies attract consistent institutional participation, making trends backed by real conviction rather than hype. "
+            f"This trend is {pers_word} to persist."
+        )
+    elif persistence >= 50 and quality < 55:
+        return (
+            f"{symbol} has weaker fundamentals (quality: {quality:.0f}/100) but shows a {dir_str} trend. "
+            f"Lower-quality companies can trend on momentum or speculation, but these moves are fragile. "
+            f"It is {pers_word} this trend holds — watch for reversals."
+        )
+    elif persistence < 50 and quality >= 65:
+        return (
+            f"{symbol} is fundamentally strong (quality: {quality:.0f}/100) but its current {dir_str} trend "
+            f"is choppy. Even quality companies consolidate or correct. "
+            f"Trend persistence is currently {pers_word} — wait for the trend to stabilise before committing."
+        )
+    else:
+        return (
+            f"{symbol} scores {quality:.0f}/100 on fundamentals with a {dir_str} trend quality of {trend_score:.0f}/100. "
+            f"Combined, the trend is {pers_word} to be maintained. Confirm with additional signals before acting."
+        )
+
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -40780,74 +40801,51 @@ def ideas_hub_analyze_stock_trend_quality(request):
     POST /ideas_hub_analyze_stock_trend_quality
     Body: { "symbol": "AAPL", "period": "6mo" }
 
-    Returns a comprehensive trend quality score (0–100) broken into:
-      - r2_score           : how linearly the price moves (R² of log-price vs time)
-      - adx_score          : ADX-based trend strength (0-100)
-      - low_volatility_score: penalises choppy daily swings
-      - drawdown_score     : how well price recovers from pullbacks
-      - momentum_score     : persistence of positive/negative streaks
-
-    Overall score = weighted average of all five dimensions.
+    Core answer: how likely is a quality company to maintain its current trend?
+    - trend_persistence_likelihood = trend_quality * quality_multiplier
+      where quality_multiplier = 0.5 + (company_quality/100)*0.5
+      → high-quality companies get full trend credit; low-quality ones get halved
     """
     try:
-        body = json.loads(request.body)
+        body   = json.loads(request.body)
         symbol = str(body.get("symbol", "")).strip().upper()
         period = str(body.get("period", "6mo")).strip()
 
         if not symbol:
             return JsonResponse({"error": "Symbol is required."}, status=400)
-
-        valid_periods = {"1mo", "3mo", "6mo", "1y", "2y", "5y"}
-        if period not in valid_periods:
+        if period not in {"1mo", "3mo", "6mo", "1y", "2y", "5y"}:
             period = "6mo"
 
-        # ── Fetch OHLCV ──────────────────────────────────────────────────────
         ticker = yf.Ticker(symbol)
+
         hist = ticker.history(period=period)
-
         if hist.empty or len(hist) < 20:
-            return JsonResponse(
-                {"error": f"Not enough data for '{symbol}'. Check the symbol and try again."},
-                status=404
-            )
+            return JsonResponse({"error": f"Not enough price data for '{symbol}'."}, status=404)
 
-        close  = hist["Close"].values
-        high   = hist["High"].values
-        low    = hist["Low"].values
-        n      = len(close)
+        close = hist["Close"].values
+        high  = hist["High"].values
+        low   = hist["Low"].values
+        n     = len(close)
 
-        # ── 1. R² Score – trend linearity ────────────────────────────────────
+        # Trend metrics
         log_close = np.log(close)
-        x_idx     = np.arange(n, dtype=float)
-        slope, _, r2 = _ideas_hub_linear_regression(x_idx, log_close)
-        # r2 is always 0-1; we want it as a 0-100 score
-        r2_score = float(np.clip(r2, 0, 1))
+        slope, _, r2 = _ideas_hub_linreg(np.arange(n, dtype=float), log_close)
+        direction = "Bullish" if slope > 0 else "Bearish"
 
-        # ── 2. ADX Score – trend strength ────────────────────────────────────
-        raw_adx  = _ideas_hub_compute_adx(high, low, close)
-        # ADX: 0-25 = no trend, 25-50 = trending, 50+ = strong
-        # Normalise to 0-100 score
-        adx_score = float(np.clip((raw_adx / 60) * 100, 0, 100))
+        raw_adx       = _ideas_hub_adx(high, low, close)
+        adx_score     = float(np.clip((raw_adx / 60) * 100, 0, 100))
 
-        # ── 3. Low-Volatility Score ───────────────────────────────────────────
-        daily_returns = np.diff(close) / close[:-1] * 100  # % changes
-        avg_daily_vol = float(np.std(daily_returns))
-        # Less vol = better score. Benchmark: 1% daily is average, 3%+ is noisy
-        low_vol_score = float(np.clip(100 - (avg_daily_vol / 3.0) * 100, 0, 100))
+        daily_ret     = np.diff(close) / close[:-1] * 100
+        avg_vol       = float(np.std(daily_ret))
+        low_vol_score = float(np.clip(100 - (avg_vol / 3.0) * 100, 0, 100))
 
-        # ── 4. Drawdown Score – recovery quality ──────────────────────────────
-        rolling_max  = np.maximum.accumulate(close)
-        drawdowns    = (close - rolling_max) / rolling_max * 100  # negative values
-        max_drawdown = float(drawdowns.min())  # most negative
-        avg_drawdown = float(drawdowns.mean())
-        # Scoring: 0% DD = 100, -20% DD = 0
-        drawdown_score = float(np.clip(100 + (max_drawdown / 20) * 100, 0, 100))
+        rolling_max   = np.maximum.accumulate(close)
+        drawdowns     = (close - rolling_max) / rolling_max * 100
+        max_dd        = float(drawdowns.min())
+        dd_score      = float(np.clip(100 + (max_dd / 20) * 100, 0, 100))
 
-        # ── 5. Momentum Persistence Score ────────────────────────────────────
-        # Count how many consecutive-direction streaks of 3+ days there are
-        signs = np.sign(daily_returns)
-        streak_count = 0
-        streak = 1
+        signs = np.sign(daily_ret)
+        streak_count, streak = 0, 1
         for i in range(1, len(signs)):
             if signs[i] == signs[i - 1] and signs[i] != 0:
                 streak += 1
@@ -40855,63 +40853,63 @@ def ideas_hub_analyze_stock_trend_quality(request):
                     streak_count += 1
             else:
                 streak = 1
-        # Normalise: more streaks of 3+ = better momentum persistence
-        max_possible_streaks = n // 3
-        momentum_score = float(np.clip((streak_count / max(max_possible_streaks, 1)) * 100, 0, 100))
+        mom_score = float(np.clip((streak_count / max(n // 3, 1)) * 100, 0, 100))
 
-        # ── Weighted Overall Score ─────────────────────────────────────────────
-        weights = {
-            "r2":         0.30,
-            "adx":        0.25,
-            "low_vol":    0.20,
-            "drawdown":   0.15,
-            "momentum":   0.10,
-        }
-        overall_score = (
-            r2_score * 100      * weights["r2"] +
-            adx_score           * weights["adx"] +
-            low_vol_score       * weights["low_vol"] +
-            drawdown_score      * weights["drawdown"] +
-            momentum_score      * weights["momentum"]
-        )
-        overall_score = float(np.clip(overall_score, 0, 100))
+        trend_quality = float(np.clip(
+            r2 * 100  * 0.30 +
+            adx_score * 0.25 +
+            low_vol_score * 0.20 +
+            dd_score  * 0.15 +
+            mom_score * 0.10,
+            0, 100
+        ))
 
-        # ── Direction ─────────────────────────────────────────────────────────
-        direction = "Bullish" if slope > 0 else "Bearish"
-
-        # ── Period Return ─────────────────────────────────────────────────────
         period_return = float((close[-1] - close[0]) / close[0] * 100)
 
-        # ── Insight ───────────────────────────────────────────────────────────
-        insight = _ideas_hub_build_trend_insight(
-            symbol, overall_score, direction,
-            r2_score, adx_score, low_vol_score, drawdown_score, momentum_score,
-            period_return
-        )
+        # Fundamental quality (fully algorithmic)
+        try:
+            info = ticker.info or {}
+        except Exception:
+            info = {}
+        company_quality, fundamentals_breakdown = _ideas_hub_fundamental_quality(info)
+
+        # Trend Persistence Likelihood
+        # High-quality company → gets full trend credit (multiplier → 1.0)
+        # Low-quality company  → trend credit halved   (multiplier → 0.5)
+        quality_multiplier = 0.5 + (company_quality / 100) * 0.5
+        persistence = float(np.clip(trend_quality * quality_multiplier, 0, 100))
+
+        insight = _ideas_hub_build_insight(symbol, persistence, company_quality, trend_quality, direction)
 
         return JsonResponse({
-            "symbol":               symbol,
-            "period":               period,
-            "overall_score":        round(overall_score, 2),
-            "direction":            direction,
-            "r2_score":             round(r2_score, 4),
+            "symbol":    symbol,
+            "period":    period,
+            "direction": direction,
+
+            "trend_persistence_likelihood": round(persistence, 1),
+            "company_quality_score":        round(company_quality, 1),
+            "overall_trend_quality":        round(trend_quality, 1),
+
+            "fundamentals": fundamentals_breakdown,
+
+            "r2_score":             round(r2, 4),
             "adx_score":            round(adx_score, 2),
             "low_volatility_score": round(low_vol_score, 2),
-            "drawdown_score":       round(drawdown_score, 2),
-            "momentum_score":       round(momentum_score, 2),
+            "drawdown_score":       round(dd_score, 2),
+            "momentum_score":       round(mom_score, 2),
+
             "period_return":        round(period_return, 4),
-            "avg_daily_volatility": round(avg_daily_vol, 4),
-            "max_drawdown":         round(max_drawdown, 4),
+            "avg_daily_volatility": round(avg_vol, 4),
+            "max_drawdown":         round(max_dd, 4),
             "data_points":          n,
-            "insight":              insight,
+
+            "insight": insight,
         })
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON body."}, status=400)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
-
-
 
         
 # LEGODI BACKEND CODE
