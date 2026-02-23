@@ -40637,18 +40637,6 @@ def snowai_check_and_close_position(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ADD TO views.py — replaces the previous ideas_hub_analyze_stock_trend_quality
-# Required pip packages: yfinance, numpy
-# ─────────────────────────────────────────────────────────────────────────────
-
-import json
-import numpy as np
-import yfinance as yf
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-
 
 def _ideas_hub_linreg(x, y):
     x, y = np.array(x, dtype=float), np.array(y, dtype=float)
@@ -40846,15 +40834,21 @@ def _ideas_hub_fundamental_quality(info):
     else:
         analyst_score = max(0.0, 100.0 - (rec - 3.0) * 50)
 
-    stability = float(np.mean([mc_score, beta_score, analyst_score]))
+    # Market cap is 60% of stability — it is the dominant signal
+    stability = float(mc_score * 0.60 + beta_score * 0.20 + analyst_score * 0.20)
 
     # ── Overall (weighted) ────────────────────────────────────────────────────
-    # Profitability is king — it's the most stable signal of genuine quality
+    # Market cap is the PRIMARY determinant — it represents the market's
+    # collective verdict on a company's value, staying power, and institutional
+    # backing. Everything else refines the picture around that anchor.
+    # mc_score lives inside stability, so stability leads the weighting.
+    # Then profitability confirms the cap is earned, balance sheet for health,
+    # growth as a forward-looking bonus.
     overall = float(np.clip(
-        profitability * 0.40 +
-        growth        * 0.20 +
-        balance_sheet * 0.25 +
-        stability     * 0.15,
+        stability     * 0.40 +   # market cap is the dominant signal
+        profitability * 0.30 +   # confirms the market cap is justified
+        balance_sheet * 0.20 +   # financial health
+        growth        * 0.10,    # forward-looking bonus
         0, 100
     ))
 
