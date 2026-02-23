@@ -8906,26 +8906,21 @@ def fetch_news_data_api(request):
     """Enhanced news data function that includes economic events."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
-
     try:
         body = json.loads(request.body)
         assets_to_fetch = body.get('assets', [])
         user_email = body.get('user_email', None)
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
     if not assets_to_fetch or not user_email:
         return JsonResponse({'error': 'Missing assets or user_email'}, status=400)
-
     all_news_data = []
-
     conn = http.client.HTTPSConnection('api.marketaux.com')
     params_template = {
         'api_token': 'xH2KZ1sYqHmNRpfBVfb9C1BbItHMtlRIdZQoRlYw',
         'langauge': 'en',
         'limit': 3,
     }
-
     for asset in assets_to_fetch:
         params = params_template.copy()
         params['symbols'] = asset
@@ -8933,7 +8928,6 @@ def fetch_news_data_api(request):
         res = conn.getresponse()
         data = res.read().decode('utf-8')
         news_data = json.loads(data)
-
         for article in news_data.get('data', []):
             # Extract highlights properly
             highlights = ''
@@ -8946,8 +8940,16 @@ def fetch_news_data_api(request):
                     # Extract the actual highlight text
                     highlights = entity_highlights.get('highlight', '') or entity_highlights.get('text', '')
                 elif isinstance(entity_highlights, list) and len(entity_highlights) > 0:
-                    highlights = entity_highlights[0] if isinstance(entity_highlights[0], str) else str(entity_highlights[0])
-            
+                    first = entity_highlights[0]
+                    if isinstance(first, str):
+                        highlights = first
+                    elif isinstance(first, dict):
+                        # ✅ Extract the key directly — str(dict) produces a broken Python repr
+                        highlights = first.get('highlight', '') or first.get('text', '') or ''
+                # Strip <em> and other HTML tags the API injects into highlight text
+                import re
+                highlights = re.sub(r'<[^>]+>', '', highlights).strip()
+
             news_entry_data = {
                 'asset': asset,
                 'title': article.get('title', ''),
@@ -8957,7 +8959,6 @@ def fetch_news_data_api(request):
                 'highlights': highlights,  # Now always a string
             }
             all_news_data.append(news_entry_data)
-
     economic_events_data = []
     for asset in assets_to_fetch:
         economic_events = get_economic_events_for_pair(asset)
@@ -8965,12 +8966,11 @@ def fetch_news_data_api(request):
             'asset': asset,
             'economic_events': economic_events
         })
-
     return JsonResponse({
         'message': all_news_data,
         'economic_events': economic_events_data
     }, safe=False)
-
+    
 
 
 def fetch_news_data(assets, user_email):
