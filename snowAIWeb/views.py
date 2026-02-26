@@ -41143,6 +41143,241 @@ def snowai_thundervault_ohlcv_chart_stream(request):
 
 
 
+# Timeframes to analyze (in calendar days — yfinance fetches accordingly)
+_IDEAS_HUB_TREND_AGE_TIMEFRAMES = [
+    {"days": 15,  "label": "15d"},
+    {"days": 20,  "label": "20d"},
+    {"days": 30,  "label": "30d"},
+    {"days": 45,  "label": "45d"},
+    {"days": 60,  "label": "60d"},
+    {"days": 90,  "label": "90d"},
+    {"days": 180, "label": "180d"},
+]
+
+
+def _ideas_hub_trend_age_r2_for_window(prices: np.ndarray) -> tuple[float, str]:
+    """
+    Calculates R² for a price window using LinearRegression exactly as in
+    calculate_market_stability_score — fitting a linear model to raw prices
+    vs index, returning r_squared and trend direction.
+
+    Returns (r2: float 0-1, direction: "Bullish" | "Bearish")
+    """
+    if len(prices) < 5:
+        return 0.0, "Bullish"
+
+    X = np.arange(len(prices)).reshape(-1, 1)
+    y = prices.reshape(-1, 1)
+
+    model = LinearRegression()
+    model.fit(X, y)
+
+    r2 = float(model.score(X, y))
+    r2 = max(0.0, min(r2, 1.0))   # clamp — can be slightly negative on terrible fits
+
+    direction = "Bullish" if float(model.coef_[0][0]) > 0 else "Bearish"
+    return r2, direction
+
+
+def _ideas_hub_trend_age_classify(r2_values: list[float]) -> dict:
+    """
+    Given a list of 7 R² values (15d → 180d, short to long), classifies the
+    trend lifecycle stage by examining the pattern across timeframes.
+
+    Logic:
+    - Short = avg of first 3 (15, 20, 30d)
+    - Mid   = avg of next 2 (45, 60d)
+    - Long  = avg of last 2 (90, 180d)
+
+    Combinations → lifecycle stage:
+      High short + High mid + High long   → Mature (trend running across all horizons)
+      High short + Low long               → Early / Young (only showing up recently)
+      Low short  + High long              → Aging / Exhausting (long trend breaking down)
+      High short + High mid + Low long    → Developing (building but not yet long-term)
+      Low short  + High mid + Low long    → Choppy / Consolidating
+      Low everywhere                      → No Clear Trend
+      Everything else                     → Mixed / Unclear
+    """
+    s = r2_values[:3]
+    m = r2_values[3:5]
+    l = r2_values[5:7]
+
+    avg_s = sum(s) / len(s)
+    avg_m = sum(m) / len(m)
+    avg_l = sum(l) / len(l)
+
+    # Trend acceleration: is R² growing or shrinking across timeframes?
+    # Positive = trend getting cleaner at longer horizons (mature/developing)
+    # Negative = trend getting noisier at longer horizons (young or exhausting)
+    trajectory = avg_l - avg_s
+
+    if avg_s > 0.55 and avg_m > 0.55 and avg_l > 0.55:
+        return {
+            "age": "Mature",
+            "description": (
+                "R² is strong across all timeframes — 15d through 180d. "
+                "This trend has been running cleanly for a long time with consistent direction. "
+                "Strong institutional backing is implied; these moves don't sustain without conviction."
+            ),
+            "action": "High conviction hold. Trend has durability but may be late-stage for fresh entries — wait for a pullback.",
+            "trajectory": "sustained",
+        }
+
+    if avg_s > 0.50 and avg_l < 0.38:
+        return {
+            "age": "Early / Young",
+            "description": (
+                "R² is high on short timeframes (15–30d) but drops sharply on longer ones (90–180d). "
+                "The trend is clean and directional right now, but it hasn't been running long enough "
+                "to show up as a linear move on higher timeframes. This is a relatively new trend."
+            ),
+            "action": "Potentially high-upside entry point — the trend is fresh. Confirm with volume and fundamentals before sizing up.",
+            "trajectory": "emerging",
+        }
+
+    if avg_s < 0.33 and avg_l > 0.50:
+        return {
+            "age": "Aging / Exhausting",
+            "description": (
+                "R² is high on longer timeframes (90–180d) but has collapsed on shorter ones (15–30d). "
+                "The big trend is real and has history behind it, but recent price action has become "
+                "choppy and directionless. Classic late-stage behaviour — distribution or consolidation is likely underway."
+            ),
+            "action": "Caution — don't chase. The trend exists historically but is losing momentum now. Watch for a lower-high as a reversal signal.",
+            "trajectory": "deteriorating",
+        }
+
+    if avg_s > 0.45 and avg_m > 0.42 and avg_l < 0.42:
+        return {
+            "age": "Developing",
+            "description": (
+                "R² is solid on short and mid timeframes (15–60d) but hasn't yet established itself "
+                "on longer ones (90–180d). The trend is building credibility — past the very early stage "
+                "but not yet a fully confirmed long-term move."
+            ),
+            "action": "Good risk/reward if the direction aligns with your thesis. Trend is gaining traction — add on dips.",
+            "trajectory": "building",
+        }
+
+    if avg_m > 0.50 and avg_s < 0.38 and avg_l < 0.38:
+        return {
+            "age": "Choppy / Consolidating",
+            "description": (
+                "R² is only meaningful at mid-range timeframes (45–60d). Short-term is noisy and "
+                "long-term has no clear linear direction. The asset is likely range-bound or in a "
+                "consolidation phase between two larger moves."
+            ),
+            "action": "Avoid trend-following strategies. Wait for a clear breakout with improving R² across multiple timeframes simultaneously.",
+            "trajectory": "sideways",
+        }
+
+    if avg_s < 0.28 and avg_m < 0.28 and avg_l < 0.28:
+        return {
+            "age": "No Clear Trend",
+            "description": (
+                "R² is low across all 7 timeframes. Price action has no sustained linear direction "
+                "at any measured horizon — moves are essentially random from a trend perspective."
+            ),
+            "action": "No trend to trade here. This is a mean-reversion or range market, not a trend market.",
+            "trajectory": "flat",
+        }
+
+    # Catch-all — mixed signals
+    return {
+        "age": "Mixed / Unclear",
+        "description": (
+            f"R² pattern doesn't fit a clean lifecycle profile. "
+            f"Short avg: {avg_s:.0%}, Mid avg: {avg_m:.0%}, Long avg: {avg_l:.0%}. "
+            "The asset may be transitioning between trend phases or reacting to a one-off event."
+        ),
+        "action": "Monitor for a few more sessions. Look for R² to converge consistently in one direction before trading.",
+        "trajectory": "mixed",
+    }
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def ideas_hub_trend_age_analysis_v1(request):
+    """
+    POST /ideas_hub_trend_age_analysis_v1
+    Body: { "symbol": "AAPL" }
+
+    Calculates R² (via LinearRegression, same method as calculate_market_stability_score)
+    across 7 timeframes: 15, 20, 30, 45, 60, 90, 180 days.
+
+    Uses the pattern of R² values across timeframes to classify where the trend
+    is in its lifecycle: Early, Developing, Mature, Aging, Choppy, or No Trend.
+
+    Returns:
+        symbol              : ticker
+        direction           : overall dominant direction (Bullish/Bearish)
+        r2_by_timeframe     : list of { label, days, r2, direction } per timeframe
+        classification      : { age, description, action, trajectory }
+        short_avg_r2        : avg R² of 15-30d windows
+        mid_avg_r2          : avg R² of 45-60d windows
+        long_avg_r2         : avg R² of 90-180d windows
+    """
+    try:
+        body   = json.loads(request.body)
+        symbol = str(body.get("symbol", "")).strip().upper()
+
+        if not symbol:
+            return JsonResponse({"error": "symbol is required."}, status=400)
+
+        # Fetch enough history to cover all timeframes (180 trading days ≈ ~260 calendar days)
+        ticker = yf.Ticker(symbol)
+        hist   = ticker.history(period="1y")   # 1y gives ~252 trading days, enough for all windows
+
+        if hist.empty:
+            return JsonResponse({"error": f"No price data found for '{symbol}'."}, status=404)
+
+        close_all = hist["Close"].values
+
+        if len(close_all) < 15:
+            return JsonResponse({"error": f"Not enough price history for '{symbol}'."}, status=404)
+
+        # For each timeframe, take the LAST N trading days from the full history
+        r2_results = []
+        for tf in _IDEAS_HUB_TREND_AGE_TIMEFRAMES:
+            n = tf["days"]
+            # Use trading days (each row in hist = 1 trading day)
+            window = close_all[-n:] if len(close_all) >= n else close_all
+            r2, direction = _ideas_hub_trend_age_r2_for_window(window)
+            r2_results.append({
+                "label":     tf["label"],
+                "days":      n,
+                "r2":        round(r2, 4),
+                "direction": direction,
+            })
+
+        r2_values = [r["r2"] for r in r2_results]
+
+        # Overall direction: majority vote across timeframes
+        bull_count = sum(1 for r in r2_results if r["direction"] == "Bullish")
+        overall_direction = "Bullish" if bull_count >= 4 else "Bearish"
+
+        # Averages by horizon band
+        short_avg = round(sum(r2_values[:3]) / 3, 4)
+        mid_avg   = round(sum(r2_values[3:5]) / 2, 4)
+        long_avg  = round(sum(r2_values[5:7]) / 2, 4)
+
+        classification = _ideas_hub_trend_age_classify(r2_values)
+
+        return JsonResponse({
+            "symbol":           symbol,
+            "direction":        overall_direction,
+            "r2_by_timeframe":  r2_results,
+            "classification":   classification,
+            "short_avg_r2":     short_avg,
+            "mid_avg_r2":       mid_avg,
+            "long_avg_r2":      long_avg,
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
