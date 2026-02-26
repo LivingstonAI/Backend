@@ -41036,8 +41036,11 @@ def snowai_thundervault_ohlcv_chart_stream(request):
     Fetches OHLCV candlestick data using yfinance.
     Used by ChartInsightsTab in the SnowAI Stock Screener.
 
-    POST: { "ticker": "AAPL", "interval": "1D" }
-    interval options: 1D | 1W | 1M | 3M | 6M | 1Y | 2Y
+    POST: { "ticker": "AAPL", "interval": "1h" }
+
+    Supported intervals (with auto-adjusted lookback periods):
+        Intraday : 1m | 5m | 15m | 30m | 1h | 4h
+        Daily+   : 1D | 1W | 1M | 3M | 6M | 1Y | 2Y
 
     Returns: { "candles": [{ "time", "open", "high", "low", "close", "volume" }] }
     """
@@ -41047,34 +41050,60 @@ def snowai_thundervault_ohlcv_chart_stream(request):
     try:
         body     = json.loads(request.body)
         ticker   = body.get('ticker', '').strip().upper()
-        interval = body.get('interval', '1M')
+        interval = body.get('interval', '1D')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     if not ticker:
         return JsonResponse({'error': 'Missing ticker'}, status=400)
 
+    # Smart lookback: enough bars to be useful, within yfinance's limits
+    # yfinance limits: 1m→7d max, 2m/5m/15m/30m/60m/90m→60d max, 1h→730d max
     interval_map = {
-        '1D': {'period': '5d',  'interval': '15m'},
-        '1W': {'period': '1mo', 'interval': '60m'},
-        '1M': {'period': '3mo', 'interval': '1d'},
-        '3M': {'period': '6mo', 'interval': '1d'},
-        '6M': {'period': '1y',  'interval': '1d'},
-        '1Y': {'period': '2y',  'interval': '1wk'},
-        '2Y': {'period': '5y',  'interval': '1wk'},
+        '1m':  {'period': '5d',   'interval': '1m'},
+        '5m':  {'period': '30d',  'interval': '5m'},
+        '15m': {'period': '60d',  'interval': '15m'},
+        '30m': {'period': '60d',  'interval': '30m'},
+        '1h':  {'period': '3mo',  'interval': '1h'},
+        '4h':  {'period': '6mo',  'interval': '1h'},   # yfinance has no native 4h; resample below
+        '1D':  {'period': '6mo',  'interval': '1d'},
+        '1W':  {'period': '1y',   'interval': '1wk'},
+        '1M':  {'period': '3mo',  'interval': '1d'},
+        '3M':  {'period': '6mo',  'interval': '1d'},
+        '6M':  {'period': '1y',   'interval': '1d'},
+        '1Y':  {'period': '2y',   'interval': '1wk'},
+        '2Y':  {'period': '5y',   'interval': '1wk'},
     }
 
-    cfg         = interval_map.get(interval, interval_map['1M'])
+    cfg = interval_map.get(interval, interval_map['1D'])
     yf_period   = cfg['period']
     yf_interval = cfg['interval']
+    resample_4h = (interval == '4h')
 
     try:
-        hist = yf.Ticker(ticker).history(period=yf_period, interval=yf_interval, auto_adjust=True)
+        hist = yf.Ticker(ticker).history(
+            period=yf_period,
+            interval=yf_interval,
+            auto_adjust=True,
+        )
     except Exception as e:
         return JsonResponse({'error': f'yfinance error: {str(e)}'}, status=500)
 
     if hist.empty:
         return JsonResponse({'error': f'No data found for {ticker}'}, status=404)
+
+    # Resample hourly → 4h if requested
+    if resample_4h:
+        try:
+            hist = hist.resample('4h').agg({
+                'Open':   'first',
+                'High':   'max',
+                'Low':    'min',
+                'Close':  'last',
+                'Volume': 'sum',
+            }).dropna()
+        except Exception:
+            pass  # fall back to raw 1h data
 
     candles = []
     for ts, row in hist.iterrows():
@@ -41111,6 +41140,7 @@ def snowai_thundervault_ohlcv_chart_stream(request):
         'interval': interval,
         'count':    len(candles),
     }, safe=False)
+
 
 
         
