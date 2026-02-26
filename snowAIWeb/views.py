@@ -41029,29 +41029,23 @@ def ideas_hub_analyze_stock_trend_quality(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-import urllib.parse
-import http.client
-
-
+import math
 @csrf_exempt
 def snowai_thundervault_ohlcv_chart_stream(request):
     """
-    Fetches OHLCV candlestick data for a given ticker + interval from Yahoo Finance.
-    Used exclusively by the ChartInsightsTab component in the SnowAI Stock Screener.
+    Fetches OHLCV candlestick data using yfinance.
+    Used by ChartInsightsTab in the SnowAI Stock Screener.
 
-    POST body:
-        { "ticker": "AAPL", "interval": "1D" }
-
+    POST: { "ticker": "AAPL", "interval": "1D" }
     interval options: 1D | 1W | 1M | 3M | 6M | 1Y | 2Y
 
-    Returns:
-        { "candles": [ { "time": <unix_ts>, "open", "high", "low", "close", "volume" }, ... ] }
+    Returns: { "candles": [{ "time", "open", "high", "low", "close", "volume" }] }
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
 
     try:
-        body = json.loads(request.body)
+        body     = json.loads(request.body)
         ticker   = body.get('ticker', '').strip().upper()
         interval = body.get('interval', '1M')
     except json.JSONDecodeError:
@@ -41060,76 +41054,65 @@ def snowai_thundervault_ohlcv_chart_stream(request):
     if not ticker:
         return JsonResponse({'error': 'Missing ticker'}, status=400)
 
-    # Map UI interval labels → Yahoo Finance range + interval params
     interval_map = {
-        '1D':  {'range': '5d',   'interval': '15m'},
-        '1W':  {'range': '1mo',  'interval': '60m'},
-        '1M':  {'range': '3mo',  'interval': '1d'},
-        '3M':  {'range': '6mo',  'interval': '1d'},
-        '6M':  {'range': '1y',   'interval': '1d'},
-        '1Y':  {'range': '2y',   'interval': '1wk'},
-        '2Y':  {'range': '5y',   'interval': '1wk'},
+        '1D': {'period': '5d',  'interval': '15m'},
+        '1W': {'period': '1mo', 'interval': '60m'},
+        '1M': {'period': '3mo', 'interval': '1d'},
+        '3M': {'period': '6mo', 'interval': '1d'},
+        '6M': {'period': '1y',  'interval': '1d'},
+        '1Y': {'period': '2y',  'interval': '1wk'},
+        '2Y': {'period': '5y',  'interval': '1wk'},
     }
 
-    config = interval_map.get(interval, interval_map['1M'])
-    yf_range    = config['range']
-    yf_interval = config['interval']
-
-    params = urllib.parse.urlencode({
-        'range':          yf_range,
-        'interval':       yf_interval,
-        'includePrePost': 'false',
-        'events':         'div,splits',
-    })
+    cfg         = interval_map.get(interval, interval_map['1M'])
+    yf_period   = cfg['period']
+    yf_interval = cfg['interval']
 
     try:
-        conn = http.client.HTTPSConnection('query1.finance.yahoo.com', timeout=10)
-        conn.request(
-            'GET',
-            f'/v8/finance/chart/{ticker}?{params}',
-            headers={
-                'User-Agent': 'Mozilla/5.0',
-                'Accept': 'application/json',
-            }
-        )
-        res  = conn.getresponse()
-        data = json.loads(res.read().decode('utf-8'))
-        conn.close()
+        hist = yf.Ticker(ticker).history(period=yf_period, interval=yf_interval, auto_adjust=True)
     except Exception as e:
-        return JsonResponse({'error': f'Failed to fetch chart data: {str(e)}'}, status=500)
+        return JsonResponse({'error': f'yfinance error: {str(e)}'}, status=500)
 
-    try:
-        result    = data['chart']['result'][0]
-        timestamps = result.get('timestamp', [])
-        quote      = result['indicators']['quote'][0]
-        adj_close  = result['indicators'].get('adjclose', [{}])[0].get('adjclose', [])
+    if hist.empty:
+        return JsonResponse({'error': f'No data found for {ticker}'}, status=404)
 
-        candles = []
-        for i, ts in enumerate(timestamps):
-            o = quote['open'][i]
-            h = quote['high'][i]
-            l = quote['low'][i]
-            c = adj_close[i] if adj_close and i < len(adj_close) and adj_close[i] is not None else quote['close'][i]
-            v = quote.get('volume', [None])[i]
+    candles = []
+    for ts, row in hist.iterrows():
+        try:
+            unix_ts = int(ts.timestamp())
+        except Exception:
+            continue
 
-            # Skip bars with null OHLC (gaps / pre-post market)
-            if None in (o, h, l, c):
+        o, h, l, c, v = (
+            row.get('Open'), row.get('High'), row.get('Low'),
+            row.get('Close'), row.get('Volume'),
+        )
+
+        if any(x is None for x in [o, h, l, c]):
+            continue
+        try:
+            if any(math.isnan(float(x)) for x in [o, h, l, c]):
                 continue
+        except (TypeError, ValueError):
+            continue
 
-            candles.append({
-                'time':   int(ts),
-                'open':   round(float(o), 4),
-                'high':   round(float(h), 4),
-                'low':    round(float(l), 4),
-                'close':  round(float(c), 4),
-                'volume': int(v) if v is not None else 0,
-            })
+        candles.append({
+            'time':   unix_ts,
+            'open':   round(float(o), 4),
+            'high':   round(float(h), 4),
+            'low':    round(float(l), 4),
+            'close':  round(float(c), 4),
+            'volume': int(v) if v and not math.isnan(float(v)) else 0,
+        })
 
-        return JsonResponse({'candles': candles, 'ticker': ticker, 'interval': interval}, safe=False)
+    return JsonResponse({
+        'candles':  candles,
+        'ticker':   ticker,
+        'interval': interval,
+        'count':    len(candles),
+    }, safe=False)
 
-    except (KeyError, IndexError, TypeError) as e:
-        return JsonResponse({'error': f'Could not parse chart data: {str(e)}'}, status=500)
-    
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
