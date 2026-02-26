@@ -699,21 +699,24 @@ urlpatterns = [
         name='backtest_delete_all_trades',
     ),
 
-    # ONCE-OFF: Fix existing Loss trades to have positive amounts
-    path(
-        'api/backtest-fix-loss-positives/',
-        views.backtest_fix_loss_positives,
-        name='backtest_fix_loss_positives',
-    ),
- 
-
-  path('api/snowai-check-and-close-position/', views.snowai_check_and_close_position, name='check and close'),
- 
-  path(
-         'ideas_hub_analyze_stock_trend_quality',
-         views.ideas_hub_analyze_stock_trend_quality,
-         name='ideas_hub_analyze_stock_trend_quality'
+     # ONCE-OFF: Fix existing Loss trades to have positive amounts
+     path(
+         'api/backtest-fix-loss-positives/',
+         views.backtest_fix_loss_positives,
+         name='backtest_fix_loss_positives',
      ),
+  
+ 
+   path('api/snowai-check-and-close-position/', views.snowai_check_and_close_position, name='check and close'),
+  
+   path(
+          'ideas_hub_analyze_stock_trend_quality',
+          views.ideas_hub_analyze_stock_trend_quality,
+          name='ideas_hub_analyze_stock_trend_quality'
+      ),
+
+     path('api/snowai_thundervault_ohlcv_chart_stream/', views.snowai_thundervault_ohlcv_chart_stream, name='snowai_thundervault_ohlcv_chart_stream'),
+
 
 
 
