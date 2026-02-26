@@ -715,7 +715,12 @@ urlpatterns = [
           name='ideas_hub_analyze_stock_trend_quality'
       ),
 
-     path('api/snowai_thundervault_ohlcv_chart_stream/', views.snowai_thundervault_ohlcv_chart_stream, name='snowai_thundervault_ohlcv_chart_stream'),
+  path(
+      'api/snowai_thundervault_ohlcv_chart_stream/',
+      views.snowai_thundervault_ohlcv_chart_stream,
+      name='snowai_thundervault_ohlcv_chart_stream',
+  ),
+
 
 
 
