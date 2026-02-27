@@ -41143,6 +41143,23 @@ def snowai_thundervault_ohlcv_chart_stream(request):
 
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD TO views.py
+# ADD TO urls.py:
+#   path('ideas_hub_trend_age_analysis_v1', ideas_hub_trend_age_analysis_v1, name='ideas_hub_trend_age_analysis_v1'),
+#
+# pip install yfinance scikit-learn numpy (sklearn likely already installed)
+# ─────────────────────────────────────────────────────────────────────────────
+
+import json
+import numpy as np
+import yfinance as yf
+from sklearn.linear_model import LinearRegression
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+
 # Timeframes to analyze (in calendar days — yfinance fetches accordingly)
 _IDEAS_HUB_TREND_AGE_TIMEFRAMES = [
     {"days": 15,  "label": "15d"},
@@ -41363,21 +41380,36 @@ def ideas_hub_trend_age_analysis_v1(request):
 
         classification = _ideas_hub_trend_age_classify(r2_values)
 
+        # Grab market cap + name for filtering/display — lightweight, no extra request
+        try:
+            info       = ticker.info or {}
+            market_cap = info.get("marketCap") or 0
+            name       = info.get("shortName") or info.get("longName") or symbol
+            sector     = info.get("sector") or ""
+            industry   = info.get("industry") or ""
+            current_price = float(hist["Close"].iloc[-1]) if not hist.empty else 0
+        except Exception:
+            market_cap, name, sector, industry, current_price = 0, symbol, "", "", 0
+
         return JsonResponse({
             "symbol":           symbol,
+            "name":             name,
             "direction":        overall_direction,
             "r2_by_timeframe":  r2_results,
             "classification":   classification,
             "short_avg_r2":     short_avg,
             "mid_avg_r2":       mid_avg,
             "long_avg_r2":      long_avg,
+            "market_cap":       market_cap,
+            "sector":           sector,
+            "industry":         industry,
+            "current_price":    round(current_price, 2),
         })
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON body."}, status=400)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
-
 
 
 # Map frontend interval codes → (yfinance interval, yfinance period)
@@ -41544,6 +41576,165 @@ def contact_us(request):
         return JsonResponse({"message": "Email sent successfully and saved to database!"})
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+
+def _ideas_hub_fmt_large_number(n):
+    """Format large numbers into readable strings: 1.23T, 456.7B, 12.3M etc."""
+    if n is None or n == 0:
+        return "N/A"
+    n = float(n)
+    if abs(n) >= 1e12:
+        return f"${n/1e12:.2f}T"
+    if abs(n) >= 1e9:
+        return f"${n/1e9:.2f}B"
+    if abs(n) >= 1e6:
+        return f"${n/1e6:.2f}M"
+    return f"${n:,.0f}"
+
+
+def _ideas_hub_safe_pct(val):
+    if val is None:
+        return "N/A"
+    try:
+        return f"{float(val)*100:.1f}%"
+    except Exception:
+        return "N/A"
+
+
+def _ideas_hub_safe_float(val, decimals=2, suffix=""):
+    if val is None:
+        return "N/A"
+    try:
+        return f"{float(val):.{decimals}f}{suffix}"
+    except Exception:
+        return "N/A"
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def ideas_hub_stock_info_v1(request):
+    """
+    POST /ideas_hub_stock_info_v1
+    Body: { "symbol": "AAPL" }
+
+    Returns a rich info payload for the stock info popover in the Trend Age modal.
+    Pulls from yfinance .info dict — all fields gracefully handle None.
+
+    Returns:
+        identity     : name, symbol, exchange, sector, industry, country, website
+        price        : current, open, prev_close, day_high, day_low, 52w_high, 52w_low
+        valuation    : market_cap (raw + formatted), pe_trailing, pe_forward, ps_ratio, pb_ratio, ev_ebitda
+        fundamentals : gross_margin, op_margin, net_margin, roe, roa, revenue, revenue_growth,
+                       earnings_growth, eps_trailing, eps_forward, debt_to_equity, current_ratio, fcf
+        dividends    : dividend_yield, dividend_rate, payout_ratio, ex_dividend_date
+        analyst      : recommendation, target_mean, target_high, target_low, num_analysts
+        description  : business summary (truncated to 400 chars)
+        market_cap_tier : "Mega", "Large", "Mid", "Small", "Micro", "Nano"
+    """
+    try:
+        body   = json.loads(request.body)
+        symbol = str(body.get("symbol", "")).strip().upper()
+        if not symbol:
+            return JsonResponse({"error": "symbol is required."}, status=400)
+
+        ticker = yf.Ticker(symbol)
+        info   = ticker.info or {}
+
+        if not info or info.get("regularMarketPrice") is None and info.get("currentPrice") is None and info.get("marketCap") is None:
+            return JsonResponse({"error": f"No data found for '{symbol}'. Check the symbol is valid."}, status=404)
+
+        # ── Market cap tier ──────────────────────────────────────────────────
+        mc = info.get("marketCap") or 0
+        if mc >= 200e9:       mc_tier = "Mega Cap"
+        elif mc >= 10e9:      mc_tier = "Large Cap"
+        elif mc >= 2e9:       mc_tier = "Mid Cap"
+        elif mc >= 300e6:     mc_tier = "Small Cap"
+        elif mc >= 50e6:      mc_tier = "Micro Cap"
+        else:                 mc_tier = "Nano Cap"
+
+        # ── Current price ────────────────────────────────────────────────────
+        price = (info.get("currentPrice")
+              or info.get("regularMarketPrice")
+              or info.get("previousClose")
+              or 0)
+
+        prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose") or 0
+        day_change_pct = ((price - prev_close) / prev_close * 100) if prev_close else 0
+
+        # ── Business summary — truncate sensibly ────────────────────────────
+        summary = info.get("longBusinessSummary") or ""
+        if len(summary) > 420:
+            summary = summary[:420].rsplit(" ", 1)[0] + "…"
+
+        return JsonResponse({
+            # Identity
+            "symbol":          symbol,
+            "name":            info.get("shortName") or info.get("longName") or symbol,
+            "exchange":        info.get("exchange") or info.get("fullExchangeName") or "N/A",
+            "sector":          info.get("sector") or "N/A",
+            "industry":        info.get("industry") or "N/A",
+            "country":         info.get("country") or "N/A",
+            "website":         info.get("website") or "",
+            "logo_url":        f"https://logo.clearbit.com/{(info.get('website') or '').replace('https://','').replace('http://','').split('/')[0]}",
+
+            # Price
+            "price":           round(float(price), 2) if price else 0,
+            "day_change_pct":  round(day_change_pct, 2),
+            "prev_close":      _ideas_hub_safe_float(prev_close),
+            "day_open":        _ideas_hub_safe_float(info.get("open") or info.get("regularMarketOpen")),
+            "day_high":        _ideas_hub_safe_float(info.get("dayHigh") or info.get("regularMarketDayHigh")),
+            "day_low":         _ideas_hub_safe_float(info.get("dayLow") or info.get("regularMarketDayLow")),
+            "week_52_high":    _ideas_hub_safe_float(info.get("fiftyTwoWeekHigh")),
+            "week_52_low":     _ideas_hub_safe_float(info.get("fiftyTwoWeekLow")),
+            "avg_volume":      _ideas_hub_fmt_large_number(info.get("averageVolume")).replace("$",""),
+
+            # Valuation
+            "market_cap":      mc,
+            "market_cap_fmt":  _ideas_hub_fmt_large_number(mc),
+            "market_cap_tier": mc_tier,
+            "pe_trailing":     _ideas_hub_safe_float(info.get("trailingPE"), 1, "x"),
+            "pe_forward":      _ideas_hub_safe_float(info.get("forwardPE"), 1, "x"),
+            "ps_ratio":        _ideas_hub_safe_float(info.get("priceToSalesTrailing12Months"), 1, "x"),
+            "pb_ratio":        _ideas_hub_safe_float(info.get("priceToBook"), 1, "x"),
+            "ev_ebitda":       _ideas_hub_safe_float(info.get("enterpriseToEbitda"), 1, "x"),
+            "peg_ratio":       _ideas_hub_safe_float(info.get("pegRatio"), 2, "x"),
+
+            # Fundamentals
+            "revenue":         _ideas_hub_fmt_large_number(info.get("totalRevenue")),
+            "revenue_growth":  _ideas_hub_safe_pct(info.get("revenueGrowth")),
+            "earnings_growth": _ideas_hub_safe_pct(info.get("earningsGrowth")),
+            "gross_margin":    _ideas_hub_safe_pct(info.get("grossMargins")),
+            "op_margin":       _ideas_hub_safe_pct(info.get("operatingMargins")),
+            "net_margin":      _ideas_hub_safe_pct(info.get("profitMargins")),
+            "roe":             _ideas_hub_safe_pct(info.get("returnOnEquity")),
+            "roa":             _ideas_hub_safe_pct(info.get("returnOnAssets")),
+            "eps_trailing":    _ideas_hub_safe_float(info.get("trailingEps")),
+            "eps_forward":     _ideas_hub_safe_float(info.get("forwardEps")),
+            "debt_to_equity":  _ideas_hub_safe_float(info.get("debtToEquity"), 1),
+            "current_ratio":   _ideas_hub_safe_float(info.get("currentRatio"), 2),
+            "free_cashflow":   _ideas_hub_fmt_large_number(info.get("freeCashflow")),
+
+            # Dividends
+            "dividend_yield":  _ideas_hub_safe_pct(info.get("dividendYield")),
+            "dividend_rate":   _ideas_hub_safe_float(info.get("dividendRate"), 2, "/yr"),
+            "payout_ratio":    _ideas_hub_safe_pct(info.get("payoutRatio")),
+
+            # Analyst
+            "recommendation":  info.get("recommendationKey", "N/A").replace("_", " ").title(),
+            "target_mean":     _ideas_hub_safe_float(info.get("targetMeanPrice")),
+            "target_high":     _ideas_hub_safe_float(info.get("targetHighPrice")),
+            "target_low":      _ideas_hub_safe_float(info.get("targetLowPrice")),
+            "num_analysts":    info.get("numberOfAnalystOpinions") or 0,
+
+            # Description
+            "description": summary,
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 def book_order(request):
