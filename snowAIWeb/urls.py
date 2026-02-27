@@ -728,6 +728,11 @@ urlpatterns = [
 
  path('ideas_hub_chart_data_v1', views.ideas_hub_chart_data_v1, name='ideas_hub_chart_data_v1'),
 
+ path('api/snowai_vortex_analyst_ratings_vault/',
+     views.snowai_vortex_analyst_ratings_vault,
+     name='snowai_vortex_analyst_ratings_vault'),
+
+
 
 
 
