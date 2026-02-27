@@ -721,7 +721,10 @@ urlpatterns = [
       name='snowai_thundervault_ohlcv_chart_stream',
   ),
 
- path('ideas_hub_trend_age_analysis_v1', views.ideas_hub_trend_age_analysis_v1, name='ideas_hub_trend_age_analysis_v1'),
+  path('ideas_hub_trend_age_analysis_v1', views.ideas_hub_trend_age_analysis_v1, name='ideas_hub_trend_age_analysis_v1'),
+
+   path('ideas_hub_stock_info_v1', views.ideas_hub_stock_info_v1, name='ideas_hub_stock_info_v1'),
+
 
  path('ideas_hub_chart_data_v1', views.ideas_hub_chart_data_v1, name='ideas_hub_chart_data_v1'),
 
