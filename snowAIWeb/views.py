@@ -41378,6 +41378,122 @@ def ideas_hub_trend_age_analysis_v1(request):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
+
+
+# Map frontend interval codes → (yfinance interval, yfinance period)
+# yfinance intraday data is only available for ~60 days max
+_IDEAS_HUB_CHART_INTERVAL_MAP = {
+    "1m":   ("1m",   "5d"),
+    "5m":   ("5m",   "60d"),
+    "15m":  ("15m",  "60d"),
+    "30m":  ("30m",  "60d"),
+    "60m":  ("60m",  "730d"),
+    "240m": ("60m",  "730d"),   # yfinance max is 1h; we fetch 1h and label as 4H
+    "1d":   ("1d",   "2y"),
+    "1wk":  ("1wk",  "5y"),
+    "1mo":  ("1mo",  "10y"),
+    "3mo":  ("1d",   "3mo"),
+    "6mo":  ("1d",   "6mo"),
+    "1y":   ("1d",   "1y"),
+    "2y":   ("1d",   "2y"),
+}
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def ideas_hub_chart_data_v1(request):
+    """
+    POST /ideas_hub_chart_data_v1
+    Body: { "symbol": "AAPL", "interval": "1d" }
+
+    Returns OHLCV data formatted for TradingView Lightweight Charts:
+    {
+        "symbol": "AAPL",
+        "interval": "1d",
+        "ohlcv": [
+            { "time": 1700000000, "open": 180.0, "high": 185.0, "low": 179.0, "close": 184.0, "volume": 50000000 },
+            ...
+        ]
+    }
+
+    Times are Unix timestamps (seconds). LightweightCharts accepts both
+    Unix timestamps and "YYYY-MM-DD" strings for daily data — we use
+    Unix timestamps throughout for consistency across all intervals.
+    """
+    try:
+        body     = json.loads(request.body)
+        symbol   = str(body.get("symbol", "")).strip().upper()
+        interval = str(body.get("interval", "1d")).strip()
+
+        if not symbol:
+            return JsonResponse({"error": "symbol is required."}, status=400)
+
+        if interval not in _IDEAS_HUB_CHART_INTERVAL_MAP:
+            interval = "1d"
+
+        yf_interval, yf_period = _IDEAS_HUB_CHART_INTERVAL_MAP[interval]
+
+        ticker = yf.Ticker(symbol)
+        hist   = ticker.history(interval=yf_interval, period=yf_period)
+
+        if hist.empty:
+            return JsonResponse({"error": f"No data found for '{symbol}'."}, status=404)
+
+        ohlcv = []
+        for ts, row in hist.iterrows():
+            # Convert pandas Timestamp → Unix int (seconds)
+            try:
+                unix_ts = int(ts.timestamp())
+            except Exception:
+                continue
+
+            o = float(row["Open"])
+            h = float(row["High"])
+            l = float(row["Low"])
+            c = float(row["Close"])
+            v = int(row.get("Volume", 0))
+
+            # Skip rows with bad data
+            if any(x != x for x in [o, h, l, c]):   # NaN check
+                continue
+            if h < l or o <= 0 or c <= 0:
+                continue
+
+            ohlcv.append({
+                "time":   unix_ts,
+                "open":   round(o, 4),
+                "high":   round(h, 4),
+                "low":    round(l, 4),
+                "close":  round(c, 4),
+                "volume": v,
+            })
+
+        if not ohlcv:
+            return JsonResponse({"error": f"No valid OHLCV data for '{symbol}' at interval '{interval}'."}, status=404)
+
+        # Deduplicate by timestamp (yfinance occasionally returns dupes)
+        seen = set()
+        deduped = []
+        for bar in ohlcv:
+            if bar["time"] not in seen:
+                seen.add(bar["time"])
+                deduped.append(bar)
+
+        # Sort ascending by time (required by LightweightCharts)
+        deduped.sort(key=lambda x: x["time"])
+
+        return JsonResponse({
+            "symbol":   symbol,
+            "interval": interval,
+            "bars":     len(deduped),
+            "ohlcv":    deduped,
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
         
 # LEGODI BACKEND CODE
 def send_simple_message():
