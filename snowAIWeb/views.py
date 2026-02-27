@@ -41029,119 +41029,6 @@ def ideas_hub_analyze_stock_trend_quality(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-import math
-@csrf_exempt
-def snowai_thundervault_ohlcv_chart_stream(request):
-    """
-    Fetches OHLCV candlestick data using yfinance.
-    Used by ChartInsightsTab in the SnowAI Stock Screener.
-
-    POST: { "ticker": "AAPL", "interval": "1h" }
-
-    Supported intervals (with auto-adjusted lookback periods):
-        Intraday : 1m | 5m | 15m | 30m | 1h | 4h
-        Daily+   : 1D | 1W | 1M | 3M | 6M | 1Y | 2Y
-
-    Returns: { "candles": [{ "time", "open", "high", "low", "close", "volume" }] }
-    """
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
-
-    try:
-        body     = json.loads(request.body)
-        ticker   = body.get('ticker', '').strip().upper()
-        interval = body.get('interval', '1D')
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    if not ticker:
-        return JsonResponse({'error': 'Missing ticker'}, status=400)
-
-    # Smart lookback: enough bars to be useful, within yfinance's limits
-    # yfinance limits: 1m→7d max, 2m/5m/15m/30m/60m/90m→60d max, 1h→730d max
-    interval_map = {
-        '1m':  {'period': '5d',   'interval': '1m'},
-        '5m':  {'period': '30d',  'interval': '5m'},
-        '15m': {'period': '60d',  'interval': '15m'},
-        '30m': {'period': '60d',  'interval': '30m'},
-        '1h':  {'period': '3mo',  'interval': '1h'},
-        '4h':  {'period': '6mo',  'interval': '1h'},   # yfinance has no native 4h; resample below
-        '1D':  {'period': '6mo',  'interval': '1d'},
-        '1W':  {'period': '1y',   'interval': '1wk'},
-        '1M':  {'period': '3mo',  'interval': '1d'},
-        '3M':  {'period': '6mo',  'interval': '1d'},
-        '6M':  {'period': '1y',   'interval': '1d'},
-        '1Y':  {'period': '2y',   'interval': '1wk'},
-        '2Y':  {'period': '5y',   'interval': '1wk'},
-    }
-
-    cfg = interval_map.get(interval, interval_map['1D'])
-    yf_period   = cfg['period']
-    yf_interval = cfg['interval']
-    resample_4h = (interval == '4h')
-
-    try:
-        hist = yf.Ticker(ticker).history(
-            period=yf_period,
-            interval=yf_interval,
-            auto_adjust=True,
-        )
-    except Exception as e:
-        return JsonResponse({'error': f'yfinance error: {str(e)}'}, status=500)
-
-    if hist.empty:
-        return JsonResponse({'error': f'No data found for {ticker}'}, status=404)
-
-    # Resample hourly → 4h if requested
-    if resample_4h:
-        try:
-            hist = hist.resample('4h').agg({
-                'Open':   'first',
-                'High':   'max',
-                'Low':    'min',
-                'Close':  'last',
-                'Volume': 'sum',
-            }).dropna()
-        except Exception:
-            pass  # fall back to raw 1h data
-
-    candles = []
-    for ts, row in hist.iterrows():
-        try:
-            unix_ts = int(ts.timestamp())
-        except Exception:
-            continue
-
-        o, h, l, c, v = (
-            row.get('Open'), row.get('High'), row.get('Low'),
-            row.get('Close'), row.get('Volume'),
-        )
-
-        if any(x is None for x in [o, h, l, c]):
-            continue
-        try:
-            if any(math.isnan(float(x)) for x in [o, h, l, c]):
-                continue
-        except (TypeError, ValueError):
-            continue
-
-        candles.append({
-            'time':   unix_ts,
-            'open':   round(float(o), 4),
-            'high':   round(float(h), 4),
-            'low':    round(float(l), 4),
-            'close':  round(float(c), 4),
-            'volume': int(v) if v and not math.isnan(float(v)) else 0,
-        })
-
-    return JsonResponse({
-        'candles':  candles,
-        'ticker':   ticker,
-        'interval': interval,
-        'count':    len(candles),
-    }, safe=False)
-
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ADD TO views.py
@@ -41735,6 +41622,364 @@ def ideas_hub_stock_info_v1(request):
         return JsonResponse({"error": "Invalid JSON body."}, status=400)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
+import json
+import math
+import numpy as np
+import yfinance as yf
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Indicator helpers (pure numpy — no ta-lib dependency)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _to_series(candles, key='close'):
+    return np.array([c[key] for c in candles], dtype=float)
+
+def compute_twap(candles):
+    """
+    Trapezoidal integration of close price over time.
+    TWAP(i) = integral[0..i](price · dt) / elapsed_time
+    Returns list of {time, value} dicts + summary stats.
+    """
+    if len(candles) < 2:
+        return [], []
+    integral = 0.0
+    twap_pts = []
+    for i, c in enumerate(candles):
+        if i > 0:
+            dt        = candles[i]['time'] - candles[i-1]['time']
+            avg_price = (c['close'] + candles[i-1]['close']) / 2
+            integral += avg_price * dt
+        elapsed = candles[i]['time'] - candles[0]['time'] or 1
+        twap_pts.append({'time': c['time'], 'value': round(integral / elapsed, 4)})
+
+    closes   = _to_series(candles)
+    twap_arr = np.array([p['value'] for p in twap_pts])
+    deviations = closes - twap_arr
+    std        = float(np.std(deviations))
+    band_top   = [{'time': p['time'], 'value': round(p['value'] + std, 4)} for p in twap_pts]
+    band_bot   = [{'time': p['time'], 'value': round(p['value'] - std, 4)} for p in twap_pts]
+
+    last_twap  = twap_pts[-1]['value']
+    last_price = candles[-1]['close']
+    dev_pct    = round((last_price - last_twap) / last_twap * 100, 2) if last_twap else 0
+    signal     = ('EXTENDED_ABOVE' if dev_pct >  1.5 else
+                  'EXTENDED_BELOW' if dev_pct < -1.5 else 'NEAR_TWAP')
+
+    stats = {
+        'twap':      round(last_twap, 4),
+        'current':   round(last_price, 4),
+        'deviation': dev_pct,
+        'std':       round(std, 4),
+        'signal':    signal,
+    }
+    return twap_pts, band_top, band_bot, stats
+
+
+def compute_rsi(candles, period=14):
+    """Standard Wilder RSI."""
+    closes = _to_series(candles)
+    if len(closes) < period + 1:
+        return []
+    deltas = np.diff(closes)
+    gains  = np.where(deltas > 0, deltas, 0.0)
+    losses = np.where(deltas < 0, -deltas, 0.0)
+
+    # Wilder smoothing (EMA with α=1/period)
+    avg_gain = np.mean(gains[:period])
+    avg_loss = np.mean(losses[:period])
+    rsi_vals = []
+    for i in range(period, len(deltas)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        rs  = avg_gain / avg_loss if avg_loss != 0 else float('inf')
+        rsi = 100 - (100 / (1 + rs))
+        rsi_vals.append({'time': candles[i + 1]['time'], 'value': round(rsi, 2)})
+    return rsi_vals
+
+
+def compute_bollinger(candles, period=20, num_std=2):
+    """Bollinger Bands: SMA ± num_std × rolling stddev."""
+    closes = _to_series(candles)
+    if len(closes) < period:
+        return [], [], []
+    mid, top, bot = [], [], []
+    for i in range(period - 1, len(closes)):
+        window = closes[i - period + 1 : i + 1]
+        sma    = float(np.mean(window))
+        std    = float(np.std(window))
+        t      = candles[i]['time']
+        mid.append({'time': t, 'value': round(sma, 4)})
+        top.append({'time': t, 'value': round(sma + num_std * std, 4)})
+        bot.append({'time': t, 'value': round(sma - num_std * std, 4)})
+    return mid, top, bot
+
+
+def compute_ema(candles, period):
+    """Exponential moving average."""
+    closes = _to_series(candles)
+    if len(closes) < period:
+        return []
+    k   = 2 / (period + 1)
+    ema = float(np.mean(closes[:period]))
+    result = []
+    for i in range(period, len(closes)):
+        ema = closes[i] * k + ema * (1 - k)
+        result.append({'time': candles[i]['time'], 'value': round(ema, 4)})
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OHLCV + Indicators endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+@csrf_exempt
+def snowai_thundervault_ohlcv_chart_stream(request):
+    """
+    Returns OHLCV candles + pre-computed indicators (TWAP, RSI, Bollinger, EMAs).
+    POST: { "ticker": "AAPL", "interval": "1D", "indicators": ["twap","rsi","bb","ema"] }
+    All indicator keys are optional — omit to skip computation.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+
+    try:
+        body       = json.loads(request.body)
+        ticker     = body.get('ticker', '').strip().upper()
+        interval   = body.get('interval', '1D')
+        indicators = body.get('indicators', [])   # list of strings
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not ticker:
+        return JsonResponse({'error': 'Missing ticker'}, status=400)
+
+    interval_map = {
+        '1m':  {'period': '5d',   'interval': '1m'},
+        '5m':  {'period': '30d',  'interval': '5m'},
+        '15m': {'period': '60d',  'interval': '15m'},
+        '30m': {'period': '60d',  'interval': '30m'},
+        '1h':  {'period': '3mo',  'interval': '1h'},
+        '4h':  {'period': '6mo',  'interval': '1h'},
+        '1D':  {'period': '6mo',  'interval': '1d'},
+        '1W':  {'period': '1y',   'interval': '1wk'},
+        '1M':  {'period': '3mo',  'interval': '1d'},
+        '3M':  {'period': '6mo',  'interval': '1d'},
+        '6M':  {'period': '1y',   'interval': '1d'},
+        '1Y':  {'period': '2y',   'interval': '1wk'},
+        '2Y':  {'period': '5y',   'interval': '1wk'},
+    }
+
+    cfg         = interval_map.get(interval, interval_map['1D'])
+    resample_4h = (interval == '4h')
+
+    try:
+        hist = yf.Ticker(ticker).history(
+            period=cfg['period'], interval=cfg['interval'], auto_adjust=True,
+        )
+    except Exception as e:
+        return JsonResponse({'error': f'yfinance error: {str(e)}'}, status=500)
+
+    if hist.empty:
+        return JsonResponse({'error': f'No data found for {ticker}'}, status=404)
+
+    if resample_4h:
+        try:
+            hist = hist.resample('4h').agg(
+                {'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}
+            ).dropna()
+        except Exception:
+            pass
+
+    candles = []
+    for ts, row in hist.iterrows():
+        try:
+            unix_ts = int(ts.timestamp())
+        except Exception:
+            continue
+        o, h, l, c, v = row.get('Open'), row.get('High'), row.get('Low'), row.get('Close'), row.get('Volume')
+        if any(x is None for x in [o, h, l, c]):
+            continue
+        try:
+            if any(math.isnan(float(x)) for x in [o, h, l, c]):
+                continue
+        except (TypeError, ValueError):
+            continue
+        candles.append({
+            'time':   unix_ts,
+            'open':   round(float(o), 4),
+            'high':   round(float(h), 4),
+            'low':    round(float(l), 4),
+            'close':  round(float(c), 4),
+            'volume': int(v) if v and not math.isnan(float(v)) else 0,
+        })
+
+    # ── Compute requested indicators ──────────────────────────────────────────
+    response = {'candles': candles, 'ticker': ticker, 'interval': interval, 'count': len(candles)}
+
+    if 'twap' in indicators:
+        twap, band_top, band_bot, stats = compute_twap(candles)
+        response['twap']      = twap
+        response['twapBandTop'] = band_top
+        response['twapBandBot'] = band_bot
+        response['twapStats'] = stats
+
+    if 'rsi' in indicators:
+        response['rsi'] = compute_rsi(candles, period=14)
+
+    if 'bb' in indicators:
+        mid, top, bot = compute_bollinger(candles, period=20, num_std=2)
+        response['bbMid'] = mid
+        response['bbTop'] = top
+        response['bbBot'] = bot
+
+    if 'ema' in indicators:
+        response['ema20']  = compute_ema(candles, 20)
+        response['ema50']  = compute_ema(candles, 50)
+        response['ema200'] = compute_ema(candles, 200)
+
+    return JsonResponse(response, safe=False)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Analyst Ratings endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+@csrf_exempt
+def snowai_vortex_analyst_ratings_vault(request):
+    """
+    Returns comprehensive analyst ratings, price targets, and recommendation
+    history for a given ticker using yfinance.
+
+    POST: { "ticker": "AAPL" }
+
+    Returns:
+    {
+      "summary": { "strongBuy", "buy", "hold", "sell", "strongSell", "total",
+                   "bullishPct", "consensus" },
+      "priceTarget": { "current", "mean", "low", "high", "numberOfAnalysts" },
+      "recentRatings": [ { "date", "firm", "toGrade", "fromGrade", "action" }, ... ],
+      "history": [ { "period", "strongBuy", "buy", "hold", "sell", "strongSell" }, ... ]
+    }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+
+    try:
+        body   = json.loads(request.body)
+        ticker = body.get('ticker', '').strip().upper()
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not ticker:
+        return JsonResponse({'error': 'Missing ticker'}, status=400)
+
+    try:
+        tk = yf.Ticker(ticker)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+    response = {}
+
+    # ── 1. Recommendations summary (strongBuy / buy / hold / sell / strongSell) ──
+    try:
+        rec_summary = tk.recommendations_summary
+        if rec_summary is not None and not rec_summary.empty:
+            # most recent period is index 0
+            latest = rec_summary.iloc[0]
+            sb  = int(latest.get('strongBuy',  0))
+            b   = int(latest.get('buy',        0))
+            h   = int(latest.get('hold',       0))
+            s   = int(latest.get('sell',       0))
+            ss  = int(latest.get('strongSell', 0))
+            total = sb + b + h + s + ss
+            bullish_pct = round((sb + b) / total * 100, 1) if total else 0
+            bearish_pct = round((s + ss) / total * 100, 1) if total else 0
+
+            # Consensus label
+            if bullish_pct >= 65:
+                consensus = 'STRONG BUY'
+            elif bullish_pct >= 50:
+                consensus = 'BUY'
+            elif bearish_pct >= 65:
+                consensus = 'STRONG SELL'
+            elif bearish_pct >= 50:
+                consensus = 'SELL'
+            else:
+                consensus = 'HOLD'
+
+            response['summary'] = {
+                'strongBuy':  sb,
+                'buy':        b,
+                'hold':       h,
+                'sell':       s,
+                'strongSell': ss,
+                'total':      total,
+                'bullishPct': bullish_pct,
+                'bearishPct': bearish_pct,
+                'consensus':  consensus,
+            }
+
+            # Full history (all periods)
+            history = []
+            for _, row in rec_summary.iterrows():
+                history.append({
+                    'period':     str(row.name) if hasattr(row, 'name') else '',
+                    'strongBuy':  int(row.get('strongBuy',  0)),
+                    'buy':        int(row.get('buy',        0)),
+                    'hold':       int(row.get('hold',       0)),
+                    'sell':       int(row.get('sell',       0)),
+                    'strongSell': int(row.get('strongSell', 0)),
+                })
+            response['history'] = history
+    except Exception as e:
+        response['summaryError'] = str(e)
+
+    # ── 2. Analyst price targets ──
+    try:
+        pt = tk.analyst_price_targets
+        if pt is not None:
+            # analyst_price_targets is a dict-like object
+            def safe(val):
+                try:
+                    v = float(val)
+                    return round(v, 2) if not math.isnan(v) else None
+                except (TypeError, ValueError):
+                    return None
+
+            response['priceTarget'] = {
+                'current':           safe(pt.get('current')),
+                'mean':              safe(pt.get('mean')),
+                'low':               safe(pt.get('low')),
+                'high':              safe(pt.get('high')),
+                'numberOfAnalysts':  int(pt.get('numberOfAnalysts', 0)) if pt.get('numberOfAnalysts') else None,
+            }
+    except Exception as e:
+        response['priceTargetError'] = str(e)
+
+    # ── 3. Recent individual ratings (upgrades / downgrades) ──
+    try:
+        recs = tk.recommendations
+        if recs is not None and not recs.empty:
+            recent = recs.sort_index(ascending=False).head(20)
+            ratings = []
+            for ts, row in recent.iterrows():
+                ratings.append({
+                    'date':      ts.strftime('%Y-%m-%d') if hasattr(ts, 'strftime') else str(ts),
+                    'firm':      str(row.get('Firm', row.get('firm', ''))),
+                    'toGrade':   str(row.get('To Grade', row.get('toGrade', ''))),
+                    'fromGrade': str(row.get('From Grade', row.get('fromGrade', ''))),
+                    'action':    str(row.get('Action', row.get('action', ''))),
+                })
+            response['recentRatings'] = ratings
+    except Exception as e:
+        response['recentRatingsError'] = str(e)
+
+    response['ticker'] = ticker
+    return JsonResponse(response, safe=False)
+
 
 
 def book_order(request):
