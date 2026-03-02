@@ -15008,8 +15008,48 @@ def get_commodity_data(commodities, date_range):
     return commodity_data
 
 
+def get_stock_data(stock_tickers, date_range):
+    range_days = {'7d':7,'30d':30,'90d':90,'180d':180,'365d':365}
+    days = range_days.get(date_range, 30)
+    interval = '1h' if days <= 7 else '1d'
+    stock_data = {}
+
+    for ticker in stock_tickers:
+        try:
+            end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            data = yf.download(ticker, start=start_date, end=end_date, interval=interval)
+
+            if data.empty:
+                stock_data[ticker] = []
+                continue
+
+            stock_data[ticker] = []
+            if isinstance(data.columns, pd.MultiIndex):
+                close_col = next((c for c in data.columns if c[0] == 'Close'), None)
+                if not close_col: continue
+                for date_idx, price in data[close_col].items():
+                    if pd.notna(price):
+                        date_str = date_idx.strftime('%Y-%m-%d') if hasattr(date_idx, 'strftime') else str(date_idx)[:10]
+                        stock_data[ticker].append({'date': date_str, 'price': float(price)})
+            else:
+                for _, row in data.reset_index().iterrows():
+                    date_val = row.get('Date', row.get('Datetime'))
+                    close = row.get('Close')
+                    if date_val is not None and close is not None and pd.notna(close):
+                        stock_data[ticker].append({
+                            'date': date_val.strftime('%Y-%m-%d') if hasattr(date_val,'strftime') else str(date_val)[:10],
+                            'price': float(close)
+                        })
+        except Exception as e:
+            print(f"Error fetching {ticker}: {e}")
+            stock_data[ticker] = []
+
+    return stock_data
+
+
 # 2. UPDATED FUNCTION: Replace your existing merge_multi_asset_data() with this
-def merge_multi_asset_data(esi_data, forex_data, stock_data, volume_data, commodity_data):
+def merge_multi_asset_data(esi_data, forex_data, stock_data, volume_data, commodity_data, stock_ticker_data=None):
     """
     Merge ESI data with forex price data, stock indices data, volume data, and commodity data
     """
@@ -15374,6 +15414,32 @@ def merge_multi_asset_data(esi_data, forex_data, stock_data, volume_data, commod
                 except Exception as e:
                     print(f"Error adding commodity-only date {commodity_date_str}: {str(e)}")
                     continue
+                    
+    if stock_ticker_data:
+        for ticker, price_data in stock_ticker_data.items():
+            by_date = {p['date']: p['price'] for p in price_data}
+            for date_key in list(merged_data.keys()):
+                try:
+                    if date_key in by_date:
+                        merged_data[date_key][f"{ticker}_stock"] = by_date[date_key]
+                    else:
+                        target = datetime.strptime(date_key, '%Y-%m-%d')
+                        before = after = before_p = after_p = None
+                        for ds, p in by_date.items():
+                            try:
+                                d = datetime.strptime(ds, '%Y-%m-%d')
+                                if d <= target and (before is None or d > before): before, before_p = d, p
+                                if d >= target and (after is None or d < after): after, after_p = d, p
+                            except: continue
+                        if before_p and after_p and before != after:
+                            w = (target - before).days / (after - before).days
+                            merged_data[date_key][f"{ticker}_stock"] = before_p + (after_p - before_p) * w
+                        elif before_p: merged_data[date_key][f"{ticker}_stock"] = before_p
+                        elif after_p: merged_data[date_key][f"{ticker}_stock"] = after_p
+                except: continue
+            for ds, p in by_date.items():
+                if ds not in merged_data:
+                    merged_data[ds] = {'date': datetime.strptime(ds,'%Y-%m-%d').strftime('%m/%d'), f"{ticker}_stock": p}
     
     # Convert back to list format and sort by actual date
     merged_list = []
@@ -15404,7 +15470,8 @@ def economic_strength_index(request):
         forex_pairs = data.get('forex_pairs', [])
         stock_indices = data.get('stock_indices', [])
         volume_assets = data.get('volume_assets', [])
-        commodities = data.get('commodities', [])  # NEW: Get commodities from request
+        commodities = data.get('commodities', [])
+        stocks = data.get('stocks', [])
         date_range = data.get('date_range', '30d')
         
         print(f"Received request: currencies={currencies}, forex={forex_pairs}, stocks={stock_indices}, volume={volume_assets}, commodities={commodities}, range={date_range}")
@@ -15598,10 +15665,13 @@ def economic_strength_index(request):
         if commodities:
             commodity_data = get_commodity_data(commodities, date_range)
             print(f"Fetched commodity data for {len(commodities)} commodities")
+
+        stock_ticker_data = get_stock_data(stocks, date_range) if stocks else {}
+
         
         # Merge ESI data with forex, stock indices, volume, and commodity data
         if forex_data or stock_data or volume_data or commodity_data:
-            merged_data = merge_multi_asset_data(chart_data, forex_data, stock_data, volume_data, commodity_data)
+            merged_data = merge_multi_asset_data(chart_data, forex_data, stock_data, volume_data, commodity_data, stock_ticker_data)
             print(f"Merged data contains {len(merged_data)} points")
         else:
             merged_data = chart_data
@@ -15628,7 +15698,8 @@ def economic_strength_index(request):
                 'forex_pairs': forex_pairs,
                 'stock_indices': stock_indices,
                 'volume_assets': volume_assets,
-                'commodities': commodities,  # NEW: Include commodities in metadata
+                'commodities': commodities,
+                'stocks': stocks,
                 'data_points': len(merged_data),
                 'events_processed': events.count()
             }
