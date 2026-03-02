@@ -732,8 +732,8 @@ urlpatterns = [
      views.snowai_vortex_analyst_ratings_vault,
      name='snowai_vortex_analyst_ratings_vault'),
 
-    path('api/esi_ohlcv_feed_v1/', views.esi_chart_stock_views.esi_ohlcv_feed_v1),
-    path('api/esi_stock_fundamentals_v1/', views.esi_chart_stock_views.esi_stock_fundamentals_v1),
+    path('api/esi_ohlcv_feed_v1/', views.esi_ohlcv_feed_v1),
+    path('api/esi_stock_fundamentals_v1/', views.esi_stock_fundamentals_v1),
 
 
 
