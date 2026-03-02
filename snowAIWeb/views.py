@@ -15714,6 +15714,263 @@ def economic_strength_index(request):
             'success': False
         }, status=500)
 
+
+"""
+ESI Dashboard — Chart data + Stock fundamentals endpoints
+=========================================================
+Unique function names to avoid any collision in your 50k-line codebase.
+
+Add to urls.py:
+    path('api/esi_ohlcv_feed_v1/',           views.esi_ohlcv_feed_v1),
+    path('api/esi_stock_fundamentals_v1/',    views.esi_stock_fundamentals_v1),
+"""
+
+import json
+import yfinance as yf
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1.  OHLCV CHART FEED
+#     POST /api/esi_ohlcv_feed_v1/
+#     Body: { "ticker": "AAPL", "interval": "1d", "range": "1y" }
+#     Returns: { "data": [{ "time": <unix_ts>, "close": 182.5 }, ...] }
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def esi_ohlcv_feed_v1(request):
+    """
+    Lightweight OHLCV proxy for the ESI correlation chart modal.
+    No auth — single-user deployment.
+    Unique name: esi_ohlcv_feed_v1
+    """
+    try:
+        body     = json.loads(request.body)
+        ticker   = body.get("ticker", "").strip()
+        interval = body.get("interval", "1d")
+        period   = body.get("range", "1y")   # yfinance period string e.g. "1y", "3mo", "5d"
+
+        if not ticker:
+            return JsonResponse({"error": "ticker is required", "success": False}, status=400)
+
+        # Validate interval against yfinance supported values
+        VALID_INTERVALS = {"1m","2m","5m","15m","30m","60m","90m","1h","1d","5d","1wk","1mo","3mo"}
+        if interval not in VALID_INTERVALS:
+            interval = "1d"
+
+        VALID_PERIODS = {"1d","5d","1mo","3mo","6mo","1y","2y","5y","10y","ytd","max"}
+        if period not in VALID_PERIODS:
+            period = "1y"
+
+        ticker_obj = yf.Ticker(ticker)
+        hist = ticker_obj.history(period=period, interval=interval, auto_adjust=True)
+
+        if hist.empty:
+            return JsonResponse({"data": [], "success": True, "ticker": ticker})
+
+        records = []
+        for ts, row in hist.iterrows():
+            try:
+                close_val = float(row["Close"])
+                if close_val != close_val:   # NaN check
+                    continue
+                # Ensure integer unix timestamp (seconds)
+                unix_ts = int(ts.timestamp()) if hasattr(ts, "timestamp") else int(ts.value // 1e9)
+                records.append({"time": unix_ts, "close": round(close_val, 6)})
+            except Exception:
+                continue
+
+        return JsonResponse({
+            "data":    records,
+            "success": True,
+            "ticker":  ticker,
+            "count":   len(records),
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body", "success": False}, status=400)
+    except Exception as e:
+        import traceback
+        print(f"[esi_ohlcv_feed_v1] Error for {ticker}: {e}\n{traceback.format_exc()}")
+        return JsonResponse({"error": str(e), "success": False}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.  STOCK FUNDAMENTALS
+#     POST /api/esi_stock_fundamentals_v1/
+#     Body: { "tickers": ["AAPL"] }           ← 1 or 2 tickers
+#     Returns: { "data": { "AAPL": { ...fundamentals... } } }
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _extract_esi_fundamentals(ticker_symbol: str) -> dict:
+    """
+    Pull the juicy bits from yfinance .info for one ticker.
+    Internal helper — not a view.
+    """
+    try:
+        t    = yf.Ticker(ticker_symbol)
+        info = t.info or {}
+
+        def _safe(key, default=None):
+            val = info.get(key, default)
+            # Convert numpy types to Python native
+            try:
+                if val is not None and hasattr(val, "item"):
+                    return val.item()
+            except Exception:
+                pass
+            return val
+
+        def _safe_float(key):
+            v = _safe(key)
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        def _safe_int(key):
+            v = _safe(key)
+            try:
+                return int(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        return {
+            # Identity
+            "ticker":       ticker_symbol,
+            "name":         _safe("longName") or _safe("shortName") or ticker_symbol,
+            "sector":       _safe("sector", "—"),
+            "industry":     _safe("industry", "—"),
+            "exchange":     _safe("exchange", "—"),
+            "country":      _safe("country", "—"),
+            "website":      _safe("website"),
+            "logo_url":     _safe("logo_url"),
+
+            # Summary
+            "summary":      _safe("longBusinessSummary"),
+
+            # Price
+            "price":             _safe_float("currentPrice") or _safe_float("regularMarketPrice"),
+            "previous_close":    _safe_float("previousClose"),
+            "change_pct":        (
+                ((_safe_float("currentPrice") or _safe_float("regularMarketPrice") or 0)
+                 - (_safe_float("previousClose") or 0))
+                / (_safe_float("previousClose") or 1) * 100
+                if _safe_float("previousClose") else None
+            ),
+            "open":          _safe_float("open") or _safe_float("regularMarketOpen"),
+            "day_high":      _safe_float("dayHigh"),
+            "day_low":       _safe_float("dayLow"),
+            "week52_high":   _safe_float("fiftyTwoWeekHigh"),
+            "week52_low":    _safe_float("fiftyTwoWeekLow"),
+
+            # Valuation
+            "market_cap":    _safe_float("marketCap"),
+            "enterprise_val":_safe_float("enterpriseValue"),
+            "pe_ratio":      _safe_float("trailingPE"),
+            "forward_pe":    _safe_float("forwardPE"),
+            "peg_ratio":     _safe_float("pegRatio"),
+            "pb_ratio":      _safe_float("priceToBook"),
+            "ps_ratio":      _safe_float("priceToSalesTrailing12Months"),
+            "ev_ebitda":     _safe_float("enterpriseToEbitda"),
+
+            # Income
+            "revenue":           _safe_float("totalRevenue"),
+            "revenue_growth":    _safe_float("revenueGrowth"),
+            "gross_margin":      _safe_float("grossMargins"),
+            "operating_margin":  _safe_float("operatingMargins"),
+            "profit_margin":     _safe_float("profitMargins"),
+            "ebitda":            _safe_float("ebitda"),
+            "earnings_growth":   _safe_float("earningsGrowth"),
+            "eps":               _safe_float("trailingEps"),
+            "forward_eps":       _safe_float("forwardEps"),
+
+            # Balance sheet
+            "total_cash":        _safe_float("totalCash"),
+            "total_debt":        _safe_float("totalDebt"),
+            "debt_equity":       _safe_float("debtToEquity"),
+            "current_ratio":     _safe_float("currentRatio"),
+            "quick_ratio":       _safe_float("quickRatio"),
+
+            # Returns
+            "roe":               _safe_float("returnOnEquity"),
+            "roa":               _safe_float("returnOnAssets"),
+
+            # Dividends
+            "dividend_yield":    _safe_float("dividendYield"),
+            "dividend_rate":     _safe_float("dividendRate"),
+            "payout_ratio":      _safe_float("payoutRatio"),
+
+            # Volume
+            "avg_volume":        _safe_int("averageVolume"),
+            "avg_volume_10d":    _safe_int("averageVolume10days"),
+
+            # Misc
+            "beta":              _safe_float("beta"),
+            "shares_outstanding":_safe_float("sharesOutstanding"),
+            "float_shares":      _safe_float("floatShares"),
+            "short_ratio":       _safe_float("shortRatio"),
+            "employees":         _safe_int("fullTimeEmployees"),
+
+            # Analyst
+            "target_high":       _safe_float("targetHighPrice"),
+            "target_low":        _safe_float("targetLowPrice"),
+            "target_mean":       _safe_float("targetMeanPrice"),
+            "target_median":     _safe_float("targetMedianPrice"),
+            "recommendation":    _safe("recommendationKey"),
+            "analyst_count":     _safe_int("numberOfAnalystOpinions"),
+        }
+
+    except Exception as e:
+        import traceback
+        print(f"[_extract_esi_fundamentals] Error for {ticker_symbol}: {e}\n{traceback.format_exc()}")
+        return {"ticker": ticker_symbol, "error": str(e)}
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def esi_stock_fundamentals_v1(request):
+    """
+    Fetch fundamental data for 1 or 2 stock tickers.
+    No auth — single-user deployment.
+    Unique name: esi_stock_fundamentals_v1
+
+    Body:  { "tickers": ["AAPL"] }
+           { "tickers": ["AAPL", "GOOGL"] }
+
+    Response: { "success": true, "data": { "AAPL": {...}, "GOOGL": {...} } }
+    """
+    try:
+        body    = json.loads(request.body)
+        tickers = body.get("tickers", [])
+
+        if not tickers or not isinstance(tickers, list):
+            return JsonResponse({"error": "tickers must be a non-empty list", "success": False}, status=400)
+
+        # Cap at 2 tickers per request — this endpoint is for correlation cards
+        tickers = [str(t).strip().upper() for t in tickers[:2] if t]
+
+        result = {}
+        for sym in tickers:
+            result[sym] = _extract_esi_fundamentals(sym)
+
+        return JsonResponse({
+            "success": True,
+            "data":    result,
+            "count":   len(result),
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body", "success": False}, status=400)
+    except Exception as e:
+        import traceback
+        print(f"[esi_stock_fundamentals_v1] Unhandled error: {e}\n{traceback.format_exc()}")
+        return JsonResponse({"error": str(e), "success": False}, status=500)
+        
+
 from django.shortcuts import render
 from django.core.paginator import Paginator
 from django.db.models import Q, Count, Avg, Max, Min
