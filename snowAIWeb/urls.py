@@ -735,6 +735,9 @@ urlpatterns = [
     path('api/esi_ohlcv_feed_v1/', views.esi_ohlcv_feed_v1),
     path('api/esi_stock_fundamentals_v1/', views.esi_stock_fundamentals_v1),
 
+      path('ideas_hub_volume_velocity_v1', ideas_hub_volume_velocity_v1, name='ideas_hub_volume_velocity_v1'),
+
+
 
 
 
