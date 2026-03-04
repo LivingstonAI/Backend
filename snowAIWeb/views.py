@@ -42307,3 +42307,355 @@ def snowai_vortex_analyst_ratings_vault(request):
 
     response['ticker'] = ticker
     return JsonResponse(response, safe=False)
+
+
+from sklearn.linear_model import LinearRegression
+def _vv_safe(val, decimals=2):
+    """Return rounded float or 0 if None/NaN."""
+    try:
+        v = float(val)
+        return round(v, decimals) if not (v != v) else 0  # NaN check
+    except Exception:
+        return 0
+
+
+def _vv_r2_slope(series: np.ndarray):
+    """Linear regression R² and normalised slope for a series."""
+    if len(series) < 3:
+        return 0.0, 0.0
+    X = np.arange(len(series)).reshape(-1, 1)
+    y = series.reshape(-1, 1)
+    m = LinearRegression().fit(X, y)
+    r2    = max(0.0, min(float(m.score(X, y)), 1.0))
+    slope = float(m.coef_[0][0])
+    return r2, slope
+
+
+def _vv_classify_signal(opp_score: float, rvol: float, ad_score: float,
+                         vel_score: float, r2_provided: float) -> dict:
+    """
+    Classify the combined opportunity signal into a human-readable label.
+
+    Tiers:
+      🔥 High Conviction   — strong R², elevated RVOL, accumulation confirmed
+      🚀 Breakout Watch    — RVOL spike + early-stage or developing trend
+      📈 Building Momentum — moderate scores across the board, improving
+      ⚠️  Divergence        — high R² but volume declining (fragile trend)
+      🌊 Distribution      — high RVOL on down-days (smart money exiting)
+      😴 Low Activity      — low RVOL, low velocity, no signal
+      🔍 Noise             — low R² everywhere, high volatility, random
+    """
+    if opp_score >= 72 and rvol >= 1.4 and ad_score >= 55:
+        return {"label": "High Conviction", "emoji": "🔥",
+                "color": "#15803D", "bg": "#DCFCE7", "border": "#86EFAC",
+                "detail": "Strong trend clarity + elevated volume + accumulation confirmed. "
+                          "Institutions are actively building positions in the direction of the trend."}
+
+    if rvol >= 2.0 and r2_provided < 0.45 and vel_score >= 50:
+        return {"label": "Breakout Watch", "emoji": "🚀",
+                "color": "#7C3AED", "bg": "#EDE9FE", "border": "#C4B5FD",
+                "detail": "Volume is spiking significantly but trend R² is still early/low. "
+                          "This could be a trend just beginning to form — watch for R² to rise over the next few sessions."}
+
+    if opp_score >= 55 and rvol >= 1.1:
+        return {"label": "Building Momentum", "emoji": "📈",
+                "color": "#2563EB", "bg": "#DBEAFE", "border": "#93C5FD",
+                "detail": "Moderate trend quality with above-average volume. "
+                          "Momentum is building but not yet at full conviction — worth monitoring closely."}
+
+    if r2_provided >= 0.55 and rvol < 0.8:
+        return {"label": "Divergence ⚠", "emoji": "⚠️",
+                "color": "#D97706", "bg": "#FEF9C3", "border": "#FDE047",
+                "detail": "Trend is clean and directional (high R²) but volume is drying up. "
+                          "Fragile — the trend may be running out of fuel. Tighten stops."}
+
+    if ad_score < 35 and rvol >= 1.3:
+        return {"label": "Distribution", "emoji": "🌊",
+                "color": "#DC2626", "bg": "#FEE2E2", "border": "#FCA5A5",
+                "detail": "High volume but concentrated on down-days. "
+                          "Smart money may be distributing (selling into strength). Caution on longs."}
+
+    if rvol < 0.7 and vel_score < 35:
+        return {"label": "Low Activity", "emoji": "😴",
+                "color": "#64748B", "bg": "#F1F5F9", "border": "#CBD5E1",
+                "detail": "Below-average volume and low price velocity. "
+                          "No meaningful activity — market is in a wait-and-see mode."}
+
+    return {"label": "Mixed / Noise", "emoji": "🔍",
+            "color": "#64748B", "bg": "#F8FAFC", "border": "#E2E8F0",
+            "detail": "No clear pattern across volume and velocity metrics. "
+                      "Insufficient signal to form a directional view."}
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def ideas_hub_volume_velocity_v1(request):
+    """
+    POST /ideas_hub_volume_velocity_v1
+    Body: {
+        "symbol":   "AAPL",
+        "r2_avg":   0.62        # optional — pass from bulk scan cache for combined score
+    }
+
+    Computes volume and velocity metrics over 60 trading days:
+
+    RVOL (Relative Volume)
+        Today's volume / 20-day average volume.
+        >1.5 = elevated, >2.0 = significant, <0.7 = quiet.
+
+    Volume Trend (R² + slope of 20-day volume series)
+        Is volume itself in an uptrend? Rising volume confirms a price trend.
+        Falling volume on a price trend = divergence / distribution risk.
+
+    Price Velocity
+        Average daily price change / average price × 100 over 20 days.
+        Normalised so it's comparable across different price levels.
+        A $500 stock moving $2/day = same velocity as a $50 stock moving $0.20/day.
+
+    Velocity Trend (acceleration)
+        Is velocity increasing (momentum accelerating) or decreasing?
+        Compare last 10-day avg velocity vs prior 10-day avg velocity.
+
+    Accumulation / Distribution Score (0–100)
+        For each of the last 20 days: if price closed up AND volume was above avg → accumulation point.
+        If price closed down AND volume was above avg → distribution point.
+        Score = accumulation_days / (accumulation_days + distribution_days) × 100.
+        Score > 60 = accumulation dominant, < 40 = distribution dominant.
+
+    Dollar Liquidity
+        Average dollar volume (price × volume) over 20 days.
+        Ensures the market is actually tradeable at size.
+
+    Velocity Score (0–100)
+        Composite of RVOL, vol trend, price velocity, velocity trend. Scaled 0–100.
+
+    Opportunity Score (0–100)
+        Fuses R² (from trend age scan) + Velocity Score + A/D Score.
+        This is the "find me liquid, trending markets" number.
+        Formula: (r2 × 0.40) + (velocity_score × 0.35) + (ad_score × 0.25)
+        All components pre-normalised 0–100.
+    """
+    try:
+        body      = json.loads(request.body)
+        symbol    = str(body.get("symbol", "")).strip().upper()
+        r2_avg_in = float(body.get("r2_avg", 0) or 0)   # 0–1 float from trend age scan
+
+        if not symbol:
+            return JsonResponse({"error": "symbol is required."}, status=400)
+
+        ticker = yf.Ticker(symbol)
+        hist   = ticker.history(period="90d", interval="1d")   # ~90 calendar days → ~63 trading days
+
+        if hist.empty or len(hist) < 10:
+            return JsonResponse({"error": f"Not enough data for '{symbol}'."}, status=404)
+
+        closes  = hist["Close"].values.astype(float)
+        volumes = hist["Volume"].values.astype(float)
+        opens   = hist["Open"].values.astype(float)
+
+        n = len(closes)
+
+        # ── RVOL ─────────────────────────────────────────────────────────────
+        window_20 = min(20, n - 1)
+        avg_vol_20 = float(np.mean(volumes[-window_20-1:-1])) if window_20 > 0 else 1
+        today_vol  = float(volumes[-1])
+        rvol = (today_vol / avg_vol_20) if avg_vol_20 > 0 else 1.0
+
+        # ── Volume trend (R² of 20-day volume series) ────────────────────────
+        vol_series = volumes[-window_20:]
+        vol_r2, vol_slope = _vv_r2_slope(vol_series)
+        # Normalised slope: slope per day as % of mean volume
+        mean_vol = float(np.mean(vol_series)) if np.mean(vol_series) > 0 else 1
+        vol_slope_pct = (vol_slope / mean_vol) * 100   # % change per day
+
+        # ── Price velocity ───────────────────────────────────────────────────
+        # Daily absolute change / price level, expressed as % per day
+        price_changes = np.abs(np.diff(closes[-window_20:]))
+        avg_price_20  = float(np.mean(closes[-window_20:]))
+        price_velocity_pct = float(np.mean(price_changes) / avg_price_20 * 100) if avg_price_20 > 0 else 0
+
+        # ── Velocity acceleration ────────────────────────────────────────────
+        # Compare last 10 days vs prior 10 days velocity
+        if n >= 20:
+            vel_recent = float(np.mean(np.abs(np.diff(closes[-10:]))) / np.mean(closes[-10:]) * 100)
+            vel_prior  = float(np.mean(np.abs(np.diff(closes[-20:-10]))) / np.mean(closes[-20:-10]) * 100)
+            vel_accel  = vel_recent - vel_prior   # positive = accelerating
+        else:
+            vel_accel = 0.0
+
+        # ── Accumulation / Distribution score ────────────────────────────────
+        last_20_closes  = closes[-window_20:]
+        last_20_opens   = opens[-window_20:]
+        last_20_volumes = volumes[-window_20:]
+        avg_vol_period  = float(np.mean(last_20_volumes))
+
+        accum_days = 0
+        distr_days = 0
+        for i in range(window_20):
+            is_up_day      = last_20_closes[i] > last_20_opens[i]
+            is_above_avg_v = last_20_volumes[i] > avg_vol_period
+            if is_up_day and is_above_avg_v:
+                accum_days += 1
+            elif not is_up_day and is_above_avg_v:
+                distr_days += 1
+
+        total_signal_days = accum_days + distr_days
+        if total_signal_days > 0:
+            ad_score = (accum_days / total_signal_days) * 100
+        else:
+            ad_score = 50.0   # neutral
+
+        # ── Dollar liquidity ─────────────────────────────────────────────────
+        dollar_vol = float(np.mean(closes[-window_20:] * volumes[-window_20:]))
+
+        # ── Velocity Score (0–100) ────────────────────────────────────────────
+        # RVOL component: 0 at RVOL=0, 100 at RVOL=3+
+        rvol_score   = min(rvol / 3.0, 1.0) * 100
+
+        # Volume trend component: R² × direction (rising=positive, falling=negative)
+        vol_trend_score = vol_r2 * 100 * (1 if vol_slope_pct >= 0 else -0.5)
+        vol_trend_score = max(0, min(vol_trend_score, 100))
+
+        # Price velocity component: 0–100, capped at 3% daily velocity = 100
+        vel_score_raw = min(price_velocity_pct / 3.0, 1.0) * 100
+
+        # Acceleration bonus/penalty
+        accel_adj = min(max(vel_accel * 10, -20), 20)   # ±20 points
+
+        velocity_score = (
+            rvol_score      * 0.40 +
+            vol_trend_score * 0.25 +
+            vel_score_raw   * 0.25 +
+            50              * 0.10   # baseline
+        ) + accel_adj
+        velocity_score = max(0.0, min(velocity_score, 100.0))
+
+        # ── Opportunity Score (0–100) ─────────────────────────────────────────
+        # Uses R² passed in from the trend age bulk scan cache (0–1 float)
+        # If not provided, uses vol_r2 as a proxy trend quality signal
+        r2_for_score = r2_avg_in if r2_avg_in > 0 else vol_r2
+        r2_pct       = r2_for_score * 100   # scale to 0–100
+
+        opp_score = (
+            r2_pct         * 0.40 +
+            velocity_score * 0.35 +
+            ad_score       * 0.25
+        )
+        opp_score = max(0.0, min(opp_score, 100.0))
+
+        # ── Signal classification ─────────────────────────────────────────────
+        signal = _vv_classify_signal(
+            opp_score   = opp_score,
+            rvol        = rvol,
+            ad_score    = ad_score,
+            vel_score   = velocity_score,
+            r2_provided = r2_for_score,
+        )
+
+        # ── Recent volume bars (last 20 days) for sparkline ──────────────────
+        vol_bars = []
+        for i in range(-min(20, n), 0):
+            vol_bars.append({
+                "vol":      int(volumes[i]),
+                "is_up":    bool(closes[i] >= opens[i]),
+                "vs_avg":   round(float(volumes[i]) / avg_vol_period, 2) if avg_vol_period > 0 else 1.0,
+            })
+
+        def fmt_large(n):
+            if n >= 1e9:  return f"{n/1e9:.1f}B"
+            if n >= 1e6:  return f"{n/1e6:.1f}M"
+            if n >= 1e3:  return f"{n/1e3:.0f}K"
+            return str(int(n))
+
+        return JsonResponse({
+            "symbol":           symbol,
+            "rvol":             _vv_safe(rvol, 2),
+            "rvol_fmt":         f"{rvol:.2f}x",
+            "avg_volume_fmt":   fmt_large(avg_vol_20),
+            "today_volume_fmt": fmt_large(today_vol),
+            "vol_r2":           _vv_safe(vol_r2, 3),
+            "vol_slope_pct":    _vv_safe(vol_slope_pct, 2),
+            "price_velocity":   _vv_safe(price_velocity_pct, 3),
+            "vel_accel":        _vv_safe(vel_accel, 3),
+            "ad_score":         _vv_safe(ad_score, 1),
+            "accum_days":       accum_days,
+            "distr_days":       distr_days,
+            "dollar_liquidity": _vv_safe(dollar_vol, 0),
+            "dollar_liq_fmt":   f"${fmt_large(dollar_vol)}",
+            "velocity_score":   _vv_safe(velocity_score, 1),
+            "opp_score":        _vv_safe(opp_score, 1),
+            "r2_used":          _vv_safe(r2_for_score, 3),
+            "signal":           signal,
+            "vol_bars":         vol_bars,
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
