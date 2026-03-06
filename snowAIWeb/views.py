@@ -42332,6 +42332,143 @@ def snowai_vortex_analyst_ratings_vault(request):
     return JsonResponse(response, safe=False)
 
 
+# ── urls.py — add BOTH to urlpatterns: ───────────────────────────────────────
+# path('api/snowai_thundervault_ohlcv_chart_stream/',
+#      views.snowai_thundervault_ohlcv_chart_stream,
+#      name='snowai_thundervault_ohlcv_chart_stream'),
+# path('api/snowai_vortex_analyst_ratings_vault/',
+#      views.snowai_vortex_analyst_ratings_vault,
+#      name='snowai_vortex_analyst_ratings_vault'),
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Options Flow endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+@csrf_exempt
+def snowai_options_flow_vault(request):
+    """
+    POST: { "ticker": "AAPL", "expiry": "2025-01-17" (optional) }
+    Returns put/call ratio, volume breakdown, notable strikes near current price.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body   = json.loads(request.body)
+        ticker = body.get('ticker', '').strip().upper()
+        expiry = body.get('expiry', None)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not ticker:
+        return JsonResponse({'error': 'Missing ticker'}, status=400)
+
+    try:
+        tk             = yf.Ticker(ticker)
+        current_price  = tk.info.get('currentPrice') or tk.info.get('regularMarketPrice')
+        expiry_dates   = list(tk.options)
+        if not expiry_dates:
+            return JsonResponse({'error': 'No options data available for this ticker'}, status=404)
+
+        # Use requested expiry or nearest one
+        target_expiry = expiry if expiry and expiry in expiry_dates else expiry_dates[0]
+        chain         = tk.option_chain(target_expiry)
+        calls         = chain.calls
+        puts          = chain.puts
+
+        call_volume   = int(calls['volume'].fillna(0).sum())
+        put_volume    = int(puts['volume'].fillna(0).sum())
+        total_volume  = call_volume + put_volume
+        pcr           = round(put_volume / call_volume, 3) if call_volume else None
+
+        # Notable strikes: top 10 by open interest within ±20% of current price
+        def notable(df, stype):
+            rows = []
+            for _, row in df.iterrows():
+                strike = float(row.get('strike', 0))
+                if current_price and abs(strike - current_price) / current_price > 0.20:
+                    continue
+                rows.append({
+                    'type':            stype,
+                    'strike':          round(strike, 2),
+                    'openInterest':    int(row.get('openInterest', 0) or 0),
+                    'volume':          int(row.get('volume', 0) or 0),
+                    'impliedVolatility': round(float(row.get('impliedVolatility', 0) or 0), 4),
+                })
+            return sorted(rows, key=lambda x: x['openInterest'], reverse=True)[:6]
+
+        notable_strikes = sorted(
+            notable(calls, 'call') + notable(puts, 'put'),
+            key=lambda x: x['openInterest'], reverse=True
+        )[:12]
+
+        return JsonResponse({
+            'ticker':         ticker,
+            'expiry':         target_expiry,
+            'expiryDates':    expiry_dates[:8],
+            'currentPrice':   round(float(current_price), 2) if current_price else None,
+            'putCallRatio':   pcr,
+            'callVolume':     call_volume,
+            'putVolume':      put_volume,
+            'totalVolume':    total_volume,
+            'notableStrikes': notable_strikes,
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Correlation Matrix endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+@csrf_exempt
+def snowai_correlation_matrix_vault(request):
+    """
+    POST: { "tickers": ["AAPL","MSFT","NVDA"], "period": "3mo" }
+    Returns a correlation matrix of 90-day daily returns.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body    = json.loads(request.body)
+        tickers = [t.strip().upper() for t in body.get('tickers', []) if t.strip()][:8]
+        period  = body.get('period', '3mo')
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if len(tickers) < 2:
+        return JsonResponse({'error': 'Need at least 2 tickers'}, status=400)
+
+    try:
+        closes = {}
+        for t in tickers:
+            hist = yf.Ticker(t).history(period=period, interval='1d', auto_adjust=True)
+            if not hist.empty:
+                closes[t] = hist['Close']
+
+        if len(closes) < 2:
+            return JsonResponse({'error': 'Could not fetch data for enough tickers'}, status=404)
+
+        valid_tickers = list(closes.keys())
+        import pandas as pd
+        df      = pd.DataFrame(closes).dropna()
+        returns = df.pct_change().dropna()
+        corr    = returns.corr()
+
+        matrix = []
+        for t1 in valid_tickers:
+            row = []
+            for t2 in valid_tickers:
+                try:
+                    val = round(float(corr.loc[t1, t2]), 3)
+                except Exception:
+                    val = None
+                row.append(val)
+            matrix.append(row)
+
+        return JsonResponse({'tickers': valid_tickers, 'matrix': matrix, 'period': period})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 from sklearn.linear_model import LinearRegression
 def _vv_safe(val, decimals=2):
     """Return rounded float or 0 if None/NaN."""
