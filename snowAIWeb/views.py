@@ -42079,6 +42079,7 @@ def snowai_thundervault_ohlcv_chart_stream(request):
         ticker     = body.get('ticker', '').strip().upper()
         interval   = body.get('interval', '1D')
         indicators = body.get('indicators', [])   # list of strings
+        pre_post   = bool(body.get('prePost', False))
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
@@ -42104,9 +42105,16 @@ def snowai_thundervault_ohlcv_chart_stream(request):
     cfg         = interval_map.get(interval, interval_map['1D'])
     resample_4h = (interval == '4h')
 
+    # Pre/post market only available on intraday intervals
+    INTRADAY_INTERVALS = {'1m', '5m', '15m', '30m', '1h', '4h'}
+    use_prepost = pre_post and (interval in INTRADAY_INTERVALS)
+
     try:
         hist = yf.Ticker(ticker).history(
-            period=cfg['period'], interval=cfg['interval'], auto_adjust=True,
+            period=cfg['period'],
+            interval=cfg['interval'],
+            auto_adjust=True,
+            prepost=use_prepost,
         )
     except Exception as e:
         return JsonResponse({'error': f'yfinance error: {str(e)}'}, status=500)
@@ -42136,17 +42144,32 @@ def snowai_thundervault_ohlcv_chart_stream(request):
                 continue
         except (TypeError, ValueError):
             continue
+        # Tag session type for frontend awareness
+        # NYSE: pre 04:00-09:30 ET, regular 09:30-16:00 ET, post 16:00-20:00 ET
+        try:
+            import pytz
+            et_tz    = pytz.timezone('America/New_York')
+            et_dt    = ts.astimezone(et_tz) if ts.tzinfo else ts.tz_localize('UTC').astimezone(et_tz)
+            et_mins  = et_dt.hour * 60 + et_dt.minute
+            if   et_mins < 9 * 60 + 30:  session_tag = 'pre'
+            elif et_mins < 16 * 60:       session_tag = 'regular'
+            elif et_mins < 20 * 60:       session_tag = 'post'
+            else:                         session_tag = 'pre'  # next day pre
+        except Exception:
+            session_tag = 'regular'
+
         candles.append({
-            'time':   unix_ts,
-            'open':   round(float(o), 4),
-            'high':   round(float(h), 4),
-            'low':    round(float(l), 4),
-            'close':  round(float(c), 4),
-            'volume': int(v) if v and not math.isnan(float(v)) else 0,
+            'time':    unix_ts,
+            'open':    round(float(o), 4),
+            'high':    round(float(h), 4),
+            'low':     round(float(l), 4),
+            'close':   round(float(c), 4),
+            'volume':  int(v) if v and not math.isnan(float(v)) else 0,
+            'session': session_tag,
         })
 
     # ── Compute requested indicators ──────────────────────────────────────────
-    response = {'candles': candles, 'ticker': ticker, 'interval': interval, 'count': len(candles)}
+    response = {'candles': candles, 'ticker': ticker, 'interval': interval, 'count': len(candles), 'prePost': use_prepost}
 
     if 'twap' in indicators:
         twap, band_top, band_bot, stats = compute_twap(candles)
