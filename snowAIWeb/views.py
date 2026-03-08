@@ -43688,12 +43688,28 @@ def _build_trade_log_table(week_trades, t, styles):
 
 
 class _PageNumberCanvas(rl_canvas.Canvas):
-    """Canvas that adds page numbers and a header on each page."""
+    """
+    Canvas that draws a branded SnowAI header + footer on every page.
+
+    HEADER  (top 14mm): deep navy bar | bright-blue left stripe | dots | SNOWAI wordmark | account/month right
+    FOOTER (bottom 14mm): deep navy bar | page number centred | copyright left | bright-blue right stripe | dots
+    """
+
+    HEADER_H = 14 * mm
+    FOOTER_H = 14 * mm
+    ACCENT_W = 5  * mm
+    PAGE_W, PAGE_H = A4
+
+    C_DEEP   = colors.HexColor("#0f2d6b")
+    C_BRIGHT = colors.HexColor("#1a56db")
+    C_ICE    = colors.HexColor("#d1e8ff")
+    C_WHITE  = colors.white
 
     def __init__(self, *args, **kwargs):
-        self._t = kwargs.pop("translations", {})
-        self._account = kwargs.pop("account_name", "")
-        self._font = kwargs.pop("font_name", "Helvetica")
+        self._t       = kwargs.pop("translations",  {})
+        self._account = kwargs.pop("account_name",  "")
+        self._font    = kwargs.pop("font_name",     "Helvetica")
+        self._month   = kwargs.pop("month_label",   "")
         super().__init__(*args, **kwargs)
         self._saved_page_states = []
 
@@ -43702,23 +43718,83 @@ class _PageNumberCanvas(rl_canvas.Canvas):
         self._startPage()
 
     def save(self):
-        num_pages = len(self._saved_page_states)
+        total = len(self._saved_page_states)
         for state in self._saved_page_states:
             self.__dict__.update(state)
-            self._draw_page_number(num_pages)
+            self._draw_header()
+            self._draw_footer(total)
             super().showPage()
         super().save()
 
-    def _draw_page_number(self, page_count):
+    def _draw_header(self):
+        W, H = self.PAGE_W, self.PAGE_H
+        # Full deep-navy bar
+        self.setFillColor(self.C_DEEP)
+        self.rect(0, H - self.HEADER_H, W, self.HEADER_H, fill=1, stroke=0)
+        # Left accent stripe
+        self.setFillColor(self.C_BRIGHT)
+        self.rect(0, H - self.HEADER_H, self.ACCENT_W, self.HEADER_H, fill=1, stroke=0)
+        # Decorative dots
+        self.setFillColor(self.C_ICE)
+        dot_y = H - self.HEADER_H / 2
+        for i in range(4):
+            self.circle(self.ACCENT_W + 4*mm + i*4.5*mm, dot_y, 1.2*mm, fill=1, stroke=0)
+        # SNOWAI wordmark — always Latin, it is the brand name
+        self.setFillColor(self.C_WHITE)
+        self.setFont("Helvetica-Bold", 13)
+        self.drawString(self.ACCENT_W + 25*mm, H - self.HEADER_H/2 - 2*mm, "SNOW")
+        self.setFillColor(self.C_ICE)
+        self.drawString(self.ACCENT_W + 25*mm + self.stringWidth("SNOW","Helvetica-Bold",13),
+                        H - self.HEADER_H/2 - 2*mm, "AI")
+        # Vertical divider
+        self.setStrokeColor(self.C_BRIGHT)
+        self.setLineWidth(0.8)
+        mid_x = self.ACCENT_W + 52*mm
+        self.line(mid_x, H - self.HEADER_H + 3*mm, mid_x, H - 3*mm)
+        # Right: account + month
+        self.setFont(self._font, 7.5)
+        self.setFillColor(self.C_ICE)
+        self.drawRightString(W - 6*mm, H - self.HEADER_H/2 - 2*mm,
+                             f"{self._account}  ·  {self._month}")
+        # Sub-label
+        self.setFont("Helvetica", 6)
+        self.setFillColor(colors.HexColor("#7bafd4"))
+        self.drawString(self.ACCENT_W + 25*mm, H - self.HEADER_H + 3*mm,
+                        "Trading Intelligence Platform")
+        # Bottom edge line of header
+        self.setStrokeColor(self.C_BRIGHT)
+        self.setLineWidth(1.2)
+        self.line(0, H - self.HEADER_H, W, H - self.HEADER_H)
+
+    def _draw_footer(self, total_pages):
+        W = self.PAGE_W
+        # Full deep-navy bar
+        self.setFillColor(self.C_DEEP)
+        self.rect(0, 0, W, self.FOOTER_H, fill=1, stroke=0)
+        # Right accent stripe
+        self.setFillColor(self.C_BRIGHT)
+        self.rect(W - self.ACCENT_W, 0, self.ACCENT_W, self.FOOTER_H, fill=1, stroke=0)
+        # Decorative dots (right side)
+        self.setFillColor(self.C_ICE)
+        dot_y = self.FOOTER_H / 2
+        for i in range(4):
+            self.circle(W - self.ACCENT_W - 4*mm - i*4.5*mm, dot_y, 1.2*mm, fill=1, stroke=0)
+        # Copyright left
+        self.setFont("Helvetica", 7)
+        self.setFillColor(colors.HexColor("#7bafd4"))
+        self.drawString(6*mm, self.FOOTER_H/2 + 1.5*mm, "© SnowAI  ·  Confidential & Proprietary")
+        self.setFont(self._font, 6)
+        self.drawString(6*mm, self.FOOTER_H/2 - 4*mm, "For internal use only — do not distribute")
+        # Page number centred
         page_label = self._t.get("page", "Page")
-        text = f"{page_label} {self._pageNumber} / {page_count}"
-        self.setFont(self._font, 8)
-        self.setFillColor(MID_GRAY)
-        width, _ = A4
-        self.drawRightString(width - 15 * mm, 10 * mm, text)
-        # Thin footer line
-        self.setStrokeColor(colors.HexColor("#e5e7eb"))
-        self.line(15 * mm, 14 * mm, width - 15 * mm, 14 * mm)
+        self.setFont("Helvetica-Bold", 8)
+        self.setFillColor(self.C_WHITE)
+        self.drawCentredString(W/2, self.FOOTER_H/2 - 2*mm,
+                               f"{page_label}  {self._pageNumber} / {total_pages}")
+        # Top edge line of footer
+        self.setStrokeColor(self.C_BRIGHT)
+        self.setLineWidth(1.2)
+        self.line(0, self.FOOTER_H, W, self.FOOTER_H)
 
 
 def _generate_trading_pdf(trades_data, account_name, language, year, month):
@@ -43739,6 +43815,7 @@ def _generate_trading_pdf(trades_data, account_name, language, year, month):
             translations=t,
             account_name=account_name,
             font_name=font_name,
+            month_label=month_name,
             **kwargs,
         )
 
@@ -43747,8 +43824,8 @@ def _generate_trading_pdf(trades_data, account_name, language, year, month):
         pagesize=A4,
         rightMargin=15 * mm,
         leftMargin=15 * mm,
-        topMargin=15 * mm,
-        bottomMargin=20 * mm,
+        topMargin=22 * mm,     # leaves room for 14mm header bar + 8mm breathing space
+        bottomMargin=22 * mm,  # leaves room for 14mm footer bar + 8mm breathing space
         title=t["report_title"],
         author="SnowAI",
     )
