@@ -42796,6 +42796,259 @@ def ideas_hub_volume_velocity_v1(request):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CHILL Module — views.py additions
+#
+# Paste these two views into your existing views.py (or a new chill_views.py).
+#
+# Requirements (add to requirements.txt on Railway):
+#   reportlab
+#   gtts
+#
+# urls.py additions are at the bottom of this file.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import io
+import re
+import json
+from datetime import datetime
+
+from django.http import HttpResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+
+
+# ─── PDF Export ───────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_POST
+def chill_export_section_pdf(request):
+    """
+    POST /chill/export-section-pdf/
+    Body JSON: { "section": "Section Name", "text": "## Heading\n..." }
+    Returns:   A styled A4 PDF as application/pdf (attachment).
+    """
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_LEFT, TA_CENTER
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer,
+            HRFlowable, Table, TableStyle,
+        )
+
+        data = json.loads(request.body)
+        section_name = data.get('section', 'Section')
+        raw_text     = data.get('text', '')
+
+        # ── Palette ──────────────────────────────────────────────────────────
+        CHILL_NAVY     = colors.HexColor('#0f1b35')
+        CHILL_BLUE     = colors.HexColor('#1d6fd8')
+        CHILL_LIGHT_BG = colors.HexColor('#f0f6ff')
+        CHILL_SUBPOINT = colors.HexColor('#334155')
+        CHILL_NOTE_BG  = colors.HexColor('#fef9ec')
+        CHILL_NOTE_BAR = colors.HexColor('#f59e0b')
+        CHILL_RULE     = colors.HexColor('#dbeafe')
+        CHILL_BODY_TXT = colors.HexColor('#1e293b')
+        CHILL_META_TXT = colors.HexColor('#94a3b8')
+        CHILL_WHITE    = colors.white
+
+        PAGE_W, PAGE_H = A4
+        MARGIN = 22 * mm
+
+        # ── Chrome callbacks (header/footer on every page) ────────────────
+        def _chill_draw_chrome(canvas, doc):
+            canvas.saveState()
+
+            # Top navy banner
+            canvas.setFillColor(CHILL_NAVY)
+            canvas.rect(0, PAGE_H - 18 * mm, PAGE_W, 18 * mm, fill=1, stroke=0)
+            canvas.setFillColor(CHILL_WHITE)
+            canvas.setFont('Helvetica-Bold', 10)
+            canvas.drawString(MARGIN, PAGE_H - 11 * mm, 'C.H.I.L.L  ·  Trading Intelligence')
+            canvas.setFont('Helvetica', 8)
+            canvas.drawRightString(
+                PAGE_W - MARGIN, PAGE_H - 11 * mm,
+                datetime.now().strftime('%d %b %Y')
+            )
+            # Blue accent stripe under banner
+            canvas.setFillColor(CHILL_BLUE)
+            canvas.rect(0, PAGE_H - 19.5 * mm, PAGE_W, 1.5 * mm, fill=1, stroke=0)
+
+            # Bottom navy footer
+            canvas.setFillColor(CHILL_NAVY)
+            canvas.rect(0, 0, PAGE_W, 10 * mm, fill=1, stroke=0)
+            canvas.setFillColor(CHILL_WHITE)
+            canvas.setFont('Helvetica', 7.5)
+            canvas.drawString(MARGIN, 3.5 * mm, 'snowAI · Private Trading System')
+            canvas.drawRightString(PAGE_W - MARGIN, 3.5 * mm, f'Page {doc.page}')
+
+            canvas.restoreState()
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buf,
+            pagesize=A4,
+            leftMargin=MARGIN, rightMargin=MARGIN,
+            topMargin=24 * mm, bottomMargin=16 * mm,
+        )
+
+        # ── Paragraph styles ─────────────────────────────────────────────────
+        def _ps(name, **kw):
+            return ParagraphStyle(name, **kw)
+
+        ps_chill_title = _ps(
+            'chill_pdf_title',
+            fontName='Helvetica-Bold', fontSize=20,
+            textColor=CHILL_NAVY, spaceAfter=2 * mm, leading=26,
+        )
+        ps_chill_h2 = _ps(
+            'chill_pdf_h2',
+            fontName='Helvetica-Bold', fontSize=13,
+            textColor=CHILL_BLUE, spaceBefore=5 * mm, spaceAfter=2 * mm, leading=18,
+        )
+        ps_chill_h3 = _ps(
+            'chill_pdf_h3',
+            fontName='Helvetica-Bold', fontSize=11,
+            textColor=CHILL_SUBPOINT, spaceBefore=3 * mm, spaceAfter=1.5 * mm, leading=15,
+        )
+        ps_chill_body = _ps(
+            'chill_pdf_body',
+            fontName='Helvetica', fontSize=10,
+            textColor=CHILL_BODY_TXT, spaceBefore=1 * mm, spaceAfter=1 * mm, leading=15,
+        )
+        ps_chill_note = _ps(
+            'chill_pdf_note',
+            fontName='Helvetica-Oblique', fontSize=9.5,
+            textColor=colors.HexColor('#78350f'),
+            spaceBefore=1 * mm, spaceAfter=1 * mm, leading=14, leftIndent=4 * mm,
+        )
+        ps_chill_footer_line = _ps(
+            'chill_pdf_footer_line',
+            fontName='Helvetica', fontSize=8,
+            textColor=CHILL_META_TXT, alignment=TA_CENTER,
+        )
+
+        # ── Build story ───────────────────────────────────────────────────────
+        story = []
+
+        # Section title in a styled box
+        title_tbl = Table(
+            [[Paragraph(section_name, ps_chill_title)]],
+            colWidths=[PAGE_W - 2 * MARGIN],
+        )
+        title_tbl.setStyle(TableStyle([
+            ('BACKGROUND',      (0, 0), (-1, -1), CHILL_LIGHT_BG),
+            ('TOPPADDING',      (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING',   (0, 0), (-1, -1), 8),
+            ('LEFTPADDING',     (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING',    (0, 0), (-1, -1), 10),
+            ('BOX',             (0, 0), (-1, -1), 1.5, CHILL_BLUE),
+        ]))
+        story.append(title_tbl)
+        story.append(Spacer(1, 5 * mm))
+        story.append(HRFlowable(width='100%', thickness=1, color=CHILL_RULE, spaceAfter=4 * mm))
+
+        for line in raw_text.split('\n'):
+            line = line.strip()
+            if not line:
+                story.append(Spacer(1, 2 * mm))
+                continue
+
+            if line.startswith('## '):
+                story.append(Paragraph(line[3:].strip(), ps_chill_h2))
+                story.append(HRFlowable(width='40%', thickness=0.5, color=CHILL_RULE, spaceAfter=1 * mm))
+
+            elif line.startswith('### '):
+                story.append(Paragraph(line[4:].strip(), ps_chill_h3))
+
+            elif line.startswith('-> '):
+                note_tbl = Table(
+                    [[Paragraph(f'💡  {line[3:].strip()}', ps_chill_note)]],
+                    colWidths=[PAGE_W - 2 * MARGIN],
+                )
+                note_tbl.setStyle(TableStyle([
+                    ('BACKGROUND',    (0, 0), (-1, -1), CHILL_NOTE_BG),
+                    ('TOPPADDING',    (0, 0), (-1, -1), 5),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                    ('LEFTPADDING',   (0, 0), (-1, -1), 8),
+                    ('RIGHTPADDING',  (0, 0), (-1, -1), 8),
+                    ('LINEBEFORE',    (0, 0), (0, -1),  3, CHILL_NOTE_BAR),
+                ]))
+                story.append(note_tbl)
+                story.append(Spacer(1, 1 * mm))
+
+            else:
+                story.append(Paragraph(line, ps_chill_body))
+
+        story.append(Spacer(1, 6 * mm))
+        story.append(HRFlowable(width='100%', thickness=0.5, color=CHILL_RULE))
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(
+            f'Generated by snowAI C.H.I.L.L · {datetime.now().strftime("%d %B %Y, %H:%M")}',
+            ps_chill_footer_line,
+        ))
+
+        doc.build(
+            story,
+            onFirstPage=_chill_draw_chrome,
+            onLaterPages=_chill_draw_chrome,
+        )
+        buf.seek(0)
+
+        safe_name = re.sub(r'[^\w\s-]', '', section_name).strip().replace(' ', '_')
+        response = HttpResponse(buf.read(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{safe_name}_notes.pdf"'
+        response['Access-Control-Allow-Origin'] = '*'
+        return response
+
+    except ImportError:
+        return JsonResponse({'error': 'reportlab not installed. Run: pip install reportlab'}, status=500)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+# ─── TTS Audio Download ───────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_POST
+def chill_download_section_audio(request):
+    """
+    POST /chill/download-section-audio/
+    Body JSON: { "section": "Section Name", "text": "..." }
+    Returns:   MP3 audio via Google TTS (gTTS) as audio/mpeg (attachment).
+    Note:      Uses Google's TTS voice, not the browser voice — but it's
+               a real downloadable MP3.
+    """
+    try:
+        from gtts import gTTS
+
+        data        = json.loads(request.body)
+        raw_text    = data.get('text', '')
+        section_name = data.get('section', 'notes')
+
+        # Strip markdown markers before speaking
+        clean = re.sub(r'#{1,3}\s*', '', raw_text)
+        clean = re.sub(r'->\s*', '', clean)
+        clean = re.sub(r'\n+', ' ', clean).strip()
+
+        tts = gTTS(text=clean, lang='en', slow=False)
+        buf = io.BytesIO()
+        tts.write_to_fp(buf)
+        buf.seek(0)
+
+        safe_name = re.sub(r'[^\w\s-]', '', section_name).strip().replace(' ', '_')
+        response = HttpResponse(buf.read(), content_type='audio/mpeg')
+        response['Content-Disposition'] = f'attachment; filename="{safe_name}_audio.mp3"'
+        response['Access-Control-Allow-Origin'] = '*'
+        return response
+
+    except ImportError:
+        return JsonResponse({'error': 'gtts not installed. Run: pip install gtts'}, status=500)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
 
 
 def book_order(request):

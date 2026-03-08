@@ -738,6 +738,9 @@ urlpatterns = [
 
      path('ideas_hub_volume_velocity_v1', views.ideas_hub_volume_velocity_v1, name='ideas_hub_volume_velocity_v1'),
 
+     path('chill/export-section-pdf/',    views.chill_export_section_pdf,    name='chill_export_section_pdf'),
+     path('chill/download-section-audio/', views.chill_download_section_audio, name='chill_download_section_audio'),
+
 
 
 
