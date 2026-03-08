@@ -43050,6 +43050,1062 @@ def chill_download_section_audio(request):
     except Exception as exc:
         return JsonResponse({'error': str(exc)}, status=500)
 
+"""
+trading_report_views.py
+-----------------------
+Unique-named Django view for generating trading PDF reports via ReportLab.
+Supports: English, Chinese, Japanese, Korean, Russian
+
+Add to urls.py:
+    from .trading_report_views import generate_trading_pdf_report_view
+    path('api/trading-pdf-report/', generate_trading_pdf_report_view, name='trading_pdf_report'),
+"""
+
+import io
+from datetime import datetime, date
+from collections import defaultdict
+
+
+# ReportLab imports
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import mm
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    PageBreak, HRFlowable, KeepTogether
+)
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas as rl_canvas
+
+import os
+import urllib.request
+
+
+# ---------------------------------------------------------------------------
+# Font registration helper — downloads Google Noto fonts for CJK + Cyrillic
+# ---------------------------------------------------------------------------
+
+FONT_DIR = os.path.join(os.path.dirname(__file__), "trading_report_fonts")
+
+FONT_URLS = {
+    "NotoSans": "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf",
+    "NotoSansBold": "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Bold.ttf",
+    "NotoSansSC": "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+    "NotoSansJP": "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf",
+    "NotoSansKR": "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf",
+}
+
+# Fallback: use system fonts if available
+SYSTEM_FONT_PATHS = {
+    "NotoSans": [
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ],
+    "NotoSansBold": [
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    ],
+    "NotoSansSC": [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+    ],
+    "NotoSansJP": [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+    ],
+    "NotoSansKR": [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+    ],
+}
+
+_fonts_registered = {}
+
+
+def _find_system_font(font_name):
+    """Try to find a system font for the given name."""
+    for path in SYSTEM_FONT_PATHS.get(font_name, []):
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def _ensure_font_registered(font_name):
+    """Register a ReportLab font, trying system paths first."""
+    if font_name in _fonts_registered:
+        return _fonts_registered[font_name]
+
+    # Try system fonts first
+    system_path = _find_system_font(font_name)
+    if system_path:
+        try:
+            pdfmetrics.registerFont(TTFont(font_name, system_path))
+            _fonts_registered[font_name] = font_name
+            return font_name
+        except Exception:
+            pass
+
+    # Try downloaded fonts
+    os.makedirs(FONT_DIR, exist_ok=True)
+    font_path = os.path.join(FONT_DIR, f"{font_name}.ttf")
+    if not os.path.exists(font_path):
+        url = FONT_URLS.get(font_name)
+        if url:
+            try:
+                urllib.request.urlretrieve(url, font_path)
+            except Exception:
+                pass
+
+    if os.path.exists(font_path):
+        try:
+            pdfmetrics.registerFont(TTFont(font_name, font_path))
+            _fonts_registered[font_name] = font_name
+            return font_name
+        except Exception:
+            pass
+
+    # Final fallback: use Helvetica
+    _fonts_registered[font_name] = "Helvetica"
+    return "Helvetica"
+
+
+def _get_lang_font(language, bold=False):
+    """Return the best registered font name for a given language."""
+    font_map = {
+        "chinese": ("NotoSansSC", "NotoSansSC"),
+        "japanese": ("NotoSansJP", "NotoSansJP"),
+        "korean": ("NotoSansKR", "NotoSansKR"),
+        "russian": ("NotoSans", "NotoSansBold"),
+        "english": ("Helvetica", "Helvetica-Bold"),
+    }
+    regular, boldface = font_map.get(language, ("Helvetica", "Helvetica-Bold"))
+
+    if language in ("chinese", "japanese", "korean"):
+        font = _ensure_font_registered(regular)
+        return font
+    elif language == "russian":
+        font = _ensure_font_registered(regular)
+        bold_font = _ensure_font_registered(boldface)
+        return bold_font if bold else font
+    else:
+        return boldface if bold else regular
+
+
+# ---------------------------------------------------------------------------
+# Translations
+# ---------------------------------------------------------------------------
+
+TRANSLATIONS = {
+    "english": {
+        "report_title": "Comprehensive Trading Report",
+        "company": "SnowAI Company Report",
+        "executive_summary": "Executive Summary",
+        "total_trades": "Total Trades",
+        "winning_trades": "Winning Trades",
+        "losing_trades": "Losing Trades",
+        "avg_win": "Average Win",
+        "avg_loss": "Average Loss",
+        "risk_reward": "Risk/Reward Ratio",
+        "profit_factor": "Profit Factor",
+        "net_pl": "Net P&L",
+        "largest_win": "Largest Win",
+        "largest_loss": "Largest Loss",
+        "performance_analysis": "Performance Analysis",
+        "by_day": "By Day of Week",
+        "by_session": "By Trading Session",
+        "by_strategy": "By Strategy",
+        "by_asset": "By Asset",
+        "insights": "Trading Insights",
+        "best_day": "Best Trading Day",
+        "worst_day": "Worst Trading Day",
+        "longest_win_streak": "Longest Winning Streak",
+        "longest_loss_streak": "Longest Losing Streak",
+        "trade_log": "Detailed Trade Log",
+        "week_of": "Week of",
+        "total": "Total",
+        "date": "Date",
+        "asset": "Asset",
+        "strategy": "Strategy",
+        "session": "Session",
+        "outcome": "Outcome",
+        "amount": "Amount",
+        "reflections": "Trade Reflections & Lessons",
+        "trade": "Trade",
+        "win_rate": "Win Rate",
+        "page": "Page",
+        "account": "Account",
+        "trades": "trades",
+        "trader": "Professional Trader",
+        "researcher": "Quantitative Researcher / Investor",
+        "no_trades": "No trades found for this period.",
+    },
+    "chinese": {
+        "report_title": "综合交易报告",
+        "company": "SnowAI 公司报告",
+        "executive_summary": "执行摘要",
+        "total_trades": "总交易数",
+        "winning_trades": "盈利交易",
+        "losing_trades": "亏损交易",
+        "avg_win": "平均盈利",
+        "avg_loss": "平均亏损",
+        "risk_reward": "风险/收益比",
+        "profit_factor": "盈利因子",
+        "net_pl": "净盈亏",
+        "largest_win": "最大盈利",
+        "largest_loss": "最大亏损",
+        "performance_analysis": "绩效分析",
+        "by_day": "按星期几",
+        "by_session": "按交易时段",
+        "by_strategy": "按策略",
+        "by_asset": "按资产",
+        "insights": "交易洞察",
+        "best_day": "最佳交易日",
+        "worst_day": "最差交易日",
+        "longest_win_streak": "最长连胜",
+        "longest_loss_streak": "最长连败",
+        "trade_log": "详细交易记录",
+        "week_of": "周期",
+        "total": "总计",
+        "date": "日期",
+        "asset": "资产",
+        "strategy": "策略",
+        "session": "时段",
+        "outcome": "结果",
+        "amount": "金额",
+        "reflections": "交易反思与教训",
+        "trade": "交易",
+        "win_rate": "胜率",
+        "page": "页",
+        "account": "账户",
+        "trades": "笔交易",
+        "trader": "专业交易员",
+        "researcher": "量化研究员/投资者",
+        "no_trades": "本期未找到交易记录。",
+    },
+    "japanese": {
+        "report_title": "総合取引レポート",
+        "company": "SnowAI 会社レポート",
+        "executive_summary": "エグゼクティブサマリー",
+        "total_trades": "総取引数",
+        "winning_trades": "勝ちトレード",
+        "losing_trades": "負けトレード",
+        "avg_win": "平均利益",
+        "avg_loss": "平均損失",
+        "risk_reward": "リスク/リワード比",
+        "profit_factor": "プロフィットファクター",
+        "net_pl": "純損益",
+        "largest_win": "最大利益",
+        "largest_loss": "最大損失",
+        "performance_analysis": "パフォーマンス分析",
+        "by_day": "曜日別",
+        "by_session": "セッション別",
+        "by_strategy": "戦略別",
+        "by_asset": "資産別",
+        "insights": "取引インサイト",
+        "best_day": "最良の取引日",
+        "worst_day": "最悪の取引日",
+        "longest_win_streak": "最長連勝",
+        "longest_loss_streak": "最長連敗",
+        "trade_log": "詳細取引ログ",
+        "week_of": "週",
+        "total": "合計",
+        "date": "日付",
+        "asset": "資産",
+        "strategy": "戦略",
+        "session": "セッション",
+        "outcome": "結果",
+        "amount": "金額",
+        "reflections": "取引の振り返りと教訓",
+        "trade": "取引",
+        "win_rate": "勝率",
+        "page": "ページ",
+        "account": "口座",
+        "trades": "トレード",
+        "trader": "プロトレーダー",
+        "researcher": "クォンツリサーチャー/投資家",
+        "no_trades": "この期間の取引が見つかりません。",
+    },
+    "korean": {
+        "report_title": "종합 거래 보고서",
+        "company": "SnowAI 회사 보고서",
+        "executive_summary": "요약",
+        "total_trades": "총 거래수",
+        "winning_trades": "수익 거래",
+        "losing_trades": "손실 거래",
+        "avg_win": "평균 수익",
+        "avg_loss": "평균 손실",
+        "risk_reward": "위험/수익 비율",
+        "profit_factor": "수익 팩터",
+        "net_pl": "순 손익",
+        "largest_win": "최대 수익",
+        "largest_loss": "최대 손실",
+        "performance_analysis": "성과 분석",
+        "by_day": "요일별",
+        "by_session": "거래 세션별",
+        "by_strategy": "전략별",
+        "by_asset": "자산별",
+        "insights": "거래 인사이트",
+        "best_day": "최고 거래일",
+        "worst_day": "최악 거래일",
+        "longest_win_streak": "최장 연승",
+        "longest_loss_streak": "최장 연패",
+        "trade_log": "상세 거래 로그",
+        "week_of": "주간",
+        "total": "총계",
+        "date": "날짜",
+        "asset": "자산",
+        "strategy": "전략",
+        "session": "세션",
+        "outcome": "결과",
+        "amount": "금액",
+        "reflections": "거래 성찰과 교훈",
+        "trade": "거래",
+        "win_rate": "승률",
+        "page": "페이지",
+        "account": "계좌",
+        "trades": "거래",
+        "trader": "전문 트레이더",
+        "researcher": "퀀트 연구원/투자자",
+        "no_trades": "이 기간의 거래가 없습니다.",
+    },
+    "russian": {
+        "report_title": "Комплексный торговый отчёт",
+        "company": "Отчёт компании SnowAI",
+        "executive_summary": "Краткое резюме",
+        "total_trades": "Всего сделок",
+        "winning_trades": "Прибыльные сделки",
+        "losing_trades": "Убыточные сделки",
+        "avg_win": "Средняя прибыль",
+        "avg_loss": "Средний убыток",
+        "risk_reward": "Соотношение риск/прибыль",
+        "profit_factor": "Профит-фактор",
+        "net_pl": "Чистая P&L",
+        "largest_win": "Наибольшая прибыль",
+        "largest_loss": "Наибольший убыток",
+        "performance_analysis": "Анализ эффективности",
+        "by_day": "По дням недели",
+        "by_session": "По торговым сессиям",
+        "by_strategy": "По стратегиям",
+        "by_asset": "По активам",
+        "insights": "Торговые выводы",
+        "best_day": "Лучший торговый день",
+        "worst_day": "Худший торговый день",
+        "longest_win_streak": "Наибольшая серия побед",
+        "longest_loss_streak": "Наибольшая серия проигрышей",
+        "trade_log": "Детальный журнал сделок",
+        "week_of": "Неделя",
+        "total": "Итого",
+        "date": "Дата",
+        "asset": "Актив",
+        "strategy": "Стратегия",
+        "session": "Сессия",
+        "outcome": "Результат",
+        "amount": "Сумма",
+        "reflections": "Рефлексии и уроки",
+        "trade": "Сделка",
+        "win_rate": "Процент побед",
+        "page": "Страница",
+        "account": "Счёт",
+        "trades": "сделок",
+        "trader": "Профессиональный трейдер",
+        "researcher": "Количественный исследователь/инвестор",
+        "no_trades": "Сделок за этот период не найдено.",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Analytics helpers
+# ---------------------------------------------------------------------------
+
+def _parse_trades(raw_trades):
+    """Normalize trade amounts and parse dates."""
+    result = []
+    for trade in raw_trades:
+        try:
+            amount = float(trade.get("amount", 0))
+            outcome = trade.get("outcome", "")
+            if outcome == "Loss":
+                amount = -abs(amount)
+            else:
+                amount = abs(amount)
+
+            date_str = trade.get("date_entered")
+            if date_str:
+                try:
+                    trade_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                    # Shift back 1 day (matching frontend logic)
+                    from datetime import timedelta
+                    trade_date = trade_date - timedelta(days=1)
+                except Exception:
+                    trade_date = None
+            else:
+                trade_date = None
+
+            result.append({**trade, "amount": amount, "_parsed_date": trade_date})
+        except Exception:
+            continue
+    return result
+
+
+def _filter_month(trades, year, month):
+    return [
+        t for t in trades
+        if t.get("_parsed_date") and
+           t["_parsed_date"].year == year and
+           t["_parsed_date"].month == month
+    ]
+
+
+def _calc_analytics(month_trades):
+    if not month_trades:
+        return {
+            "win_rate": 0, "avg_win": 0, "avg_loss": 0,
+            "profit_factor": 0, "total_wins": 0, "total_losses": 0,
+            "total_trades": 0, "net_pnl": 0,
+        }
+    wins = [t for t in month_trades if t["amount"] > 0]
+    losses = [t for t in month_trades if t["amount"] < 0]
+    total_win_amt = sum(t["amount"] for t in wins)
+    total_loss_amt = abs(sum(t["amount"] for t in losses))
+    win_rate = len(wins) / len(month_trades) * 100 if month_trades else 0
+    avg_win = total_win_amt / len(wins) if wins else 0
+    avg_loss = total_loss_amt / len(losses) if losses else 0
+    profit_factor = (total_win_amt / total_loss_amt) if total_loss_amt > 0 else (float("inf") if total_win_amt > 0 else 0)
+    net_pnl = sum(t["amount"] for t in month_trades)
+    return {
+        "win_rate": win_rate,
+        "avg_win": avg_win,
+        "avg_loss": avg_loss,
+        "profit_factor": profit_factor,
+        "total_wins": len(wins),
+        "total_losses": len(losses),
+        "total_trades": len(month_trades),
+        "net_pnl": net_pnl,
+    }
+
+
+def _group_performance(month_trades, field):
+    groups = defaultdict(list)
+    for t in month_trades:
+        key = t.get(field) or "Unknown"
+        groups[key].append(t["amount"])
+    result = {}
+    for key, amounts in groups.items():
+        wins = [a for a in amounts if a > 0]
+        losses = [a for a in amounts if a < 0]
+        total = sum(amounts)
+        result[key] = {
+            "total": total,
+            "trades": len(amounts),
+            "wins": len(wins),
+            "losses": len(losses),
+            "win_rate": round(len(wins) / len(amounts) * 100, 1) if amounts else 0,
+            "avg": round(total / len(amounts), 2) if amounts else 0,
+        }
+    return result
+
+
+def _streaks(month_trades):
+    sorted_trades = sorted(month_trades, key=lambda t: t.get("_parsed_date") or datetime.min)
+    max_win = max_loss = cur = 0
+    streak_type = None
+    for t in sorted_trades:
+        if t["amount"] > 0:
+            cur = cur + 1 if streak_type == "win" else 1
+            streak_type = "win"
+            max_win = max(max_win, cur)
+        elif t["amount"] < 0:
+            cur = cur + 1 if streak_type == "loss" else 1
+            streak_type = "loss"
+            max_loss = max(max_loss, cur)
+    return max_win, max_loss
+
+
+# ---------------------------------------------------------------------------
+# PDF builder
+# ---------------------------------------------------------------------------
+
+BLUE = colors.HexColor("#1a56db")
+GREEN = colors.HexColor("#057a55")
+RED = colors.HexColor("#c81e1e")
+LIGHT_GRAY = colors.HexColor("#f3f4f6")
+DARK_GRAY = colors.HexColor("#374151")
+MID_GRAY = colors.HexColor("#6b7280")
+WHITE = colors.white
+BLACK = colors.black
+
+
+def _build_styles(font_name, font_bold):
+    styles = {
+        "title": ParagraphStyle(
+            "TitleStyle", fontName=font_bold, fontSize=22,
+            textColor=BLUE, alignment=TA_CENTER, spaceAfter=6,
+        ),
+        "subtitle": ParagraphStyle(
+            "SubtitleStyle", fontName=font_name, fontSize=14,
+            textColor=BLUE, alignment=TA_CENTER, spaceAfter=4,
+        ),
+        "section": ParagraphStyle(
+            "SectionStyle", fontName=font_bold, fontSize=13,
+            textColor=BLUE, spaceBefore=12, spaceAfter=6,
+        ),
+        "subsection": ParagraphStyle(
+            "SubsectionStyle", fontName=font_bold, fontSize=11,
+            textColor=DARK_GRAY, spaceBefore=8, spaceAfter=4,
+        ),
+        "normal": ParagraphStyle(
+            "NormalStyle", fontName=font_name, fontSize=9,
+            textColor=BLACK, spaceAfter=3,
+        ),
+        "small": ParagraphStyle(
+            "SmallStyle", fontName=font_name, fontSize=8,
+            textColor=MID_GRAY, spaceAfter=2,
+        ),
+        "cover_name": ParagraphStyle(
+            "CoverNameStyle", fontName=font_bold, fontSize=16,
+            textColor=BLUE, spaceAfter=4,
+        ),
+        "cover_role": ParagraphStyle(
+            "CoverRoleStyle", fontName=font_name, fontSize=11,
+            textColor=MID_GRAY, spaceAfter=2,
+        ),
+    }
+    return styles
+
+
+def _money(val):
+    if val >= 0:
+        return f"${val:,.2f}"
+    return f"-${abs(val):,.2f}"
+
+
+def _color_money(val):
+    return GREEN if val >= 0 else RED
+
+
+def _build_summary_table(analytics, t, styles):
+    pf = analytics["profit_factor"]
+    pf_str = "∞" if pf == float("inf") else f"{pf:.2f}"
+
+    rr = (analytics["avg_win"] / analytics["avg_loss"]) if analytics["avg_loss"] > 0 else 0
+
+    rows = [
+        [t["total_trades"], str(analytics["total_trades"]),
+         t["net_pl"], _money(analytics["net_pnl"])],
+        [t["winning_trades"], f"{analytics['total_wins']} ({analytics['win_rate']:.1f}%)",
+         t["losing_trades"], f"{analytics['total_losses']} ({100 - analytics['win_rate']:.1f}%)"],
+        [t["avg_win"], _money(analytics["avg_win"]),
+         t["avg_loss"], _money(analytics["avg_loss"])],
+        [t["risk_reward"], f"1:{rr:.2f}",
+         t["profit_factor"], pf_str],
+    ]
+
+    font_name = styles["normal"].fontName
+    font_bold = styles["subsection"].fontName
+
+    table_data = []
+    for row in rows:
+        table_data.append([
+            Paragraph(str(row[0]), ParagraphStyle("lbl", fontName=font_bold, fontSize=9, textColor=DARK_GRAY)),
+            Paragraph(str(row[1]), ParagraphStyle("val", fontName=font_name, fontSize=9)),
+            Paragraph(str(row[2]), ParagraphStyle("lbl2", fontName=font_bold, fontSize=9, textColor=DARK_GRAY)),
+            Paragraph(str(row[3]), ParagraphStyle("val2", fontName=font_name, fontSize=9)),
+        ])
+
+    tbl = Table(table_data, colWidths=[55 * mm, 35 * mm, 55 * mm, 35 * mm])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_GRAY),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [WHITE, LIGHT_GRAY]),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    return tbl
+
+
+def _build_group_table(group_data, t, styles):
+    font_name = styles["normal"].fontName
+    font_bold = styles["subsection"].fontName
+
+    header_style = ParagraphStyle("th", fontName=font_bold, fontSize=8, textColor=WHITE)
+    cell_style = ParagraphStyle("td", fontName=font_name, fontSize=8, textColor=BLACK)
+
+    headers = [
+        Paragraph(k, header_style) for k in [
+            t["asset"] if "asset" in t else "Group",
+            t["total"],
+            t["trades"],
+            t["win_rate"],
+            "Avg",
+        ]
+    ]
+    # Reuse first column label generically
+    headers[0] = Paragraph("Group", header_style)
+
+    table_data = [headers]
+    for key, metrics in sorted(group_data.items(), key=lambda x: x[1]["total"], reverse=True):
+        color_str = "#057a55" if metrics["total"] >= 0 else "#c81e1e"
+        row = [
+            Paragraph(str(key), cell_style),
+            Paragraph(f'<font color="{color_str}">{_money(metrics["total"])}</font>', cell_style),
+            Paragraph(str(metrics["trades"]), cell_style),
+            Paragraph(f'{metrics["win_rate"]}%', cell_style),
+            Paragraph(_money(metrics["avg"]), cell_style),
+        ]
+        table_data.append(row)
+
+    col_w = [50 * mm, 30 * mm, 20 * mm, 25 * mm, 25 * mm]
+    tbl = Table(table_data, colWidths=col_w)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BLUE),
+        ("ROWBACKGROUNDS", (1, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    return tbl
+
+
+def _build_trade_log_table(week_trades, t, styles):
+    font_name = styles["normal"].fontName
+    font_bold = styles["subsection"].fontName
+
+    header_style = ParagraphStyle("wth", fontName=font_bold, fontSize=7, textColor=WHITE)
+    cell_style_base = ParagraphStyle("wtd", fontName=font_name, fontSize=7, textColor=BLACK)
+
+    headers = [Paragraph(h, header_style) for h in [
+        t["date"], t["asset"], t["strategy"], t["session"], t["outcome"], t["amount"]
+    ]]
+
+    table_data = [headers]
+    for trade in week_trades:
+        td = trade.get("_parsed_date")
+        date_str = td.strftime("%b %d") if td else "N/A"
+        amt = trade["amount"]
+        color_str = "#057a55" if amt >= 0 else "#c81e1e"
+        row = [
+            Paragraph(date_str, cell_style_base),
+            Paragraph(str(trade.get("asset") or "N/A")[:14], cell_style_base),
+            Paragraph(str(trade.get("strategy") or "N/A")[:16], cell_style_base),
+            Paragraph(str(trade.get("trading_session_entered") or "N/A")[:14], cell_style_base),
+            Paragraph(str(trade.get("outcome") or "N/A"), cell_style_base),
+            Paragraph(f'<font color="{color_str}">{_money(amt)}</font>', cell_style_base),
+        ]
+        table_data.append(row)
+
+    col_w = [20 * mm, 28 * mm, 32 * mm, 28 * mm, 20 * mm, 22 * mm]
+    tbl = Table(table_data, colWidths=col_w)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#374151")),
+        ("ROWBACKGROUNDS", (1, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e5e7eb")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    return tbl
+
+
+class _PageNumberCanvas(rl_canvas.Canvas):
+    """Canvas that adds page numbers and a header on each page."""
+
+    def __init__(self, *args, **kwargs):
+        self._t = kwargs.pop("translations", {})
+        self._account = kwargs.pop("account_name", "")
+        self._font = kwargs.pop("font_name", "Helvetica")
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self._draw_page_number(num_pages)
+            super().showPage()
+        super().save()
+
+    def _draw_page_number(self, page_count):
+        page_label = self._t.get("page", "Page")
+        text = f"{page_label} {self._pageNumber} / {page_count}"
+        self.setFont(self._font, 8)
+        self.setFillColor(MID_GRAY)
+        width, _ = A4
+        self.drawRightString(width - 15 * mm, 10 * mm, text)
+        # Thin footer line
+        self.setStrokeColor(colors.HexColor("#e5e7eb"))
+        self.line(15 * mm, 14 * mm, width - 15 * mm, 14 * mm)
+
+
+def _generate_trading_pdf(trades_data, account_name, language, year, month):
+    """Core PDF generation. Returns bytes."""
+    t = TRANSLATIONS.get(language, TRANSLATIONS["english"])
+
+    # Register fonts
+    font_name = _get_lang_font(language, bold=False)
+    font_bold = _get_lang_font(language, bold=True)
+
+    styles = _build_styles(font_name, font_bold)
+
+    buffer = io.BytesIO()
+
+    def make_canvas(*args, **kwargs):
+        return _PageNumberCanvas(
+            *args,
+            translations=t,
+            account_name=account_name,
+            font_name=font_name,
+            **kwargs,
+        )
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=15 * mm,
+        leftMargin=15 * mm,
+        topMargin=15 * mm,
+        bottomMargin=20 * mm,
+        title=t["report_title"],
+        author="SnowAI",
+    )
+
+    story = []
+    all_trades = _parse_trades(trades_data)
+    month_trades = _filter_month(all_trades, year, month)
+    analytics = _calc_analytics(month_trades)
+
+    month_name = date(year, month, 1).strftime("%B %Y")
+
+    # ── COVER PAGE ──────────────────────────────────────────────────────────
+    story.append(Spacer(1, 30 * mm))
+    story.append(Paragraph(t["company"], styles["title"]))
+    story.append(Spacer(1, 8 * mm))
+    story.append(HRFlowable(width="100%", thickness=2, color=BLUE))
+    story.append(Spacer(1, 8 * mm))
+    story.append(Paragraph(t["report_title"], styles["subtitle"]))
+    story.append(Paragraph(month_name, styles["subtitle"]))
+    story.append(Paragraph(f'{t["account"]}: {account_name}', styles["subtitle"]))
+    story.append(Spacer(1, 15 * mm))
+
+    # Personal info block
+    personal_data = [
+        [
+            Paragraph("Tlotlo Kutlwano Motingwe", styles["cover_name"]),
+            Paragraph(""),
+        ],
+        [
+            Paragraph(t["trader"], styles["cover_role"]),
+            Paragraph(""),
+        ],
+        [
+            Paragraph(t["researcher"], styles["cover_role"]),
+            Paragraph(""),
+        ],
+        [
+            Paragraph("+27 84 731 6417", styles["small"]),
+            Paragraph(""),
+        ],
+        [
+            Paragraph("butterrobot83@gmail.com", styles["small"]),
+            Paragraph(""),
+        ],
+    ]
+    personal_tbl = Table(personal_data, colWidths=[130 * mm, 50 * mm])
+    personal_tbl.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    story.append(personal_tbl)
+    story.append(Spacer(1, 10 * mm))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e5e7eb")))
+
+    # Quick stats strip on cover
+    story.append(Spacer(1, 8 * mm))
+    pnl_color = "#057a55" if analytics["net_pnl"] >= 0 else "#c81e1e"
+    win_color = "#057a55" if analytics["win_rate"] >= 50 else "#c81e1e"
+    pf = analytics["profit_factor"]
+    pf_str = "∞" if pf == float("inf") else f"{pf:.2f}"
+    pf_color = "#057a55" if (pf == float("inf") or pf >= 1) else "#c81e1e"
+
+    cover_stats = [
+        [
+            Paragraph(f'<b>{t["total_trades"]}</b>', ParagraphStyle("cs", fontName=font_bold, fontSize=10, alignment=TA_CENTER)),
+            Paragraph(f'<b>{t["win_rate"]}</b>', ParagraphStyle("cs2", fontName=font_bold, fontSize=10, alignment=TA_CENTER)),
+            Paragraph(f'<b>{t["net_pl"]}</b>', ParagraphStyle("cs3", fontName=font_bold, fontSize=10, alignment=TA_CENTER)),
+            Paragraph(f'<b>{t["profit_factor"]}</b>', ParagraphStyle("cs4", fontName=font_bold, fontSize=10, alignment=TA_CENTER)),
+        ],
+        [
+            Paragraph(f'<b>{analytics["total_trades"]}</b>', ParagraphStyle("csv", fontName=font_bold, fontSize=18, textColor=colors.HexColor("#1a56db"), alignment=TA_CENTER)),
+            Paragraph(f'<b><font color="{win_color}">{analytics["win_rate"]:.1f}%</font></b>', ParagraphStyle("csv2", fontName=font_bold, fontSize=18, alignment=TA_CENTER)),
+            Paragraph(f'<b><font color="{pnl_color}">{_money(analytics["net_pnl"])}</font></b>', ParagraphStyle("csv3", fontName=font_bold, fontSize=18, alignment=TA_CENTER)),
+            Paragraph(f'<b><font color="{pf_color}">{pf_str}</font></b>', ParagraphStyle("csv4", fontName=font_bold, fontSize=18, alignment=TA_CENTER)),
+        ],
+    ]
+    cover_tbl = Table(cover_stats, colWidths=[45 * mm] * 4)
+    cover_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), LIGHT_GRAY),
+        ("BACKGROUND", (0, 1), (-1, 1), WHITE),
+        ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#e5e7eb")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(cover_tbl)
+    story.append(PageBreak())
+
+    # ── PAGE 2: EXECUTIVE SUMMARY ───────────────────────────────────────────
+    story.append(Paragraph(t["executive_summary"], styles["section"]))
+    story.append(HRFlowable(width="100%", thickness=1, color=BLUE))
+    story.append(Spacer(1, 4 * mm))
+
+    # Largest win/loss
+    amounts = [tr["amount"] for tr in month_trades] or [0]
+    largest_win = max(amounts)
+    largest_loss = min(amounts)
+
+    story.append(_build_summary_table(analytics, t, styles))
+    story.append(Spacer(1, 3 * mm))
+
+    extra_rows_data = [
+        [
+            Paragraph(t["largest_win"], ParagraphStyle("lbl3", fontName=font_bold, fontSize=9, textColor=DARK_GRAY)),
+            Paragraph(_money(largest_win), ParagraphStyle("v3", fontName=font_name, fontSize=9, textColor=GREEN)),
+            Paragraph(t["largest_loss"], ParagraphStyle("lbl4", fontName=font_bold, fontSize=9, textColor=DARK_GRAY)),
+            Paragraph(_money(largest_loss), ParagraphStyle("v4", fontName=font_name, fontSize=9, textColor=RED)),
+        ]
+    ]
+    extra_tbl = Table(extra_rows_data, colWidths=[55 * mm, 35 * mm, 55 * mm, 35 * mm])
+    extra_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_GRAY),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(extra_tbl)
+    story.append(Spacer(1, 6 * mm))
+
+    # ── PERFORMANCE ANALYSIS ────────────────────────────────────────────────
+    story.append(Paragraph(t["performance_analysis"], styles["section"]))
+    story.append(HRFlowable(width="100%", thickness=1, color=BLUE))
+
+    for field, label in [
+        ("day_of_week_entered", t["by_day"]),
+        ("trading_session_entered", t["by_session"]),
+        ("strategy", t["by_strategy"]),
+        ("asset", t["by_asset"]),
+    ]:
+        group_data = _group_performance(month_trades, field)
+        if group_data:
+            story.append(Spacer(1, 4 * mm))
+            story.append(Paragraph(label, styles["subsection"]))
+            story.append(_build_group_table(group_data, t, styles))
+
+    story.append(Spacer(1, 6 * mm))
+
+    # ── INSIGHTS ────────────────────────────────────────────────────────────
+    story.append(Paragraph(t["insights"], styles["section"]))
+    story.append(HRFlowable(width="100%", thickness=1, color=BLUE))
+    story.append(Spacer(1, 4 * mm))
+
+    # Best / worst day
+    day_totals = defaultdict(float)
+    for trade in month_trades:
+        td = trade.get("_parsed_date")
+        if td:
+            day_totals[td.strftime("%Y-%m-%d")] += trade["amount"]
+
+    if day_totals:
+        sorted_days = sorted(day_totals.items(), key=lambda x: x[1], reverse=True)
+        best_day = sorted_days[0]
+        worst_day = sorted_days[-1]
+
+        insights_data = [
+            [
+                Paragraph(t["best_day"], ParagraphStyle("ib", fontName=font_bold, fontSize=9, textColor=DARK_GRAY)),
+                Paragraph(f'{best_day[0]}  ({_money(best_day[1])})', ParagraphStyle("iv", fontName=font_name, fontSize=9, textColor=GREEN)),
+            ],
+            [
+                Paragraph(t["worst_day"], ParagraphStyle("iw", fontName=font_bold, fontSize=9, textColor=DARK_GRAY)),
+                Paragraph(f'{worst_day[0]}  ({_money(worst_day[1])})', ParagraphStyle("ivw", fontName=font_name, fontSize=9, textColor=RED)),
+            ],
+        ]
+        max_win_streak, max_loss_streak = _streaks(month_trades)
+        insights_data.append([
+            Paragraph(t["longest_win_streak"], ParagraphStyle("iws", fontName=font_bold, fontSize=9, textColor=DARK_GRAY)),
+            Paragraph(f'{max_win_streak} {t["trades"]}', ParagraphStyle("ivws", fontName=font_name, fontSize=9, textColor=GREEN)),
+        ])
+        insights_data.append([
+            Paragraph(t["longest_loss_streak"], ParagraphStyle("ils", fontName=font_bold, fontSize=9, textColor=DARK_GRAY)),
+            Paragraph(f'{max_loss_streak} {t["trades"]}', ParagraphStyle("ivls", fontName=font_name, fontSize=9, textColor=RED)),
+        ])
+
+        insights_tbl = Table(insights_data, colWidths=[75 * mm, 95 * mm])
+        insights_tbl.setStyle(TableStyle([
+            ("ROWBACKGROUNDS", (0, 0), (-1, -1), [WHITE, LIGHT_GRAY]),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        story.append(insights_tbl)
+
+    story.append(PageBreak())
+
+    # ── DETAILED TRADE LOG ──────────────────────────────────────────────────
+    story.append(Paragraph(t["trade_log"], styles["section"]))
+    story.append(HRFlowable(width="100%", thickness=1, color=BLUE))
+    story.append(Spacer(1, 4 * mm))
+
+    if not month_trades:
+        story.append(Paragraph(t["no_trades"], styles["normal"]))
+    else:
+        # Group by week
+        weekly = defaultdict(list)
+        for trade in month_trades:
+            td = trade.get("_parsed_date")
+            if td:
+                week_start = td - __import__("datetime").timedelta(days=td.weekday())
+                weekly[week_start.strftime("%Y-%m-%d")].append(trade)
+
+        for week_key in sorted(weekly.keys()):
+            week_trades = sorted(weekly[week_key], key=lambda x: x.get("_parsed_date") or datetime.min)
+            week_total = sum(t2["amount"] for t2 in week_trades)
+            from datetime import timedelta
+            ws = datetime.strptime(week_key, "%Y-%m-%d")
+            we = ws + timedelta(days=6)
+            week_color = "#057a55" if week_total >= 0 else "#c81e1e"
+            week_header_text = (
+                f'{t["week_of"]} {ws.strftime("%b %d")} – {we.strftime("%b %d, %Y")}  |  '
+                f'{t["total"]}: <font color="{week_color}">{_money(week_total)}</font>  |  '
+                f'{len(week_trades)} {t["trades"]}'
+            )
+            story.append(KeepTogether([
+                Paragraph(week_header_text, ParagraphStyle(
+                    "wh", fontName=font_bold, fontSize=9,
+                    textColor=DARK_GRAY, spaceBefore=6, spaceAfter=3,
+                )),
+                _build_trade_log_table(week_trades, t, styles),
+                Spacer(1, 4 * mm),
+            ]))
+
+    # ── REFLECTIONS ─────────────────────────────────────────────────────────
+    reflections = [tr for tr in month_trades if tr.get("reflection", "").strip()]
+    if reflections:
+        story.append(PageBreak())
+        story.append(Paragraph(t["reflections"], styles["section"]))
+        story.append(HRFlowable(width="100%", thickness=1, color=BLUE))
+        story.append(Spacer(1, 4 * mm))
+
+        for i, trade in enumerate(reflections, 1):
+            td = trade.get("_parsed_date")
+            date_str = td.strftime("%b %d, %Y") if td else "N/A"
+            header = f'{t["trade"]} {i}: {trade.get("asset", "N/A")} — {date_str}'
+            story.append(Paragraph(header, styles["subsection"]))
+            story.append(Paragraph(trade["reflection"], styles["normal"]))
+            story.append(Spacer(1, 3 * mm))
+
+    # Build
+    doc.build(story, canvasmaker=make_canvas)
+    buffer.seek(0)
+    return buffer.read()
+
+
+# ---------------------------------------------------------------------------
+# Django View
+# ---------------------------------------------------------------------------
+
+@csrf_exempt
+@require_http_methods(["POST", "GET"])
+def generate_trading_pdf_report_view(request):
+    """
+    Unique view name: generate_trading_pdf_report_view
+
+    GET  ?account_name=X&language=english&year=2025&month=3
+         Fetches trades from the existing endpoint and streams a PDF.
+
+    POST JSON body:
+         {
+           "account_name": "...",
+           "language": "english|chinese|japanese|korean|russian",
+           "year": 2025,
+           "month": 3,
+           "trades": [...]   // optional — if omitted, fetched internally
+         }
+    """
+    import urllib.request as urlreq
+
+    # Parse params
+    if request.method == "GET":
+        account_name = request.GET.get("account_name", "")
+        language = request.GET.get("language", "english")
+        year = int(request.GET.get("year", datetime.now().year))
+        month = int(request.GET.get("month", datetime.now().month))
+        trades_data = None
+    else:
+        try:
+            body = json.loads(request.body)
+        except Exception:
+            return JsonResponse({"error": "Invalid JSON body"}, status=400)
+        account_name = body.get("account_name", "")
+        language = body.get("language", "english")
+        year = int(body.get("year", datetime.now().year))
+        month = int(body.get("month", datetime.now().month))
+        trades_data = body.get("trades")
+
+    if not account_name:
+        return JsonResponse({"error": "account_name is required"}, status=400)
+
+    if language not in TRANSLATIONS:
+        language = "english"
+
+    # Fetch trades if not provided
+    if trades_data is None:
+        try:
+            base_url = "https://backend-production-c0ab.up.railway.app"
+            url = f"{base_url}/api/trades-calendar/?account_name={account_name}"
+            req = urlreq.Request(url)
+            with urlreq.urlopen(req, timeout=15) as resp:
+                trades_data = json.loads(resp.read().decode())
+        except Exception as e:
+            return JsonResponse({"error": f"Failed to fetch trades: {str(e)}"}, status=502)
+
+    if not isinstance(trades_data, list):
+        return JsonResponse({"error": "Invalid trades data"}, status=400)
+
+    # Generate PDF
+    try:
+        pdf_bytes = _generate_trading_pdf(trades_data, account_name, language, year, month)
+    except Exception as e:
+        import traceback
+        return JsonResponse({"error": f"PDF generation failed: {str(e)}", "detail": traceback.format_exc()}, status=500)
+
+    month_name = date(year, month, 1).strftime("%B_%Y")
+    filename = f"SnowAI_Trading_Report_{month_name}_{language}.pdf"
+
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Access-Control-Allow-Origin"] = "*"
+    response["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
 
 def book_order(request):
     if request.method == "POST":

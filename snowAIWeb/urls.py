@@ -741,6 +741,13 @@ urlpatterns = [
      path('chill/export-section-pdf/',    views.chill_export_section_pdf,    name='chill_export_section_pdf'),
      path('chill/download-section-audio/', views.chill_download_section_audio, name='chill_download_section_audio'),
 
+     path(
+        "api/trading-pdf-report/",
+        views.generate_trading_pdf_report_view,
+        name="trading_pdf_report_snowai",
+    ),
+
+
 
 
 
