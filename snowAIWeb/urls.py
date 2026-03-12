@@ -747,6 +747,9 @@ urlpatterns = [
         name="trading_pdf_report_snowai",
     ),
 
+     path('ideas_hub_reversal_v1', views.ideas_hub_reversal_v1, name='ideas_hub_reversal_v1'),
+
+
 
 
 

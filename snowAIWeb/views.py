@@ -44091,6 +44091,415 @@ def generate_trading_pdf_report_view(request):
     response["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD TO views.py
+# ADD TO urls.py:
+#   path('ideas_hub_reversal_v1', ideas_hub_reversal_v1, name='ideas_hub_reversal_v1'),
+#
+# Trend Exhaustion + Reversal Detector
+# Designed for Mega / Large / Mid Cap stocks where institutional behaviour means
+# genuine reversals tend to commit and sustain, rather than snap back.
+#
+# Strategy thesis:
+#   A trend that has been running hot (high R², extended move, rising volume)
+#   and then reverses on elevated volume with momentum divergence is MORE likely
+#   to sustain the new direction than a random choppy stock doing the same.
+#   We want to catch the FIRST DAYS of the new trend, not chase after it's
+#   already extended again.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import json
+import numpy as np
+import yfinance as yf
+from sklearn.linear_model import LinearRegression
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+
+def _rev_r2_slope(arr: np.ndarray):
+    if len(arr) < 3:
+        return 0.0, 0.0
+    X = np.arange(len(arr)).reshape(-1, 1)
+    y = arr.reshape(-1, 1)
+    m = LinearRegression().fit(X, y)
+    return float(max(0.0, min(m.score(X, y), 1.0))), float(m.coef_[0][0])
+
+
+def _rev_ema(arr: np.ndarray, period: int) -> np.ndarray:
+    """Exponential moving average."""
+    ema = np.zeros(len(arr))
+    k   = 2 / (period + 1)
+    ema[0] = arr[0]
+    for i in range(1, len(arr)):
+        ema[i] = arr[i] * k + ema[i - 1] * (1 - k)
+    return ema
+
+
+def _rev_rsi(closes: np.ndarray, period: int = 14) -> np.ndarray:
+    """Standard RSI."""
+    deltas = np.diff(closes)
+    gains  = np.where(deltas > 0, deltas, 0.0)
+    losses = np.where(deltas < 0, -deltas, 0.0)
+    avg_g  = np.zeros(len(closes))
+    avg_l  = np.zeros(len(closes))
+    # seed
+    avg_g[period] = np.mean(gains[:period])
+    avg_l[period] = np.mean(losses[:period])
+    for i in range(period + 1, len(closes)):
+        avg_g[i] = (avg_g[i - 1] * (period - 1) + gains[i - 1]) / period
+        avg_l[i] = (avg_l[i - 1] * (period - 1) + losses[i - 1]) / period
+    rs  = np.where(avg_l == 0, 100.0, avg_g / avg_l)
+    rsi = 100 - (100 / (1 + rs))
+    rsi[:period] = 50.0   # neutral before seed
+    return rsi
+
+
+def _rev_classify(
+    exhaustion_score: float,
+    reversal_score: float,
+    freshness_score: float,
+    direction: str,          # "Bull→Bear" or "Bear→Bull"
+    prior_r2: float,
+    reversal_vol_ratio: float,
+) -> dict:
+    """
+    Classify the reversal setup quality.
+
+    Grades:
+      🎯 Prime Reversal   — all three scores high, institutional quality
+      ⚡ Strong Signal    — good scores, high-probability trade
+      👀 Watch Closely    — emerging reversal, not fully confirmed
+      ⏳ Exhaustion Only  — trend worn out but no clean reversal yet
+      ❌ No Signal        — insufficient evidence
+    """
+    combined = exhaustion_score * 0.35 + reversal_score * 0.40 + freshness_score * 0.25
+
+    if combined >= 72 and reversal_score >= 65 and exhaustion_score >= 60:
+        return {
+            "grade": "Prime Reversal", "emoji": "🎯",
+            "color": "#15803D", "bg": "#DCFCE7", "border": "#86EFAC",
+            "detail": (
+                f"{'Bullish reversal' if direction == 'Bear→Bull' else 'Bearish reversal'} with high conviction. "
+                "Prior trend was extended and high-quality (institutions were in it), "
+                "reversal came on above-average volume, and the new short-term trend is already building R². "
+                "These are the setups that run — early entry, tight stop just beyond reversal candle."
+            ),
+        }
+    if combined >= 55 and reversal_score >= 45:
+        return {
+            "grade": "Strong Signal", "emoji": "⚡",
+            "color": "#2563EB", "bg": "#DBEAFE", "border": "#93C5FD",
+            "detail": (
+                "Solid reversal evidence across most metrics. "
+                "Prior trend showed genuine exhaustion and the reversal has volume behind it. "
+                "Consider a starter position with a plan to add if new-direction R² continues to build."
+            ),
+        }
+    if combined >= 38 and (exhaustion_score >= 50 or reversal_score >= 40):
+        return {
+            "grade": "Watch Closely", "emoji": "👀",
+            "color": "#D97706", "bg": "#FEF9C3", "border": "#FDE047",
+            "detail": (
+                "Some reversal characteristics present but not fully confirmed. "
+                "Could be early-stage or a temporary pullback within the prior trend. "
+                "Watch for volume and new-direction R² to increase before committing."
+            ),
+        }
+    if exhaustion_score >= 55 and reversal_score < 35:
+        return {
+            "grade": "Exhaustion Only", "emoji": "⏳",
+            "color": "#7C3AED", "bg": "#EDE9FE", "border": "#C4B5FD",
+            "detail": (
+                "Prior trend shows clear exhaustion signals but the reversal hasn't confirmed yet. "
+                "This is a pre-reversal alert — the setup is priming. "
+                "Watch for a high-volume reversal candle to trigger entry."
+            ),
+        }
+    return {
+        "grade": "No Signal", "emoji": "❌",
+        "color": "#94A3B8", "bg": "#F8FAFC", "border": "#E2E8F0",
+        "detail": "Insufficient evidence of exhaustion or reversal. Not a setup worth trading.",
+    }
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def ideas_hub_reversal_v1(request):
+    """
+    POST /ideas_hub_reversal_v1
+    Body: {
+        "symbol":    "AAPL",
+        "mc_filter": ["Mega","Large","Mid"]   // optional — for bulk scan filtering
+    }
+
+    Trend Exhaustion + Reversal Detector.
+    Returns scores and classification for whether a high-quality stock is
+    showing a fresh, institutionally-backed reversal worth trading.
+
+    ── What we measure ──────────────────────────────────────────────────────
+
+    PRIOR TREND ANALYSIS (60-day lookback)
+      prior_r2          : R² of prior trend (30–60d window) — was the trend real?
+      prior_direction   : Bullish / Bearish
+      price_extension   : How many std-devs price moved from 60d mean (stretch)
+      rsi_at_peak       : RSI when price was at its extreme (overbought/oversold?)
+      volume_divergence : Was volume declining as price pushed to extreme?
+
+    REVERSAL EVIDENCE (last 10 trading days)
+      reversal_candle   : Did price reverse on above-avg volume in last 5 days?
+      ema_cross         : Did price cross below 20 EMA (bull→bear) or above (bear→bull)?
+      reversal_vol_ratio: Volume on reversal vs prior 20d avg
+      rsi_reversal      : RSI turning from extreme back toward 50
+
+    NEW TREND FRESHNESS (last 5–10 days)
+      new_r2            : R² of new direction (last 10d) — is new trend already forming?
+      new_direction     : Direction of the new micro-trend
+      days_since_turn   : How many trading days since the reversal candle
+
+    SCORES (all 0–100)
+      exhaustion_score  : How worn-out was the prior trend?
+      reversal_score    : How convincing is the reversal itself?
+      freshness_score   : How early/clean is the new trend?
+      combined_score    : Weighted composite (35/40/25)
+
+    CLASSIFICATION
+      grade, emoji, color, bg, border, detail
+    """
+    try:
+        body      = json.loads(request.body)
+        symbol    = str(body.get("symbol", "")).strip().upper()
+        if not symbol:
+            return JsonResponse({"error": "symbol is required."}, status=400)
+
+        ticker = yf.Ticker(symbol)
+        hist   = ticker.history(period="6mo", interval="1d")
+
+        if hist.empty or len(hist) < 30:
+            return JsonResponse({"error": f"Not enough data for '{symbol}'."}, status=404)
+
+        closes  = hist["Close"].values.astype(float)
+        opens   = hist["Open"].values.astype(float)
+        highs   = hist["High"].values.astype(float)
+        lows    = hist["Low"].values.astype(float)
+        volumes = hist["Volume"].values.astype(float)
+        n       = len(closes)
+
+        # ── EMAs ─────────────────────────────────────────────────────────────
+        ema20 = _rev_ema(closes, 20)
+        ema50 = _rev_ema(closes, 50) if n >= 50 else _rev_ema(closes, 20)
+        rsi   = _rev_rsi(closes, 14)
+
+        # ── PRIOR TREND (30–60 days ago window) ─────────────────────────────
+        prior_start = max(0, n - 60)
+        prior_end   = max(10, n - 10)   # up to 10 days ago
+        prior_close = closes[prior_start:prior_end]
+        prior_vol   = volumes[prior_start:prior_end]
+
+        prior_r2, prior_slope = _rev_r2_slope(prior_close)
+        prior_direction = "Bullish" if prior_slope > 0 else "Bearish"
+
+        # Price extension: how far did price stretch from its 60d mean (in std-devs)?
+        mean_60  = float(np.mean(closes[-60:])) if n >= 60 else float(np.mean(closes))
+        std_60   = float(np.std(closes[-60:]))  if n >= 60 else float(np.std(closes))
+        # Peak price during prior trend
+        peak_idx = np.argmax(prior_close) if prior_direction == "Bullish" else np.argmin(prior_close)
+        peak_price = float(prior_close[peak_idx])
+        price_extension = abs(peak_price - mean_60) / std_60 if std_60 > 0 else 0.0
+
+        # Volume divergence: was volume declining while price was trending?
+        # Compare first-half avg vs second-half avg volume during prior trend
+        mid = len(prior_vol) // 2
+        if mid > 0 and len(prior_vol[mid:]) > 0:
+            vol_first_half  = float(np.mean(prior_vol[:mid]))
+            vol_second_half = float(np.mean(prior_vol[mid:]))
+            # Declining volume = second half lower than first (divergence)
+            vol_divergence_ratio = vol_second_half / vol_first_half if vol_first_half > 0 else 1.0
+            volume_divergence = vol_divergence_ratio < 0.85   # True if volume fading
+        else:
+            vol_divergence_ratio = 1.0
+            volume_divergence = False
+
+        # RSI at peak
+        rsi_at_peak = float(rsi[prior_start + peak_idx]) if (prior_start + peak_idx) < len(rsi) else 50.0
+
+        # ── REVERSAL EVIDENCE (last 10 days) ─────────────────────────────────
+        recent_close  = closes[-10:]
+        recent_open   = opens[-10:]
+        recent_high   = highs[-10:]
+        recent_low    = lows[-10:]
+        recent_vol    = volumes[-10:]
+        recent_ema20  = ema20[-10:]
+        recent_rsi    = rsi[-10:]
+        avg_vol_20    = float(np.mean(volumes[-21:-1])) if n >= 21 else float(np.mean(volumes))
+
+        # EMA cross: did price cross the 20 EMA in last 10 days?
+        ema_cross_bull = False   # price crossed above ema20
+        ema_cross_bear = False   # price crossed below ema20
+        for i in range(1, len(recent_close)):
+            prev_above = recent_close[i-1] > recent_ema20[i-1]
+            curr_above = recent_close[i]   > recent_ema20[i]
+            if not prev_above and curr_above:
+                ema_cross_bull = True
+            if prev_above and not curr_above:
+                ema_cross_bear = True
+
+        # Reversal candle: large-body candle in the NEW direction on above-avg volume
+        # in last 5 days
+        reversal_candle_strength = 0.0
+        reversal_vol_ratio = 0.0
+        days_since_turn = 0
+        for i in range(len(recent_close) - 5, len(recent_close)):
+            if i < 0:
+                continue
+            body   = abs(recent_close[i] - recent_open[i])
+            rng    = recent_high[i] - recent_low[i]
+            body_r = body / rng if rng > 0 else 0
+            v_rat  = recent_vol[i] / avg_vol_20 if avg_vol_20 > 0 else 1
+            # Is this candle in the OPPOSITE direction to prior trend?
+            is_reversal = (
+                (prior_direction == "Bullish" and recent_close[i] < recent_open[i]) or
+                (prior_direction == "Bearish" and recent_close[i] > recent_open[i])
+            )
+            if is_reversal and body_r > 0.5 and v_rat > 1.0:
+                strength = body_r * min(v_rat, 3.0) / 3.0   # 0–1
+                if strength > reversal_candle_strength:
+                    reversal_candle_strength = strength
+                    reversal_vol_ratio = v_rat
+                    days_since_turn = len(recent_close) - 1 - i
+
+        # RSI reversal: RSI turning from extreme back toward 50
+        rsi_was_extreme = (rsi_at_peak >= 70 and prior_direction == "Bullish") or \
+                          (rsi_at_peak <= 30 and prior_direction == "Bearish")
+        current_rsi     = float(rsi[-1])
+        rsi_reversing   = (
+            (prior_direction == "Bullish" and current_rsi < 55 and rsi_at_peak >= 65) or
+            (prior_direction == "Bearish" and current_rsi > 45 and rsi_at_peak <= 35)
+        )
+
+        # ── NEW TREND FRESHNESS (last 5–10 days) ─────────────────────────────
+        fresh_window = closes[-10:]
+        new_r2, new_slope = _rev_r2_slope(fresh_window)
+        new_direction_raw = "Bullish" if new_slope > 0 else "Bearish"
+
+        # Freshness: new direction should be OPPOSITE to prior trend
+        correct_reversal = new_direction_raw != prior_direction
+
+        # ── SCORES (0–100) ────────────────────────────────────────────────────
+
+        # Exhaustion score
+        ext_score  = min(price_extension / 3.0, 1.0) * 35     # 0–35 pts (3 std-devs = max)
+        r2_score   = prior_r2 * 25                             # 0–25 pts (prior trend had to be real)
+        rsi_score  = (abs(rsi_at_peak - 50) / 50) * 20        # 0–20 pts (how extreme was RSI?)
+        vdiv_score = 20 if volume_divergence else 0            # 0–20 pts (volume fading = exhaustion)
+        exhaustion_score = min(ext_score + r2_score + rsi_score + vdiv_score, 100.0)
+
+        # Reversal score
+        candle_pts  = reversal_candle_strength * 45            # 0–45 pts
+        ema_pts     = 25 if (ema_cross_bull or ema_cross_bear) else 0  # 0–25 pts
+        rsi_rev_pts = 20 if rsi_reversing else 0               # 0–20 pts
+        vol_pts     = min((reversal_vol_ratio - 1.0) / 2.0, 1.0) * 10 if reversal_vol_ratio > 1 else 0  # 0–10 pts
+        reversal_score = min(candle_pts + ema_pts + rsi_rev_pts + vol_pts, 100.0)
+
+        # Freshness score
+        new_r2_pts    = new_r2 * 60 if correct_reversal else 0      # 0–60 pts
+        timing_pts    = max(0, (5 - days_since_turn) / 5) * 40      # 0–40 pts — fresher = higher
+        freshness_score = min(new_r2_pts + timing_pts, 100.0)
+
+        # Combined
+        combined_score = (
+            exhaustion_score * 0.35 +
+            reversal_score   * 0.40 +
+            freshness_score  * 0.25
+        )
+
+        # ── Reversal direction ────────────────────────────────────────────────
+        direction_label = "Bear→Bull" if prior_direction == "Bullish" else "Bull→Bear"
+        # Invert: if prior was bullish, the reversal is BEARISH
+        reversal_direction = "Bearish" if prior_direction == "Bullish" else "Bullish"
+
+        # ── Classification ────────────────────────────────────────────────────
+        classification = _rev_classify(
+            exhaustion_score, reversal_score, freshness_score,
+            direction_label, prior_r2, reversal_vol_ratio,
+        )
+
+        # ── Market info ───────────────────────────────────────────────────────
+        try:
+            info       = ticker.info or {}
+            mc         = info.get("marketCap") or 0
+            if mc >= 200e9:   mc_tier = "Mega"
+            elif mc >= 10e9:  mc_tier = "Large"
+            elif mc >= 2e9:   mc_tier = "Mid"
+            else:             mc_tier = "Small/Micro"
+            name   = info.get("shortName") or info.get("longName") or symbol
+            sector = info.get("sector") or ""
+            price  = float(closes[-1])
+        except Exception:
+            mc, mc_tier, name, sector, price = 0, "Unknown", symbol, "", float(closes[-1])
+
+        # ── Recent price bars for mini-chart context (last 20 days) ──────────
+        recent_bars = []
+        for i in range(-min(20, n), 0):
+            recent_bars.append({
+                "close":   round(float(closes[i]), 2),
+                "is_up":   bool(closes[i] >= opens[i]),
+                "rsi":     round(float(rsi[i]), 1),
+                "vol_rat": round(float(volumes[i]) / avg_vol_20, 2) if avg_vol_20 > 0 else 1.0,
+            })
+
+        def fmt_score(v): return round(float(v), 1)
+
+        return JsonResponse({
+            "symbol":               symbol,
+            "name":                 name,
+            "price":                round(price, 2),
+            "mc_tier":              mc_tier,
+            "sector":               sector,
+
+            # Prior trend
+            "prior_direction":      prior_direction,
+            "prior_r2":             round(prior_r2, 3),
+            "price_extension_sd":   round(price_extension, 2),
+            "rsi_at_peak":          round(rsi_at_peak, 1),
+            "volume_divergence":    volume_divergence,
+            "vol_divergence_ratio": round(vol_divergence_ratio, 2),
+
+            # Reversal evidence
+            "reversal_direction":   reversal_direction,
+            "direction_label":      direction_label,
+            "ema_cross":            ema_cross_bull or ema_cross_bear,
+            "ema_cross_bull":       ema_cross_bull,
+            "reversal_candle":      reversal_candle_strength > 0.2,
+            "reversal_candle_str":  round(reversal_candle_strength, 3),
+            "reversal_vol_ratio":   round(reversal_vol_ratio, 2),
+            "rsi_reversing":        rsi_reversing,
+            "current_rsi":          round(current_rsi, 1),
+            "days_since_turn":      days_since_turn,
+
+            # New trend
+            "new_r2":               round(new_r2, 3),
+            "new_direction":        new_direction_raw,
+            "correct_reversal":     correct_reversal,
+
+            # Scores
+            "exhaustion_score":     fmt_score(exhaustion_score),
+            "reversal_score":       fmt_score(reversal_score),
+            "freshness_score":      fmt_score(freshness_score),
+            "combined_score":       fmt_score(combined_score),
+
+            # Classification
+            "classification":       classification,
+
+            # Recent bars
+            "recent_bars":          recent_bars,
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
     
 def book_order(request):
     if request.method == "POST":
