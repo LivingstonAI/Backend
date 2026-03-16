@@ -6654,7 +6654,6 @@ def genesys_live(request, identifier, num_positions, asset, interval, order_tick
             'average_retracement': average_retracement,
             'is_monte_carlo_bullish_prediction': is_monte_carlo_bullish_prediction,
             'is_monte_carlo_bearish_prediction': is_monte_carlo_bearish_prediction,
-            # 'is_high_elasticity_trend': is_high_elasticity_trend,
             'is_high_r_squared': is_high_r_squared
         }
     
@@ -44756,6 +44755,1298 @@ def snowai_insta_fetch_media_proxy(request):
 
     except Exception as exc:
         return JsonResponse({'error': str(exc)}, status=500)
+
+
+"""
+views.py  –  SnowAI GA/RL Sandbox
+──────────────────────────────────
+Endpoints
+  POST   /api/snowai/models/                     create model
+  GET    /api/snowai/models/                     list models (search/filter)
+  GET    /api/snowai/models/<id>/                model detail
+  DELETE /api/snowai/models/<id>/                delete model
+  POST   /api/snowai/models/<id>/start/          trigger GA run
+  POST   /api/snowai/models/<id>/pause/          pause
+  POST   /api/snowai/models/<id>/resume/         resume
+  GET    /api/snowai/models/<id>/status/         live progress poll
+  GET    /api/snowai/models/<id>/chart/<asset>/  OHLCV + trade markers
+  GET    /api/snowai/functions/                  list available functions
+  GET    /api/snowai/assets/                     asset catalogue
+  GET    /api/snowai/check-combo/                check if combo already exists
+"""
+
+import json
+import math
+import random
+import threading
+import uuid
+import base64
+import io
+import traceback
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+from django.db import transaction
+from django.db.models import Q, Max, Avg, Min
+
+from .models import (
+    SnowAIGAModel, GAChromosome, GATradeLog,
+    OHLCVCache, GAGenerationSummary,
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  ASSET CATALOGUE  (full list)
+# ─────────────────────────────────────────────────────────────────────────────
+
+ASSET_CATALOGUE = {
+    'forex': [
+        'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X',
+        'USDCAD=X', 'USDCHF=X', 'NZDUSD=X', 'EURGBP=X',
+        'EURJPY=X', 'GBPJPY=X', 'AUDJPY=X', 'EURCHF=X',
+    ],
+    'stocks': [
+        # Tech Giants & Semiconductors
+        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA',
+        'TSLA', 'META', 'AMD', 'INTC', 'ORCL', 'CSCO',
+        'ADBE', 'CRM', 'AVGO', 'QCOM', 'TXN', 'AMAT',
+        'LRCX', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'NXPI',
+        'MU', 'ADI', 'MPWR', 'SWKS', 'QRVO', 'ON',
+        'IBM', 'AAOI', 'ACLS', 'ACN', 'ADSK', 'AKAM',
+        'ANSS', 'APH', 'ANET', 'ASML', 'AVAV', 'KEYS',
+        'MCHP', 'MTSI', 'MSI', 'MDB', 'NTAP', 'NTNX',
+        'PAYC', 'PTC', 'ROP', 'SAP', 'SLAB', 'STX',
+        'TER', 'TSM', 'TYL', 'UMC', 'VRSN', 'WDC',
+        'XLNX', 'ZBRA',
+        # Software & Cloud
+        'NOW', 'INTU', 'WDAY', 'PANW', 'CRWD', 'ZS',
+        'DDOG', 'NET', 'SNOW', 'PLTR', 'TEAM', 'FTNT',
+        'OKTA', 'S', 'CYBR',
+        # Fintech & Payments
+        'V', 'MA', 'PYPL', 'ADP', 'FISV', 'FIS',
+        'ZM', 'DOCU', 'TWLO', 'SQ', 'UBER', 'LYFT',
+        'DASH', 'PINS', 'SNAP', 'SPOT', 'ROKU', 'Z',
+        'ZG', 'AFRM', 'COIN', 'HOOD', 'SOFI', 'RBLX',
+        'ASTS',
+        # Financial Services & Banks
+        'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'BLK',
+        'SCHW', 'AXP', 'SPGI', 'CME', 'ICE', 'MCO',
+        'BK', 'USB', 'PNC', 'TFC', 'COF',
+        'AFL', 'AMG', 'AON', 'AJG', 'AMP', 'BEN',
+        'CBOE', 'CINF', 'DFS', 'ERIE', 'FITB', 'FRC',
+        'GL', 'HBAN', 'HIG', 'IVZ', 'JKHY', 'KEY',
+        'L', 'LNC', 'MTB', 'NTRS', 'NDAQ', 'PFG',
+        'RF', 'RJF', 'SIVB', 'STT', 'SYF', 'TROW',
+        'WRB', 'ZION', 'CFG', 'CMA', 'FHN', 'EWBC',
+        'WAL', 'WBS', 'ALLY',
+        # Insurance
+        'BRK-B', 'PGR', 'ALL', 'TRV', 'AIG', 'MET', 'PRU',
+        # Healthcare & Pharma
+        'JNJ', 'LLY', 'UNH', 'PFE', 'ABBV', 'MRK', 'TMO',
+        'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS',
+        'CI', 'ELV', 'HUM', 'VRTX', 'REGN', 'ISRG',
+        'BIIB', 'MRNA', 'BNTX', 'SGEN', 'ALNY', 'BGNE',
+        'MCK', 'CAH', 'COR', 'IDXX', 'A', 'WAT',
+        'ALGN', 'ATRC', 'BAX', 'BDX', 'BIO', 'BSX',
+        'CERN', 'DXCM', 'EW', 'EXAS', 'HOLX', 'HSIC',
+        'ILMN', 'INCY', 'IQV', 'LH', 'MDT', 'MOH',
+        'NBIX', 'PKI', 'PODD', 'RMD', 'STE', 'SYK',
+        'TFX', 'UHS', 'WST', 'XRAY', 'ZBH', 'ZTS',
+        'TDOC', 'DOCS', 'VEEV', 'HALO', 'NVAX', 'IONS',
+        'UTHR',
+        # Consumer Discretionary & Retail
+        'HD', 'MCD', 'NKE', 'SBUX', 'TJX', 'LOW',
+        'BKNG', 'MAR', 'CMG', 'F', 'GM', 'ABNB',
+        'SHOP', 'MELI', 'EBAY', 'ETSY', 'TGT', 'ROST',
+        'YUM', 'DPZ', 'QSR', 'AAL', 'DAL', 'UAL',
+        'LUV', 'CCL', 'RCL', 'EA', 'TTWO', 'RBLX',
+        'U', 'RIVN', 'LCID',
+        'AZO', 'BBY', 'BURL', 'CPRT', 'DHI', 'DRI',
+        'EXPE', 'GPC', 'GRMN', 'HAS', 'HLT', 'KMX',
+        'LEN', 'LVS', 'MGM', 'MHK', 'NVR', 'ORLY',
+        'PHM', 'POOL', 'RL', 'TSCO', 'TPR', 'ULTA',
+        'VFC', 'WHR', 'WYNN', 'APTV', 'BWA', 'DG',
+        'DLTR', 'DDS', 'FIVE', 'FL', 'FOXA', 'FOX',
+        'GPS', 'GT', 'HBI', 'LAD', 'LKQ', 'M',
+        'NCLH', 'NWL', 'PVH',
+        # Consumer Staples
+        'WMT', 'PG', 'KO', 'PEP', 'COST', 'PM', 'MO',
+        'MDLZ', 'CL', 'KMB', 'GIS', 'KHC', 'STZ',
+        'ADM', 'BF-B', 'CAG', 'CHD', 'CLX', 'CPB',
+        'EL', 'HSY', 'K', 'KDP', 'KR', 'KVUE',
+        'MKC', 'MNST', 'SJM', 'SYY', 'TAP', 'TSN',
+        'WBA', 'BGS', 'BG', 'COKE', 'FLO', 'HRL',
+        'LANC', 'POST',
+        # Energy
+        'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX',
+        'VLO', 'OXY', 'HAL', 'DVN', 'HES', 'BKR',
+        'APA', 'CTRA', 'FANG', 'KMI', 'LNG', 'MRO',
+        'NOV', 'OKE', 'TRGP', 'WMB', 'EQT', 'AR',
+        'CLR', 'CNX', 'CQP', 'EXE', 'FTI', 'HP',
+        'MTDR', 'NBL', 'OVV', 'PBF', 'PR', 'RIG',
+        'SM', 'VAL', 'XEC',
+        # Industrials
+        'BA', 'HON', 'UNP', 'CAT', 'GE', 'RTX', 'LMT',
+        'UPS', 'DE', 'MMM', 'GD', 'NOC', 'FDX', 'CSX',
+        'HWM', 'TDG', 'HEI', 'LHX', 'TXT',
+        'AOS', 'CARR', 'CHRW', 'CMI', 'DOV', 'EMR',
+        'ETN', 'EXPD', 'FAST', 'FTV', 'GNRC', 'GWW',
+        'IEX', 'IR', 'ITW', 'J', 'JBHT', 'JCI',
+        'LDOS', 'MAS', 'NSC', 'ODFL', 'OTIS', 'PCAR',
+        'PH', 'PWR', 'ROK', 'ROL', 'RSG', 'SNA',
+        'SWK', 'TT', 'URI', 'VRSK', 'WAB', 'WM',
+        'XYL', 'ALK', 'JBLU', 'SAVE',
+        # Communication Services & Media
+        'T', 'VZ', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR',
+        'LYV', 'MTCH', 'NWSA', 'NWS', 'OMC', 'PARA',
+        'WBD', 'IPG', 'DISH',
+        # Real Estate & REITs
+        'AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'SPG', 'O',
+        'AVB', 'ARE', 'BXP', 'CBRE', 'DLR', 'EQR',
+        'ESS', 'EXR', 'FRT', 'HST', 'IRM', 'KIM',
+        'MAA', 'REG', 'SBAC', 'SLG', 'UDR', 'VTR',
+        'WELL', 'WY', 'INVH', 'PEAK', 'VNO',
+        # Materials & Chemicals
+        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'NEM', 'FCX',
+        'DOW', 'LYB', 'CE', 'ALB', 'EMN', 'SQM',
+        'AMCR', 'BALL', 'CF', 'CLF', 'CTVA', 'FMC',
+        'IP', 'MLM', 'MOS', 'NUE', 'PKG', 'PPG',
+        'SEE', 'STLD', 'SW', 'VMC', 'AVY', 'AA',
+        'MP', 'RS',
+        # Utilities
+        'NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE',
+        'AEE', 'AES', 'AWK', 'CMS', 'CNP', 'DTE',
+        'ED', 'EIX', 'ES', 'ETR', 'EVRG', 'FE',
+        'LNT', 'NI', 'NRG', 'PCG', 'PEG', 'PNW',
+        'PPL', 'VST', 'WEC', 'XEL', 'CEG',
+        # Chinese ADRs
+        'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV', 'LI',
+    ],
+    'indices': [
+        # US Indices
+        '^GSPC', '^DJI', '^IXIC', '^RUT', '^VIX',
+        # European Indices
+        '^FTSE', '^GDAXI', '^FCHI', '^IBEX', '^AEX',
+        '^SSMI', '^OMXS30', '^BFX',
+        # Asian Indices
+        '^N225', '^HSI', '000001.SS', '^STI', '^BSESN',
+        '^NSEI', '^KS11', '^TWII', '^JKSE',
+        # Other Global Indices
+        '^AXJO', '^GSPTSE', '^MXX', '^BVSP', '^MERV',
+    ],
+    'commodities': [
+        # Precious Metals
+        'GC=F', 'SI=F', 'PL=F', 'PA=F',
+        # Energy
+        'CL=F', 'BZ=F', 'NG=F', 'RB=F', 'HO=F',
+        # Base Metals
+        'HG=F', 'ALI=F',
+        # Agricultural
+        'ZC=F', 'ZW=F', 'ZS=F', 'KC=F', 'SB=F',
+        'CT=F', 'CC=F', 'LBS=F',
+    ],
+    'bonds': [
+        # US Treasury Yields
+        '^TNX', '^TYX', '^FVX', '^IRX',
+        # Treasury Futures
+        'ZN=F', 'ZB=F', 'ZT=F', 'ZF=F',
+    ],
+    'crypto': [
+        'BTC-USD', 'ETH-USD', 'BNB-USD', 'SOL-USD', 'ADA-USD',
+        'XRP-USD', 'DOGE-USD', 'AVAX-USD', 'DOT-USD', 'MATIC-USD',
+        'LINK-USD', 'UNI-USD', 'LTC-USD', 'BCH-USD', 'ATOM-USD',
+    ],
+}
+
+AVAILABLE_FUNCTIONS = [
+    # Trend
+    'is_uptrend', 'is_downtrend', 'is_ranging_market',
+    'is_bullish_market_retracement', 'is_bearish_market_retracement',
+    'is_bullish_bias', 'is_bearish_bias',
+    'is_high_r_squared',
+    # Support / Resistance
+    'is_support_level', 'is_resistance_level',
+    'is_fibonacci_level',
+    'is_ote_buy', 'is_ote_sell',
+    'is_bullish_orderblock', 'is_bearish_orderblock',
+    # Market regime
+    'is_stable_market', 'is_choppy_market', 'is_volatile_market',
+    'is_high_volume', 'is_low_volume',
+    'buy_hold', 'sell_hold', 'buy_hold_regime',
+    # Candlestick patterns
+    'is_bullish_candle', 'is_bearish_candle',
+    'is_bullish_engulfing', 'is_bearish_engulfing',
+    'is_morning_star', 'is_evening_star',
+    'is_three_white_soldiers', 'is_three_black_crows',
+    'is_morning_doji_star', 'is_evening_doji_star',
+    'is_rising_three_methods', 'is_falling_three_methods',
+    'is_hammer', 'is_hanging_man',
+    'is_inverted_hammer', 'is_shooting_star',
+    'is_bullish_kicker', 'is_bearish_kicker',
+    'is_bullish_harami', 'is_bearish_harami',
+    'is_bullish_three_line_strike', 'is_bearish_three_line_strike',
+    # Session
+    'new_york_session', 'london_session', 'asian_session',
+    'is_asian_range_buy', 'is_asian_range_sell',
+    # Weekly profile
+    'is_bullish_weekly_profile', 'is_bearish_weekly_profile',
+    # SnowAI proprietary signals
+    'snow_alpha_buy', 'snow_alpha_short',
+    'ice_beta_buy', 'ice_beta_short',
+    'frost_gamma_buy', 'frost_gamma_short',
+    'glacier_x_buy', 'glacier_x_short',
+    'avalanche_z_buy', 'avalanche_z_short',
+    'polar_prime_buy', 'polar_prime_short',
+    'blizzard_omega_buy', 'blizzard_omega_short',
+    'tundra_sigma_buy', 'tundra_sigma_short',
+    'arctic_delta_buy', 'arctic_delta_short',
+    'permafrost_theta_buy', 'permafrost_theta_short',
+    # Statistical / quantitative
+    'is_monte_carlo_bullish_prediction', 'is_monte_carlo_bearish_prediction',
+    'average_retracement',
+]
+
+# Running session state (augments DB for real-time polling)
+_SESSIONS: dict[str, dict] = {}
+_SESSION_LOCK = threading.Lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  TRADING SIGNAL FUNCTIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
+
+def _atr(df, period=14):
+    high, low, close = df['High'], df['Low'], df['Close']
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low  - close.shift()).abs(),
+    ], axis=1).max(axis=1)
+    return tr.rolling(period).mean()
+
+def _rsi(series, period=14):
+    delta = series.diff()
+    gain  = delta.clip(lower=0).rolling(period).mean()
+    loss  = (-delta.clip(upper=0)).rolling(period).mean()
+    rs    = gain / (loss + 1e-9)
+    return 100 - (100 / (1 + rs))
+
+def is_uptrend(df):
+    if len(df) < 50: return False
+    ema20 = _ema(df['Close'], 20).iloc[-1]
+    ema50 = _ema(df['Close'], 50).iloc[-1]
+    return ema20 > ema50 and df['Close'].iloc[-1] > ema20
+
+def is_downtrend(df):
+    if len(df) < 50: return False
+    ema20 = _ema(df['Close'], 20).iloc[-1]
+    ema50 = _ema(df['Close'], 50).iloc[-1]
+    return ema20 < ema50 and df['Close'].iloc[-1] < ema20
+
+def is_ranging_market(df):
+    if len(df) < 20: return False
+    recent = df['Close'].iloc[-20:]
+    return (recent.max() - recent.min()) / (recent.mean() + 1e-9) < 0.04
+
+def is_bullish_market_retracement(df):
+    if len(df) < 30: return False
+    high = df['Close'].iloc[-30:].max()
+    cur  = df['Close'].iloc[-1]
+    ret  = (high - cur) / (high + 1e-9)
+    return is_uptrend(df) and 0.03 < ret < 0.15
+
+def is_bearish_market_retracement(df):
+    if len(df) < 30: return False
+    low = df['Close'].iloc[-30:].min()
+    cur = df['Close'].iloc[-1]
+    ret = (cur - low) / (low + 1e-9)
+    return is_downtrend(df) and 0.03 < ret < 0.15
+
+def is_resistance_level(df):
+    if len(df) < 20: return False
+    cur  = df['Close'].iloc[-1]
+    high = df['High'].iloc[-20:].max()
+    return abs(cur - high) / (high + 1e-9) < 0.01
+
+def is_support_level(df):
+    if len(df) < 20: return False
+    cur = df['Close'].iloc[-1]
+    low = df['Low'].iloc[-20:].min()
+    return abs(cur - low) / (low + 1e-9) < 0.01
+
+def buy_hold(df):
+    return True
+
+def sell_hold(df):
+    return True
+
+def is_stable_market(df):
+    if len(df) < 20: return False
+    atr  = _atr(df).iloc[-1]
+    price = df['Close'].iloc[-1]
+    return atr / (price + 1e-9) < 0.01
+
+def is_choppy_market(df):
+    return is_ranging_market(df) and not is_stable_market(df)
+
+def is_volatile_market(df):
+    if len(df) < 20: return False
+    atr   = _atr(df).iloc[-1]
+    price = df['Close'].iloc[-1]
+    return atr / (price + 1e-9) > 0.025
+
+def is_bullish_bias(df):
+    if len(df) < 10: return False
+    return df['Close'].iloc[-1] > df['Close'].iloc[-10]
+
+def is_bearish_bias(df):
+    if len(df) < 10: return False
+    return df['Close'].iloc[-1] < df['Close'].iloc[-10]
+
+def is_high_volume(df):
+    if len(df) < 20 or 'Volume' not in df.columns: return False
+    return df['Volume'].iloc[-1] > df['Volume'].iloc[-20:].mean() * 1.5
+
+def is_low_volume(df):
+    if len(df) < 20 or 'Volume' not in df.columns: return False
+    return df['Volume'].iloc[-1] < df['Volume'].iloc[-20:].mean() * 0.6
+
+def is_bullish_engulfing(df):
+    if len(df) < 2: return False
+    prev, cur = df.iloc[-2], df.iloc[-1]
+    return (prev['Close'] < prev['Open'] and cur['Close'] > cur['Open']
+            and cur['Close'] > prev['Open'] and cur['Open'] < prev['Close'])
+
+def is_bearish_engulfing(df):
+    if len(df) < 2: return False
+    prev, cur = df.iloc[-2], df.iloc[-1]
+    return (prev['Close'] > prev['Open'] and cur['Close'] < cur['Open']
+            and cur['Open'] > prev['Close'] and cur['Close'] < prev['Open'])
+
+def is_hammer(df):
+    if len(df) < 1: return False
+    c = df.iloc[-1]
+    body = abs(c['Close'] - c['Open'])
+    lower_wick = min(c['Close'], c['Open']) - c['Low']
+    return lower_wick > 2 * body and body > 0
+
+def is_shooting_star(df):
+    if len(df) < 1: return False
+    c = df.iloc[-1]
+    body = abs(c['Close'] - c['Open'])
+    upper_wick = c['High'] - max(c['Close'], c['Open'])
+    return upper_wick > 2 * body and body > 0
+
+def is_high_r_squared(df):
+    if len(df) < 20: return False
+    y = df['Close'].iloc[-20:].values
+    x = np.arange(len(y))
+    corr = np.corrcoef(x, y)[0, 1]
+    return corr**2 > 0.85
+
+def snow_alpha_buy(df):
+    return is_uptrend(df) and is_bullish_market_retracement(df) and is_support_level(df)
+
+def snow_alpha_short(df):
+    return is_downtrend(df) and is_bearish_market_retracement(df) and is_resistance_level(df)
+
+def ice_beta_buy(df):
+    return is_uptrend(df) and is_high_volume(df) and is_bullish_engulfing(df)
+
+def ice_beta_short(df):
+    return is_downtrend(df) and is_high_volume(df) and is_bearish_engulfing(df)
+
+FUNC_MAP = {
+    'is_uptrend': is_uptrend, 'is_downtrend': is_downtrend,
+    'is_ranging_market': is_ranging_market,
+    'is_bullish_market_retracement': is_bullish_market_retracement,
+    'is_bearish_market_retracement': is_bearish_market_retracement,
+    'is_resistance_level': is_resistance_level, 'is_support_level': is_support_level,
+    'buy_hold': buy_hold, 'sell_hold': sell_hold,
+    'is_stable_market': is_stable_market, 'is_choppy_market': is_choppy_market,
+    'is_volatile_market': is_volatile_market,
+    'is_bullish_bias': is_bullish_bias, 'is_bearish_bias': is_bearish_bias,
+    'is_high_volume': is_high_volume, 'is_low_volume': is_low_volume,
+    'is_bullish_engulfing': is_bullish_engulfing, 'is_bearish_engulfing': is_bearish_engulfing,
+    'is_hammer': is_hammer, 'is_shooting_star': is_shooting_star,
+    'snow_alpha_buy': snow_alpha_buy, 'snow_alpha_short': snow_alpha_short,
+    'ice_beta_buy': ice_beta_buy, 'ice_beta_short': ice_beta_short,
+    'is_high_r_squared': is_high_r_squared,
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  MARKET DATA
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fetch_ohlcv(asset: str, timeframe: str, start_year: int, end_year: int) -> pd.DataFrame | None:
+    """Fetch OHLCV from yfinance, cache to DB."""
+    try:
+        ticker = yf.Ticker(asset)
+        start  = f'{start_year}-01-01'
+        end    = f'{end_year}-12-31'
+        df = ticker.history(start=start, end=end, interval=timeframe)
+        if df.empty:
+            return None
+        df.index = pd.to_datetime(df.index, utc=True)
+        df = df[['Open','High','Low','Close','Volume']].dropna()
+        return df
+    except Exception as e:
+        print(f'[SnowAI] fetch error {asset}: {e}')
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  MARKET SNAPSHOT  (base64 PNG heatmap)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _generate_market_snapshot(df: pd.DataFrame, functions: list) -> tuple[str, dict]:
+    """
+    Build a compact market-condition heatmap image as base64 PNG.
+    Returns (b64_string, meta_dict).
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
+
+        window = df.iloc[-60:] if len(df) >= 60 else df
+
+        # Compute regime metrics
+        atr_val    = float(_atr(window).iloc[-1]) if len(window) >= 14 else 0
+        price      = float(window['Close'].iloc[-1])
+        vol_ratio  = atr_val / (price + 1e-9)
+        rsi_val    = float(_rsi(window['Close']).iloc[-1]) if len(window) >= 14 else 50
+        ema20_slope = float(_ema(window['Close'], 20).diff().iloc[-1]) if len(window) >= 20 else 0
+        vol_ratio_norm = min(vol_ratio * 40, 1.0)
+
+        # 8-cell heatmap: [ATR, RSI, Trend, Volume, Ranging, Stable, Uptrend, Downtrend]
+        labels  = ['ATR', 'RSI', 'Trend\nSlope', 'Vol\nRatio',
+                   'Ranging', 'Stable', 'Uptrend', 'Downtrend']
+        values  = [
+            vol_ratio_norm,
+            rsi_val / 100,
+            min(max((ema20_slope / (price + 1e-9)) * 500 + 0.5, 0), 1),
+            min(vol_ratio * 20, 1.0),
+            1.0 if is_ranging_market(window) else 0.0,
+            1.0 if is_stable_market(window)  else 0.0,
+            1.0 if is_uptrend(window)         else 0.0,
+            1.0 if is_downtrend(window)       else 0.0,
+        ]
+
+        fig, axes = plt.subplots(2, 4, figsize=(6, 2.4))
+        fig.patch.set_facecolor('#0d1117')
+        cmap = plt.cm.get_cmap('RdYlGn')
+
+        for ax, label, val in zip(axes.flat, labels, values):
+            color = cmap(val)
+            ax.set_facecolor('#0d1117')
+            rect = mpatches.FancyBboxPatch(
+                (0.05, 0.05), 0.9, 0.9,
+                boxstyle='round,pad=0.05',
+                facecolor=(*color[:3], 0.85),
+                edgecolor='#ffffff22', linewidth=0.5,
+                transform=ax.transAxes
+            )
+            ax.add_patch(rect)
+            ax.text(0.5, 0.62, f'{val:.2f}',
+                    ha='center', va='center',
+                    transform=ax.transAxes,
+                    fontsize=9, fontweight='bold',
+                    color='white', fontfamily='monospace')
+            ax.text(0.5, 0.28, label,
+                    ha='center', va='center',
+                    transform=ax.transAxes,
+                    fontsize=6.5, color='#aaaaaa', fontfamily='monospace')
+            ax.set_xticks([]); ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+
+        plt.tight_layout(pad=0.3)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=80,
+                    facecolor='#0d1117', bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode()
+
+        meta = {
+            'atr':        round(atr_val, 6),
+            'vol_ratio':  round(vol_ratio, 6),
+            'rsi':        round(rsi_val, 2),
+            'ema20_slope': round(ema20_slope, 6),
+            'is_uptrend':  is_uptrend(window),
+            'is_ranging':  is_ranging_market(window),
+            'is_stable':   is_stable_market(window),
+        }
+        return b64, meta
+
+    except Exception as e:
+        print(f'[SnowAI] snapshot error: {e}')
+        return '', {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  STRATEGY EVALUATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _evaluate_chromosome(functions: list, datasets: dict, config: dict) -> dict:
+    """
+    Vectorised backtest across all datasets.
+    Returns fitness, win_rate, total_trades, total_pnl, sharpe, max_drawdown, trades_log.
+    """
+    tp_pct = config.get('take_profit', 4.0) / 100
+    sl_pct = config.get('stop_loss',   2.0) / 100
+    equity = config.get('initial_capital', 10000.0)
+    all_returns = []
+    all_trades  = []
+    total_wins  = 0
+
+    for asset, df in datasets.items():
+        if df is None or len(df) < 50:
+            continue
+
+        in_pos      = False
+        entry_price = 0.0
+        entry_time  = None
+        step        = max(1, len(df) // 8000)
+
+        for i in range(50, len(df), step):
+            window = df.iloc[i - 50: i]
+
+            try:
+                signal = all(
+                    FUNC_MAP[f](window)
+                    for f in functions
+                    if f in FUNC_MAP
+                )
+            except Exception:
+                continue
+
+            cur_price = float(df['Close'].iloc[i])
+            cur_time  = df.index[i]
+
+            if not in_pos and signal:
+                in_pos      = True
+                entry_price = cur_price
+                entry_time  = cur_time
+                continue
+
+            if in_pos:
+                chg = (cur_price - entry_price) / entry_price
+                if chg >= tp_pct:
+                    pnl = equity * tp_pct
+                    equity += pnl
+                    all_returns.append(tp_pct)
+                    all_trades.append({
+                        'asset': asset,
+                        'entry_time':  str(entry_time),
+                        'exit_time':   str(cur_time),
+                        'entry_price': round(entry_price, 6),
+                        'exit_price':  round(cur_price, 6),
+                        'direction':   'BUY',
+                        'pnl':         round(pnl, 4),
+                        'hit_tp':      True,
+                        'hit_sl':      False,
+                    })
+                    total_wins += 1
+                    in_pos = False
+
+                elif chg <= -sl_pct:
+                    pnl = -equity * sl_pct
+                    equity += pnl
+                    all_returns.append(-sl_pct)
+                    all_trades.append({
+                        'asset': asset,
+                        'entry_time':  str(entry_time),
+                        'exit_time':   str(cur_time),
+                        'entry_price': round(entry_price, 6),
+                        'exit_price':  round(cur_price, 6),
+                        'direction':   'BUY',
+                        'pnl':         round(pnl, 4),
+                        'hit_tp':      False,
+                        'hit_sl':      True,
+                    })
+                    in_pos = False
+
+    n = len(all_returns)
+    if n == 0:
+        return dict(fitness=0, win_rate=0, total_trades=0,
+                    total_pnl=0, sharpe=0, max_drawdown=0, trades=[])
+
+    arr        = np.array(all_returns)
+    win_rate   = total_wins / n * 100
+    total_pnl  = float(sum(t['pnl'] for t in all_trades))
+    sharpe     = float(arr.mean() / (arr.std() + 1e-9) * math.sqrt(252))
+
+    # max drawdown
+    cumulative = np.cumprod(1 + arr)
+    peak       = np.maximum.accumulate(cumulative)
+    drawdown   = (cumulative - peak) / (peak + 1e-9)
+    max_dd     = float(drawdown.min()) * 100
+
+    fitness = (
+        win_rate * 0.4
+        + (total_pnl / config.get('initial_capital', 10000) * 50)
+        + max(sharpe, 0) * 5
+        - abs(max_dd) * 0.1
+    )
+    return dict(
+        fitness=round(fitness, 4),
+        win_rate=round(win_rate, 2),
+        total_trades=n,
+        total_pnl=round(total_pnl, 2),
+        sharpe=round(sharpe, 4),
+        max_drawdown=round(max_dd, 2),
+        trades=all_trades,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  RL Q-TABLE  (epsilon-greedy function-combo selection)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _rl_select_combo(q_table: dict, available: list, n_funcs: int, epsilon: float = 0.2) -> list:
+    """Select a function combination via epsilon-greedy on the Q-table."""
+    if random.random() < epsilon or not q_table:
+        size = random.randint(2, min(4, len(available)))
+        return random.sample(available, size)
+
+    # Greedy: pick from combos with highest Q value if we've seen enough
+    scored = sorted(q_table.items(), key=lambda x: x[1], reverse=True)
+    for key, _ in scored[:10]:
+        funcs = key.split('|')
+        if all(f in available for f in funcs):
+            return funcs
+
+    size = random.randint(2, min(4, len(available)))
+    return random.sample(available, size)
+
+
+def _rl_update_q(q_table: dict, combo_key: str, reward: float, lr: float = 0.01) -> dict:
+    old = q_table.get(combo_key, 0.0)
+    q_table[combo_key] = old + lr * (reward - old)
+    return q_table
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  GENETIC ALGORITHM  (runs in background thread)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_ga(model_id: str):
+    """
+    Full GA+RL training loop.  Runs in a daemon thread triggered by the
+    scheduler or the /start/ endpoint.
+    """
+    with _SESSION_LOCK:
+        session = _SESSIONS.get(model_id, {})
+        session.setdefault('logs', [])
+        session['running'] = True
+        _SESSIONS[model_id] = session
+
+    try:
+        model = SnowAIGAModel.objects.get(id=model_id)
+        model.status     = 'running'
+        model.started_at = timezone.now()
+        model.save(update_fields=['status', 'started_at'])
+
+        config = {
+            'take_profit':    model.take_profit,
+            'stop_loss':      model.stop_loss,
+            'initial_capital': model.initial_capital,
+            'population_size': model.population_size,
+            'max_generations': model.max_generations,
+            'mutation_rate':   model.mutation_rate,
+            'elite_fraction':  model.elite_fraction,
+            'rl_lr':           model.rl_learning_rate,
+        }
+        allowed = model.get_allowed_functions() or AVAILABLE_FUNCTIONS
+        assets  = model.get_assets_list()
+
+        def _log(msg):
+            _SESSIONS[model_id]['logs'].append(msg)
+
+        _log('📡 Fetching market data…')
+        datasets = {}
+        for asset in assets:
+            df = _fetch_ohlcv(asset, model.timeframe, model.start_year, model.end_year)
+            if df is not None:
+                datasets[asset] = df
+                _log(f'  ✓ {asset}  ({len(df)} bars)')
+            else:
+                _log(f'  ✗ {asset}  (no data)')
+
+        if not datasets:
+            raise ValueError('No valid datasets loaded.')
+
+        q_table = model.get_rl_q_table()
+
+        # ── Initialise population ──────────────────────────────────────
+        population = []
+        seen_keys  = set()
+        attempts   = 0
+        while len(population) < config['population_size'] and attempts < config['population_size'] * 20:
+            attempts += 1
+            funcs = _rl_select_combo(q_table, allowed, 3, epsilon=0.5)
+            key   = '|'.join(sorted(funcs))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                population.append({'functions': funcs, 'result': None})
+
+        _log(f'🧬 Population initialised: {len(population)} individuals')
+
+        best_fitness_history = []
+
+        for gen in range(model.current_generation, config['max_generations']):
+
+            # ── Check for pause ────────────────────────────────────────
+            while _SESSIONS.get(model_id, {}).get('paused', False):
+                import time; time.sleep(0.5)
+                if not _SESSIONS.get(model_id, {}).get('running', True):
+                    return
+
+            _log(f'🔬 Generation {gen + 1}/{config["max_generations"]}')
+
+            # ── Evaluate unevaluated individuals ───────────────────────
+            for idx, ind in enumerate(population):
+                if ind['result'] is None:
+                    ind['result'] = _evaluate_chromosome(ind['functions'], datasets, config)
+                    q_table = _rl_update_q(
+                        q_table,
+                        '|'.join(sorted(ind['functions'])),
+                        ind['result']['fitness'],
+                        config['rl_lr'],
+                    )
+                    if (idx + 1) % 5 == 0:
+                        _log(f'  … {idx + 1}/{len(population)} evaluated')
+
+            # ── Sort ───────────────────────────────────────────────────
+            population.sort(key=lambda x: x['result']['fitness'], reverse=True)
+            best = population[0]
+            best_fitness_history.append(best['result']['fitness'])
+
+            _log(
+                f'  🏆 Best: [{" + ".join(best["functions"])}]  '
+                f'fit={best["result"]["fitness"]:.2f}  '
+                f'wr={best["result"]["win_rate"]:.1f}%  '
+                f'trades={best["result"]["total_trades"]}'
+            )
+
+            # ── Save generation summary ────────────────────────────────
+            fitnesses = [i['result']['fitness'] for i in population]
+            GAGenerationSummary.objects.update_or_create(
+                model=model, generation=gen,
+                defaults=dict(
+                    best_fitness=max(fitnesses),
+                    avg_fitness=sum(fitnesses) / len(fitnesses),
+                    worst_fitness=min(fitnesses),
+                    diversity=len({i['result']['fitness'] for i in population}) / len(population),
+                    top_combos=json.dumps([
+                        '|'.join(sorted(i['functions']))
+                        for i in population[:3]
+                    ]),
+                ),
+            )
+
+            # ── Persist top chromosomes ────────────────────────────────
+            elite_count = max(3, int(len(population) * config['elite_fraction']))
+            with transaction.atomic():
+                for rank, ind in enumerate(population[:elite_count]):
+                    r = ind['result']
+
+                    # Market snapshot from first dataset
+                    first_df = next(iter(datasets.values()))
+                    snapshot_b64, snapshot_meta = _generate_market_snapshot(
+                        first_df, ind['functions']
+                    )
+
+                    chrom = GAChromosome.objects.create(
+                        model=model,
+                        generation=gen,
+                        functions=json.dumps(ind['functions']),
+                        fitness=r['fitness'],
+                        win_rate=r['win_rate'],
+                        total_trades=r['total_trades'],
+                        total_pnl=r['total_pnl'],
+                        sharpe_ratio=r['sharpe'],
+                        max_drawdown=r['max_drawdown'],
+                        is_elite=(rank == 0),
+                        market_snapshot=snapshot_b64,
+                        market_snapshot_meta=json.dumps(snapshot_meta),
+                    )
+
+                    # Save trade logs
+                    trade_objs = []
+                    for t in r.get('trades', [])[:200]:  # cap per chromosome
+                        try:
+                            trade_objs.append(GATradeLog(
+                                chromosome=chrom,
+                                asset=t['asset'],
+                                entry_time=datetime.fromisoformat(t['entry_time'].replace(' ', 'T').split('+')[0]),
+                                exit_time=datetime.fromisoformat(t['exit_time'].replace(' ', 'T').split('+')[0]),
+                                entry_price=t['entry_price'],
+                                exit_price=t['exit_price'],
+                                direction=t['direction'],
+                                pnl=t['pnl'],
+                                hit_tp=t['hit_tp'],
+                                hit_sl=t['hit_sl'],
+                            ))
+                        except Exception:
+                            pass
+                    if trade_objs:
+                        GATradeLog.objects.bulk_create(trade_objs, ignore_conflicts=True)
+
+            # ── Update model state ─────────────────────────────────────
+            model.current_generation = gen + 1
+            model.progress           = int((gen + 1) / config['max_generations'] * 100)
+            model.set_rl_q_table(q_table)
+            model.save(update_fields=['current_generation', 'progress', 'rl_q_table'])
+            _SESSIONS[model_id]['progress'] = model.progress
+
+            # ── Selection + crossover + mutation ──────────────────────
+            elites    = population[:elite_count]
+            next_gen  = [dict(functions=e['functions'], result=None) for e in elites]
+
+            while len(next_gen) < config['population_size']:
+                # Tournament selection
+                p1 = max(random.sample(elites, min(3, len(elites))),
+                         key=lambda x: x['result']['fitness'])
+                p2 = max(random.sample(elites, min(3, len(elites))),
+                         key=lambda x: x['result']['fitness'])
+
+                pool  = list(set(p1['functions'] + p2['functions']))
+                size  = random.randint(2, min(4, len(pool)))
+                child = random.sample(pool, size)
+
+                # Mutation
+                if random.random() < config['mutation_rate']:
+                    action = random.choice(['add', 'remove', 'replace'])
+                    if action == 'add' and len(child) < 5:
+                        others = [f for f in allowed if f not in child]
+                        if others: child.append(random.choice(others))
+                    elif action == 'remove' and len(child) > 2:
+                        child.pop(random.randint(0, len(child) - 1))
+                    elif action == 'replace':
+                        others = [f for f in allowed if f not in child]
+                        if others:
+                            child[random.randint(0, len(child) - 1)] = random.choice(others)
+
+                # RL-guided injection every 5th slot
+                if len(next_gen) % 5 == 0:
+                    child = _rl_select_combo(q_table, allowed, 3, epsilon=0.1)
+
+                next_gen.append({'functions': child, 'result': None})
+
+            population = next_gen
+            import time; time.sleep(0.02)
+
+        # ── Finished ───────────────────────────────────────────────────
+        model.status      = 'completed'
+        model.progress    = 100
+        model.finished_at = timezone.now()
+        model.save(update_fields=['status', 'progress', 'finished_at'])
+        _log('🎉 Training complete!')
+
+    except Exception as e:
+        traceback.print_exc()
+        try:
+            model = SnowAIGAModel.objects.get(id=model_id)
+            model.status        = 'failed'
+            model.error_message = str(e)
+            model.save(update_fields=['status', 'error_message'])
+        except Exception:
+            pass
+        with _SESSION_LOCK:
+            _SESSIONS.setdefault(model_id, {})['logs'] = (
+                _SESSIONS[model_id].get('logs', []) + [f'❌ Error: {e}']
+            )
+    finally:
+        with _SESSION_LOCK:
+            if model_id in _SESSIONS:
+                _SESSIONS[model_id]['running'] = False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SCHEDULER JOB  (called by APScheduler every N minutes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def scheduler_run_pending_ga_models():
+    """
+    Entry point for the APScheduler job.
+    Picks up any 'pending' models and starts them in background threads.
+    """
+    pending = SnowAIGAModel.objects.filter(status='pending')
+    for model in pending:
+        mid = str(model.id)
+        with _SESSION_LOCK:
+            already = _SESSIONS.get(mid, {}).get('running', False)
+        if not already:
+            print(f'[SnowAI Scheduler] Starting model {model.name} ({mid})')
+            t = threading.Thread(target=_run_ga, args=(mid,), daemon=True)
+            t.start()
+
+
+# ── Add this next to your other scheduler.add_job() calls ─────────────────────
+# scheduler is already defined & started elsewhere in your views.py.
+# Just drop this in alongside your existing jobs:
+#
+# scheduler.add_job(
+#     scheduler_run_pending_ga_models,
+#     trigger=IntervalTrigger(minutes=5),
+#     id='snowai_ga_runner',
+#     name='SnowAI: pick up pending GA models every 5 min',
+#     replace_existing=True,
+# )
+#
+# Safe to leave running permanently — when there are no pending models
+# it does a single cheap DB query (.filter(status='pending')) and exits.
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _json(data, status=200):
+    return JsonResponse(data, status=status, safe=isinstance(data, dict))
+
+
+def _model_summary(m: SnowAIGAModel) -> dict:
+    best = m.get_best_chromosome()
+    gen_sums = list(
+        m.generation_summaries
+         .values('generation', 'best_fitness', 'avg_fitness')
+         .order_by('generation')
+    )
+    return {
+        'id':               str(m.id),
+        'name':             m.name,
+        'assets':           m.get_assets_list(),
+        'timeframe':        m.timeframe,
+        'start_year':       m.start_year,
+        'end_year':         m.end_year,
+        'initial_capital':  m.initial_capital,
+        'take_profit':      m.take_profit,
+        'stop_loss':        m.stop_loss,
+        'population_size':  m.population_size,
+        'max_generations':  m.max_generations,
+        'mutation_rate':    m.mutation_rate,
+        'rl_enabled':       m.rl_enabled,
+        'rl_learning_rate': m.rl_learning_rate,
+        'allowed_functions': m.get_allowed_functions(),
+        'status':           m.status,
+        'progress':         m.progress,
+        'current_generation': m.current_generation,
+        'error_message':    m.error_message,
+        'created_at':       m.created_at.isoformat(),
+        'updated_at':       m.updated_at.isoformat(),
+        'started_at':       m.started_at.isoformat() if m.started_at else None,
+        'finished_at':      m.finished_at.isoformat() if m.finished_at else None,
+        'best_chromosome': {
+            'id':          str(best.id),
+            'generation':  best.generation,
+            'functions':   best.get_functions(),
+            'fitness':     best.fitness,
+            'win_rate':    best.win_rate,
+            'total_trades': best.total_trades,
+            'total_pnl':   best.total_pnl,
+            'sharpe_ratio': best.sharpe_ratio,
+            'max_drawdown': best.max_drawdown,
+            'market_snapshot': best.market_snapshot,
+            'market_snapshot_meta': best.get_market_snapshot_meta(),
+        } if best else None,
+        'fitness_history': gen_sums,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  API VIEWS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+def model_list_create(request):
+    """GET list (search/filter) | POST create."""
+
+    if request.method == 'GET':
+        qs = SnowAIGAModel.objects.all()
+
+        # ── Search ─────────────────────────────────────────────────────
+        q = request.GET.get('q', '').strip()
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(assets__icontains=q))
+
+        # ── Filters ────────────────────────────────────────────────────
+        status = request.GET.get('status')
+        if status:
+            qs = qs.filter(status=status)
+
+        timeframe = request.GET.get('timeframe')
+        if timeframe:
+            qs = qs.filter(timeframe=timeframe)
+
+        func_filter = request.GET.get('function')
+        if func_filter:
+            qs = qs.filter(allowed_functions__icontains=func_filter)
+
+        return _json({'models': [_model_summary(m) for m in qs[:100]]})
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+        except Exception:
+            return _json({'error': 'Invalid JSON'}, 400)
+
+        # Duplicate check
+        funcs_key = json.dumps(sorted(data.get('allowed_functions', [])))
+        if SnowAIGAModel.objects.filter(
+            assets=','.join(sorted(data.get('assets', []))),
+            timeframe=data.get('timeframe', '1d'),
+            allowed_functions=funcs_key,
+        ).exists():
+            return _json({'error': 'A model with this exact combo/asset/timeframe already exists.'}, 409)
+
+        m = SnowAIGAModel.objects.create(
+            name=data.get('name', f'Model {uuid.uuid4().hex[:6]}'),
+            assets=','.join(data.get('assets', [])),
+            timeframe=data.get('timeframe', '1d'),
+            start_year=data.get('start_year', 2020),
+            end_year=data.get('end_year', 2024),
+            initial_capital=data.get('initial_capital', 10000),
+            take_profit=data.get('take_profit', 4.0),
+            stop_loss=data.get('stop_loss', 2.0),
+            population_size=data.get('population_size', 30),
+            max_generations=data.get('max_generations', 20),
+            mutation_rate=data.get('mutation_rate', 0.2),
+            elite_fraction=data.get('elite_fraction', 0.3),
+            rl_enabled=data.get('rl_enabled', True),
+            rl_learning_rate=data.get('rl_learning_rate', 0.01),
+            allowed_functions=json.dumps(sorted(data.get('allowed_functions', AVAILABLE_FUNCTIONS))),
+            status='pending',
+        )
+        return _json({'model': _model_summary(m)}, 201)
+
+    return _json({'error': 'Method not allowed'}, 405)
+
+
+@csrf_exempt
+def model_detail(request, model_id):
+    """GET detail | DELETE."""
+    try:
+        m = SnowAIGAModel.objects.get(id=model_id)
+    except SnowAIGAModel.DoesNotExist:
+        return _json({'error': 'Not found'}, 404)
+
+    if request.method == 'GET':
+        return _json({'model': _model_summary(m)})
+
+    if request.method == 'DELETE':
+        m.delete()
+        return _json({'deleted': True})
+
+    return _json({'error': 'Method not allowed'}, 405)
+
+
+@csrf_exempt
+def model_start(request, model_id):
+    """POST – kick off GA training."""
+    if request.method != 'POST':
+        return _json({'error': 'POST required'}, 405)
+    try:
+        m = SnowAIGAModel.objects.get(id=model_id)
+    except SnowAIGAModel.DoesNotExist:
+        return _json({'error': 'Not found'}, 404)
+
+    if m.status == 'running':
+        return _json({'error': 'Already running'}, 400)
+
+    m.status = 'pending'
+    m.save(update_fields=['status'])
+
+    with _SESSION_LOCK:
+        _SESSIONS[model_id] = {'logs': [], 'running': False, 'paused': False, 'progress': 0}
+
+    t = threading.Thread(target=_run_ga, args=(model_id,), daemon=True)
+    t.start()
+    return _json({'started': True})
+
+
+@csrf_exempt
+def model_pause(request, model_id):
+    if request.method != 'POST':
+        return _json({'error': 'POST required'}, 405)
+    with _SESSION_LOCK:
+        _SESSIONS.setdefault(model_id, {})['paused'] = True
+    try:
+        SnowAIGAModel.objects.filter(id=model_id).update(status='paused')
+    except Exception:
+        pass
+    return _json({'paused': True})
+
+
+@csrf_exempt
+def model_resume(request, model_id):
+    if request.method != 'POST':
+        return _json({'error': 'POST required'}, 405)
+    with _SESSION_LOCK:
+        _SESSIONS.setdefault(model_id, {})['paused'] = False
+    try:
+        SnowAIGAModel.objects.filter(id=model_id).update(status='running')
+    except Exception:
+        pass
+    return _json({'resumed': True})
+
+
+@csrf_exempt
+def model_status(request, model_id):
+    """GET – live progress for polling."""
+    try:
+        m = SnowAIGAModel.objects.get(id=model_id)
+    except SnowAIGAModel.DoesNotExist:
+        return _json({'error': 'Not found'}, 404)
+
+    session = _SESSIONS.get(str(model_id), {})
+    last_seen = int(request.GET.get('last_log', 0))
+    new_logs  = session.get('logs', [])[last_seen:]
+
+    return _json({
+        'status':       m.status,
+        'progress':     m.progress,
+        'generation':   m.current_generation,
+        'max_generations': m.max_generations,
+        'logs':         new_logs,
+        'log_offset':   last_seen + len(new_logs),
+        'paused':       session.get('paused', False),
+        'error':        m.error_message,
+    })
+
+
+@csrf_exempt
+def model_chart_data(request, model_id, asset):
+    """
+    GET – OHLCV bars + trade markers for TradingView Lightweight Charts.
+    Returns {bars: [{time, open, high, low, close}], trades: [{time, price, type, pnl}]}
+    """
+    try:
+        m = SnowAIGAModel.objects.get(id=model_id)
+    except SnowAIGAModel.DoesNotExist:
+        return _json({'error': 'Not found'}, 404)
+
+    df = _fetch_ohlcv(asset, m.timeframe, m.start_year, m.end_year)
+    if df is None:
+        return _json({'error': 'No data'}, 404)
+
+    bars = []
+    for ts, row in df.iterrows():
+        epoch = int(ts.timestamp()) if hasattr(ts, 'timestamp') else int(ts.value // 1e9)
+        bars.append({
+            'time':  epoch,
+            'open':  round(float(row['Open']),  6),
+            'high':  round(float(row['High']),  6),
+            'low':   round(float(row['Low']),   6),
+            'close': round(float(row['Close']), 6),
+        })
+
+    # Best chromosome trades for this asset
+    best = m.get_best_chromosome()
+    trade_markers = []
+    if best:
+        for t in best.trades.filter(asset=asset).order_by('entry_time'):
+            trade_markers.append({
+                'time':       int(t.entry_time.timestamp()),
+                'price':      t.entry_price,
+                'exit_price': t.exit_price,
+                'type':       t.direction,
+                'pnl':        t.pnl,
+                'hit_tp':     t.hit_tp,
+                'hit_sl':     t.hit_sl,
+            })
+
+    return _json({'bars': bars, 'trades': trade_markers, 'asset': asset})
+
+
+@csrf_exempt
+def model_chromosomes(request, model_id):
+    """GET – list chromosomes for a model (with optional gen filter)."""
+    try:
+        m = SnowAIGAModel.objects.get(id=model_id)
+    except SnowAIGAModel.DoesNotExist:
+        return _json({'error': 'Not found'}, 404)
+
+    gen = request.GET.get('generation')
+    qs  = m.chromosomes.all()
+    if gen is not None:
+        qs = qs.filter(generation=int(gen))
+    elite_only = request.GET.get('elite_only') == '1'
+    if elite_only:
+        qs = qs.filter(is_elite=True)
+
+    return _json({'chromosomes': [
+        {
+            'id':           str(c.id),
+            'generation':   c.generation,
+            'functions':    c.get_functions(),
+            'fitness':      c.fitness,
+            'win_rate':     c.win_rate,
+            'total_trades': c.total_trades,
+            'total_pnl':    c.total_pnl,
+            'sharpe_ratio': c.sharpe_ratio,
+            'max_drawdown': c.max_drawdown,
+            'is_elite':     c.is_elite,
+            'market_snapshot': c.market_snapshot,
+            'market_snapshot_meta': c.get_market_snapshot_meta(),
+        }
+        for c in qs[:50]
+    ]})
+
+
+@csrf_exempt
+def check_combo(request):
+    """
+    GET ?functions=fn1,fn2&assets=AAPL,TSLA&timeframe=1d
+    Returns whether an identical combo already exists.
+    """
+    funcs_param = request.GET.get('functions', '')
+    assets_param = request.GET.get('assets', '')
+    tf = request.GET.get('timeframe', '1d')
+
+    funcs_key = json.dumps(sorted(funcs_param.split(','))) if funcs_param else '[]'
+    assets_sorted = ','.join(sorted(a.strip() for a in assets_param.split(',') if a.strip()))
+
+    exists = SnowAIGAModel.objects.filter(
+        allowed_functions=funcs_key,
+        assets=assets_sorted,
+        timeframe=tf,
+    ).exists()
+
+    return _json({'exists': exists})
+
+
+@csrf_exempt
+def function_list(request):
+    return _json({'functions': AVAILABLE_FUNCTIONS})
+
+
+@csrf_exempt
+def asset_catalogue(request):
+    return _json({'assets': ASSET_CATALOGUE})
+
+
+scheduler.add_job(
+    scheduler_run_pending_ga_models,
+    trigger=IntervalTrigger(minutes=5),
+    id='snowai_ga_runner',
+    name='SnowAI: pick up pending GA models every 5 min',
+    replace_existing=True,
+)
+
     
 def book_order(request):
     if request.method == "POST":

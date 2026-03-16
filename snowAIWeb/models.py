@@ -2510,6 +2510,285 @@ class SnowAIInstaPost(models.Model):
 # After adding, run:
 #   python manage.py makemigrations
 #   python manage.py migrate
+
+import uuid
+import json
+from django.db import models
+from django.utils import timezone
+
+
+# ─────────────────────────────────────────────
+#  Helpers
+# ─────────────────────────────────────────────
+
+TIMEFRAME_CHOICES = [
+    ('1m', '1 Minute'), ('5m', '5 Minutes'), ('15m', '15 Minutes'),
+    ('1h', '1 Hour'), ('4h', '4 Hours'), ('1d', '1 Day'), ('1wk', '1 Week'),
+]
+
+STATUS_CHOICES = [
+    ('pending',   'Pending'),
+    ('running',   'Running'),
+    ('paused',    'Paused'),
+    ('completed', 'Completed'),
+    ('failed',    'Failed'),
+]
+
+CHART_STYLE_CHOICES = [
+    ('dark',  'Dark'),
+    ('light', 'Light'),
+    ('hud',   'HUD'),
+]
+
+CHART_TYPE_CHOICES = [
+    ('candlestick', 'Candlestick'),
+    ('line',        'Line'),
+    ('area',        'Area'),
+]
+
+
+# ─────────────────────────────────────────────
+#  Core GA / RL Model
+# ─────────────────────────────────────────────
+
+class SnowAIGAModel(models.Model):
+    """
+    Represents a single GA+RL experiment that evolves function combinations
+    across a set of assets to discover robust entry/exit strategies.
+    """
+    id           = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name         = models.CharField(max_length=120)
+
+    # ── Parameters chosen on the frontend ──────────────────────────────
+    # Comma-separated asset tickers, e.g. "AAPL,TSLA,NVDA"
+    assets            = models.TextField(help_text='Comma-separated ticker symbols')
+    timeframe         = models.CharField(max_length=5, choices=TIMEFRAME_CHOICES, default='1d')
+    start_year        = models.IntegerField(default=2020)
+    end_year          = models.IntegerField(default=2024)
+    initial_capital   = models.FloatField(default=10000.0)
+    take_profit       = models.FloatField(default=4.0,  help_text='%')
+    stop_loss         = models.FloatField(default=2.0,  help_text='%')
+
+    # ── GA hyper-parameters ────────────────────────────────────────────
+    population_size   = models.IntegerField(default=30)
+    max_generations   = models.IntegerField(default=20)
+    mutation_rate     = models.FloatField(default=0.2)
+    elite_fraction    = models.FloatField(default=0.3,  help_text='Top fraction kept unchanged')
+
+    # ── RL reward shaping ──────────────────────────────────────────────
+    rl_enabled        = models.BooleanField(default=True)
+    rl_learning_rate  = models.FloatField(default=0.01)
+    # Stores a JSON dict mapping function-combo-key -> cumulative Q-value
+    rl_q_table        = models.TextField(default='{}', blank=True)
+
+    # ── Runtime state ──────────────────────────────────────────────────
+    status            = models.CharField(max_length=16, choices=STATUS_CHOICES, default='pending')
+    current_generation = models.IntegerField(default=0)
+    progress          = models.IntegerField(default=0,  help_text='0-100 %')
+    error_message     = models.TextField(blank=True)
+
+    # ── Function pool this model may use ──────────────────────────────
+    # JSON list of allowed function names
+    allowed_functions = models.TextField(default='[]')
+
+    # ── Timestamps ─────────────────────────────────────────────────────
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+    started_at  = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'SnowAI GA Model'
+
+    def __str__(self):
+        return f'{self.name} [{self.status}]'
+
+    # ── Convenience helpers ────────────────────────────────────────────
+    def get_assets_list(self):
+        return [a.strip() for a in self.assets.split(',') if a.strip()]
+
+    def get_allowed_functions(self):
+        try:
+            return json.loads(self.allowed_functions)
+        except Exception:
+            return []
+
+    def get_rl_q_table(self):
+        try:
+            return json.loads(self.rl_q_table)
+        except Exception:
+            return {}
+
+    def set_rl_q_table(self, table: dict):
+        self.rl_q_table = json.dumps(table)
+
+    def get_best_chromosome(self):
+        return (
+            self.chromosomes
+                .filter(is_elite=True)
+                .order_by('-fitness')
+                .first()
+        )
+
+    def get_fitness_history(self):
+        """Return list of (generation, best_fitness) tuples."""
+        return list(
+            self.chromosomes
+                .values('generation')
+                .annotate(best=models.Max('fitness'))
+                .order_by('generation')
+                .values_list('generation', 'best')
+        )
+
+
+# ─────────────────────────────────────────────
+#  Chromosome (individual strategy)
+# ─────────────────────────────────────────────
+
+class GAChromosome(models.Model):
+    """
+    One individual in the GA population: an ordered set of trading functions
+    evaluated against the model's asset/timeframe universe.
+    """
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    model      = models.ForeignKey(SnowAIGAModel, on_delete=models.CASCADE,
+                                   related_name='chromosomes')
+    generation = models.IntegerField(default=0)
+
+    # JSON list of function names, e.g. ["is_uptrend", "is_support_level"]
+    functions  = models.TextField()
+
+    # ── Fitness / performance ──────────────────────────────────────────
+    fitness        = models.FloatField(default=0.0)
+    win_rate       = models.FloatField(default=0.0)
+    total_trades   = models.IntegerField(default=0)
+    total_pnl      = models.FloatField(default=0.0)
+    sharpe_ratio   = models.FloatField(default=0.0)
+    max_drawdown   = models.FloatField(default=0.0)
+
+    is_elite       = models.BooleanField(default=False)
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    # ── Market-condition snapshot ──────────────────────────────────────
+    # Base64-encoded PNG of the "market fingerprint" chart when this
+    # chromosome was evaluated (volatility / trend / volume regime heatmap).
+    market_snapshot       = models.TextField(blank=True,
+                                              help_text='Base64 PNG market-condition image')
+    market_snapshot_meta  = models.TextField(default='{}',
+                                              help_text='JSON metadata: avg_atr, trend_slope, vol_regime…')
+
+    class Meta:
+        ordering = ['-fitness']
+
+    def __str__(self):
+        funcs = self.get_functions()
+        return f'Gen{self.generation} [{"+".join(funcs)}] fit={self.fitness:.2f}'
+
+    def get_functions(self):
+        try:
+            return json.loads(self.functions)
+        except Exception:
+            return []
+
+    def get_market_snapshot_meta(self):
+        try:
+            return json.loads(self.market_snapshot_meta)
+        except Exception:
+            return {}
+
+    def combo_key(self):
+        """Deterministic key for RL Q-table lookups."""
+        return '|'.join(sorted(self.get_functions()))
+
+
+# ─────────────────────────────────────────────
+#  Trade log (per chromosome evaluation)
+# ─────────────────────────────────────────────
+
+class GATradeLog(models.Model):
+    """
+    Individual trades recorded while evaluating a chromosome against one asset.
+    Used to render the TradingView Lightweight Chart overlay.
+    """
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    chromosome  = models.ForeignKey(GAChromosome, on_delete=models.CASCADE,
+                                    related_name='trades')
+    asset       = models.CharField(max_length=20)
+
+    entry_time  = models.DateTimeField()
+    exit_time   = models.DateTimeField(null=True, blank=True)
+    entry_price = models.FloatField()
+    exit_price  = models.FloatField(null=True, blank=True)
+
+    direction   = models.CharField(max_length=4, choices=[('BUY', 'Buy'), ('SELL', 'Sell')])
+    pnl         = models.FloatField(default=0.0)
+    hit_tp      = models.BooleanField(default=False)
+    hit_sl      = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['entry_time']
+
+    def __str__(self):
+        return f'{self.asset} {self.direction} @ {self.entry_price}'
+
+
+# ─────────────────────────────────────────────
+#  OHLCV Cache (avoid hammering yfinance)
+# ─────────────────────────────────────────────
+
+class OHLCVCache(models.Model):
+    """
+    Cached market data fetched from yfinance.
+    Keyed by (asset, timeframe, date). Refreshed by the scheduler if stale.
+    """
+    asset       = models.CharField(max_length=20)
+    timeframe   = models.CharField(max_length=5)
+    date        = models.DateField()
+    open_price  = models.FloatField()
+    high_price  = models.FloatField()
+    low_price   = models.FloatField()
+    close_price = models.FloatField()
+    volume      = models.FloatField(default=0.0)
+    fetched_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('asset', 'timeframe', 'date')
+        ordering        = ['asset', 'timeframe', 'date']
+        indexes         = [models.Index(fields=['asset', 'timeframe'])]
+
+    def __str__(self):
+        return f'{self.asset} {self.timeframe} {self.date}'
+
+
+# ─────────────────────────────────────────────
+#  Generation summary (analytics)
+# ─────────────────────────────────────────────
+
+class GAGenerationSummary(models.Model):
+    """
+    Aggregated stats per generation, stored after each GA cycle.
+    Drives the interactive fitness-over-time chart on the frontend.
+    """
+    id             = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    model          = models.ForeignKey(SnowAIGAModel, on_delete=models.CASCADE,
+                                       related_name='generation_summaries')
+    generation     = models.IntegerField()
+    best_fitness   = models.FloatField(default=0.0)
+    avg_fitness    = models.FloatField(default=0.0)
+    worst_fitness  = models.FloatField(default=0.0)
+    diversity      = models.FloatField(default=0.0,
+                                       help_text='Fraction of unique combos in population')
+    # JSON list of top-3 combo keys this generation
+    top_combos     = models.TextField(default='[]')
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('model', 'generation')
+        ordering        = ['model', 'generation']
+
+    def __str__(self):
+        return f'{self.model.name} Gen{self.generation} best={self.best_fitness:.2f}'
         
 
 class ContactUs(models.Model):

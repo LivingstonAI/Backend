@@ -790,6 +790,26 @@ urlpatterns = [
         name='snowai_insta_fetch_media_proxy'
     ),
 
+        # ── Model CRUD ─────────────────────────────────────────────────────
+    path('models/',                    views.model_list_create, name='model-list-create'),
+    path('models/<str:model_id>/',     views.model_detail,      name='model-detail'),
+ 
+    # ── Model control ──────────────────────────────────────────────────
+    path('models/<str:model_id>/start/',   views.model_start,   name='model-start'),
+    path('models/<str:model_id>/pause/',   views.model_pause,   name='model-pause'),
+    path('models/<str:model_id>/resume/',  views.model_resume,  name='model-resume'),
+    path('models/<str:model_id>/status/',  views.model_status,  name='model-status'),
+ 
+    # ── Data endpoints ─────────────────────────────────────────────────
+    path('models/<str:model_id>/chromosomes/',  views.model_chromosomes, name='model-chromosomes'),
+    path('models/<str:model_id>/chart/<str:asset>/', views.model_chart_data, name='model-chart'),
+ 
+    # ── Utility ────────────────────────────────────────────────────────
+    path('check-combo/',  views.check_combo,     name='check-combo'),
+    path('functions/',    views.function_list,   name='function-list'),
+    path('assets/',       views.asset_catalogue, name='asset-catalogue'),
+
+
 
 
 
