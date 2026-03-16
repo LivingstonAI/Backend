@@ -749,6 +749,48 @@ urlpatterns = [
 
      path('ideas_hub_reversal_v1', views.ideas_hub_reversal_v1, name='ideas_hub_reversal_v1'),
 
+         # ── Instagram Categories ──────────────────────────────────────────────────
+    path(
+        'api/snowai-insta-categories/',
+        snowai_insta_get_all_categories,
+        name='snowai_insta_get_all_categories'
+    ),
+    path(
+        'api/snowai-insta-categories/create/',
+        snowai_insta_create_category,
+        name='snowai_insta_create_category'
+    ),
+ 
+    # ── Instagram Posts / Reels ───────────────────────────────────────────────
+    path(
+        'api/snowai-insta-posts/',
+        snowai_insta_get_all_posts,
+        name='snowai_insta_get_all_posts'
+    ),
+    path(
+        'api/snowai-insta-posts/create/',
+        snowai_insta_create_post,
+        name='snowai_insta_create_post'
+    ),
+    path(
+        'api/snowai-insta-posts/<int:post_id>/update/',
+        snowai_insta_update_post,
+        name='snowai_insta_update_post'
+    ),
+    path(
+        'api/snowai-insta-posts/<int:post_id>/delete/',
+        snowai_insta_delete_post,
+        name='snowai_insta_delete_post'
+    ),
+ 
+    # ── Media proxy (yt-dlp powered, best-effort) ─────────────────────────────
+    path(
+        'api/snowai-insta-fetch-media/',
+        snowai_insta_fetch_media_proxy,
+        name='snowai_insta_fetch_media_proxy'
+    ),
+
+
 
 
 

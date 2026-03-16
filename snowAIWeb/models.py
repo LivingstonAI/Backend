@@ -2417,6 +2417,99 @@ class SnowAIModelTrade(models.Model):
 
     def __str__(self):
         return f"{self.model.name} | {self.order_type} {self.asset_symbol} | {self.outcome}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD THESE MODELS TO YOUR EXISTING models.py
+# Prefix: SnowAIInsta — unique to avoid collisions in your 40k codebase
+# ─────────────────────────────────────────────────────────────────────────────
+
+from django.db import models
+import re
+
+
+class SnowAIInstaCategory(models.Model):
+    """Category for organising saved Instagram posts/reels."""
+    category_name = models.CharField(max_length=100, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'snowai_insta_categories'
+        ordering = ['category_name']
+        verbose_name = 'SnowAI Insta Category'
+        verbose_name_plural = 'SnowAI Insta Categories'
+
+    def __str__(self):
+        return self.category_name
+
+
+class SnowAIInstaPost(models.Model):
+    """A saved Instagram post or reel of interest."""
+
+    MEDIA_TYPE_CHOICES = [
+        ('POST', 'Post'),
+        ('REEL', 'Reel'),
+        ('TV', 'IGTV'),
+        ('UNKNOWN', 'Unknown'),
+    ]
+
+    title = models.CharField(max_length=255)
+    post_url = models.URLField(max_length=500)
+    account_handle = models.CharField(max_length=100, blank=True, null=True)
+    category = models.ForeignKey(
+        SnowAIInstaCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='snowai_insta_posts'
+    )
+    media_type = models.CharField(max_length=10, choices=MEDIA_TYPE_CHOICES, default='UNKNOWN')
+    caption = models.TextField(blank=True, null=True)
+    thumbnail_url = models.URLField(max_length=1000, blank=True, null=True)
+    shortcode = models.CharField(max_length=50, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    date_added = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'snowai_insta_posts'
+        ordering = ['-date_added']
+        verbose_name = 'SnowAI Insta Post'
+        verbose_name_plural = 'SnowAI Insta Posts'
+
+    def __str__(self):
+        return self.title
+
+    def get_shortcode(self):
+        if self.shortcode:
+            return self.shortcode
+        if self.post_url:
+            m = re.search(r'/(?:p|reel|tv)/([A-Za-z0-9_-]+)', self.post_url)
+            if m:
+                return m.group(1)
+        return None
+
+    def detect_media_type(self):
+        if not self.post_url:
+            return 'UNKNOWN'
+        if '/reel/' in self.post_url:
+            return 'REEL'
+        if '/tv/' in self.post_url:
+            return 'TV'
+        if '/p/' in self.post_url:
+            return 'POST'
+        return 'UNKNOWN'
+
+    def save(self, *args, **kwargs):
+        if not self.media_type or self.media_type == 'UNKNOWN':
+            self.media_type = self.detect_media_type()
+        if not self.shortcode:
+            self.shortcode = self.get_shortcode()
+        super().save(*args, **kwargs)
+
+
+# After adding, run:
+#   python manage.py makemigrations
+#   python manage.py migrate
         
 
 class ContactUs(models.Model):
