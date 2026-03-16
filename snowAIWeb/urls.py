@@ -838,6 +838,20 @@ urlpatterns = [
          views.ga_asset_catalogue,
          name='ga-asset-catalogue'),
 
+     # ── SnowAI GA Sandbox ─────────────────────────────────────────
+     path('api/snowai/models/',                                views.ga_model_list_create,  name='ga-model-list-create'),
+     path('api/snowai/models/<str:model_id>/',                 views.ga_model_detail,       name='ga-model-detail'),
+     path('api/snowai/models/<str:model_id>/start/',           views.ga_model_start,        name='ga-model-start'),
+     path('api/snowai/models/<str:model_id>/pause/',           views.ga_model_pause,        name='ga-model-pause'),
+     path('api/snowai/models/<str:model_id>/resume/',          views.ga_model_resume,       name='ga-model-resume'),
+     path('api/snowai/models/<str:model_id>/status/',          views.ga_model_status,       name='ga-model-status'),
+     path('api/snowai/models/<str:model_id>/chromosomes/',     views.ga_model_chromosomes,  name='ga-model-chromosomes'),
+     path('api/snowai/models/<str:model_id>/chart/<str:asset>/', views.ga_model_chart_data, name='ga-model-chart'),
+     path('api/snowai/check-combo/',                           views.ga_check_combo,        name='ga-check-combo'),
+     path('api/snowai/functions/',                             views.ga_function_list,      name='ga-function-list'),
+     path('api/snowai/assets/',                                views.ga_asset_catalogue,    name='ga-asset-catalogue'),
+     # ──────────────────────────────────────────────────────────────
+
 
 
 
