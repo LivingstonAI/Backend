@@ -44775,6 +44775,24 @@ Endpoints
   GET    /api/snowai/check-combo/                check if combo already exists
 """
 
+"""
+views.py  –  SnowAI GA/RL Sandbox
+──────────────────────────────────
+Endpoints
+  POST   /api/snowai/models/                     create model
+  GET    /api/snowai/models/                     list models (search/filter)
+  GET    /api/snowai/models/<id>/                model detail
+  DELETE /api/snowai/models/<id>/                delete model
+  POST   /api/snowai/models/<id>/start/          trigger GA run
+  POST   /api/snowai/models/<id>/pause/          pause
+  POST   /api/snowai/models/<id>/resume/         resume
+  GET    /api/snowai/models/<id>/status/         live progress poll
+  GET    /api/snowai/models/<id>/chart/<asset>/  OHLCV + trade markers
+  GET    /api/snowai/functions/                  list available functions
+  GET    /api/snowai/assets/                     asset catalogue
+  GET    /api/snowai/check-combo/                check if combo already exists
+"""
+
 import json
 import math
 import random
@@ -45036,24 +45054,69 @@ FUNC_MAP = _ga_build_func_map()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  MARKET DATA
+#  MARKET DATA  —  auto-detects available history per timeframe
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _fetch_ohlcv(asset: str, timeframe: str, start_year: int, end_year: int) -> pd.DataFrame | None:
-    """Fetch OHLCV from yfinance, cache to DB."""
+# yfinance hard limits per interval (what the API actually serves)
+_YF_MAX_HISTORY = {
+    '1m':  '7d',
+    '2m':  '60d',
+    '5m':  '60d',
+    '15m': '60d',
+    '30m': '60d',
+    '60m': '730d',
+    '1h':  '730d',
+    '90m': '60d',
+    '1d':  'max',
+    '5d':  'max',
+    '1wk': 'max',
+    '1mo': 'max',
+    '3mo': 'max',
+}
+
+
+def _fetch_ohlcv(asset: str, timeframe: str, start_year: int = None, end_year: int = None) -> pd.DataFrame | None:
+    """
+    Fetch OHLCV from yfinance.
+    start_year / end_year are IGNORED — we always pull the maximum
+    history the interval allows and let yfinance decide the real range.
+    This prevents users from requesting e.g. 1h data from 2008 (which
+    yfinance simply doesn't have).
+    """
     try:
-        ticker = yf.Ticker(asset)
-        start  = f'{start_year}-01-01'
-        end    = f'{end_year}-12-31'
-        df = ticker.history(start=start, end=end, interval=timeframe)
-        if df.empty:
+        ticker  = yf.Ticker(asset)
+        period  = _YF_MAX_HISTORY.get(timeframe, 'max')
+
+        df = ticker.history(period=period, interval=timeframe)
+        if df is None or df.empty:
             return None
+
         df.index = pd.to_datetime(df.index, utc=True)
-        df = df[['Open','High','Low','Close','Volume']].dropna()
-        return df
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+        return df if not df.empty else None
+
     except Exception as e:
-        print(f'[SnowAI] fetch error {asset}: {e}')
+        print(f'[SnowAI] fetch error {asset} ({timeframe}): {e}')
         return None
+
+
+def _ga_detect_range(asset: str, timeframe: str) -> dict:
+    """
+    Return the actual available date range + bar count for an asset/timeframe.
+    Used by the frontend to show users what data they'll actually get.
+    """
+    df = _fetch_ohlcv(asset, timeframe)
+    if df is None or df.empty:
+        return {'asset': asset, 'timeframe': timeframe, 'available': False,
+                'bars': 0, 'start': None, 'end': None}
+    return {
+        'asset':     asset,
+        'timeframe': timeframe,
+        'available': True,
+        'bars':      len(df),
+        'start':     str(df.index[0].date()),
+        'end':       str(df.index[-1].date()),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -45328,14 +45391,17 @@ def _run_ga(model_id: str):
             _SESSIONS[model_id]['logs'].append(msg)
 
         _log('📡 Fetching market data…')
+        _log(f'  ⏱ Timeframe: {model.timeframe} — pulling max available history')
         datasets = {}
         for asset in assets:
-            df = _fetch_ohlcv(asset, model.timeframe, model.start_year, model.end_year)
+            df = _fetch_ohlcv(asset, model.timeframe)
             if df is not None:
+                start_date = str(df.index[0].date())
+                end_date   = str(df.index[-1].date())
                 datasets[asset] = df
-                _log(f'  ✓ {asset}  ({len(df)} bars)')
+                _log(f'  ✓ {asset}  {start_date} → {end_date}  ({len(df)} bars)')
             else:
-                _log(f'  ✗ {asset}  (no data)')
+                _log(f'  ✗ {asset}  (no data available for {model.timeframe})')
 
         if not datasets:
             raise ValueError('No valid datasets loaded.')
@@ -45676,8 +45742,8 @@ def ga_model_list_create(request):
                 name=data.get('name', f'Model {uuid.uuid4().hex[:6]}'),
                 assets=assets_sorted,
                 timeframe=data.get('timeframe', '1d'),
-                start_year=int(data.get('start_year', 2020)),
-                end_year=int(data.get('end_year', 2024)),
+                start_year=0,   # not used — actual range detected at runtime from yfinance
+                end_year=0,     # not used — actual range detected at runtime from yfinance
                 initial_capital=float(data.get('initial_capital', 10000)),
                 take_profit=float(data.get('take_profit', 4.0)),
                 stop_loss=float(data.get('stop_loss', 2.0)),
@@ -45909,14 +45975,37 @@ def ga_check_combo(request):
 
 
 @csrf_exempt
-def ga_function_list(request):
+def ga_detect_data_range(request):
+    """
+    GET ?asset=AAPL&timeframe=1h
+    Returns the actual available date range yfinance has for that combo.
+    Called by the frontend when the user picks a timeframe so they can
+    see exactly what data they'll get before creating the model.
+    """
+    asset     = request.GET.get('asset', '').strip()
+    timeframe = request.GET.get('timeframe', '1d').strip()
+
+    if not asset:
+        return _ga_json({'error': 'asset param required'}, 400)
+
+    try:
+        info = _ga_detect_range(asset, timeframe)
+        # Also include a human-readable limit note
+        info['yf_max_period'] = _YF_MAX_HISTORY.get(timeframe, 'max')
+        return _ga_json(info)
+    except Exception as e:
+        traceback.print_exc()
+        return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+
+
     return _ga_json({'functions': AVAILABLE_FUNCTIONS})
 
 
 @csrf_exempt
 def ga_asset_catalogue(request):
     return _ga_json({'assets': ASSET_CATALOGUE})
-
+    
 
 scheduler.add_job(
     ga_scheduler_run_pending,

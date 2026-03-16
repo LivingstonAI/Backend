@@ -830,6 +830,10 @@ urlpatterns = [
          views.ga_check_combo,
          name='ga-check-combo'),
  
+    path('detect-range/',
+         views.ga_detect_data_range,
+         name='ga-detect-range'),
+ 
     path('functions/',
          views.ga_function_list,
          name='ga-function-list'),
@@ -837,6 +841,7 @@ urlpatterns = [
     path('assets/',
          views.ga_asset_catalogue,
          name='ga-asset-catalogue'),
+
 
      # ── SnowAI GA Sandbox ─────────────────────────────────────────
      path('api/snowai/models/',                                views.ga_model_list_create,  name='ga-model-list-create'),
