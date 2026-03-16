@@ -44775,24 +44775,6 @@ Endpoints
   GET    /api/snowai/check-combo/                check if combo already exists
 """
 
-"""
-views.py  –  SnowAI GA/RL Sandbox
-──────────────────────────────────
-Endpoints
-  POST   /api/snowai/models/                     create model
-  GET    /api/snowai/models/                     list models (search/filter)
-  GET    /api/snowai/models/<id>/                model detail
-  DELETE /api/snowai/models/<id>/                delete model
-  POST   /api/snowai/models/<id>/start/          trigger GA run
-  POST   /api/snowai/models/<id>/pause/          pause
-  POST   /api/snowai/models/<id>/resume/         resume
-  GET    /api/snowai/models/<id>/status/         live progress poll
-  GET    /api/snowai/models/<id>/chart/<asset>/  OHLCV + trade markers
-  GET    /api/snowai/functions/                  list available functions
-  GET    /api/snowai/assets/                     asset catalogue
-  GET    /api/snowai/check-combo/                check if combo already exists
-"""
-
 import json
 import math
 import random
@@ -46027,7 +46009,6 @@ def ga_detect_data_range(request):
 
     try:
         info = _ga_detect_range(asset, timeframe)
-        # Also include a human-readable limit note
         info['yf_max_period'] = _YF_MAX_HISTORY.get(timeframe, 'max')
         return _ga_json(info)
     except Exception as e:
@@ -46035,7 +46016,8 @@ def ga_detect_data_range(request):
         return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
 
 
-
+@csrf_exempt
+def ga_function_list(request):
     return _ga_json({'functions': AVAILABLE_FUNCTIONS})
 
 
@@ -46043,6 +46025,7 @@ def ga_detect_data_range(request):
 def ga_asset_catalogue(request):
     return _ga_json({'assets': ASSET_CATALOGUE})
 
+    
 scheduler.add_job(
     ga_scheduler_run_pending,
     trigger=IntervalTrigger(minutes=5),
