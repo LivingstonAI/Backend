@@ -853,7 +853,7 @@ urlpatterns = [
      path('api/snowai/models/<str:model_id>/chromosomes/',     views.ga_model_chromosomes,  name='ga-model-chromosomes'),
      path('api/snowai/models/<str:model_id>/chart/<str:asset>/', views.ga_model_chart_data, name='ga-model-chart'),
      path('api/snowai/check-combo/',                           views.ga_check_combo,        name='ga-check-combo'),
-     path('api/snowai/functions/',                             views.ga_function_list,      name='ga-function-list'),
+     # path('api/snowai/functions/',                             views.ga_function_list,      name='ga-function-list'),
      path('api/snowai/assets/',                                views.ga_asset_catalogue,    name='ga-asset-catalogue'),
      # ──────────────────────────────────────────────────────────────
 
