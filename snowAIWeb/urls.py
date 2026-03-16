@@ -834,9 +834,9 @@ urlpatterns = [
          views.ga_detect_data_range,
          name='ga-detect-range'),
  
-    path('functions/',
-         views.ga_function_list,
-         name='ga-function-list'),
+#     path('functions/',
+#          views.ga_function_list,
+#          name='ga-function-list'),
  
     path('assets/',
          views.ga_asset_catalogue,
