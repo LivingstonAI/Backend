@@ -45890,9 +45890,10 @@ def ga_function_list(request):
 def ga_asset_catalogue(request):
     return _ga_json({'assets': ASSET_CATALOGUE})
 
+
 scheduler.add_job(
-    scheduler_run_pending_ga_models,
-    trigger=IntervalTrigger(minutes=5),
+    ga_scheduler_run_pending,
+    trigger=IntervalTrigger(minutes=30),
     id='snowai_ga_runner',
     name='SnowAI: pick up pending GA models every 5 min',
     replace_existing=True,
