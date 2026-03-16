@@ -790,24 +790,54 @@ urlpatterns = [
         name='snowai_insta_fetch_media_proxy'
     ),
 
-        # ── Model CRUD ─────────────────────────────────────────────────────
-    path('models/',                    views.model_list_create, name='model-list-create'),
-    path('models/<str:model_id>/',     views.model_detail,      name='model-detail'),
+         # ── Model CRUD ──────────────────────────────────────────────────────
+    path('models/',
+         views.ga_model_list_create,
+         name='ga-model-list-create'),
  
-    # ── Model control ──────────────────────────────────────────────────
-    path('models/<str:model_id>/start/',   views.model_start,   name='model-start'),
-    path('models/<str:model_id>/pause/',   views.model_pause,   name='model-pause'),
-    path('models/<str:model_id>/resume/',  views.model_resume,  name='model-resume'),
-    path('models/<str:model_id>/status/',  views.model_status,  name='model-status'),
+    path('models/<str:model_id>/',
+         views.ga_model_detail,
+         name='ga-model-detail'),
  
-    # ── Data endpoints ─────────────────────────────────────────────────
-    path('models/<str:model_id>/chromosomes/',  views.model_chromosomes, name='model-chromosomes'),
-    path('models/<str:model_id>/chart/<str:asset>/', views.model_chart_data, name='model-chart'),
+    # ── Model control ────────────────────────────────────────────────────
+    path('models/<str:model_id>/start/',
+         views.ga_model_start,
+         name='ga-model-start'),
  
-    # ── Utility ────────────────────────────────────────────────────────
-    path('check-combo/',  views.check_combo,     name='check-combo'),
-    path('functions/',    views.function_list,   name='function-list'),
-    path('assets/',       views.asset_catalogue, name='asset-catalogue'),
+    path('models/<str:model_id>/pause/',
+         views.ga_model_pause,
+         name='ga-model-pause'),
+ 
+    path('models/<str:model_id>/resume/',
+         views.ga_model_resume,
+         name='ga-model-resume'),
+ 
+    path('models/<str:model_id>/status/',
+         views.ga_model_status,
+         name='ga-model-status'),
+ 
+    # ── Data endpoints ───────────────────────────────────────────────────
+    path('models/<str:model_id>/chromosomes/',
+         views.ga_model_chromosomes,
+         name='ga-model-chromosomes'),
+ 
+    path('models/<str:model_id>/chart/<str:asset>/',
+         views.ga_model_chart_data,
+         name='ga-model-chart'),
+ 
+    # ── Utility ──────────────────────────────────────────────────────────
+    path('check-combo/',
+         views.ga_check_combo,
+         name='ga-check-combo'),
+ 
+    path('functions/',
+         views.ga_function_list,
+         name='ga-function-list'),
+ 
+    path('assets/',
+         views.ga_asset_catalogue,
+         name='ga-asset-catalogue'),
+
 
 
 

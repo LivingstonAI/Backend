@@ -45016,24 +45016,23 @@ _SESSIONS: dict[str, dict] = {}
 _SESSION_LOCK = threading.Lock()
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  FUNC_MAP  — built dynamically from functions already in this views.py
+#  No redefinitions needed; we just look them up by name in globals().
+# ─────────────────────────────────────────────────────────────────────────────
 
-FUNC_MAP = {
-    'is_uptrend': is_uptrend, 'is_downtrend': is_downtrend,
-    'is_ranging_market': is_ranging_market,
-    'is_bullish_market_retracement': is_bullish_market_retracement,
-    'is_bearish_market_retracement': is_bearish_market_retracement,
-    'is_resistance_level': is_resistance_level, 'is_support_level': is_support_level,
-    'buy_hold': buy_hold, 'sell_hold': sell_hold,
-    'is_stable_market': is_stable_market, 'is_choppy_market': is_choppy_market,
-    'is_volatile_market': is_volatile_market,
-    'is_bullish_bias': is_bullish_bias, 'is_bearish_bias': is_bearish_bias,
-    'is_high_volume': is_high_volume, 'is_low_volume': is_low_volume,
-    'is_bullish_engulfing': is_bullish_engulfing, 'is_bearish_engulfing': is_bearish_engulfing,
-    'is_hammer': is_hammer, 'is_shooting_star': is_shooting_star,
-    'snow_alpha_buy': snow_alpha_buy, 'snow_alpha_short': snow_alpha_short,
-    'ice_beta_buy': ice_beta_buy, 'ice_beta_short': ice_beta_short,
-    'is_high_r_squared': is_high_r_squared,
-}
+def _ga_build_func_map():
+    """
+    Resolve every function name in AVAILABLE_FUNCTIONS against the module's
+    global namespace (where your existing trading functions live).
+    Unknown names are silently skipped so a missing function never crashes
+    the GA — it just won't be used in evaluation.
+    """
+    g = globals()
+    return {name: g[name] for name in AVAILABLE_FUNCTIONS if name in g and callable(g[name])}
+
+# Built once at import time; all GA code references FUNC_MAP.
+FUNC_MAP = _ga_build_func_map()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -45532,7 +45531,7 @@ def _run_ga(model_id: str):
 #  SCHEDULER JOB  (called by APScheduler every N minutes)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def scheduler_run_pending_ga_models():
+def ga_scheduler_run_pending():
     """
     Entry point for the APScheduler job.
     Picks up any 'pending' models and starts them in background threads.
@@ -45553,7 +45552,7 @@ def scheduler_run_pending_ga_models():
 # Just drop this in alongside your existing jobs:
 #
 # scheduler.add_job(
-#     scheduler_run_pending_ga_models,
+#     ga_scheduler_run_pending,
 #     trigger=IntervalTrigger(minutes=5),
 #     id='snowai_ga_runner',
 #     name='SnowAI: pick up pending GA models every 5 min',
@@ -45568,11 +45567,11 @@ def scheduler_run_pending_ga_models():
 #  HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _json(data, status=200):
+def _ga_json(data, status=200):
     return JsonResponse(data, status=status, safe=isinstance(data, dict))
 
 
-def _model_summary(m: SnowAIGAModel) -> dict:
+def _ga_model_summary(m: SnowAIGAModel) -> dict:
     best = m.get_best_chromosome()
     gen_sums = list(
         m.generation_summaries
@@ -45625,7 +45624,7 @@ def _model_summary(m: SnowAIGAModel) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @csrf_exempt
-def model_list_create(request):
+def ga_model_list_create(request):
     """GET list (search/filter) | POST create."""
 
     if request.method == 'GET':
@@ -45649,13 +45648,13 @@ def model_list_create(request):
         if func_filter:
             qs = qs.filter(allowed_functions__icontains=func_filter)
 
-        return _json({'models': [_model_summary(m) for m in qs[:100]]})
+        return _ga_json({'models': [_ga_model_summary(m) for m in qs[:100]]})
 
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
         except Exception:
-            return _json({'error': 'Invalid JSON'}, 400)
+            return _ga_json({'error': 'Invalid JSON'}, 400)
 
         # Duplicate check
         funcs_key = json.dumps(sorted(data.get('allowed_functions', [])))
@@ -45664,7 +45663,7 @@ def model_list_create(request):
             timeframe=data.get('timeframe', '1d'),
             allowed_functions=funcs_key,
         ).exists():
-            return _json({'error': 'A model with this exact combo/asset/timeframe already exists.'}, 409)
+            return _ga_json({'error': 'A model with this exact combo/asset/timeframe already exists.'}, 409)
 
         m = SnowAIGAModel.objects.create(
             name=data.get('name', f'Model {uuid.uuid4().hex[:6]}'),
@@ -45684,41 +45683,41 @@ def model_list_create(request):
             allowed_functions=json.dumps(sorted(data.get('allowed_functions', AVAILABLE_FUNCTIONS))),
             status='pending',
         )
-        return _json({'model': _model_summary(m)}, 201)
+        return _ga_json({'model': _ga_model_summary(m)}, 201)
 
-    return _json({'error': 'Method not allowed'}, 405)
+    return _ga_json({'error': 'Method not allowed'}, 405)
 
 
 @csrf_exempt
-def model_detail(request, model_id):
+def ga_model_detail(request, model_id):
     """GET detail | DELETE."""
     try:
         m = SnowAIGAModel.objects.get(id=model_id)
     except SnowAIGAModel.DoesNotExist:
-        return _json({'error': 'Not found'}, 404)
+        return _ga_json({'error': 'Not found'}, 404)
 
     if request.method == 'GET':
-        return _json({'model': _model_summary(m)})
+        return _ga_json({'model': _ga_model_summary(m)})
 
     if request.method == 'DELETE':
         m.delete()
-        return _json({'deleted': True})
+        return _ga_json({'deleted': True})
 
-    return _json({'error': 'Method not allowed'}, 405)
+    return _ga_json({'error': 'Method not allowed'}, 405)
 
 
 @csrf_exempt
-def model_start(request, model_id):
+def ga_model_start(request, model_id):
     """POST – kick off GA training."""
     if request.method != 'POST':
-        return _json({'error': 'POST required'}, 405)
+        return _ga_json({'error': 'POST required'}, 405)
     try:
         m = SnowAIGAModel.objects.get(id=model_id)
     except SnowAIGAModel.DoesNotExist:
-        return _json({'error': 'Not found'}, 404)
+        return _ga_json({'error': 'Not found'}, 404)
 
     if m.status == 'running':
-        return _json({'error': 'Already running'}, 400)
+        return _ga_json({'error': 'Already running'}, 400)
 
     m.status = 'pending'
     m.save(update_fields=['status'])
@@ -45728,48 +45727,48 @@ def model_start(request, model_id):
 
     t = threading.Thread(target=_run_ga, args=(model_id,), daemon=True)
     t.start()
-    return _json({'started': True})
+    return _ga_json({'started': True})
 
 
 @csrf_exempt
-def model_pause(request, model_id):
+def ga_model_pause(request, model_id):
     if request.method != 'POST':
-        return _json({'error': 'POST required'}, 405)
+        return _ga_json({'error': 'POST required'}, 405)
     with _SESSION_LOCK:
         _SESSIONS.setdefault(model_id, {})['paused'] = True
     try:
         SnowAIGAModel.objects.filter(id=model_id).update(status='paused')
     except Exception:
         pass
-    return _json({'paused': True})
+    return _ga_json({'paused': True})
 
 
 @csrf_exempt
-def model_resume(request, model_id):
+def ga_model_resume(request, model_id):
     if request.method != 'POST':
-        return _json({'error': 'POST required'}, 405)
+        return _ga_json({'error': 'POST required'}, 405)
     with _SESSION_LOCK:
         _SESSIONS.setdefault(model_id, {})['paused'] = False
     try:
         SnowAIGAModel.objects.filter(id=model_id).update(status='running')
     except Exception:
         pass
-    return _json({'resumed': True})
+    return _ga_json({'resumed': True})
 
 
 @csrf_exempt
-def model_status(request, model_id):
+def ga_model_status(request, model_id):
     """GET – live progress for polling."""
     try:
         m = SnowAIGAModel.objects.get(id=model_id)
     except SnowAIGAModel.DoesNotExist:
-        return _json({'error': 'Not found'}, 404)
+        return _ga_json({'error': 'Not found'}, 404)
 
     session = _SESSIONS.get(str(model_id), {})
     last_seen = int(request.GET.get('last_log', 0))
     new_logs  = session.get('logs', [])[last_seen:]
 
-    return _json({
+    return _ga_json({
         'status':       m.status,
         'progress':     m.progress,
         'generation':   m.current_generation,
@@ -45782,7 +45781,7 @@ def model_status(request, model_id):
 
 
 @csrf_exempt
-def model_chart_data(request, model_id, asset):
+def ga_model_chart_data(request, model_id, asset):
     """
     GET – OHLCV bars + trade markers for TradingView Lightweight Charts.
     Returns {bars: [{time, open, high, low, close}], trades: [{time, price, type, pnl}]}
@@ -45790,11 +45789,11 @@ def model_chart_data(request, model_id, asset):
     try:
         m = SnowAIGAModel.objects.get(id=model_id)
     except SnowAIGAModel.DoesNotExist:
-        return _json({'error': 'Not found'}, 404)
+        return _ga_json({'error': 'Not found'}, 404)
 
     df = _fetch_ohlcv(asset, m.timeframe, m.start_year, m.end_year)
     if df is None:
-        return _json({'error': 'No data'}, 404)
+        return _ga_json({'error': 'No data'}, 404)
 
     bars = []
     for ts, row in df.iterrows():
@@ -45822,16 +45821,16 @@ def model_chart_data(request, model_id, asset):
                 'hit_sl':     t.hit_sl,
             })
 
-    return _json({'bars': bars, 'trades': trade_markers, 'asset': asset})
+    return _ga_json({'bars': bars, 'trades': trade_markers, 'asset': asset})
 
 
 @csrf_exempt
-def model_chromosomes(request, model_id):
+def ga_model_chromosomes(request, model_id):
     """GET – list chromosomes for a model (with optional gen filter)."""
     try:
         m = SnowAIGAModel.objects.get(id=model_id)
     except SnowAIGAModel.DoesNotExist:
-        return _json({'error': 'Not found'}, 404)
+        return _ga_json({'error': 'Not found'}, 404)
 
     gen = request.GET.get('generation')
     qs  = m.chromosomes.all()
@@ -45841,7 +45840,7 @@ def model_chromosomes(request, model_id):
     if elite_only:
         qs = qs.filter(is_elite=True)
 
-    return _json({'chromosomes': [
+    return _ga_json({'chromosomes': [
         {
             'id':           str(c.id),
             'generation':   c.generation,
@@ -45861,7 +45860,7 @@ def model_chromosomes(request, model_id):
 
 
 @csrf_exempt
-def check_combo(request):
+def ga_check_combo(request):
     """
     GET ?functions=fn1,fn2&assets=AAPL,TSLA&timeframe=1d
     Returns whether an identical combo already exists.
@@ -45879,18 +45878,17 @@ def check_combo(request):
         timeframe=tf,
     ).exists()
 
-    return _json({'exists': exists})
+    return _ga_json({'exists': exists})
 
 
 @csrf_exempt
-def function_list(request):
-    return _json({'functions': AVAILABLE_FUNCTIONS})
+def ga_function_list(request):
+    return _ga_json({'functions': AVAILABLE_FUNCTIONS})
 
 
 @csrf_exempt
-def asset_catalogue(request):
-    return _json({'assets': ASSET_CATALOGUE})
-
+def ga_asset_catalogue(request):
+    return _ga_json({'assets': ASSET_CATALOGUE})
 
 scheduler.add_job(
     scheduler_run_pending_ga_models,
