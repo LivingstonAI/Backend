@@ -1271,7 +1271,7 @@ def update_user_assets(request, user_email):
 
 
 # Set the OpenAI API key globally
-openai.api_key = os.environ['OPENAI_API_KEY']
+# openai.api_key = os.environ['OPENAI_API_KEY']
 
 def chat_gpt(prompt):
     response = openai.ChatCompletion.create(
@@ -45012,8 +45012,8 @@ AVAILABLE_FUNCTIONS = [
 ]
 
 # Running session state (augments DB for real-time polling)
-_SESSIONS: dict[str, dict] = {}
-_SESSION_LOCK = threading.Lock()
+# Session state is now stored entirely in the DB (SnowAIGAModel.logs,
+# .status, .progress) so redeployments never lose state.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -45346,12 +45346,7 @@ def _run_ga(model_id: str):
     """
     # Ensure session exists and is marked running — don't wipe logs if the
     # scheduler already pre-initialized the session dict.
-    with _SESSION_LOCK:
-        session = _SESSIONS.setdefault(model_id, {})
-        session.setdefault('logs', [])
-        session.setdefault('paused', False)
-        session.setdefault('progress', 0)
-        session['running'] = True
+    # No in-memory session — all state lives in the DB.
 
     try:
         model = SnowAIGAModel.objects.get(id=model_id)
@@ -45382,8 +45377,7 @@ def _run_ga(model_id: str):
         assets  = model.get_assets_list()
 
         def _log(msg):
-            with _SESSION_LOCK:
-                _SESSIONS.setdefault(model_id, {}).setdefault('logs', []).append(msg)
+            model.append_log(msg)
 
         _log('📡 Fetching market data…')
         _log(f'  ⏱ Timeframe: {model.timeframe} — pulling max available history')
@@ -45422,9 +45416,10 @@ def _run_ga(model_id: str):
         for gen in range(model.current_generation, config['max_generations']):
 
             # ── Check for pause ────────────────────────────────────────
-            while _SESSIONS.get(model_id, {}).get('paused', False):
-                import time; time.sleep(0.5)
-                if not _SESSIONS.get(model_id, {}).get('running', True):
+            while SnowAIGAModel.objects.filter(id=model_id, status='paused').exists():
+                import time; time.sleep(2)
+                # Check if model was deleted or force-stopped
+                if not SnowAIGAModel.objects.filter(id=model_id).exists():
                     return
 
             _log(f'🔬 Generation {gen + 1}/{config["max_generations"]}')
@@ -45523,8 +45518,7 @@ def _run_ga(model_id: str):
             model.progress           = int((gen + 1) / config['max_generations'] * 100)
             model.set_rl_q_table(q_table)
             model.save(update_fields=['current_generation', 'progress', 'rl_q_table'])
-            with _SESSION_LOCK:
-                _SESSIONS.setdefault(model_id, {})['progress'] = model.progress
+            # progress already saved via model.save() above
 
             # ── Selection + crossover + mutation ──────────────────────
             elites    = population[:elite_count]
@@ -45579,14 +45573,12 @@ def _run_ga(model_id: str):
             model.save(update_fields=['status', 'error_message'])
         except Exception:
             pass
-        with _SESSION_LOCK:
-            _SESSIONS.setdefault(model_id, {})['logs'] = (
-                _SESSIONS[model_id].get('logs', []) + [f'❌ Error: {e}']
-            )
+        try:
+            SnowAIGAModel.objects.filter(id=model_id).first().append_log(f'❌ Error: {e}')
+        except Exception:
+            pass
     finally:
-        with _SESSION_LOCK:
-            if model_id in _SESSIONS:
-                _SESSIONS[model_id]['running'] = False
+        pass  # All state is in DB; nothing to clean up in memory.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -45597,20 +45589,15 @@ def ga_scheduler_run_pending():
     """
     Entry point for the APScheduler job.
     Picks up any 'pending' models and starts them in background threads.
-    Guards against double-starting via both the in-memory _SESSIONS flag
-    and the DB status field.
+    Guards against double-starting via the DB status field.
+    Works correctly across redeployments — no in-memory state used.
     """
     try:
         pending = SnowAIGAModel.objects.filter(status='pending')
         for model in pending:
             mid = str(model.id)
 
-            # Guard 1: in-memory check (same process)
-            with _SESSION_LOCK:
-                already = _SESSIONS.get(mid, {}).get('running', False)
-
-            if already:
-                continue
+            # Guard: DB status check (works across restarts/redeployments)
 
             # Guard 2: atomically flip status to 'running' so a second
             # scheduler tick can't pick it up again before the thread starts
@@ -45622,14 +45609,9 @@ def ga_scheduler_run_pending():
                 # Another process/tick already grabbed it
                 continue
 
-            # Pre-initialize the session dict so _log() never hits a KeyError
-            with _SESSION_LOCK:
-                _SESSIONS[mid] = {
-                    'logs':    [],
-                    'running': True,
-                    'paused':  False,
-                    'progress': 0,
-                }
+            # Clear stale logs from previous run so the log tab starts fresh
+            model.clear_logs()
+            model.append_log(f'🚀 Scheduler picked up model: {model.name}')
 
             print(f'[SnowAI Scheduler] Starting model "{model.name}" ({mid})')
             t = threading.Thread(target=_run_ga, args=(mid,), daemon=True)
@@ -45868,10 +45850,8 @@ def ga_model_start(request, model_id):
             return _ga_json({'error': 'Already running'}, 400)
 
         m.status = 'pending'
+        m.clear_logs()
         m.save(update_fields=['status'])
-
-        with _SESSION_LOCK:
-            _SESSIONS[str(model_id)] = {'logs': [], 'running': False, 'paused': False, 'progress': 0}
 
         t = threading.Thread(target=_run_ga, args=(str(model_id),), daemon=True)
         t.start()
@@ -45885,8 +45865,7 @@ def ga_model_start(request, model_id):
 def ga_model_pause(request, model_id):
     if request.method != 'POST':
         return _ga_json({'error': 'POST required'}, 405)
-    with _SESSION_LOCK:
-        _SESSIONS.setdefault(model_id, {})['paused'] = True
+    # Status updated in DB below; no in-memory session needed
     try:
         SnowAIGAModel.objects.filter(id=model_id).update(status='paused')
     except Exception:
@@ -45898,8 +45877,7 @@ def ga_model_pause(request, model_id):
 def ga_model_resume(request, model_id):
     if request.method != 'POST':
         return _ga_json({'error': 'POST required'}, 405)
-    with _SESSION_LOCK:
-        _SESSIONS.setdefault(model_id, {})['paused'] = False
+    # Status updated in DB below; no in-memory session needed
     try:
         SnowAIGAModel.objects.filter(id=model_id).update(status='running')
     except Exception:
@@ -45918,9 +45896,9 @@ def ga_model_status(request, model_id):
         return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
 
     try:
-        session   = _SESSIONS.get(str(model_id), {})
+        all_logs  = m.get_logs()
         last_seen = int(request.GET.get('last_log', 0))
-        new_logs  = session.get('logs', [])[last_seen:]
+        new_logs  = all_logs[last_seen:]
 
         return _ga_json({
             'status':          m.status,
@@ -45929,7 +45907,7 @@ def ga_model_status(request, model_id):
             'max_generations': m.max_generations,
             'logs':            new_logs,
             'log_offset':      last_seen + len(new_logs),
-            'paused':          session.get('paused', False),
+            'paused':          m.status == 'paused',
             'error':           m.error_message,
         })
     except Exception as e:
@@ -46070,6 +46048,7 @@ def ga_function_list(request):
 def ga_asset_catalogue(request):
     return _ga_json({'assets': ASSET_CATALOGUE})
 
+
 scheduler.add_job(
     ga_scheduler_run_pending,
     trigger=IntervalTrigger(minutes=5),
@@ -46077,6 +46056,7 @@ scheduler.add_job(
     name='SnowAI: pick up pending GA models every 5 min',
     replace_existing=True,
 )
+
     
 def book_order(request):
     if request.method == "POST":

@@ -2587,6 +2587,10 @@ class SnowAIGAModel(models.Model):
     progress          = models.IntegerField(default=0,  help_text='0-100 %')
     error_message     = models.TextField(blank=True)
 
+    # ── Persistent log — JSON list of strings, appended during GA run ──
+    # Stored in DB so logs survive redeployments and process restarts.
+    logs              = models.TextField(default='[]', blank=True)
+
     # ── Function pool this model may use ──────────────────────────────
     # JSON list of allowed function names
     allowed_functions = models.TextField(default='[]')
@@ -2622,6 +2626,28 @@ class SnowAIGAModel(models.Model):
 
     def set_rl_q_table(self, table: dict):
         self.rl_q_table = json.dumps(table)
+
+    # ── Log helpers ───────────────────────────────────────────────────
+    def get_logs(self) -> list:
+        try:
+            return json.loads(self.logs)
+        except Exception:
+            return []
+
+    def append_log(self, msg: str):
+        """Append a single log line and persist immediately."""
+        try:
+            current = json.loads(self.logs)
+        except Exception:
+            current = []
+        current.append(msg)
+        # Keep last 500 lines so the column never grows unbounded
+        if len(current) > 500:
+            current = current[-500:]
+        SnowAIGAModel.objects.filter(pk=self.pk).update(logs=json.dumps(current))
+
+    def clear_logs(self):
+        SnowAIGAModel.objects.filter(pk=self.pk).update(logs='[]')
 
     def get_best_chromosome(self):
         return (
@@ -2788,8 +2814,7 @@ class GAGenerationSummary(models.Model):
         ordering        = ['model', 'generation']
 
     def __str__(self):
-        return f'{self.model.name} Gen{self.generation} best={self.best_fitness:.2f}'
-        
+        return f'{self.model.name} Gen{self.generation} best={self.best_fitness:.2f}'        
 
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
