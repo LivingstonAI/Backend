@@ -45344,17 +45344,29 @@ def _run_ga(model_id: str):
     Full GA+RL training loop.  Runs in a daemon thread triggered by the
     scheduler or the /start/ endpoint.
     """
+    # Ensure session exists and is marked running — don't wipe logs if the
+    # scheduler already pre-initialized the session dict.
     with _SESSION_LOCK:
-        session = _SESSIONS.get(model_id, {})
+        session = _SESSIONS.setdefault(model_id, {})
         session.setdefault('logs', [])
+        session.setdefault('paused', False)
+        session.setdefault('progress', 0)
         session['running'] = True
-        _SESSIONS[model_id] = session
 
     try:
         model = SnowAIGAModel.objects.get(id=model_id)
-        model.status     = 'running'
-        model.started_at = timezone.now()
-        model.save(update_fields=['status', 'started_at'])
+
+        # Only update status/started_at if not already running
+        # (scheduler pre-sets status='running' before spawning the thread)
+        update_fields = []
+        if model.status != 'running':
+            model.status = 'running'
+            update_fields.append('status')
+        if not model.started_at:
+            model.started_at = timezone.now()
+            update_fields.append('started_at')
+        if update_fields:
+            model.save(update_fields=update_fields)
 
         config = {
             'take_profit':    model.take_profit,
@@ -45370,7 +45382,8 @@ def _run_ga(model_id: str):
         assets  = model.get_assets_list()
 
         def _log(msg):
-            _SESSIONS[model_id]['logs'].append(msg)
+            with _SESSION_LOCK:
+                _SESSIONS.setdefault(model_id, {}).setdefault('logs', []).append(msg)
 
         _log('📡 Fetching market data…')
         _log(f'  ⏱ Timeframe: {model.timeframe} — pulling max available history')
@@ -45510,7 +45523,8 @@ def _run_ga(model_id: str):
             model.progress           = int((gen + 1) / config['max_generations'] * 100)
             model.set_rl_q_table(q_table)
             model.save(update_fields=['current_generation', 'progress', 'rl_q_table'])
-            _SESSIONS[model_id]['progress'] = model.progress
+            with _SESSION_LOCK:
+                _SESSIONS.setdefault(model_id, {})['progress'] = model.progress
 
             # ── Selection + crossover + mutation ──────────────────────
             elites    = population[:elite_count]
@@ -45583,16 +45597,47 @@ def ga_scheduler_run_pending():
     """
     Entry point for the APScheduler job.
     Picks up any 'pending' models and starts them in background threads.
+    Guards against double-starting via both the in-memory _SESSIONS flag
+    and the DB status field.
     """
-    pending = SnowAIGAModel.objects.filter(status='pending')
-    for model in pending:
-        mid = str(model.id)
-        with _SESSION_LOCK:
-            already = _SESSIONS.get(mid, {}).get('running', False)
-        if not already:
-            print(f'[SnowAI Scheduler] Starting model {model.name} ({mid})')
+    try:
+        pending = SnowAIGAModel.objects.filter(status='pending')
+        for model in pending:
+            mid = str(model.id)
+
+            # Guard 1: in-memory check (same process)
+            with _SESSION_LOCK:
+                already = _SESSIONS.get(mid, {}).get('running', False)
+
+            if already:
+                continue
+
+            # Guard 2: atomically flip status to 'running' so a second
+            # scheduler tick can't pick it up again before the thread starts
+            updated = SnowAIGAModel.objects.filter(
+                id=model.id, status='pending'
+            ).update(status='running')
+
+            if not updated:
+                # Another process/tick already grabbed it
+                continue
+
+            # Pre-initialize the session dict so _log() never hits a KeyError
+            with _SESSION_LOCK:
+                _SESSIONS[mid] = {
+                    'logs':    [],
+                    'running': True,
+                    'paused':  False,
+                    'progress': 0,
+                }
+
+            print(f'[SnowAI Scheduler] Starting model "{model.name}" ({mid})')
             t = threading.Thread(target=_run_ga, args=(mid,), daemon=True)
             t.start()
+
+    except Exception as e:
+        print(f'[SnowAI Scheduler] Error in ga_scheduler_run_pending: {e}')
+        traceback.print_exc()
 
 
 # ── Add this next to your other scheduler.add_job() calls ─────────────────────
@@ -46025,7 +46070,6 @@ def ga_function_list(request):
 def ga_asset_catalogue(request):
     return _ga_json({'assets': ASSET_CATALOGUE})
 
-    
 scheduler.add_job(
     ga_scheduler_run_pending,
     trigger=IntervalTrigger(minutes=5),
