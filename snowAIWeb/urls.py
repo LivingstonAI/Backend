@@ -855,7 +855,38 @@ urlpatterns = [
      path('api/snowai/check-combo/',                           views.ga_check_combo,        name='ga-check-combo'),
      path('api/snowai/functions/',                             views.ga_function_list,      name='ga-function-list'),
      path('api/snowai/assets/',                                views.ga_asset_catalogue,    name='ga-asset-catalogue'),
+
      # ──────────────────────────────────────────────────────────────
+
+     path(
+        'api/snowai-save-transcript/',
+        snowai_stream_transcript_save,
+        name='snowai_stream_transcript_save',
+    ),
+ 
+    # ── List all Web Speech API transcripts (GET) ─────────────────────────────
+    # Optional params: ?category=youtube &search=fed &limit=50
+    path(
+        'api/snowai-stream-transcripts/',
+        snowai_stream_transcript_list,
+        name='snowai_stream_transcript_list',
+    ),
+ 
+    # ── Get a single transcript with full text (GET) ──────────────────────────
+    path(
+        'api/snowai-stream-transcripts/<str:transcript_uuid>/',
+        snowai_stream_transcript_detail,
+        name='snowai_stream_transcript_detail',
+    ),
+ 
+    # ── Delete a transcript (DELETE) ──────────────────────────────────────────
+    # Safety-guarded: only deletes web_speech_api records, won't touch yt-dlp ones
+    path(
+        'api/snowai-stream-transcripts/<str:transcript_uuid>/delete/',
+        snowai_stream_transcript_delete,
+        name='snowai_stream_transcript_delete',
+    ),
+
 
 
 

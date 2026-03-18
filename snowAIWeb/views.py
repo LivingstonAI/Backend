@@ -46074,6 +46074,246 @@ scheduler.add_job(
     replace_existing=True,
 )
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD THESE VIEWS TO YOUR EXISTING views.py
+# Prefix: snowai_stream_transcript_  — safe alongside your existing codebase
+# These handle transcripts captured via the Web Speech API in SnowAI Stream.
+# They reuse your existing SnowAIVideoTranscriptRecord model — no new model needed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import json
+import uuid as uuid_lib
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+# ── Import your existing model ────────────────────────────────────────────────
+# This already exists in your codebase — just import it here
+from .models import SnowAIVideoTranscriptRecord
+
+
+# ── UTILITY ───────────────────────────────────────────────────────────────────
+
+def snowai_stream_transcript_safe_truncate(value, max_length):
+    """Safely truncate a string field to max_length. Returns empty string for None."""
+    if not value:
+        return ''
+    return str(value)[:max_length]
+
+
+def snowai_stream_transcript_serialize(record):
+    """Serialize a SnowAIVideoTranscriptRecord to a dict for API responses."""
+    return {
+        'id':                   record.id,
+        'transcript_uuid':      record.transcript_uuid,
+        'video_title':          record.video_title,
+        'primary_speaker_name': record.primary_speaker_name,
+        'content_category':     record.content_category,
+        'transcription_method': record.transcription_method,
+        'transcript_language':  record.transcript_language,
+        'word_count':           record.word_count,
+        'processing_status':    record.processing_status,
+        'created_at':           record.created_at.isoformat() if record.created_at else None,
+        # Truncated preview — full text can be large
+        'text_preview':         (record.full_transcript_text or '')[:300] + ('…' if len(record.full_transcript_text or '') > 300 else ''),
+    }
+
+
+# ── SAVE TRANSCRIPT ───────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_stream_transcript_save(request):
+    """
+    Save a transcript captured via the Web Speech API in SnowAI Stream.
+
+    Accepts JSON body with:
+        transcript_uuid      (str, optional — generated server-side if missing)
+        video_title          (str, required)
+        full_transcript_text (str, required)
+        primary_speaker_name (str, optional)
+        content_category     (str, optional, default 'youtube')
+        transcription_method (str, optional, default 'web_speech_api')
+        transcript_language  (str, optional, default 'en')
+        youtube_video_id     (str, optional)
+        youtube_url          (str, optional)
+        processing_status    (str, optional, default 'completed')
+
+    Returns:
+        201 on success with transcript_uuid and word_count
+        400 on validation error
+        409 if transcript_uuid already exists
+    """
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON body.'}, status=400)
+
+    # ── Validate required fields ──────────────────────────────────────────────
+    full_text = (data.get('full_transcript_text') or '').strip()
+    if not full_text:
+        return JsonResponse({'error': 'full_transcript_text is required and cannot be empty.'}, status=400)
+
+    video_title = (data.get('video_title') or '').strip()
+    if not video_title:
+        return JsonResponse({'error': 'video_title is required.'}, status=400)
+
+    # ── Generate or validate UUID ─────────────────────────────────────────────
+    raw_uuid = data.get('transcript_uuid', '').strip()
+    if raw_uuid:
+        # Check for duplicates — idempotent saves are fine
+        existing = SnowAIVideoTranscriptRecord.objects.filter(
+            transcript_uuid=raw_uuid
+        ).first()
+        if existing:
+            return JsonResponse({
+                'message':        'Transcript already saved.',
+                'transcript_uuid': existing.transcript_uuid,
+                'word_count':      existing.word_count,
+                'existing':        True,
+            }, status=409)
+        transcript_uuid = raw_uuid[:100]
+    else:
+        transcript_uuid = str(uuid_lib.uuid4())
+
+    # ── Safely build field values ─────────────────────────────────────────────
+    t = snowai_stream_transcript_safe_truncate  # alias
+
+    video_title_clean          = t(video_title, 300)
+    primary_speaker_name_clean = t(data.get('primary_speaker_name'), 200) or None
+    content_category_clean     = t(data.get('content_category', 'youtube'), 100)
+    transcription_method_clean = t(data.get('transcription_method', 'web_speech_api'), 50)
+    transcript_language_clean  = t(data.get('transcript_language', 'en'), 10)
+    processing_status_clean    = t(data.get('processing_status', 'completed'), 30)
+    youtube_video_id_clean     = t(data.get('youtube_video_id'), 50) or None
+    youtube_url_clean          = t(data.get('youtube_url'), 500) or None
+
+    # ── Create the record ─────────────────────────────────────────────────────
+    try:
+        record = SnowAIVideoTranscriptRecord.objects.create(
+            transcript_uuid      = transcript_uuid,
+            youtube_video_id     = youtube_video_id_clean,
+            youtube_url          = youtube_url_clean,
+            video_title          = video_title_clean,
+            full_transcript_text = full_text,
+            primary_speaker_name = primary_speaker_name_clean,
+            content_category     = content_category_clean,
+            transcription_method = transcription_method_clean,
+            transcript_language  = transcript_language_clean,
+            processing_status    = processing_status_clean,
+            # Fields not set by Web Speech API captures — left at model defaults
+            # word_count is auto-set by SnowAIVideoTranscriptRecord.save()
+        )
+    except Exception as e:
+        error_str = str(e).lower()
+        if 'unique' in error_str or 'duplicate' in error_str:
+            return JsonResponse({
+                'error': f'A transcript with uuid "{transcript_uuid}" already exists.',
+                'transcript_uuid': transcript_uuid,
+            }, status=409)
+        if 'value too long' in error_str:
+            return JsonResponse({
+                'error': 'A field value exceeds the database column length. Check title, speaker name, etc.',
+                'debug': str(e)[:200],
+            }, status=400)
+        return JsonResponse({
+            'error': f'Database error while saving transcript: {str(e)[:200]}',
+        }, status=500)
+
+    return JsonResponse({
+        'message':         'Transcript saved successfully.',
+        'transcript_uuid': record.transcript_uuid,
+        'word_count':      record.word_count,
+        'title':           record.video_title,
+        'category':        record.content_category,
+        'method':          record.transcription_method,
+        'created_at':      record.created_at.isoformat(),
+    }, status=201)
+
+
+# ── LIST STREAM TRANSCRIPTS ───────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_stream_transcript_list(request):
+    """
+    List all transcripts captured via Web Speech API in SnowAI Stream.
+    Filters to transcription_method='web_speech_api' so it doesn't clash
+    with your other yt-dlp transcripts.
+
+    Optional query params:
+        category  — filter by content_category
+        search    — search in video_title and primary_speaker_name
+        limit     — max records (default 50)
+    """
+    queryset = SnowAIVideoTranscriptRecord.objects.filter(
+        transcription_method='web_speech_api'
+    ).order_by('-created_at')
+
+    # Optional filters
+    category = request.GET.get('category', '').strip()
+    if category:
+        queryset = queryset.filter(content_category=category)
+
+    search = request.GET.get('search', '').strip()
+    if search:
+        from django.db.models import Q
+        queryset = queryset.filter(
+            Q(video_title__icontains=search) |
+            Q(primary_speaker_name__icontains=search) |
+            Q(full_transcript_text__icontains=search)
+        )
+
+    limit = min(int(request.GET.get('limit', 50)), 200)
+    records = queryset[:limit]
+
+    return JsonResponse({
+        'transcripts': [snowai_stream_transcript_serialize(r) for r in records],
+        'count':       queryset.count(),
+    })
+
+
+# ── GET SINGLE TRANSCRIPT (full text) ────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_stream_transcript_detail(request, transcript_uuid):
+    """
+    Get full transcript text for a specific record by UUID.
+    """
+    try:
+        record = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_uuid)
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': f'Transcript "{transcript_uuid}" not found.'}, status=404)
+
+    data = snowai_stream_transcript_serialize(record)
+    data['full_transcript_text'] = record.full_transcript_text  # include full text here
+    return JsonResponse(data)
+
+
+# ── DELETE TRANSCRIPT ─────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_stream_transcript_delete(request, transcript_uuid):
+    """
+    Delete a transcript by UUID.
+    Only allows deletion of web_speech_api transcripts as a safety guard —
+    won't touch your yt-dlp records.
+    """
+    try:
+        record = SnowAIVideoTranscriptRecord.objects.get(
+            transcript_uuid=transcript_uuid,
+            transcription_method='web_speech_api',
+        )
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({
+            'error': f'Transcript "{transcript_uuid}" not found or not a Web Speech API transcript.'
+        }, status=404)
+
+    record.delete()
+    return JsonResponse({'message': 'Transcript deleted.', 'transcript_uuid': transcript_uuid})
+
     
 def book_order(request):
     if request.method == "POST":
