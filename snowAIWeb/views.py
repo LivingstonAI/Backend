@@ -46337,6 +46337,265 @@ def snowai_stream_transcript_delete(request, transcript_uuid):
     record.delete()
     return JsonResponse({'message': 'Transcript deleted.', 'transcript_uuid': transcript_uuid})
 
+
+"""
+ESI Market Pulse — Batch endpoints
+====================================
+Add to urls.py:
+    path('api/esi_batch_ohlcv_v1/',    views.esi_batch_ohlcv_v1),
+    path('api/esi_market_caps_v1/',    views.esi_market_caps_v1),
+
+Both @csrf_exempt, no auth.
+"""
+
+import json
+import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import pandas as pd
+import yfinance as yf
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+VALID_INTERVALS = {
+    '1m','2m','5m','15m','30m','60m','90m','1h','1d','5d','1wk','1mo','3mo'
+}
+VALID_PERIODS = {
+    '1d','5d','1mo','3mo','6mo','1y','2y','5y','10y','ytd','max'
+}
+
+def _fetch_single_ohlcv(ticker: str, interval: str, period: str) -> list:
+    """
+    Fetch OHLCV for one ticker. Returns list of {time, close} dicts.
+    Runs inside a thread — no Django ORM access.
+    """
+    try:
+        t    = yf.Ticker(ticker)
+        hist = t.history(period=period, interval=interval, auto_adjust=True)
+
+        if hist.empty:
+            return []
+
+        records = []
+        for ts, row in hist.iterrows():
+            try:
+                close_val = float(row['Close'])
+                if close_val != close_val:   # NaN
+                    continue
+                unix_ts = int(ts.timestamp()) if hasattr(ts, 'timestamp') else int(ts.value // 1_000_000_000)
+                records.append({'time': unix_ts, 'close': round(close_val, 6)})
+            except Exception:
+                continue
+        return records
+
+    except Exception as e:
+        print(f'[_fetch_single_ohlcv] {ticker}: {e}')
+        return []
+
+
+def _fetch_single_market_cap(ticker: str) -> int | None:
+    """
+    Fetch market cap for one ticker via yfinance .info.
+    Returns integer (USD) or None.
+    """
+    try:
+        info = yf.Ticker(ticker).info
+        mc   = info.get('marketCap') or info.get('market_cap')
+        return int(mc) if mc else None
+    except Exception as e:
+        print(f'[_fetch_single_market_cap] {ticker}: {e}')
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1.  BATCH OHLCV
+#     POST /api/esi_batch_ohlcv_v1/
+#
+#     Body:
+#       {
+#         "tickers":  ["AAPL", "MSFT", "NVDA"],
+#         "interval": "1d",
+#         "period":   "1y"
+#       }
+#
+#     Response:
+#       {
+#         "success": true,
+#         "data": {
+#           "AAPL": [{"time": 1700000000, "close": 182.5}, ...],
+#           "MSFT": [...],
+#           ...
+#         },
+#         "failed": ["BADTICKER"]
+#       }
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def esi_batch_ohlcv_v1(request):
+    """
+    Batch OHLCV fetch for MarketPulse sector + overview charts.
+    Uses a thread pool so all tickers are fetched in parallel.
+    Max 60 tickers per request to avoid memory/timeout issues.
+    No auth — single-user deployment.
+    Unique name: esi_batch_ohlcv_v1
+    """
+    try:
+        body     = json.loads(request.body)
+        tickers  = [str(t).strip().upper() for t in body.get('tickers', []) if t]
+        interval = body.get('interval', '1d')
+        period   = body.get('period',   '1y')
+
+        if not tickers:
+            return JsonResponse({'error': 'tickers list is required', 'success': False}, status=400)
+
+        # Sanitise
+        tickers  = list(dict.fromkeys(tickers))[:60]   # dedupe + cap
+        if interval not in VALID_INTERVALS:
+            interval = '1d'
+        if period not in VALID_PERIODS:
+            period = '1y'
+
+        results = {}
+        failed  = []
+
+        # Parallel fetch — up to 20 threads
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            future_map = {
+                pool.submit(_fetch_single_ohlcv, t, interval, period): t
+                for t in tickers
+            }
+            for future in as_completed(future_map):
+                ticker = future_map[future]
+                try:
+                    data = future.result()
+                    if data:
+                        results[ticker] = data
+                    else:
+                        failed.append(ticker)
+                except Exception as e:
+                    print(f'[esi_batch_ohlcv_v1] Future error for {ticker}: {e}')
+                    failed.append(ticker)
+
+        return JsonResponse({
+            'success': True,
+            'data':    results,
+            'failed':  failed,
+            'count':   len(results),
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON body', 'success': False}, status=400)
+    except Exception as e:
+        print(f'[esi_batch_ohlcv_v1] Unhandled: {e}\n{traceback.format_exc()}')
+        return JsonResponse({'error': str(e), 'success': False}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.  MARKET CAPS
+#     POST /api/esi_market_caps_v1/
+#
+#     Body:
+#       { "tickers": ["AAPL", "MSFT", "NVDA", ...] }
+#
+#     Response:
+#       {
+#         "success": true,
+#         "data": {
+#           "AAPL": 3050000000000,
+#           "MSFT": 2900000000000,
+#           "NVDA": 2200000000000,
+#           "BADTICKER": null
+#         }
+#       }
+#
+#     Notes:
+#       - Results are cached in-process for 6 hours (market caps don't change
+#         minute-to-minute and .info calls are slow).
+#       - Max 100 tickers per request.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import time as _time
+
+# Simple in-process cache: { ticker: (market_cap_int_or_none, fetched_at_unix) }
+_MC_CACHE: dict = {}
+_MC_CACHE_TTL   = 6 * 3600   # 6 hours
+
+
+def _get_market_cap_cached(ticker: str) -> int | None:
+    now    = _time.time()
+    cached = _MC_CACHE.get(ticker)
+    if cached and (now - cached[1]) < _MC_CACHE_TTL:
+        return cached[0]
+    mc = _fetch_single_market_cap(ticker)
+    _MC_CACHE[ticker] = (mc, now)
+    return mc
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def esi_market_caps_v1(request):
+    """
+    Live market caps for a list of tickers, used by MarketPulse to build
+    market-cap-weighted sector indices. Cached in-process for 6 hours.
+    No auth — single-user deployment.
+    Unique name: esi_market_caps_v1
+    """
+    try:
+        body    = json.loads(request.body)
+        tickers = [str(t).strip().upper() for t in body.get('tickers', []) if t]
+
+        if not tickers:
+            return JsonResponse({'error': 'tickers list is required', 'success': False}, status=400)
+
+        tickers = list(dict.fromkeys(tickers))[:100]   # dedupe + cap
+
+        results = {}
+
+        # Check cache first — only fetch what's missing or stale
+        to_fetch = []
+        now      = _time.time()
+        for t in tickers:
+            cached = _MC_CACHE.get(t)
+            if cached and (now - cached[1]) < _MC_CACHE_TTL:
+                results[t] = cached[0]
+            else:
+                to_fetch.append(t)
+
+        # Parallel fetch for cache misses
+        if to_fetch:
+            with ThreadPoolExecutor(max_workers=20) as pool:
+                future_map = {
+                    pool.submit(_get_market_cap_cached, t): t
+                    for t in to_fetch
+                }
+                for future in as_completed(future_map):
+                    ticker = future_map[future]
+                    try:
+                        results[ticker] = future.result()
+                    except Exception as e:
+                        print(f'[esi_market_caps_v1] Future error for {ticker}: {e}')
+                        results[ticker] = None
+
+        return JsonResponse({
+            'success':    True,
+            'data':       results,
+            'from_cache': len(tickers) - len(to_fetch),
+            'fetched':    len(to_fetch),
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON body', 'success': False}, status=400)
+    except Exception as e:
+        print(f'[esi_market_caps_v1] Unhandled: {e}\n{traceback.format_exc()}')
+        return JsonResponse({'error': str(e), 'success': False}, status=500)
+
     
 def book_order(request):
     if request.method == "POST":

@@ -887,6 +887,10 @@ urlpatterns = [
         name='snowai_stream_transcript_delete',
     ),
 
+    
+    path('api/esi_batch_ohlcv_v1/',    views.esi_batch_ohlcv_v1),
+    path('api/esi_market_caps_v1/',    views.esi_market_caps_v1),
+
 
 
 
