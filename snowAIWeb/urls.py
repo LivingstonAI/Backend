@@ -891,7 +891,8 @@ urlpatterns = [
     path('api/esi_batch_ohlcv_v1/',    views.esi_batch_ohlcv_v1),
     path('api/esi_market_caps_v1/',    views.esi_market_caps_v1),
 
- path('api/snowai_earnings_calendar_vault/', views.snowai_earnings_calendar_vault),
+
+ path('api/snowai_earnings_calendar_vault/',           views.snowai_earnings_calendar_vault),
 
 
 
