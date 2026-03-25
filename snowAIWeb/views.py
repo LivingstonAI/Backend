@@ -46596,6 +46596,225 @@ def esi_market_caps_v1(request):
         print(f'[esi_market_caps_v1] Unhandled: {e}\n{traceback.format_exc()}')
         return JsonResponse({'error': str(e), 'success': False}, status=500)
 
+
+"""
+sector_helpers.py
+
+Sector analysis helper functions that are auto-available to all trading model signals.
+These fetch sector ETF data and determine if a sector is bullish/bearish.
+"""
+
+import yfinance as yf
+import pandas as pd
+from datetime import datetime, timedelta
+
+
+# Sector ETF mapping — major US sectors
+SECTOR_ETFS = {
+    'technology':           'XLK',   # Technology
+    'financials':           'XLF',   # Financials
+    'healthcare':           'XLV',   # Healthcare
+    'energy':               'XLE',   # Energy
+    'consumer_discretionary': 'XLY', # Consumer Discretionary
+    'consumer_staples':     'XLP',   # Consumer Staples
+    'industrials':          'XLI',   # Industrials
+    'materials':            'XLB',   # Materials
+    'real_estate':          'XLRE',  # Real Estate
+    'utilities':            'XLU',   # Utilities
+    'communication':        'XLC',   # Communication Services
+}
+
+
+def _fetch_sector_data(sector_etf: str, period: str = '3mo') -> pd.DataFrame:
+    """
+    Internal: Fetch OHLC data for a sector ETF.
+    Returns DataFrame with columns: open, high, low, close, volume.
+    """
+    try:
+        ticker = yf.Ticker(sector_etf)
+        hist = ticker.history(period=period, interval='1d')
+        if hist.empty:
+            return pd.DataFrame()
+        
+        # Normalize column names to match trading model format
+        df = pd.DataFrame({
+            'open':   hist['Open'].values,
+            'high':   hist['High'].values,
+            'low':    hist['Low'].values,
+            'close':  hist['Close'].values,
+            'volume': hist['Volume'].values,
+        })
+        return df
+    except Exception as e:
+        print(f"Error fetching sector data for {sector_etf}: {e}")
+        return pd.DataFrame()
+
+
+def is_sector_bullish(sector: str = 'technology', lookback: int = 50) -> bool:
+    """
+    Check if a sector is in a bullish trend.
+    
+    Args:
+        sector: Sector name (e.g. 'technology', 'financials', 'healthcare')
+                or direct ETF ticker (e.g. 'XLK')
+        lookback: Number of days to analyze (default 50)
+    
+    Returns:
+        True if sector is bullish, False otherwise
+    
+    Bullish criteria:
+        - 20-day SMA > 50-day SMA (short-term momentum above long-term)
+        - Price > 20-day SMA (current price in uptrend)
+        - Last 5 days show net positive movement
+    
+    Example:
+        def my_signal(df):
+            if not is_sector_bullish('technology'):
+                return False
+            # ... rest of your logic
+            return True
+    """
+    # Map sector name to ETF, or use directly if it's an ETF ticker
+    etf = SECTOR_ETFS.get(sector.lower(), sector.upper())
+    
+    # Fetch sector data
+    sector_df = _fetch_sector_data(etf, period='3mo')
+    if sector_df.empty or len(sector_df) < lookback:
+        return False
+    
+    # Calculate SMAs
+    sma_20 = sector_df['close'].rolling(20).mean().iloc[-1]
+    sma_50 = sector_df['close'].rolling(50).mean().iloc[-1]
+    current_price = sector_df['close'].iloc[-1]
+    
+    # Check bullish conditions
+    short_above_long = sma_20 > sma_50
+    price_above_sma = current_price > sma_20
+    
+    # Recent momentum: last 5 days net positive
+    recent_5d = sector_df['close'].tail(5)
+    recent_momentum = (recent_5d.iloc[-1] - recent_5d.iloc[0]) > 0
+    
+    return short_above_long and price_above_sma and recent_momentum
+
+
+def is_sector_bearish(sector: str = 'technology', lookback: int = 50) -> bool:
+    """
+    Check if a sector is in a bearish trend.
+    
+    Args:
+        sector: Sector name (e.g. 'technology', 'financials', 'healthcare')
+                or direct ETF ticker (e.g. 'XLK')
+        lookback: Number of days to analyze (default 50)
+    
+    Returns:
+        True if sector is bearish, False otherwise
+    
+    Bearish criteria:
+        - 20-day SMA < 50-day SMA (short-term momentum below long-term)
+        - Price < 20-day SMA (current price in downtrend)
+        - Last 5 days show net negative movement
+    
+    Example:
+        def my_signal(df):
+            if is_sector_bearish('financials'):
+                return False  # Don't trade if sector is bearish
+            # ... rest of your logic
+            return True
+    """
+    # Map sector name to ETF, or use directly if it's an ETF ticker
+    etf = SECTOR_ETFS.get(sector.lower(), sector.upper())
+    
+    # Fetch sector data
+    sector_df = _fetch_sector_data(etf, period='3mo')
+    if sector_df.empty or len(sector_df) < lookback:
+        return False
+    
+    # Calculate SMAs
+    sma_20 = sector_df['close'].rolling(20).mean().iloc[-1]
+    sma_50 = sector_df['close'].rolling(50).mean().iloc[-1]
+    current_price = sector_df['close'].iloc[-1]
+    
+    # Check bearish conditions
+    short_below_long = sma_20 < sma_50
+    price_below_sma = current_price < sma_20
+    
+    # Recent momentum: last 5 days net negative
+    recent_5d = sector_df['close'].tail(5)
+    recent_momentum = (recent_5d.iloc[-1] - recent_5d.iloc[0]) < 0
+    
+    return short_below_long and price_below_sma and recent_momentum
+
+
+def get_sector_strength(sector: str = 'technology') -> dict:
+    """
+    Get detailed sector strength metrics.
+    
+    Args:
+        sector: Sector name or ETF ticker
+    
+    Returns:
+        Dictionary with:
+            - trend: 'bullish', 'bearish', or 'neutral'
+            - sma_20: Current 20-day SMA
+            - sma_50: Current 50-day SMA
+            - price: Current price
+            - momentum_5d: 5-day price change percentage
+            - momentum_20d: 20-day price change percentage
+    
+    Example:
+        def my_signal(df):
+            tech = get_sector_strength('technology')
+            if tech['trend'] == 'bullish' and tech['momentum_20d'] > 5:
+                # Strong tech sector momentum
+                return True
+            return False
+    """
+    etf = SECTOR_ETFS.get(sector.lower(), sector.upper())
+    sector_df = _fetch_sector_data(etf, period='3mo')
+    
+    if sector_df.empty or len(sector_df) < 50:
+        return {
+            'trend': 'unknown',
+            'sma_20': None,
+            'sma_50': None,
+            'price': None,
+            'momentum_5d': None,
+            'momentum_20d': None,
+        }
+    
+    sma_20 = sector_df['close'].rolling(20).mean().iloc[-1]
+    sma_50 = sector_df['close'].rolling(50).mean().iloc[-1]
+    current_price = sector_df['close'].iloc[-1]
+    
+    # Momentum calculations
+    price_5d_ago = sector_df['close'].iloc[-6] if len(sector_df) >= 6 else sector_df['close'].iloc[0]
+    price_20d_ago = sector_df['close'].iloc[-21] if len(sector_df) >= 21 else sector_df['close'].iloc[0]
+    
+    momentum_5d = ((current_price - price_5d_ago) / price_5d_ago) * 100
+    momentum_20d = ((current_price - price_20d_ago) / price_20d_ago) * 100
+    
+    # Determine trend
+    if is_sector_bullish(sector):
+        trend = 'bullish'
+    elif is_sector_bearish(sector):
+        trend = 'bearish'
+    else:
+        trend = 'neutral'
+    
+    return {
+        'trend': trend,
+        'sma_20': float(sma_20),
+        'sma_50': float(sma_50),
+        'price': float(current_price),
+        'momentum_5d': float(momentum_5d),
+        'momentum_20d': float(momentum_20d),
+    }
+
+
+# List of available sectors for reference
+AVAILABLE_SECTORS = list(SECTOR_ETFS.keys())
+
     
 def book_order(request):
     if request.method == "POST":
