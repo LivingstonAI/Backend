@@ -42455,6 +42455,141 @@ def snowai_correlation_matrix_vault(request):
 
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Earnings Calendar — batch fetch upcoming/recent earnings dates
+# ─────────────────────────────────────────────────────────────────────────────
+@csrf_exempt
+def snowai_earnings_calendar_vault(request):
+    """
+    POST { "tickers": ["AAPL","MSFT",...] }
+    Returns earnings dates, EPS estimates, market cap for each ticker.
+    Batches yfinance calls with error isolation so one bad ticker doesn't kill the rest.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body    = json.loads(request.body)
+        tickers = [t.strip().upper() for t in body.get('tickers', []) if t.strip()][:120]
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not tickers:
+        return JsonResponse({'error': 'No tickers provided'}, status=400)
+
+    results = []
+    for sym in tickers:
+        try:
+            tk   = yf.Ticker(sym)
+            info = tk.fast_info
+
+            # Earnings date — yfinance exposes this several ways
+            earnings_date = None
+            earnings_time = None  # 'BMO' before market open, 'AMC' after market close
+
+            # Method 1: calendar attribute
+            try:
+                cal = tk.calendar
+                if cal is not None and not cal.empty:
+                    ed = cal.get('Earnings Date')
+                    if ed is not None:
+                        if hasattr(ed, '__iter__'):
+                            ed = list(ed)
+                            if ed:
+                                earnings_date = str(ed[0])[:10] if ed[0] else None
+                        else:
+                            earnings_date = str(ed)[:10]
+            except Exception:
+                pass
+
+            # Method 2: earnings_dates dataframe
+            if not earnings_date:
+                try:
+                    ed_df = tk.earnings_dates
+                    if ed_df is not None and not ed_df.empty:
+                        from datetime import datetime, timezone
+                        now = datetime.now(timezone.utc)
+                        future = ed_df[ed_df.index >= now]
+                        if not future.empty:
+                            earnings_date = str(future.index[0])[:10]
+                        else:
+                            # Most recent past
+                            earnings_date = str(ed_df.index[0])[:10]
+                except Exception:
+                    pass
+
+            # EPS estimates
+            eps_estimate = None
+            eps_actual   = None
+            try:
+                cal = tk.calendar
+                if cal is not None and not cal.empty:
+                    eps_estimate = cal.get('EPS Estimate')
+                    if eps_estimate is not None:
+                        eps_estimate = round(float(eps_estimate), 4)
+            except Exception:
+                pass
+
+            try:
+                ed_df = tk.earnings_dates
+                if ed_df is not None and not ed_df.empty:
+                    row = ed_df.iloc[0]
+                    if 'EPS Estimate' in row and row['EPS Estimate'] == row['EPS Estimate']:
+                        eps_estimate = round(float(row['EPS Estimate']), 4)
+                    if 'Reported EPS' in row and row['Reported EPS'] == row['Reported EPS']:
+                        eps_actual = round(float(row['Reported EPS']), 4)
+            except Exception:
+                pass
+
+            # Market cap for sorting
+            market_cap = None
+            try:
+                market_cap = getattr(info, 'market_cap', None)
+                if market_cap:
+                    market_cap = int(market_cap)
+            except Exception:
+                pass
+
+            # Short name
+            short_name = sym
+            try:
+                short_name = tk.info.get('shortName') or tk.info.get('longName') or sym
+            except Exception:
+                pass
+
+            if earnings_date:
+                results.append({
+                    'ticker':       sym,
+                    'name':         short_name,
+                    'earningsDate': earnings_date,
+                    'epsEstimate':  eps_estimate,
+                    'epsActual':    eps_actual,
+                    'marketCap':    market_cap,
+                })
+        except Exception as e:
+            # Silently skip bad tickers — log for debugging
+            print(f"[EarningsCalendar] {sym} failed: {e}")
+            continue
+
+    # Sort: soonest upcoming first, then by market cap desc within same day
+    from datetime import date
+    today = date.today().isoformat()
+    results.sort(key=lambda x: (
+        x['earningsDate'] < today,        # upcoming first (False < True)
+        x['earningsDate'],                 # then chronologically
+        -(x['marketCap'] or 0),            # largest market cap first on same day
+    ))
+
+    return JsonResponse({'results': results, 'count': len(results)})
+
+
+# ── urls.py — add ALL endpoints: ─────────────────────────────────────────────
+# path('api/snowai_thundervault_ohlcv_chart_stream/',   views.snowai_thundervault_ohlcv_chart_stream),
+# path('api/snowai_vortex_analyst_ratings_vault/',      views.snowai_vortex_analyst_ratings_vault),
+# path('api/snowai_options_flow_vault/',                views.snowai_options_flow_vault),
+# path('api/snowai_correlation_matrix_vault/',          views.snowai_correlation_matrix_vault),
+
+
 from sklearn.linear_model import LinearRegression
 def _vv_safe(val, decimals=2):
     """Return rounded float or 0 if None/NaN."""
