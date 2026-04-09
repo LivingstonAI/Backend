@@ -901,9 +901,11 @@ urlpatterns = [
     path('snowai/moments/<uuid:moment_uuid>/update/', views.snowai_update_moment, name='snowai_update_moment'),
     path('snowai/moments/<uuid:moment_uuid>/delete/', views.snowai_delete_moment, name='snowai_delete_moment'),
     
-    # Collage operations
-    path('snowai/collages/create/', views.snowai_create_collage, name='snowai_create_collage'),
-    path('snowai/collages/list/', views.snowai_list_collages, name='snowai_list_collages'),
+    # Slideshow operations
+    path('snowai/slideshows/create/', views.snowai_create_slideshow, name='snowai_create_slideshow'),
+    path('snowai/slideshows/list/', views.snowai_list_slideshows, name='snowai_list_slideshows'),
+    path('snowai/slideshows/<uuid:slideshow_uuid>/', views.snowai_get_slideshow_detail, name='snowai_slideshow_detail'),
+    path('snowai/slideshows/<uuid:slideshow_uuid>/delete/', views.snowai_delete_slideshow, name='snowai_delete_slideshow'),
     
     # Utility endpoints
     path('snowai/search/suggestions/', views.snowai_search_suggestions, name='snowai_search_suggestions'),

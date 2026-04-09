@@ -46957,12 +46957,8 @@ from django.views.decorators.http import require_http_methods
 from django.core.paginator import Paginator
 from django.db.models import Q
 import json
-import base64
 from datetime import datetime
-from .models import SnowAIMomentEntry, SnowAIMomentCollage
-from PIL import Image
-from io import BytesIO
-import io
+from .models import SnowAIMomentEntry, SnowAIMomentSlideshow
 
 
 @csrf_exempt
@@ -47119,7 +47115,7 @@ def snowai_get_moment_detail(request, moment_uuid):
 
 
 @csrf_exempt
-@require_http_methods(["PUT", "PATCH"])
+@require_http_methods(["PUT", "PATCH", "POST"])
 def snowai_update_moment(request, moment_uuid):
     """Update a moment"""
     try:
@@ -47152,7 +47148,12 @@ def snowai_update_moment(request, moment_uuid):
         
         return JsonResponse({
             'success': True,
-            'message': 'Moment updated successfully'
+            'message': 'Moment updated successfully',
+            'moment': {
+                'uuid': str(moment.moment_uuid),
+                'title': moment.title,
+                'updated_at': moment.updated_at.isoformat()
+            }
         })
     
     except SnowAIMomentEntry.DoesNotExist:
@@ -47194,8 +47195,8 @@ def snowai_delete_moment(request, moment_uuid):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def snowai_create_collage(request):
-    """Create a collage from selected moments"""
+def snowai_create_slideshow(request):
+    """Create a slideshow from selected moments with audio"""
     try:
         data = json.loads(request.body)
         moment_uuids = data.get('moment_uuids', [])
@@ -47208,28 +47209,28 @@ def snowai_create_collage(request):
         if not moments.exists():
             return JsonResponse({
                 'success': False,
-                'error': 'No moments found for collage'
+                'error': 'No moments found for slideshow'
             }, status=400)
         
-        # Create collage record
-        collage = SnowAIMomentCollage.objects.create(
-            title=data.get('title', f'Collage - {datetime.now().strftime("%Y-%m-%d")}'),
+        # Create slideshow record
+        slideshow = SnowAIMomentSlideshow.objects.create(
+            title=data.get('title', f'Slideshow - {datetime.now().strftime("%Y-%m-%d")}'),
             description=data.get('description', ''),
             moment_uuids=','.join(moment_uuids),
-            collage_image_data=data.get('collage_image_data', ''),
-            audio_data=data.get('audio_data'),
+            audio_data=data.get('audio_data', ''),
+            audio_duration_seconds=data.get('audio_duration_seconds', 0),
             total_moments=len(moment_uuids),
             event_name=data.get('event_name')
         )
         
         return JsonResponse({
             'success': True,
-            'message': 'Collage created successfully',
-            'collage': {
-                'uuid': str(collage.collage_uuid),
-                'title': collage.title,
-                'total_moments': collage.total_moments,
-                'created_at': collage.created_at.isoformat()
+            'message': 'Slideshow created successfully',
+            'slideshow': {
+                'uuid': str(slideshow.slideshow_uuid),
+                'title': slideshow.title,
+                'total_moments': slideshow.total_moments,
+                'created_at': slideshow.created_at.isoformat()
             }
         })
     
@@ -47242,34 +47243,46 @@ def snowai_create_collage(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
-def snowai_list_collages(request):
-    """List all collages"""
+def snowai_list_slideshows(request):
+    """List all slideshows"""
     try:
         page = int(request.GET.get('page', 1))
         page_size = int(request.GET.get('page_size', 12))
         
-        collages = SnowAIMomentCollage.objects.all()
+        slideshows = SnowAIMomentSlideshow.objects.all()
         
         # Paginate
-        paginator = Paginator(collages, page_size)
+        paginator = Paginator(slideshows, page_size)
         page_obj = paginator.get_page(page)
         
-        collages_data = []
-        for collage in page_obj:
-            collages_data.append({
-                'uuid': str(collage.collage_uuid),
-                'title': collage.title,
-                'description': collage.description,
-                'collage_image_data': collage.collage_image_data,
-                'audio_data': collage.audio_data,
-                'total_moments': collage.total_moments,
-                'event_name': collage.event_name,
-                'created_at': collage.created_at.isoformat()
+        slideshows_data = []
+        for slideshow in page_obj:
+            # Get the first moment for preview
+            moment_uuids = slideshow.moment_uuids.split(',')
+            preview_image = None
+            if moment_uuids:
+                try:
+                    first_moment = SnowAIMomentEntry.objects.get(moment_uuid=moment_uuids[0])
+                    preview_image = first_moment.image_data or first_moment.video_data
+                except:
+                    pass
+            
+            slideshows_data.append({
+                'uuid': str(slideshow.slideshow_uuid),
+                'title': slideshow.title,
+                'description': slideshow.description,
+                'moment_uuids': slideshow.moment_uuids,
+                'audio_data': slideshow.audio_data,
+                'audio_duration_seconds': slideshow.audio_duration_seconds,
+                'total_moments': slideshow.total_moments,
+                'event_name': slideshow.event_name,
+                'preview_image': preview_image,
+                'created_at': slideshow.created_at.isoformat()
             })
         
         return JsonResponse({
             'success': True,
-            'collages': collages_data,
+            'slideshows': slideshows_data,
             'pagination': {
                 'page': page,
                 'total_pages': paginator.num_pages,
@@ -47277,6 +47290,83 @@ def snowai_list_collages(request):
             }
         })
     
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_slideshow_detail(request, slideshow_uuid):
+    """Get a single slideshow with all its moments"""
+    try:
+        slideshow = SnowAIMomentSlideshow.objects.get(slideshow_uuid=slideshow_uuid)
+        
+        # Fetch all moments in this slideshow
+        moment_uuids = slideshow.moment_uuids.split(',')
+        moments = SnowAIMomentEntry.objects.filter(moment_uuid__in=moment_uuids)
+        
+        moments_data = []
+        for uuid in moment_uuids:
+            try:
+                moment = moments.get(moment_uuid=uuid)
+                moments_data.append({
+                    'uuid': str(moment.moment_uuid),
+                    'title': moment.title,
+                    'image_data': moment.image_data,
+                    'video_data': moment.video_data,
+                    'media_type': moment.media_type
+                })
+            except:
+                pass
+        
+        return JsonResponse({
+            'success': True,
+            'slideshow': {
+                'uuid': str(slideshow.slideshow_uuid),
+                'title': slideshow.title,
+                'description': slideshow.description,
+                'audio_data': slideshow.audio_data,
+                'audio_duration_seconds': slideshow.audio_duration_seconds,
+                'total_moments': slideshow.total_moments,
+                'event_name': slideshow.event_name,
+                'moments': moments_data,
+                'created_at': slideshow.created_at.isoformat()
+            }
+        })
+    
+    except SnowAIMomentSlideshow.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Slideshow not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_slideshow(request, slideshow_uuid):
+    """Delete a slideshow"""
+    try:
+        slideshow = SnowAIMomentSlideshow.objects.get(slideshow_uuid=slideshow_uuid)
+        slideshow.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Slideshow deleted successfully'
+        })
+    
+    except SnowAIMomentSlideshow.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Slideshow not found'
+        }, status=404)
     except Exception as e:
         return JsonResponse({
             'success': False,
@@ -47334,7 +47424,7 @@ def snowai_stats(request):
     try:
         total_moments = SnowAIMomentEntry.objects.count()
         total_favorites = SnowAIMomentEntry.objects.filter(is_favorite=True).count()
-        total_collages = SnowAIMomentCollage.objects.count()
+        total_slideshows = SnowAIMomentSlideshow.objects.count()
         
         # Get unique events count
         unique_events = SnowAIMomentEntry.objects.exclude(
@@ -47351,7 +47441,7 @@ def snowai_stats(request):
             'stats': {
                 'total_moments': total_moments,
                 'total_favorites': total_favorites,
-                'total_collages': total_collages,
+                'total_slideshows': total_slideshows,
                 'unique_events': unique_events,
                 'media_breakdown': {
                     'images': image_count,

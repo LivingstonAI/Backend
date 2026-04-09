@@ -2872,22 +2872,22 @@ class SnowAIMomentEntry(models.Model):
         return f"{self.title} - {self.moment_date.strftime('%Y-%m-%d')}"
 
 
-class SnowAIMomentCollage(models.Model):
-    """Model to store generated collages from multiple moments"""
+class SnowAIMomentSlideshow(models.Model):
+    """Model to store generated slideshows from multiple moments with audio"""
     
     # Unique identifiers
-    collage_uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
+    slideshow_uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
     
-    # Collage information
+    # Slideshow information
     title = models.CharField(max_length=300)
     description = models.TextField(blank=True, null=True)
     
     # Related moments (comma-separated UUIDs)
-    moment_uuids = models.TextField(help_text="Comma-separated moment UUIDs included in collage")
+    moment_uuids = models.TextField(help_text="Comma-separated moment UUIDs included in slideshow")
     
-    # Generated collage data
-    collage_image_data = models.TextField(help_text="Base64 encoded collage image")
-    audio_data = models.TextField(blank=True, null=True, help_text="Base64 encoded audio narration")
+    # Audio data for slideshow
+    audio_data = models.TextField(help_text="Base64 encoded audio file")
+    audio_duration_seconds = models.FloatField(default=0, help_text="Duration of audio in seconds")
     
     # Metadata
     total_moments = models.IntegerField(default=0)
@@ -2899,11 +2899,11 @@ class SnowAIMomentCollage(models.Model):
     
     class Meta:
         ordering = ['-created_at']
-        verbose_name = "SnowAI Moment Collage"
-        verbose_name_plural = "SnowAI Moment Collages"
+        verbose_name = "SnowAI Moment Slideshow"
+        verbose_name_plural = "SnowAI Moment Slideshows"
     
     def __str__(self):
-        return f"{self.title} - {self.total_moments} moments"       
+        return f"{self.title} - {self.total_moments} moments"   
 
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
