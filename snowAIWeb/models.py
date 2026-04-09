@@ -2814,7 +2814,96 @@ class GAGenerationSummary(models.Model):
         ordering        = ['model', 'generation']
 
     def __str__(self):
-        return f'{self.model.name} Gen{self.generation} best={self.best_fitness:.2f}'        
+        return f'{self.model.name} Gen{self.generation} best={self.best_fitness:.2f}' 
+
+from django.db import models
+from django.utils import timezone
+import uuid
+
+class SnowAIMomentEntry(models.Model):
+    """Model to store individual moments with media and metadata"""
+    
+    # Unique identifiers
+    moment_uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
+    
+    # Basic information
+    title = models.CharField(max_length=300)
+    description = models.TextField(blank=True, null=True)
+    
+    # Media storage (base64 encoded)
+    image_data = models.TextField(blank=True, null=True, help_text="Base64 encoded image")
+    video_data = models.TextField(blank=True, null=True, help_text="Base64 encoded video")
+    
+    # Metadata
+    media_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('image', 'Image'),
+            ('video', 'Video'),
+            ('mixed', 'Mixed Media'),
+        ],
+        default='image'
+    )
+    
+    # Categorization
+    tags = models.TextField(blank=True, null=True, help_text="Comma-separated tags")
+    event_name = models.CharField(max_length=200, blank=True, null=True)
+    location = models.CharField(max_length=300, blank=True, null=True)
+    
+    # Timestamps
+    moment_date = models.DateTimeField(default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # Additional metadata
+    file_size_kb = models.IntegerField(default=0, help_text="Approximate file size in KB")
+    is_favorite = models.BooleanField(default=False, db_index=True)
+    
+    class Meta:
+        ordering = ['-moment_date', '-created_at']
+        indexes = [
+            models.Index(fields=['-moment_date', '-created_at']),
+            models.Index(fields=['is_favorite']),
+        ]
+        verbose_name = "SnowAI Moment"
+        verbose_name_plural = "SnowAI Moments"
+    
+    def __str__(self):
+        return f"{self.title} - {self.moment_date.strftime('%Y-%m-%d')}"
+
+
+class SnowAIMomentCollage(models.Model):
+    """Model to store generated collages from multiple moments"""
+    
+    # Unique identifiers
+    collage_uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
+    
+    # Collage information
+    title = models.CharField(max_length=300)
+    description = models.TextField(blank=True, null=True)
+    
+    # Related moments (comma-separated UUIDs)
+    moment_uuids = models.TextField(help_text="Comma-separated moment UUIDs included in collage")
+    
+    # Generated collage data
+    collage_image_data = models.TextField(help_text="Base64 encoded collage image")
+    audio_data = models.TextField(blank=True, null=True, help_text="Base64 encoded audio narration")
+    
+    # Metadata
+    total_moments = models.IntegerField(default=0)
+    event_name = models.CharField(max_length=200, blank=True, null=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "SnowAI Moment Collage"
+        verbose_name_plural = "SnowAI Moment Collages"
+    
+    def __str__(self):
+        return f"{self.title} - {self.total_moments} moments"       
 
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)

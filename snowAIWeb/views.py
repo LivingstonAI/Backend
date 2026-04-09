@@ -1271,7 +1271,7 @@ def update_user_assets(request, user_email):
 
 
 # Set the OpenAI API key globally
-openai.api_key = os.environ['OPENAI_API_KEY']
+#openai.api_key = os.environ['OPENAI_API_KEY']
 
 def chat_gpt(prompt):
     response = openai.ChatCompletion.create(
@@ -46950,6 +46950,422 @@ def get_sector_strength(sector: str = 'technology') -> dict:
 
 # List of available sectors for reference
 AVAILABLE_SECTORS = list(SECTOR_ETFS.keys())
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.core.paginator import Paginator
+from django.db.models import Q
+import json
+import base64
+from datetime import datetime
+from .models import SnowAIMomentEntry, SnowAIMomentCollage
+from PIL import Image
+from io import BytesIO
+import io
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_create_moment_entry(request):
+    """Create a new moment entry"""
+    try:
+        data = json.loads(request.body)
+        
+        moment = SnowAIMomentEntry.objects.create(
+            title=data.get('title', 'Untitled Moment'),
+            description=data.get('description', ''),
+            image_data=data.get('image_data'),
+            video_data=data.get('video_data'),
+            media_type=data.get('media_type', 'image'),
+            tags=data.get('tags', ''),
+            event_name=data.get('event_name'),
+            location=data.get('location'),
+            moment_date=data.get('moment_date', datetime.now()),
+            file_size_kb=data.get('file_size_kb', 0),
+            is_favorite=data.get('is_favorite', False)
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Moment created successfully',
+            'moment': {
+                'uuid': str(moment.moment_uuid),
+                'title': moment.title,
+                'created_at': moment.created_at.isoformat()
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_list_moments(request):
+    """List all moments with optional filtering and pagination"""
+    try:
+        # Get query parameters
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 20))
+        search = request.GET.get('search', '')
+        event_name = request.GET.get('event_name', '')
+        favorites_only = request.GET.get('favorites_only', 'false').lower() == 'true'
+        media_type = request.GET.get('media_type', '')
+        
+        # Build query
+        moments = SnowAIMomentEntry.objects.all()
+        
+        # Apply filters
+        if search:
+            moments = moments.filter(
+                Q(title__icontains=search) |
+                Q(description__icontains=search) |
+                Q(tags__icontains=search) |
+                Q(location__icontains=search)
+            )
+        
+        if event_name:
+            moments = moments.filter(event_name__icontains=event_name)
+        
+        if favorites_only:
+            moments = moments.filter(is_favorite=True)
+        
+        if media_type:
+            moments = moments.filter(media_type=media_type)
+        
+        # Paginate
+        paginator = Paginator(moments, page_size)
+        page_obj = paginator.get_page(page)
+        
+        # Serialize moments
+        moments_data = []
+        for moment in page_obj:
+            moments_data.append({
+                'uuid': str(moment.moment_uuid),
+                'title': moment.title,
+                'description': moment.description,
+                'image_data': moment.image_data if moment.image_data else None,
+                'video_data': moment.video_data if moment.video_data else None,
+                'media_type': moment.media_type,
+                'tags': moment.tags,
+                'event_name': moment.event_name,
+                'location': moment.location,
+                'moment_date': moment.moment_date.isoformat(),
+                'is_favorite': moment.is_favorite,
+                'file_size_kb': moment.file_size_kb,
+                'created_at': moment.created_at.isoformat()
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'moments': moments_data,
+            'pagination': {
+                'page': page,
+                'total_pages': paginator.num_pages,
+                'total_count': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_moment_detail(request, moment_uuid):
+    """Get a single moment by UUID"""
+    try:
+        moment = SnowAIMomentEntry.objects.get(moment_uuid=moment_uuid)
+        
+        return JsonResponse({
+            'success': True,
+            'moment': {
+                'uuid': str(moment.moment_uuid),
+                'title': moment.title,
+                'description': moment.description,
+                'image_data': moment.image_data,
+                'video_data': moment.video_data,
+                'media_type': moment.media_type,
+                'tags': moment.tags,
+                'event_name': moment.event_name,
+                'location': moment.location,
+                'moment_date': moment.moment_date.isoformat(),
+                'is_favorite': moment.is_favorite,
+                'file_size_kb': moment.file_size_kb,
+                'created_at': moment.created_at.isoformat(),
+                'updated_at': moment.updated_at.isoformat()
+            }
+        })
+    
+    except SnowAIMomentEntry.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Moment not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["PUT", "PATCH"])
+def snowai_update_moment(request, moment_uuid):
+    """Update a moment"""
+    try:
+        moment = SnowAIMomentEntry.objects.get(moment_uuid=moment_uuid)
+        data = json.loads(request.body)
+        
+        # Update fields
+        if 'title' in data:
+            moment.title = data['title']
+        if 'description' in data:
+            moment.description = data['description']
+        if 'image_data' in data:
+            moment.image_data = data['image_data']
+        if 'video_data' in data:
+            moment.video_data = data['video_data']
+        if 'media_type' in data:
+            moment.media_type = data['media_type']
+        if 'tags' in data:
+            moment.tags = data['tags']
+        if 'event_name' in data:
+            moment.event_name = data['event_name']
+        if 'location' in data:
+            moment.location = data['location']
+        if 'moment_date' in data:
+            moment.moment_date = data['moment_date']
+        if 'is_favorite' in data:
+            moment.is_favorite = data['is_favorite']
+        
+        moment.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Moment updated successfully'
+        })
+    
+    except SnowAIMomentEntry.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Moment not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_moment(request, moment_uuid):
+    """Delete a moment"""
+    try:
+        moment = SnowAIMomentEntry.objects.get(moment_uuid=moment_uuid)
+        moment.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Moment deleted successfully'
+        })
+    
+    except SnowAIMomentEntry.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Moment not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_create_collage(request):
+    """Create a collage from selected moments"""
+    try:
+        data = json.loads(request.body)
+        moment_uuids = data.get('moment_uuids', [])
+        
+        # Fetch the moments
+        moments = SnowAIMomentEntry.objects.filter(
+            moment_uuid__in=moment_uuids
+        )
+        
+        if not moments.exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'No moments found for collage'
+            }, status=400)
+        
+        # Create collage record
+        collage = SnowAIMomentCollage.objects.create(
+            title=data.get('title', f'Collage - {datetime.now().strftime("%Y-%m-%d")}'),
+            description=data.get('description', ''),
+            moment_uuids=','.join(moment_uuids),
+            collage_image_data=data.get('collage_image_data', ''),
+            audio_data=data.get('audio_data'),
+            total_moments=len(moment_uuids),
+            event_name=data.get('event_name')
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Collage created successfully',
+            'collage': {
+                'uuid': str(collage.collage_uuid),
+                'title': collage.title,
+                'total_moments': collage.total_moments,
+                'created_at': collage.created_at.isoformat()
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_list_collages(request):
+    """List all collages"""
+    try:
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 12))
+        
+        collages = SnowAIMomentCollage.objects.all()
+        
+        # Paginate
+        paginator = Paginator(collages, page_size)
+        page_obj = paginator.get_page(page)
+        
+        collages_data = []
+        for collage in page_obj:
+            collages_data.append({
+                'uuid': str(collage.collage_uuid),
+                'title': collage.title,
+                'description': collage.description,
+                'collage_image_data': collage.collage_image_data,
+                'audio_data': collage.audio_data,
+                'total_moments': collage.total_moments,
+                'event_name': collage.event_name,
+                'created_at': collage.created_at.isoformat()
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'collages': collages_data,
+            'pagination': {
+                'page': page,
+                'total_pages': paginator.num_pages,
+                'total_count': paginator.count
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_search_suggestions(request):
+    """Get search suggestions for events, tags, and locations"""
+    try:
+        query = request.GET.get('query', '')
+        
+        # Get unique events
+        events = SnowAIMomentEntry.objects.filter(
+            event_name__icontains=query
+        ).values_list('event_name', flat=True).distinct()[:10]
+        
+        # Get unique locations
+        locations = SnowAIMomentEntry.objects.filter(
+            location__icontains=query
+        ).values_list('location', flat=True).distinct()[:10]
+        
+        # Get unique tags
+        all_tags = set()
+        moments_with_tags = SnowAIMomentEntry.objects.exclude(
+            tags__isnull=True
+        ).exclude(tags='').values_list('tags', flat=True)
+        
+        for tags_string in moments_with_tags:
+            tags = [t.strip() for t in tags_string.split(',')]
+            all_tags.update([t for t in tags if query.lower() in t.lower()])
+        
+        return JsonResponse({
+            'success': True,
+            'suggestions': {
+                'events': list(events),
+                'locations': list(locations),
+                'tags': list(all_tags)[:10]
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_stats(request):
+    """Get statistics about moments"""
+    try:
+        total_moments = SnowAIMomentEntry.objects.count()
+        total_favorites = SnowAIMomentEntry.objects.filter(is_favorite=True).count()
+        total_collages = SnowAIMomentCollage.objects.count()
+        
+        # Get unique events count
+        unique_events = SnowAIMomentEntry.objects.exclude(
+            event_name__isnull=True
+        ).exclude(event_name='').values('event_name').distinct().count()
+        
+        # Media type breakdown
+        image_count = SnowAIMomentEntry.objects.filter(media_type='image').count()
+        video_count = SnowAIMomentEntry.objects.filter(media_type='video').count()
+        mixed_count = SnowAIMomentEntry.objects.filter(media_type='mixed').count()
+        
+        return JsonResponse({
+            'success': True,
+            'stats': {
+                'total_moments': total_moments,
+                'total_favorites': total_favorites,
+                'total_collages': total_collages,
+                'unique_events': unique_events,
+                'media_breakdown': {
+                    'images': image_count,
+                    'videos': video_count,
+                    'mixed': mixed_count
+                }
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
 
     
 def book_order(request):

@@ -894,6 +894,21 @@ urlpatterns = [
 
  path('api/snowai_earnings_calendar_vault/',           views.snowai_earnings_calendar_vault),
 
+ # Moment CRUD operations
+    path('snowai/moments/create/', views.snowai_create_moment_entry, name='snowai_create_moment'),
+    path('snowai/moments/list/', views.snowai_list_moments, name='snowai_list_moments'),
+    path('snowai/moments/<uuid:moment_uuid>/', views.snowai_get_moment_detail, name='snowai_moment_detail'),
+    path('snowai/moments/<uuid:moment_uuid>/update/', views.snowai_update_moment, name='snowai_update_moment'),
+    path('snowai/moments/<uuid:moment_uuid>/delete/', views.snowai_delete_moment, name='snowai_delete_moment'),
+    
+    # Collage operations
+    path('snowai/collages/create/', views.snowai_create_collage, name='snowai_create_collage'),
+    path('snowai/collages/list/', views.snowai_list_collages, name='snowai_list_collages'),
+    
+    # Utility endpoints
+    path('snowai/search/suggestions/', views.snowai_search_suggestions, name='snowai_search_suggestions'),
+    path('snowai/stats/', views.snowai_stats, name='snowai_stats'),
+
 
 
 
