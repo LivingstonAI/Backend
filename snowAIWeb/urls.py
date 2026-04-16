@@ -911,6 +911,32 @@ urlpatterns = [
     path('snowai/search/suggestions/', views.snowai_search_suggestions, name='snowai_search_suggestions'),
     path('snowai/stats/', views.snowai_stats, name='snowai_stats'),
 
+        path('api/snowai-spotify-categories/',
+         snowai_spotify_get_all_categories,
+         name='snowai_spotify_get_all_categories'),
+ 
+    path('api/snowai-spotify-categories/create/',
+         snowai_spotify_create_category,
+         name='snowai_spotify_create_category'),
+ 
+    # ── Entries ───────────────────────────────────────────────────────────────
+    path('api/snowai-spotify-entries/',
+         snowai_spotify_get_all_entries,
+         name='snowai_spotify_get_all_entries'),
+ 
+    path('api/snowai-spotify-entries/create/',
+         snowai_spotify_create_entry,
+         name='snowai_spotify_create_entry'),
+ 
+    path('api/snowai-spotify-entries/<int:entry_id>/update/',
+         snowai_spotify_update_entry,
+         name='snowai_spotify_update_entry'),
+ 
+    path('api/snowai-spotify-entries/<int:entry_id>/delete/',
+         snowai_spotify_delete_entry,
+         name='snowai_spotify_delete_entry'),
+
+
 
 
 

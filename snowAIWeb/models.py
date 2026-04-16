@@ -2905,6 +2905,72 @@ class SnowAIMomentSlideshow(models.Model):
     def __str__(self):
         return f"{self.title} - {self.total_moments} moments"   
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD THESE MODELS TO YOUR EXISTING models.py
+# Prefix: SnowAISpotify — safe alongside your existing models
+# After adding, run: python manage.py makemigrations && python manage.py migrate
+# ─────────────────────────────────────────────────────────────────────────────
+
+from django.db import models
+
+
+class SnowAISpotifyCategory(models.Model):
+    """Category for organising saved Spotify entries."""
+    category_name = models.CharField(max_length=100, unique=True)
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'snowai_spotify_categories'
+        ordering = ['category_name']
+
+    def __str__(self):
+        return self.category_name
+
+
+class SnowAISpotifyEntry(models.Model):
+    """A saved Spotify link — track, album, playlist, artist, episode, or show."""
+
+    TYPE_CHOICES = [
+        ('track',    'Track'),
+        ('album',    'Album'),
+        ('playlist', 'Playlist'),
+        ('artist',   'Artist'),
+        ('episode',  'Episode'),
+        ('show',     'Podcast / Show'),
+    ]
+
+    # Core Spotify identity
+    spotify_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='track')
+    spotify_id   = models.CharField(max_length=100)          # The Spotify content ID
+    spotify_url  = models.URLField(max_length=500, blank=True, null=True)
+
+    # User-provided metadata
+    title        = models.CharField(max_length=300)
+    artist       = models.CharField(max_length=300, blank=True, null=True)  # artist / creator / podcast host
+    notes        = models.TextField(blank=True, null=True)
+
+    # Organisation
+    category     = models.ForeignKey(
+        SnowAISpotifyCategory,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='spotify_entries',
+    )
+
+    # Timestamps
+    date_added   = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'snowai_spotify_entries'
+        ordering = ['-date_added']
+        # Prevent exact duplicate links per type
+        unique_together = [('spotify_type', 'spotify_id')]
+
+    def __str__(self):
+        return f"{self.spotify_type}: {self.title}"
+
+        
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
