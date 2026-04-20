@@ -936,7 +936,13 @@ urlpatterns = [
          snowai_spotify_delete_entry,
          name='snowai_spotify_delete_entry'),
 
-
+    # MSS endpoints
+    path('api/mss/history/',         views_mss.mss_history,          name='mss_history'),
+    path('api/mss/symbols/',         views_mss.mss_symbol_list,      name='mss_symbol_list'),
+    path('api/mss/summary/',         views_mss.mss_summary,          name='mss_summary'),
+    path('api/mss/download/<str:symbol>/', views_mss.mss_download,   name='mss_download'),
+    path('api/mss/trigger-update/',  views_mss.mss_trigger_update,   name='mss_trigger_update'),
+    path('api/mss/scheduler-status/', views_mss.mss_scheduler_status, name='mss_scheduler_status'),
 
 
 

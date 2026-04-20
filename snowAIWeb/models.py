@@ -2970,6 +2970,80 @@ class SnowAISpotifyEntry(models.Model):
     def __str__(self):
         return f"{self.spotify_type}: {self.title}"
 
+
+from django.db import models
+
+
+class MSSHistoricalRecord(models.Model):
+    """
+    Stores daily Market Stability Score snapshots for all tracked assets.
+    One record per asset per period per day.
+    """
+
+    CATEGORY_CHOICES = [
+        ('stable', 'Stable'),
+        ('choppy', 'Choppy'),
+        ('volatile', 'Volatile'),
+    ]
+
+    BIAS_CHOICES = [
+        ('bullish', 'Bullish'),
+        ('bearish', 'Bearish'),
+        ('neutral', 'Neutral'),
+    ]
+
+    ASSET_CLASS_CHOICES = [
+        ('forex', 'Forex'),
+        ('stocks', 'Stocks'),
+        ('indices', 'Indices'),
+        ('commodities', 'Commodities'),
+        ('bonds', 'Bonds'),
+    ]
+
+    # ── Identity ──────────────────────────────────────────────────────────
+    symbol          = models.CharField(max_length=32, db_index=True)
+    asset_class     = models.CharField(max_length=20, choices=ASSET_CLASS_CHOICES, default='stocks')
+    sector          = models.CharField(max_length=64, blank=True, null=True)
+
+    # ── Time ──────────────────────────────────────────────────────────────
+    date_taken      = models.DateField(db_index=True)          # YYYY-MM-DD  (OHLC style)
+    period_days     = models.IntegerField(db_index=True)        # 10/15/20/30/45/60/90/180
+
+    # ── Core MSS Metrics ──────────────────────────────────────────────────
+    mss             = models.FloatField()                        # 0–100
+    r_squared       = models.FloatField()                        # 0–1
+    volatility      = models.FloatField()
+    normalized_volatility = models.FloatField()
+    trend_consistency     = models.FloatField()
+    trend_strength        = models.FloatField()
+    liquidity_factor      = models.FloatField()
+    category        = models.CharField(max_length=10, choices=CATEGORY_CHOICES)
+
+    # ── Price Snapshot ────────────────────────────────────────────────────
+    current_price   = models.FloatField()
+    price_change    = models.FloatField()                        # % change over period
+    avg_volume      = models.BigIntegerField()
+    data_points     = models.IntegerField()
+
+    # ── Analyst / Sentiment Data ──────────────────────────────────────────
+    analyst_rating_pct  = models.FloatField(null=True, blank=True)   # 0–100  (buy-side %)
+    analyst_bias        = models.CharField(max_length=10, choices=BIAS_CHOICES, null=True, blank=True)
+
+    # Put/Call ratio
+    put_call_ratio      = models.FloatField(null=True, blank=True)
+    put_call_bias       = models.CharField(max_length=10, choices=BIAS_CHOICES, null=True, blank=True)
+
+    class Meta:
+        unique_together = ('symbol', 'date_taken', 'period_days')
+        ordering = ['-date_taken', 'symbol']
+        indexes = [
+            models.Index(fields=['symbol', 'period_days', 'date_taken']),
+            models.Index(fields=['date_taken', 'period_days']),
+        ]
+
+    def __str__(self):
+        return f"{self.symbol} | {self.date_taken} | {self.period_days}d | MSS={self.mss:.1f}"
+
         
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)

@@ -47633,6 +47633,718 @@ def snowai_spotify_delete_entry(request, entry_id):
 
 
 
+"""
+views_mss.py  –  REST endpoints + download views + scheduler for MSS historical data.
+"""
+
+import csv
+import io
+import json
+import logging
+import traceback
+from datetime import date, datetime, timedelta
+from django.http import HttpResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
+from django.core.management import call_command
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+
+# Optional heavy imports – only used in download views
+try:
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
+
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (Paragraph, SimpleDocTemplate, Spacer,
+                                     Table, TableStyle)
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
+# Scheduler imports for MSS calculations
+import numpy as np
+import yfinance as yf
+from sklearn.linear_model import LinearRegression
+
+logger = logging.getLogger(__name__)
+
+# ── Asset universe ────────────────────────────────────────────────────────────
+
+ASSET_LISTS = {
+    'forex': [
+        'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X',
+        'USDCAD=X', 'USDCHF=X', 'NZDUSD=X', 'EURGBP=X',
+        'EURJPY=X', 'GBPJPY=X', 'AUDJPY=X', 'EURCHF=X',
+    ],
+    'stocks': [
+        'AAPL','MSFT','GOOGL','GOOG','AMZN','NVDA','TSLA','META','AMD','INTC',
+        'ORCL','CSCO','ADBE','CRM','AVGO','QCOM','TXN','AMAT','LRCX','KLAC',
+        'SNPS','CDNS','MRVL','NXPI','MU','ADI','MPWR','SWKS','QRVO','ON',
+        'IBM','JPM','BAC','WFC','C','GS','MS','BLK','V','MA','PYPL','ADP',
+        'JNJ','LLY','UNH','PFE','ABBV','MRK','TMO','ABT','DHR','BMY','AMGN',
+        'HD','MCD','NKE','SBUX','TJX','LOW','WMT','PG','KO','PEP','COST',
+        'XOM','CVX','COP','EOG','SLB','BA','HON','UNP','CAT','GE','RTX','LMT',
+        'T','VZ','CMCSA','NFLX','DIS','TMUS','NEE','DUK','SO','D','LIN','APD',
+        'BABA','JD','PDD','NIO','XPEV','LI',
+    ],
+    'indices': [
+        '^GSPC','^DJI','^IXIC','^RUT','^VIX',
+        '^FTSE','^GDAXI','^FCHI','^IBEX','^AEX',
+        '^N225','^HSI','000001.SS','^STI','^BSESN',
+        '^AXJO','^GSPTSE','^MXX','^BVSP',
+    ],
+    'commodities': [
+        'GC=F','SI=F','PL=F','PA=F',
+        'CL=F','BZ=F','NG=F','RB=F','HO=F',
+        'HG=F','ZC=F','ZW=F','ZS=F','KC=F','SB=F',
+    ],
+    'bonds': [
+        '^TNX','^TYX','^FVX','^IRX',
+        'ZN=F','ZB=F','ZT=F','ZF=F',
+    ],
+}
+
+PERIODS = [10, 15, 20, 30, 45, 60, 90, 180]
+
+SECTOR_MAP = {
+    'AAPL':'Technology','MSFT':'Technology','GOOGL':'Technology','GOOG':'Technology',
+    'AMZN':'Consumer Cyclical','NVDA':'Technology','TSLA':'Consumer Cyclical',
+    'META':'Technology','AMD':'Technology','INTC':'Technology','ORCL':'Technology',
+    'CSCO':'Technology','ADBE':'Technology','CRM':'Technology','AVGO':'Technology',
+    'QCOM':'Technology','TXN':'Technology','AMAT':'Technology','LRCX':'Technology',
+    'JPM':'Financial','BAC':'Financial','WFC':'Financial','C':'Financial',
+    'GS':'Financial','MS':'Financial','BLK':'Financial','V':'Financial','MA':'Financial',
+    'PYPL':'Financial','ADP':'Industrials','JNJ':'Healthcare','LLY':'Healthcare',
+    'UNH':'Healthcare','PFE':'Healthcare','ABBV':'Healthcare','MRK':'Healthcare',
+    'TMO':'Healthcare','ABT':'Healthcare','DHR':'Healthcare','BMY':'Healthcare',
+    'AMGN':'Healthcare','HD':'Consumer Cyclical','MCD':'Consumer Cyclical',
+    'NKE':'Consumer Cyclical','SBUX':'Consumer Cyclical','TJX':'Consumer Cyclical',
+    'LOW':'Consumer Cyclical','WMT':'Consumer Defensive','PG':'Consumer Defensive',
+    'KO':'Consumer Defensive','PEP':'Consumer Defensive','COST':'Consumer Defensive',
+    'XOM':'Energy','CVX':'Energy','COP':'Energy','EOG':'Energy','SLB':'Energy',
+    'BA':'Industrials','HON':'Industrials','UNP':'Industrials','CAT':'Industrials',
+    'GE':'Industrials','RTX':'Industrials','LMT':'Industrials','T':'Communication',
+    'VZ':'Communication','CMCSA':'Communication','NFLX':'Communication','DIS':'Communication',
+    'TMUS':'Communication','NEE':'Utilities','DUK':'Utilities','SO':'Utilities',
+    'D':'Utilities','LIN':'Materials','APD':'Materials',
+}
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _record_to_dict(r):
+    return {
+        'id':                   r.id,
+        'symbol':               r.symbol,
+        'asset_class':          r.asset_class,
+        'sector':               r.sector,
+        'date_taken':           str(r.date_taken),
+        'period_days':          r.period_days,
+        'mss':                  r.mss,
+        'r_squared':            r.r_squared,
+        'volatility':           r.volatility,
+        'normalized_volatility': r.normalized_volatility,
+        'trend_consistency':    r.trend_consistency,
+        'trend_strength':       r.trend_strength,
+        'liquidity_factor':     r.liquidity_factor,
+        'category':             r.category,
+        'current_price':        r.current_price,
+        'price_change':         r.price_change,
+        'avg_volume':           r.avg_volume,
+        'data_points':          r.data_points,
+        'analyst_rating_pct':   r.analyst_rating_pct,
+        'analyst_bias':         r.analyst_bias,
+        'put_call_ratio':       r.put_call_ratio,
+        'put_call_bias':        r.put_call_bias,
+    }
+
+
+EXPORT_COLUMNS = [
+    'symbol','asset_class','sector','date_taken','period_days',
+    'mss','r_squared','volatility','normalized_volatility',
+    'trend_consistency','trend_strength','liquidity_factor','category',
+    'current_price','price_change','avg_volume','data_points',
+    'analyst_rating_pct','analyst_bias','put_call_ratio','put_call_bias',
+]
+
+
+# ── MSS Calculation Functions (from scheduler) ─────────────────────────────────
+
+def _get_analyst_data(symbol):
+    """Fetch real analyst ratings from yfinance."""
+    try:
+        ticker = yf.Ticker(symbol)
+        recommendations = ticker.recommendations
+        
+        if recommendations is not None and not recommendations.empty:
+            # Get the most recent recommendation
+            latest = recommendations.iloc[-1]
+            
+            # Map recommendation to bias
+            grade = str(latest.get('To Grade', latest.get('Firm', ''))).lower()
+            
+            # Analyst rating percentage (0-100 scale based on buy vs hold/sell)
+            if 'buy' in grade or 'outperform' in grade or 'overweight' in grade:
+                rating_pct = 85.0
+                bias = 'bullish'
+            elif 'hold' in grade or 'neutral' in grade or 'market perform' in grade:
+                rating_pct = 50.0
+                bias = 'neutral'
+            elif 'sell' in grade or 'underperform' in grade or 'underweight' in grade:
+                rating_pct = 15.0
+                bias = 'bearish'
+            else:
+                # Use historical recommendation counts if available
+                if 'strongBuy' in recommendations.columns:
+                    total = recommendations['strongBuy'].iloc[-1] + recommendations['buy'].iloc[-1] + \
+                           recommendations['hold'].iloc[-1] + recommendations['sell'].iloc[-1] + \
+                           recommendations['strongSell'].iloc[-1]
+                    if total > 0:
+                        buy_score = (recommendations['strongBuy'].iloc[-1] * 100 + 
+                                   recommendations['buy'].iloc[-1] * 75)
+                        rating_pct = min(100, (buy_score / total) * 1.0)
+                        if rating_pct >= 60:
+                            bias = 'bullish'
+                        elif rating_pct <= 40:
+                            bias = 'bearish'
+                        else:
+                            bias = 'neutral'
+                    else:
+                        rating_pct = 50.0
+                        bias = 'neutral'
+                else:
+                    rating_pct = 50.0
+                    bias = 'neutral'
+                    
+            return rating_pct, bias
+        
+        # Fallback to analyst recommendations from info
+        info = ticker.info
+        if info:
+            rec = info.get('recommendationKey', '').lower()
+            if rec == 'buy' or rec == 'strong_buy':
+                return 85.0, 'bullish'
+            elif rec == 'hold':
+                return 50.0, 'neutral'
+            elif rec == 'sell' or rec == 'strong_sell':
+                return 15.0, 'bearish'
+        
+        return 50.0, 'neutral'
+        
+    except Exception as e:
+        logger.warning(f"Could not fetch analyst data for {symbol}: {e}")
+        return 50.0, 'neutral'
+
+
+def _get_options_data(symbol):
+    """Fetch real put/call ratio from yfinance options data."""
+    try:
+        ticker = yf.Ticker(symbol)
+        
+        # Get option expiration dates
+        expirations = ticker.options
+        if not expirations:
+            return None, None
+            
+        # Get nearest expiration
+        nearest_exp = expirations[0]
+        opt_chain = ticker.option_chain(nearest_exp)
+        
+        # Calculate put/call ratio based on open interest
+        if opt_chain.calls is not None and opt_chain.puts is not None:
+            total_call_oi = opt_chain.calls['openInterest'].sum() if 'openInterest' in opt_chain.calls.columns else 0
+            total_put_oi = opt_chain.puts['openInterest'].sum() if 'openInterest' in opt_chain.puts.columns else 0
+            
+            if total_call_oi > 0:
+                put_call_ratio = total_put_oi / total_call_oi
+            else:
+                put_call_ratio = 1.0
+                
+            # Determine bias from put/call ratio
+            if put_call_ratio > 1.2:
+                bias = 'bearish'  # More puts = bearish sentiment
+            elif put_call_ratio < 0.8:
+                bias = 'bullish'  # More calls = bullish sentiment
+            else:
+                bias = 'neutral'
+                
+            return round(put_call_ratio, 3), bias
+            
+        return None, None
+        
+    except Exception as e:
+        logger.warning(f"Could not fetch options data for {symbol}: {e}")
+        return None, None
+
+
+def _compute_mss_for_symbol(symbol: str, period_days: int, all_volatilities: list):
+    """Returns a dict of raw metrics with real analyst and options data."""
+    min_required_bars = max(min(period_days, 15), 5)
+
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=f"{period_days}d")
+
+        if hist.empty or len(hist) < min_required_bars:
+            return None
+
+        # Calculate returns and volatility
+        hist['returns'] = hist['Close'].pct_change()
+        returns = hist['returns'].dropna()
+        if len(returns) < 2:
+            return None
+
+        volatility = float(returns.std())
+
+        # Linear regression for trend
+        prices = hist['Close'].values
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
+        model = LinearRegression()
+        model.fit(X, y)
+        r_squared = float(max(0, min(model.score(X, y), 1.0)))
+
+        # Trend consistency
+        positive_days = (returns > 0).sum()
+        trend_consistency = float(abs(positive_days / len(returns) - 0.5) * 2)
+
+        # Trend strength
+        slope_per_day = model.coef_[0][0]
+        avg_price = float(np.mean(prices))
+        if len(prices) > 1 and avg_price > 0:
+            trend_strength = float(min(abs(slope_per_day * len(prices)) / avg_price, 1.0))
+        else:
+            trend_strength = 0.0
+
+        # Liquidity factor
+        avg_volume = float(hist['Volume'].mean())
+        if avg_volume > 10_000_000:
+            liquidity_factor = 1.2
+        elif avg_volume > 5_000_000:
+            liquidity_factor = 1.1
+        elif avg_volume > 1_000_000:
+            liquidity_factor = 1.0
+        elif avg_volume > 500_000:
+            liquidity_factor = 0.95
+        elif avg_volume > 100_000:
+            liquidity_factor = 0.9
+        else:
+            liquidity_factor = 0.8
+
+        current_price = float(hist['Close'].iloc[-1])
+        start_price = float(hist['Close'].iloc[0])
+        price_change = ((current_price - start_price) / start_price * 100) if start_price else 0.0
+
+        # ── REAL ANALYST RATINGS ──
+        analyst_rating_pct, analyst_bias = _get_analyst_data(symbol)
+
+        # ── REAL OPTIONS DATA ──
+        put_call_ratio, put_call_bias = _get_options_data(symbol)
+
+        all_volatilities.append(volatility)
+
+        return {
+            'symbol': symbol,
+            'volatility': volatility,
+            'r_squared': r_squared,
+            'trend_consistency': trend_consistency,
+            'trend_strength': trend_strength,
+            'liquidity_factor': liquidity_factor,
+            'current_price': current_price,
+            'price_change': price_change,
+            'data_points': len(hist),
+            'avg_volume': int(avg_volume),
+            'analyst_rating_pct': analyst_rating_pct,
+            'analyst_bias': analyst_bias,
+            'put_call_ratio': put_call_ratio,
+            'put_call_bias': put_call_bias,
+        }
+    except Exception as e:
+        logger.error(f"Error processing {symbol}: {e}")
+        return None
+
+
+def _finalise_and_save(temp_results: list, period_days: int, today: date, asset_class: str):
+    """Normalise volatility, compute MSS, persist to DB."""
+    if not temp_results:
+        return 0
+
+    all_vols = [r['volatility'] for r in temp_results]
+    max_volatility = max(all_vols) or 1.0
+
+    saved = 0
+    for t in temp_results:
+        try:
+            norm_vol = t['volatility'] / max_volatility
+            trend_score = (
+                t['r_squared'] * 0.5 +
+                t['trend_consistency'] * 0.3 +
+                t['trend_strength'] * 0.2
+            ) * 100
+            stability_factor = (1 - norm_vol) ** 0.6
+            mss = min(max(trend_score * stability_factor * t['liquidity_factor'], 0), 100)
+
+            if mss >= 47:
+                category = 'stable'
+            elif mss >= 30:
+                category = 'choppy'
+            else:
+                category = 'volatile'
+
+            symbol = t['symbol']
+            MSSHistoricalRecord.objects.update_or_create(
+                symbol=symbol,
+                date_taken=today,
+                period_days=period_days,
+                defaults=dict(
+                    asset_class=asset_class,
+                    sector=SECTOR_MAP.get(symbol),
+                    mss=round(mss, 4),
+                    r_squared=round(t['r_squared'], 6),
+                    volatility=round(t['volatility'], 6),
+                    normalized_volatility=round(norm_vol, 6),
+                    trend_consistency=round(t['trend_consistency'], 6),
+                    trend_strength=round(t['trend_strength'], 6),
+                    liquidity_factor=round(t['liquidity_factor'], 4),
+                    category=category,
+                    current_price=round(t['current_price'], 4),
+                    price_change=round(t['price_change'], 4),
+                    avg_volume=t['avg_volume'],
+                    data_points=t['data_points'],
+                    analyst_rating_pct=round(t['analyst_rating_pct'], 2) if t['analyst_rating_pct'] is not None else None,
+                    analyst_bias=t['analyst_bias'],
+                    put_call_ratio=round(t['put_call_ratio'], 4) if t['put_call_ratio'] is not None else None,
+                    put_call_bias=t['put_call_bias'],
+                )
+            )
+            saved += 1
+        except Exception as e:
+            logger.error(f"DB save error for {t['symbol']}: {e}")
+
+    return saved
+
+
+def run_daily_mss_snapshot():
+    """Main job function - runs daily MSS calculations."""
+    today = date.today()
+    logger.info(f"[MSS Scheduler] Starting daily snapshot for {today}")
+    total_saved = 0
+
+    for asset_class, symbols in ASSET_LISTS.items():
+        for period in PERIODS:
+            logger.info(f"  → {asset_class.upper()} | {period}d period ({len(symbols)} symbols)")
+            temp_results = []
+            all_volatilities = []
+
+            for symbol in symbols:
+                result = _compute_mss_for_symbol(symbol, period, all_volatilities)
+                if result:
+                    temp_results.append(result)
+
+            saved = _finalise_and_save(temp_results, period, today, asset_class)
+            total_saved += saved
+            logger.info(f"     ✓ Saved {saved}/{len(temp_results)} records")
+
+    logger.info(f"[MSS Scheduler] Snapshot complete. Total records saved: {total_saved}")
+    return total_saved
+
+
+# ── Scheduler Setup ───────────────────────────────────────────────────────────
+
+_scheduler = None
+
+def start_mss_scheduler():
+    """Start the background scheduler for MSS updates."""
+    global _scheduler
+    if _scheduler is None:
+        _scheduler = BackgroundScheduler()
+        _scheduler.add_job(
+            run_daily_mss_snapshot,
+            trigger=CronTrigger(hour=0, minute=30),  # 00:30 daily
+            id='daily_mss_snapshot',
+            name='Daily MSS snapshot for all assets × all periods',
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+        _scheduler.start()
+        logger.info("[MSS Scheduler] Started - daily snapshot at 00:30")
+
+
+# ── API views (all CSRF exempt) ───────────────────────────────────────────────
+
+@csrf_exempt
+@require_GET
+def mss_history(request):
+    """
+    GET /api/mss/history/?symbol=AAPL&period=60&days=90&page=1&limit=100
+    Returns paginated history for one symbol + period.
+    """
+    symbol = request.GET.get('symbol', '').upper().strip()
+    period = request.GET.get('period')
+    days_back = int(request.GET.get('days', 365))
+    page = max(int(request.GET.get('page', 1)), 1)
+    limit = min(int(request.GET.get('limit', 100)), 500)
+
+    qs = MSSHistoricalRecord.objects.all()
+    if symbol:
+        qs = qs.filter(symbol=symbol)
+    if period:
+        qs = qs.filter(period_days=int(period))
+
+    since = date.today() - timedelta(days=days_back)
+    qs = qs.filter(date_taken__gte=since).order_by('-date_taken')
+
+    total = qs.count()
+    offset = (page - 1) * limit
+    records = list(qs[offset:offset + limit])
+
+    return JsonResponse({
+        'success': True,
+        'total': total,
+        'page': page,
+        'limit': limit,
+        'data': [_record_to_dict(r) for r in records],
+    })
+
+
+@csrf_exempt
+@require_GET
+def mss_symbol_list(request):
+    """GET /api/mss/symbols/  – distinct symbols we have data for."""
+    symbols = (
+        MSSHistoricalRecord.objects
+        .values('symbol', 'asset_class', 'sector')
+        .distinct()
+        .order_by('symbol')
+    )
+    return JsonResponse({'success': True, 'data': list(symbols)})
+
+
+@csrf_exempt
+@require_GET
+def mss_summary(request):
+    """
+    GET /api/mss/summary/?period=60&date=2024-01-15
+    Latest snapshot for every symbol at a given period on a given date.
+    """
+    period = int(request.GET.get('period', 60))
+    date_str = request.GET.get('date', str(date.today()))
+
+    try:
+        snap_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        snap_date = date.today()
+
+    records = MSSHistoricalRecord.objects.filter(
+        period_days=period,
+        date_taken=snap_date,
+    ).order_by('-mss')
+
+    return JsonResponse({
+        'success': True,
+        'date': str(snap_date),
+        'period': period,
+        'count': records.count(),
+        'data': [_record_to_dict(r) for r in records],
+    })
+
+
+@csrf_exempt
+@require_GET
+def mss_download(request, symbol):
+    """
+    GET /api/mss/download/<SYMBOL>/?format=csv|xlsx|pdf&period=60&days=365
+    """
+    fmt = request.GET.get('format', 'csv').lower()
+    period = request.GET.get('period')
+    days_back = int(request.GET.get('days', 365))
+
+    since = date.today() - timedelta(days=days_back)
+    qs = MSSHistoricalRecord.objects.filter(
+        symbol=symbol.upper(),
+        date_taken__gte=since,
+    )
+    if period:
+        qs = qs.filter(period_days=int(period))
+
+    qs = qs.order_by('-date_taken', 'period_days')
+    rows = [_record_to_dict(r) for r in qs]
+
+    if fmt == 'csv':
+        return _download_csv(symbol, rows)
+    elif fmt == 'xlsx':
+        return _download_xlsx(symbol, rows)
+    elif fmt == 'pdf':
+        return _download_pdf(symbol, rows)
+    else:
+        return JsonResponse({'success': False, 'error': 'Unsupported format. Use csv, xlsx, or pdf.'}, status=400)
+
+
+@csrf_exempt
+@require_POST
+def mss_trigger_update(request):
+    """Manual trigger for MSS update (admin only - but no auth for simplicity)."""
+    try:
+        total_saved = run_daily_mss_snapshot()
+        return JsonResponse({
+            'success': True,
+            'message': f'MSS update completed successfully',
+            'records_saved': total_saved
+        })
+    except Exception as e:
+        logger.error(f"Manual MSS update failed: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_GET
+def mss_scheduler_status(request):
+    """Check if scheduler is running."""
+    global _scheduler
+    is_running = _scheduler is not None and _scheduler.running
+    return JsonResponse({
+        'success': True,
+        'scheduler_running': is_running,
+        'next_run_time': str(_scheduler.get_job('daily_mss_snapshot').next_run_time) if is_running else None
+    })
+
+
+# ── Download helpers ──────────────────────────────────────────────────────────
+
+def _download_csv(symbol, rows):
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{symbol}_mss_history.csv"'
+
+    writer = csv.DictWriter(response, fieldnames=EXPORT_COLUMNS, extrasaction='ignore')
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({k: row.get(k, '') for k in EXPORT_COLUMNS})
+
+    return response
+
+
+def _download_xlsx(symbol, rows):
+    if not OPENPYXL_AVAILABLE:
+        return JsonResponse({'success': False, 'error': 'openpyxl not installed on server.'}, status=500)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"{symbol} MSS History"
+
+    HEADER_FILL = PatternFill(fill_type='solid', fgColor='1E3A5F')
+    HEADER_FONT = Font(color='FFFFFF', bold=True, size=10)
+    ALT_FILL = PatternFill(fill_type='solid', fgColor='EAF3FB')
+    CENTER = Alignment(horizontal='center')
+
+    ws.append(EXPORT_COLUMNS)
+    for cell in ws[1]:
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = CENTER
+
+    for i, row in enumerate(rows, start=2):
+        ws.append([row.get(c, '') for c in EXPORT_COLUMNS])
+        if i % 2 == 0:
+            for cell in ws[i]:
+                cell.fill = ALT_FILL
+
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or '')) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 30)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    response = HttpResponse(
+        buf.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{symbol}_mss_history.xlsx"'
+    return response
+
+
+def _download_pdf(symbol, rows):
+    if not REPORTLAB_AVAILABLE:
+        return JsonResponse({'success': False, 'error': 'reportlab not installed on server.'}, status=500)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=landscape(A4),
+        leftMargin=1 * cm,
+        rightMargin=1 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+    )
+
+    styles = getSampleStyleSheet()
+    story = []
+
+    story.append(Paragraph(
+        f"<b>MSS Historical Data – {symbol}</b>",
+        styles['Title'],
+    ))
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(Paragraph(
+        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}  |  Records: {len(rows)}",
+        styles['Normal'],
+    ))
+    story.append(Spacer(1, 0.6 * cm))
+
+    PDF_COLS = [
+        'date_taken', 'period_days', 'mss', 'r_squared', 'volatility',
+        'category', 'current_price', 'price_change',
+        'analyst_rating_pct', 'analyst_bias', 'put_call_ratio', 'put_call_bias',
+    ]
+    HEADERS = [
+        'Date', 'Period', 'MSS', 'R²', 'Volatility',
+        'Category', 'Price', 'Chg%',
+        'Analyst%', 'A.Bias', 'P/C Ratio', 'PC Bias',
+    ]
+
+    table_data = [HEADERS]
+    for row in rows[:500]:
+        table_data.append([str(row.get(c, '')) for c in PDF_COLS])
+
+    col_widths = [2.4*cm, 1.4*cm, 1.4*cm, 1.2*cm, 1.8*cm,
+                  2.0*cm, 2.0*cm, 1.6*cm,
+                  1.8*cm, 1.6*cm, 2.0*cm, 1.6*cm]
+
+    t = Table(table_data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTSIZE', (0, 1), (-1, -1), 7),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#EAF3FB')]),
+        ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#C5D8EC')),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+    ]))
+
+    story.append(t)
+    doc.build(story)
+    buf.seek(0)
+
+    response = HttpResponse(buf.read(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{symbol}_mss_history.pdf"'
+    return response
+
 
     
 def book_order(request):
