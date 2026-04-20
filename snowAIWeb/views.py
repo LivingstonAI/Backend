@@ -44266,4 +44266,4366 @@ def _find_swings(highs, lows, atr_val, strength=3):
     Deduplicates pivots < 0.6×ATR apart (noise filter).
     Returns: (swing_highs, swing_lows) — lists of (bar_index, price)
     """
-    n         = len(
+    n         = len(highs)
+    threshold = 0.6 * atr_val
+    raw_sh, raw_sl = [], []
+
+    for i in range(strength, n - strength):
+        if all(highs[i] >= highs[i-j] for j in range(1, strength+1)) and \
+           all(highs[i] >= highs[i+j] for j in range(1, strength+1)):
+            raw_sh.append((i, float(highs[i])))
+        if all(lows[i] <= lows[i-j] for j in range(1, strength+1)) and \
+           all(lows[i] <= lows[i+j] for j in range(1, strength+1)):
+            raw_sl.append((i, float(lows[i])))
+
+    def dedup(pivots):
+        if not pivots:
+            return []
+        out = [pivots[0]]
+        for idx, price in pivots[1:]:
+            if abs(price - out[-1][1]) >= threshold:
+                out.append((idx, price))
+        return out
+
+    return dedup(raw_sh), dedup(raw_sl)
+
+
+def _classify_structure(swing_highs, swing_lows):
+    """
+    Classify trend from swing sequence.
+    HH + HL = Uptrend. LH + LL = Downtrend. Mixed = Ranging.
+    Returns: (trend_str, structure_score 0-1)
+    """
+    def seq_score(pivots):
+        if len(pivots) < 2:
+            return None, 0.0
+        prices = [p for _, p in pivots[-4:]]
+        ups    = sum(1 for i in range(1, len(prices)) if prices[i] > prices[i-1])
+        downs  = sum(1 for i in range(1, len(prices)) if prices[i] < prices[i-1])
+        total  = len(prices) - 1
+        if total == 0:
+            return None, 0.0
+        if ups > downs:
+            return "up", ups / total
+        if downs > ups:
+            return "down", downs / total
+        return "flat", 0.0
+
+    sh_dir, sh_sc = seq_score(swing_highs)
+    sl_dir, sl_sc = seq_score(swing_lows)
+
+    if sh_dir == "up"   and sl_dir == "up":
+        return "Uptrend",   round((sh_sc + sl_sc) / 2, 3)
+    if sh_dir == "down" and sl_dir == "down":
+        return "Downtrend", round((sh_sc + sl_sc) / 2, 3)
+    if sh_dir == "up"   and sl_dir != "down":
+        return "Uptrend",   round(sh_sc * 0.6, 3)
+    if sl_dir == "down" and sh_dir != "up":
+        return "Downtrend", round(sl_sc * 0.6, 3)
+    return "Ranging", 0.0
+
+
+def _key_level(trend, swing_highs, swing_lows, current_close):
+    """
+    Key structural level whose break = reversal signal.
+    Uptrend   → last Higher Low (swing_lows[-1]). Break below = Bearish reversal.
+    Downtrend → last Lower High (swing_highs[-1]). Break above = Bullish reversal.
+    Returns: (level_price, is_broken, break_pct, level_type, level_bar_idx)
+    """
+    if trend == "Uptrend" and swing_lows:
+        idx, price = swing_lows[-1]
+        broken     = current_close < price
+        pct        = round((price - current_close) / price * 100, 3) if broken else 0.0
+        return price, broken, pct, "Last Higher Low", idx
+
+    if trend == "Downtrend" and swing_highs:
+        idx, price = swing_highs[-1]
+        broken     = current_close > price
+        pct        = round((current_close - price) / price * 100, 3) if broken else 0.0
+        return price, broken, pct, "Last Lower High", idx
+
+    return None, False, 0.0, "None", 0
+
+
+def _best_window(closes, highs, lows):
+    """
+    Auto-select the lookback window (in 1H bars) that produces the
+    cleanest swing structure. Tries 60 / 90 / 120 / 160 bars.
+    ~65 bars ≈ 2 weeks, ~130 ≈ 4 weeks of trading hours.
+    """
+    n = len(closes)
+    best_w, best_score, best_trend = 90, -1.0, "Ranging"
+
+    for w in [60, 90, 120, 160]:
+        if w > n - 10:
+            continue
+        h_w = highs[-w:]
+        l_w = lows[-w:]
+        c_w = closes[-w:]
+        atr_w = _atr(h_w, l_w, c_w)
+        if atr_w == 0:
+            continue
+        sh, sl = _find_swings(h_w, l_w, atr_w, strength=3)
+        if len(sh) < 2 or len(sl) < 2:
+            continue
+        trend, score = _classify_structure(sh, sl)
+        if trend != "Ranging" and score > best_score:
+            best_score = score
+            best_w     = w
+            best_trend = trend
+
+    return best_w
+
+
+def _grade(trend, structure_score, is_broken, break_pct,
+           bars_since_break, n_sh, n_sl):
+    """
+    Grade the setup. All logic is pure price-structure based.
+    """
+    if trend == "Ranging" or structure_score < 0.25:
+        return {
+            "grade": "No Setup", "emoji": "❌",
+            "color": "#94A3B8", "bg": "#F8FAFC", "border": "#E2E8F0",
+            "detail": "No clear trend structure detected. Price is ranging — no structural level to break.",
+        }
+
+    rev_dir   = "Bullish" if trend == "Downtrend" else "Bearish"
+    dir_emoji = "🟢" if rev_dir == "Bullish" else "🔴"
+    swing_depth = min(n_sh, n_sl)
+
+    if not is_broken:
+        if structure_score >= 0.55:
+            return {
+                "grade": "Pre-Break Alert", "emoji": "⏳",
+                "color": "#7C3AED", "bg": "#EDE9FE", "border": "#C4B5FD",
+                "detail": (
+                    f"Strong {trend.lower()} confirmed ({swing_depth} swing sequences). "
+                    f"Key structural level has NOT broken yet — this is a pre-signal. "
+                    f"If price breaks the level, it becomes a {rev_dir.lower()} setup. Set an alert."
+                ),
+            }
+        return {
+            "grade": "No Setup", "emoji": "❌",
+            "color": "#94A3B8", "bg": "#F8FAFC", "border": "#E2E8F0",
+            "detail": "Trend structure exists but is weak and the key level hasn't broken. Not actionable.",
+        }
+
+    # Break confirmed — score it
+    freshness   = max(0.0, 1.0 - bars_since_break / 48.0)  # decays over 48h (2 trading days)
+    depth_score = min(swing_depth / 5.0, 1.0)
+    combined    = structure_score * 0.35 + freshness * 0.35 + depth_score * 0.20 + (0.10 if structure_score >= 0.6 else 0.0)
+    hours_ago   = bars_since_break
+
+    if combined >= 0.72 and freshness >= 0.7 and structure_score >= 0.6:
+        return {
+            "grade": "Prime Setup", "emoji": "🎯",
+            "color": "#15803D", "bg": "#DCFCE7", "border": "#86EFAC",
+            "detail": (
+                f"{dir_emoji} {rev_dir} reversal. Prior {trend.lower()} had clean structure "
+                f"({swing_depth} confirmed pivot sequences). "
+                f"Structural level broke {hours_ago}h ago — still fresh. "
+                "Entry now, stop just beyond the broken level."
+            ),
+        }
+    if combined >= 0.50 and freshness >= 0.4:
+        return {
+            "grade": "Strong Signal", "emoji": "⚡",
+            "color": "#2563EB", "bg": "#DBEAFE", "border": "#93C5FD",
+            "detail": (
+                f"{dir_emoji} {rev_dir} structure break confirmed. "
+                f"{'Solid' if structure_score >= 0.5 else 'Moderate'} prior {trend.lower()} ({swing_depth} swings). "
+                f"Break is {'recent' if hours_ago <= 12 else str(hours_ago) + 'h old'}. "
+                "Consider entry with stop beyond the broken level."
+            ),
+        }
+    if combined >= 0.30:
+        return {
+            "grade": "Watch Closely", "emoji": "👀",
+            "color": "#D97706", "bg": "#FEF9C3", "border": "#FDE047",
+            "detail": (
+                f"{rev_dir} structure break confirmed but "
+                f"{'break is getting stale (' + str(hours_ago) + 'h ago)' if hours_ago > 24 else 'prior structure was weak'}. "
+                "Monitor for follow-through before committing."
+            ),
+        }
+    return {
+        "grade": "Watch Closely", "emoji": "👀",
+        "color": "#D97706", "bg": "#FEF9C3", "border": "#FDE047",
+        "detail": "Break detected but evidence is thin. Wait for follow-through.",
+    }
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def ideas_hub_reversal_v1(request):
+    """
+    POST /ideas_hub_reversal_v1
+    Body: { "symbol": "AAPL" }
+    Uses 60d of 1H OHLC. Pure price-structure logic only.
+    """
+    try:
+        body   = json.loads(request.body)
+        symbol = str(body.get("symbol", "")).strip().upper()
+        if not symbol:
+            return JsonResponse({"error": "symbol is required."}, status=400)
+
+        ticker = yf.Ticker(symbol)
+        hist   = ticker.history(period="60d", interval="1h")
+
+        if hist.empty or len(hist) < 30:
+            return JsonResponse({"error": f"Not enough 1H data for '{symbol}'."}, status=404)
+
+        closes = hist["Close"].values.astype(float)
+        opens  = hist["Open"].values.astype(float)
+        highs  = hist["High"].values.astype(float)
+        lows   = hist["Low"].values.astype(float)
+        n      = len(closes)
+
+        # Auto-select best window
+        best_w = _best_window(closes, highs, lows)
+        h_w    = highs[-best_w:]
+        l_w    = lows[-best_w:]
+        c_w    = closes[-best_w:]
+        atr_val = _atr(h_w, l_w, c_w)
+
+        swing_highs, swing_lows = _find_swings(h_w, l_w, atr_val, strength=3)
+        trend, structure_score  = _classify_structure(swing_highs, swing_lows)
+        current_close = float(closes[-1])
+
+        level_price, is_broken, break_pct, level_type, level_bar_idx = \
+            _key_level(trend, swing_highs, swing_lows, current_close)
+
+        # Find bars since break
+        bars_since_break = 0
+        if is_broken and level_price is not None:
+            for i in range(len(c_w) - 1, -1, -1):
+                if trend == "Uptrend"   and c_w[i] >= level_price:
+                    bars_since_break = len(c_w) - 1 - i
+                    break
+                if trend == "Downtrend" and c_w[i] <= level_price:
+                    bars_since_break = len(c_w) - 1 - i
+                    break
+
+        classification = _grade(
+            trend, structure_score, is_broken, break_pct,
+            bars_since_break, len(swing_highs), len(swing_lows),
+        )
+
+        reversal_direction = (
+            "Bullish"   if trend == "Downtrend" else
+            "Bearish"   if trend == "Uptrend"   else "N/A"
+        )
+        direction_label = (
+            "Bear→Bull" if reversal_direction == "Bullish" else
+            "Bull→Bear" if reversal_direction == "Bearish" else "N/A"
+        )
+
+        # Combined score 0-100 for UI
+        freshness   = max(0.0, 1.0 - bars_since_break / 48.0) if is_broken else 0.0
+        depth_score = min(min(len(swing_highs), len(swing_lows)) / 5.0, 1.0)
+        combined_raw = structure_score * 0.35 + freshness * 0.35 + depth_score * 0.20 + (0.10 if structure_score >= 0.6 else 0.0)
+        setup_score  = round(min(combined_raw * 100, 100.0), 1)
+
+        # Market info
+        try:
+            slow   = ticker.info or {}
+            mc     = slow.get("marketCap") or 0
+            name   = slow.get("shortName") or slow.get("longName") or symbol
+            sector = slow.get("sector") or ""
+        except Exception:
+            mc, name, sector = 0, symbol, ""
+
+        if mc >= 200e9:   mc_tier = "Mega"
+        elif mc >= 10e9:  mc_tier = "Large"
+        elif mc >= 2e9:   mc_tier = "Mid"
+        elif mc >= 300e6: mc_tier = "Small"
+        else:             mc_tier = "Micro"
+
+        # Recent 48-bar strip for mini price chart
+        recent_bars = [
+            {"close": round(float(closes[i]), 2), "is_up": bool(closes[i] >= opens[i])}
+            for i in range(-min(48, n), 0)
+        ]
+
+        def fmt_swings(swings):
+            return [{"bar": int(idx), "price": round(p, 3)} for idx, p in swings[-6:]]
+
+        trading_days = round(best_w / 6.5)
+
+        return JsonResponse({
+            "symbol":            symbol,
+            "name":              name,
+            "price":             round(current_close, 2),
+            "mc_tier":           mc_tier,
+            "sector":            sector,
+
+            "prior_trend":       trend,
+            "structure_score":   round(structure_score, 3),
+            "window_bars":       best_w,
+            "window_desc":       f"~{trading_days} trading days of 1H bars",
+            "n_swing_highs":     len(swing_highs),
+            "n_swing_lows":      len(swing_lows),
+            "swing_highs":       fmt_swings(swing_highs),
+            "swing_lows":        fmt_swings(swing_lows),
+            "atr":               round(atr_val, 4),
+
+            "level_price":       round(level_price, 3) if level_price else None,
+            "level_type":        level_type,
+            "is_broken":         is_broken,
+            "break_pct":         break_pct,
+            "bars_since_break":  bars_since_break,
+            "hours_since_break": bars_since_break,
+
+            "reversal_direction": reversal_direction,
+            "direction_label":    direction_label,
+            "setup_score":        setup_score,
+            "classification":     classification,
+            "recent_bars":        recent_bars,
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD THESE VIEWS TO YOUR EXISTING views.py
+# All functions prefixed snowai_insta_ — safe for your 40k codebase
+# ─────────────────────────────────────────────────────────────────────────────
+
+import json
+import re
+import urllib.request
+import urllib.error
+import urllib.parse
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.core.exceptions import ObjectDoesNotExist
+
+# Import the models you added to models.py
+from .models import SnowAIInstaCategory, SnowAIInstaPost
+
+
+# ── UTILITY ───────────────────────────────────────────────────────────────────
+
+def snowai_insta_fetch_oembed_metadata(post_url):
+    """
+    Attempt Instagram oEmbed metadata fetch (thumbnail, author, caption).
+    Works for public posts only. Returns dict or None.
+    Note: Full data may need a FB access token — we try unauthenticated first.
+    """
+    try:
+        encoded_url = urllib.parse.quote(post_url, safe='')
+        oembed_url = (
+            f'https://graph.facebook.com/v18.0/instagram_oembed'
+            f'?url={encoded_url}&maxwidth=320&fields=thumbnail_url,author_name,title'
+        )
+        req = urllib.request.Request(oembed_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode())
+            return {
+                'thumbnail_url': data.get('thumbnail_url'),
+                'author_name': data.get('author_name'),
+                'title': data.get('title'),
+            }
+    except Exception:
+        return None
+
+
+# ── CATEGORIES ────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_insta_get_all_categories(request):
+    """Return all Instagram categories."""
+    try:
+        cats = SnowAIInstaCategory.objects.all()
+        return JsonResponse({
+            'categories': [
+                {
+                    'id': c.id,
+                    'category_name': c.category_name,
+                    'created_at': c.created_at.isoformat(),
+                }
+                for c in cats
+            ]
+        }, status=200)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_insta_create_category(request):
+    """Create a new Instagram category."""
+    try:
+        data = json.loads(request.body)
+        category_name = data.get('category_name', '').strip()
+        if not category_name:
+            return JsonResponse({'error': 'category_name is required'}, status=400)
+
+        cat, created = SnowAIInstaCategory.objects.get_or_create(category_name=category_name)
+        status_code = 201 if created else 200
+        return JsonResponse({
+            'id': cat.id,
+            'category_name': cat.category_name,
+            'created_at': cat.created_at.isoformat(),
+            'created': created,
+        }, status=status_code)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+# ── POSTS / REELS ─────────────────────────────────────────────────────────────
+
+def snowai_insta_serialize_post(post):
+    """Serialize a SnowAIInstaPost instance to dict."""
+    return {
+        'id': post.id,
+        'title': post.title,
+        'post_url': post.post_url,
+        'account_handle': post.account_handle,
+        'category_id': post.category.id if post.category else None,
+        'category_name': post.category.category_name if post.category else 'Uncategorized',
+        'media_type': post.media_type,
+        'caption': post.caption,
+        'thumbnail_url': post.thumbnail_url,
+        'shortcode': post.shortcode,
+        'notes': post.notes,
+        'is_reel': post.media_type == 'REEL',
+        'date_added': post.date_added.isoformat(),
+        'updated_at': post.updated_at.isoformat(),
+    }
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_insta_get_all_posts(request):
+    """Fetch all saved Instagram posts. Optional ?category_id= filter."""
+    try:
+        category_id = request.GET.get('category_id')
+        qs = SnowAIInstaPost.objects.select_related('category').all()
+        if category_id:
+            qs = qs.filter(category_id=category_id)
+        return JsonResponse(
+            {'posts': [snowai_insta_serialize_post(p) for p in qs]},
+            status=200
+        )
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_insta_create_post(request):
+    """
+    Save a new Instagram post/reel.
+    Auto-fetches oEmbed metadata (thumbnail, caption) for public content.
+    """
+    try:
+        data = json.loads(request.body)
+
+        title = data.get('title', '').strip()
+        post_url = data.get('post_url', '').strip()
+        category_id = data.get('category_id')
+        account_handle = data.get('account_handle', '').strip()
+        notes = data.get('notes', '').strip()
+
+        if not title or not post_url or not category_id:
+            return JsonResponse(
+                {'error': 'title, post_url, and category_id are required'},
+                status=400
+            )
+        if 'instagram.com' not in post_url:
+            return JsonResponse({'error': 'URL must be an Instagram URL'}, status=400)
+
+        try:
+            category = SnowAIInstaCategory.objects.get(id=category_id)
+        except ObjectDoesNotExist:
+            return JsonResponse({'error': 'Category not found'}, status=404)
+
+        # Enrich with oEmbed metadata
+        thumbnail_url = None
+        caption = None
+        oembed = snowai_insta_fetch_oembed_metadata(post_url)
+        if oembed:
+            thumbnail_url = oembed.get('thumbnail_url')
+            caption = oembed.get('title')
+            if not account_handle and oembed.get('author_name'):
+                account_handle = oembed['author_name']
+
+        post = SnowAIInstaPost.objects.create(
+            title=title,
+            post_url=post_url,
+            account_handle=account_handle or None,
+            category=category,
+            thumbnail_url=thumbnail_url,
+            caption=caption,
+            notes=notes or None,
+        )
+        return JsonResponse(snowai_insta_serialize_post(post), status=201)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_insta_update_post(request, post_id):
+    """Update an existing Instagram post."""
+    try:
+        data = json.loads(request.body)
+        try:
+            post = SnowAIInstaPost.objects.get(id=post_id)
+        except ObjectDoesNotExist:
+            return JsonResponse({'error': 'Post not found'}, status=404)
+
+        if 'title' in data:
+            post.title = data['title'].strip()
+        if 'post_url' in data:
+            post.post_url = data['post_url'].strip()
+        if 'account_handle' in data:
+            post.account_handle = data['account_handle'].strip() or None
+        if 'notes' in data:
+            post.notes = data['notes'].strip() or None
+        if 'category_id' in data:
+            try:
+                post.category = SnowAIInstaCategory.objects.get(id=data['category_id'])
+            except ObjectDoesNotExist:
+                return JsonResponse({'error': 'Category not found'}, status=404)
+
+        post.save()
+        return JsonResponse(snowai_insta_serialize_post(post), status=200)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_insta_delete_post(request, post_id):
+    """Delete an Instagram post."""
+    try:
+        try:
+            post = SnowAIInstaPost.objects.get(id=post_id)
+        except ObjectDoesNotExist:
+            return JsonResponse({'error': 'Post not found'}, status=404)
+        post.delete()
+        return JsonResponse({'message': 'Post deleted successfully'}, status=200)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+# ── MEDIA PROXY (best-effort, needs yt-dlp on server) ─────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_insta_fetch_media_proxy(request):
+    """
+    Best-effort playable media URL extraction for Instagram reels.
+
+    Uses yt-dlp if installed. Instagram blocks unauthenticated access heavily,
+    so this works for PUBLIC reels only and may break if Instagram changes things.
+
+    To enable: pip install yt-dlp  (on your Railway server)
+    Add to requirements.txt: yt-dlp
+
+    If yt-dlp isn't installed or fails, the frontend gracefully falls back
+    to showing an "Open on Instagram" button — no hard errors.
+    """
+    try:
+        data = json.loads(request.body)
+        post_url = data.get('post_url', '').strip()
+
+        if not post_url or 'instagram.com' not in post_url:
+            return JsonResponse({'error': 'Valid Instagram URL required'}, status=400)
+
+        try:
+            import yt_dlp  # noqa: F401 — imported here to avoid hard dependency
+
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+            }
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(post_url, download=False)
+
+            if not info:
+                return JsonResponse({'error': 'No media info returned'}, status=422)
+
+            media_url = None
+            formats = info.get('formats', [])
+            if formats:
+                mp4_fmts = [
+                    f for f in formats
+                    if f.get('ext') == 'mp4' and f.get('url') and f.get('vcodec') != 'none'
+                ]
+                if mp4_fmts:
+                    mp4_fmts.sort(key=lambda x: x.get('height') or 0, reverse=True)
+                    media_url = mp4_fmts[0]['url']
+                elif formats:
+                    media_url = formats[-1].get('url')
+
+            if not media_url:
+                media_url = info.get('url')
+
+            if media_url:
+                return JsonResponse({
+                    'media_url': media_url,
+                    'title': info.get('title'),
+                    'thumbnail': info.get('thumbnail'),
+                    'duration': info.get('duration'),
+                    'uploader': info.get('uploader'),
+                }, status=200)
+
+            return JsonResponse({'error': 'Could not extract media URL'}, status=422)
+
+        except ImportError:
+            return JsonResponse(
+                {'error': 'yt-dlp not installed. Add yt-dlp to requirements.txt and redeploy.'},
+                status=503
+            )
+        except Exception as ydl_err:
+            return JsonResponse({'error': f'Extraction failed: {str(ydl_err)}'}, status=422)
+
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+"""
+views.py  –  SnowAI GA/RL Sandbox
+──────────────────────────────────
+Endpoints
+  POST   /api/snowai/models/                     create model
+  GET    /api/snowai/models/                     list models (search/filter)
+  GET    /api/snowai/models/<id>/                model detail
+  DELETE /api/snowai/models/<id>/                delete model
+  POST   /api/snowai/models/<id>/start/          trigger GA run
+  POST   /api/snowai/models/<id>/pause/          pause
+  POST   /api/snowai/models/<id>/resume/         resume
+  GET    /api/snowai/models/<id>/status/         live progress poll
+  GET    /api/snowai/models/<id>/chart/<asset>/  OHLCV + trade markers
+  GET    /api/snowai/functions/                  list available functions
+  GET    /api/snowai/assets/                     asset catalogue
+  GET    /api/snowai/check-combo/                check if combo already exists
+"""
+
+import json
+import math
+import random
+import threading
+import uuid
+import base64
+import io
+import traceback
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+from django.db import transaction
+from django.db.models import Q, Max, Avg, Min
+
+from .models import (
+    SnowAIGAModel, GAChromosome, GATradeLog,
+    OHLCVCache, GAGenerationSummary,
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  ASSET CATALOGUE  (full list)
+# ─────────────────────────────────────────────────────────────────────────────
+
+ASSET_CATALOGUE = {
+    'forex': [
+        'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X',
+        'USDCAD=X', 'USDCHF=X', 'NZDUSD=X', 'EURGBP=X',
+        'EURJPY=X', 'GBPJPY=X', 'AUDJPY=X', 'EURCHF=X',
+    ],
+    'stocks': [
+        # Tech Giants & Semiconductors
+        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA',
+        'TSLA', 'META', 'AMD', 'INTC', 'ORCL', 'CSCO',
+        'ADBE', 'CRM', 'AVGO', 'QCOM', 'TXN', 'AMAT',
+        'LRCX', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'NXPI',
+        'MU', 'ADI', 'MPWR', 'SWKS', 'QRVO', 'ON',
+        'IBM', 'AAOI', 'ACLS', 'ACN', 'ADSK', 'AKAM',
+        'ANSS', 'APH', 'ANET', 'ASML', 'AVAV', 'KEYS',
+        'MCHP', 'MTSI', 'MSI', 'MDB', 'NTAP', 'NTNX',
+        'PAYC', 'PTC', 'ROP', 'SAP', 'SLAB', 'STX',
+        'TER', 'TSM', 'TYL', 'UMC', 'VRSN', 'WDC',
+        'XLNX', 'ZBRA',
+        # Software & Cloud
+        'NOW', 'INTU', 'WDAY', 'PANW', 'CRWD', 'ZS',
+        'DDOG', 'NET', 'SNOW', 'PLTR', 'TEAM', 'FTNT',
+        'OKTA', 'S', 'CYBR',
+        # Fintech & Payments
+        'V', 'MA', 'PYPL', 'ADP', 'FISV', 'FIS',
+        'ZM', 'DOCU', 'TWLO', 'SQ', 'UBER', 'LYFT',
+        'DASH', 'PINS', 'SNAP', 'SPOT', 'ROKU', 'Z',
+        'ZG', 'AFRM', 'COIN', 'HOOD', 'SOFI', 'RBLX',
+        'ASTS',
+        # Financial Services & Banks
+        'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'BLK',
+        'SCHW', 'AXP', 'SPGI', 'CME', 'ICE', 'MCO',
+        'BK', 'USB', 'PNC', 'TFC', 'COF',
+        'AFL', 'AMG', 'AON', 'AJG', 'AMP', 'BEN',
+        'CBOE', 'CINF', 'DFS', 'ERIE', 'FITB', 'FRC',
+        'GL', 'HBAN', 'HIG', 'IVZ', 'JKHY', 'KEY',
+        'L', 'LNC', 'MTB', 'NTRS', 'NDAQ', 'PFG',
+        'RF', 'RJF', 'SIVB', 'STT', 'SYF', 'TROW',
+        'WRB', 'ZION', 'CFG', 'CMA', 'FHN', 'EWBC',
+        'WAL', 'WBS', 'ALLY',
+        # Insurance
+        'BRK-B', 'PGR', 'ALL', 'TRV', 'AIG', 'MET', 'PRU',
+        # Healthcare & Pharma
+        'JNJ', 'LLY', 'UNH', 'PFE', 'ABBV', 'MRK', 'TMO',
+        'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS',
+        'CI', 'ELV', 'HUM', 'VRTX', 'REGN', 'ISRG',
+        'BIIB', 'MRNA', 'BNTX', 'SGEN', 'ALNY', 'BGNE',
+        'MCK', 'CAH', 'COR', 'IDXX', 'A', 'WAT',
+        'ALGN', 'ATRC', 'BAX', 'BDX', 'BIO', 'BSX',
+        'CERN', 'DXCM', 'EW', 'EXAS', 'HOLX', 'HSIC',
+        'ILMN', 'INCY', 'IQV', 'LH', 'MDT', 'MOH',
+        'NBIX', 'PKI', 'PODD', 'RMD', 'STE', 'SYK',
+        'TFX', 'UHS', 'WST', 'XRAY', 'ZBH', 'ZTS',
+        'TDOC', 'DOCS', 'VEEV', 'HALO', 'NVAX', 'IONS',
+        'UTHR',
+        # Consumer Discretionary & Retail
+        'HD', 'MCD', 'NKE', 'SBUX', 'TJX', 'LOW',
+        'BKNG', 'MAR', 'CMG', 'F', 'GM', 'ABNB',
+        'SHOP', 'MELI', 'EBAY', 'ETSY', 'TGT', 'ROST',
+        'YUM', 'DPZ', 'QSR', 'AAL', 'DAL', 'UAL',
+        'LUV', 'CCL', 'RCL', 'EA', 'TTWO', 'RBLX',
+        'U', 'RIVN', 'LCID',
+        'AZO', 'BBY', 'BURL', 'CPRT', 'DHI', 'DRI',
+        'EXPE', 'GPC', 'GRMN', 'HAS', 'HLT', 'KMX',
+        'LEN', 'LVS', 'MGM', 'MHK', 'NVR', 'ORLY',
+        'PHM', 'POOL', 'RL', 'TSCO', 'TPR', 'ULTA',
+        'VFC', 'WHR', 'WYNN', 'APTV', 'BWA', 'DG',
+        'DLTR', 'DDS', 'FIVE', 'FL', 'FOXA', 'FOX',
+        'GPS', 'GT', 'HBI', 'LAD', 'LKQ', 'M',
+        'NCLH', 'NWL', 'PVH',
+        # Consumer Staples
+        'WMT', 'PG', 'KO', 'PEP', 'COST', 'PM', 'MO',
+        'MDLZ', 'CL', 'KMB', 'GIS', 'KHC', 'STZ',
+        'ADM', 'BF-B', 'CAG', 'CHD', 'CLX', 'CPB',
+        'EL', 'HSY', 'K', 'KDP', 'KR', 'KVUE',
+        'MKC', 'MNST', 'SJM', 'SYY', 'TAP', 'TSN',
+        'WBA', 'BGS', 'BG', 'COKE', 'FLO', 'HRL',
+        'LANC', 'POST',
+        # Energy
+        'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX',
+        'VLO', 'OXY', 'HAL', 'DVN', 'HES', 'BKR',
+        'APA', 'CTRA', 'FANG', 'KMI', 'LNG', 'MRO',
+        'NOV', 'OKE', 'TRGP', 'WMB', 'EQT', 'AR',
+        'CLR', 'CNX', 'CQP', 'EXE', 'FTI', 'HP',
+        'MTDR', 'NBL', 'OVV', 'PBF', 'PR', 'RIG',
+        'SM', 'VAL', 'XEC',
+        # Industrials
+        'BA', 'HON', 'UNP', 'CAT', 'GE', 'RTX', 'LMT',
+        'UPS', 'DE', 'MMM', 'GD', 'NOC', 'FDX', 'CSX',
+        'HWM', 'TDG', 'HEI', 'LHX', 'TXT',
+        'AOS', 'CARR', 'CHRW', 'CMI', 'DOV', 'EMR',
+        'ETN', 'EXPD', 'FAST', 'FTV', 'GNRC', 'GWW',
+        'IEX', 'IR', 'ITW', 'J', 'JBHT', 'JCI',
+        'LDOS', 'MAS', 'NSC', 'ODFL', 'OTIS', 'PCAR',
+        'PH', 'PWR', 'ROK', 'ROL', 'RSG', 'SNA',
+        'SWK', 'TT', 'URI', 'VRSK', 'WAB', 'WM',
+        'XYL', 'ALK', 'JBLU', 'SAVE',
+        # Communication Services & Media
+        'T', 'VZ', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR',
+        'LYV', 'MTCH', 'NWSA', 'NWS', 'OMC', 'PARA',
+        'WBD', 'IPG', 'DISH',
+        # Real Estate & REITs
+        'AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'SPG', 'O',
+        'AVB', 'ARE', 'BXP', 'CBRE', 'DLR', 'EQR',
+        'ESS', 'EXR', 'FRT', 'HST', 'IRM', 'KIM',
+        'MAA', 'REG', 'SBAC', 'SLG', 'UDR', 'VTR',
+        'WELL', 'WY', 'INVH', 'PEAK', 'VNO',
+        # Materials & Chemicals
+        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'NEM', 'FCX',
+        'DOW', 'LYB', 'CE', 'ALB', 'EMN', 'SQM',
+        'AMCR', 'BALL', 'CF', 'CLF', 'CTVA', 'FMC',
+        'IP', 'MLM', 'MOS', 'NUE', 'PKG', 'PPG',
+        'SEE', 'STLD', 'SW', 'VMC', 'AVY', 'AA',
+        'MP', 'RS',
+        # Utilities
+        'NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE',
+        'AEE', 'AES', 'AWK', 'CMS', 'CNP', 'DTE',
+        'ED', 'EIX', 'ES', 'ETR', 'EVRG', 'FE',
+        'LNT', 'NI', 'NRG', 'PCG', 'PEG', 'PNW',
+        'PPL', 'VST', 'WEC', 'XEL', 'CEG',
+        # Chinese ADRs
+        'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV', 'LI',
+    ],
+    'indices': [
+        # US Indices
+        '^GSPC', '^DJI', '^IXIC', '^RUT', '^VIX',
+        # European Indices
+        '^FTSE', '^GDAXI', '^FCHI', '^IBEX', '^AEX',
+        '^SSMI', '^OMXS30', '^BFX',
+        # Asian Indices
+        '^N225', '^HSI', '000001.SS', '^STI', '^BSESN',
+        '^NSEI', '^KS11', '^TWII', '^JKSE',
+        # Other Global Indices
+        '^AXJO', '^GSPTSE', '^MXX', '^BVSP', '^MERV',
+    ],
+    'commodities': [
+        # Precious Metals
+        'GC=F', 'SI=F', 'PL=F', 'PA=F',
+        # Energy
+        'CL=F', 'BZ=F', 'NG=F', 'RB=F', 'HO=F',
+        # Base Metals
+        'HG=F', 'ALI=F',
+        # Agricultural
+        'ZC=F', 'ZW=F', 'ZS=F', 'KC=F', 'SB=F',
+        'CT=F', 'CC=F', 'LBS=F',
+    ],
+    'bonds': [
+        # US Treasury Yields
+        '^TNX', '^TYX', '^FVX', '^IRX',
+        # Treasury Futures
+        'ZN=F', 'ZB=F', 'ZT=F', 'ZF=F',
+    ],
+    'crypto': [
+        'BTC-USD', 'ETH-USD', 'BNB-USD', 'SOL-USD', 'ADA-USD',
+        'XRP-USD', 'DOGE-USD', 'AVAX-USD', 'DOT-USD', 'MATIC-USD',
+        'LINK-USD', 'UNI-USD', 'LTC-USD', 'BCH-USD', 'ATOM-USD',
+    ],
+}
+
+AVAILABLE_FUNCTIONS = [
+    # Trend
+    'is_uptrend', 'is_downtrend', 'is_ranging_market',
+    'is_bullish_market_retracement', 'is_bearish_market_retracement',
+    'is_bullish_bias', 'is_bearish_bias',
+    'is_high_r_squared',
+    # Support / Resistance
+    'is_support_level', 'is_resistance_level',
+    'is_fibonacci_level',
+    'is_ote_buy', 'is_ote_sell',
+    'is_bullish_orderblock', 'is_bearish_orderblock',
+    # Market regime
+    'is_stable_market', 'is_choppy_market', 'is_volatile_market',
+    'is_high_volume', 'is_low_volume',
+    'buy_hold', 'sell_hold', 'buy_hold_regime',
+    # Candlestick patterns
+    'is_bullish_candle', 'is_bearish_candle',
+    'is_bullish_engulfing', 'is_bearish_engulfing',
+    'is_morning_star', 'is_evening_star',
+    'is_three_white_soldiers', 'is_three_black_crows',
+    'is_morning_doji_star', 'is_evening_doji_star',
+    'is_rising_three_methods', 'is_falling_three_methods',
+    'is_hammer', 'is_hanging_man',
+    'is_inverted_hammer', 'is_shooting_star',
+    'is_bullish_kicker', 'is_bearish_kicker',
+    'is_bullish_harami', 'is_bearish_harami',
+    'is_bullish_three_line_strike', 'is_bearish_three_line_strike',
+    # Session
+    'new_york_session', 'london_session', 'asian_session',
+    'is_asian_range_buy', 'is_asian_range_sell',
+    # Weekly profile
+    'is_bullish_weekly_profile', 'is_bearish_weekly_profile',
+    # SnowAI proprietary signals
+    'snow_alpha_buy', 'snow_alpha_short',
+    'ice_beta_buy', 'ice_beta_short',
+    'frost_gamma_buy', 'frost_gamma_short',
+    'glacier_x_buy', 'glacier_x_short',
+    'avalanche_z_buy', 'avalanche_z_short',
+    'polar_prime_buy', 'polar_prime_short',
+    'blizzard_omega_buy', 'blizzard_omega_short',
+    'tundra_sigma_buy', 'tundra_sigma_short',
+    'arctic_delta_buy', 'arctic_delta_short',
+    'permafrost_theta_buy', 'permafrost_theta_short',
+    # Statistical / quantitative
+    'is_monte_carlo_bullish_prediction', 'is_monte_carlo_bearish_prediction',
+    'average_retracement',
+]
+
+# Running session state (augments DB for real-time polling)
+# Session state is now stored entirely in the DB (SnowAIGAModel.logs,
+# .status, .progress) so redeployments never lose state.
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  FUNC_MAP  — built dynamically from functions already in this views.py
+#  No redefinitions needed; we just look them up by name in globals().
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ga_build_func_map():
+    """
+    Resolve every function name in AVAILABLE_FUNCTIONS against the module's
+    global namespace (where your existing trading functions live).
+    Unknown names are silently skipped so a missing function never crashes
+    the GA — it just won't be used in evaluation.
+    """
+    g = globals()
+    return {name: g[name] for name in AVAILABLE_FUNCTIONS if name in g and callable(g[name])}
+
+# Built once at import time; all GA code references FUNC_MAP.
+FUNC_MAP = _ga_build_func_map()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  STARTUP RESET
+#  On every deploy/restart, any model stuck in 'running' or 'paused' means
+#  its worker thread died with the old process. Reset them to 'pending' so
+#  the scheduler picks them up again on the next tick.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ga_reset_stale_models():
+    try:
+        stale = SnowAIGAModel.objects.filter(status__in=['running', 'paused'])
+        count = stale.count()
+        if count:
+            stale.update(status='pending')
+            print(f'[SnowAI] Reset {count} stale model(s) to pending on startup.')
+    except Exception as e:
+        # DB might not be ready yet (e.g. first migration) — silently ignore
+        print(f'[SnowAI] Startup reset skipped: {e}')
+
+# Runs once when Django imports this module (i.e. on every Gunicorn worker start)
+_ga_reset_stale_models()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  MARKET DATA  —  auto-detects available history per timeframe
+# ─────────────────────────────────────────────────────────────────────────────
+
+# yfinance hard limits per interval (what the API actually serves)
+_YF_MAX_HISTORY = {
+    '1m':  '7d',
+    '2m':  '60d',
+    '5m':  '60d',
+    '15m': '60d',
+    '30m': '60d',
+    '60m': '730d',
+    '1h':  '730d',
+    '90m': '60d',
+    '1d':  'max',
+    '5d':  'max',
+    '1wk': 'max',
+    '1mo': 'max',
+    '3mo': 'max',
+}
+
+
+def _fetch_ohlcv(asset: str, timeframe: str, start_year: int = None, end_year: int = None) -> pd.DataFrame | None:
+    """
+    Fetch OHLCV from yfinance.
+    start_year / end_year are IGNORED — we always pull the maximum
+    history the interval allows and let yfinance decide the real range.
+    This prevents users from requesting e.g. 1h data from 2008 (which
+    yfinance simply doesn't have).
+    """
+    try:
+        ticker  = yf.Ticker(asset)
+        period  = _YF_MAX_HISTORY.get(timeframe, 'max')
+
+        df = ticker.history(period=period, interval=timeframe)
+        if df is None or df.empty:
+            return None
+
+        df.index = pd.to_datetime(df.index, utc=True)
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+        return df if not df.empty else None
+
+    except Exception as e:
+        print(f'[SnowAI] fetch error {asset} ({timeframe}): {e}')
+        return None
+
+
+def _ga_detect_range(asset: str, timeframe: str) -> dict:
+    """
+    Return the actual available date range + bar count for an asset/timeframe.
+    Used by the frontend to show users what data they'll actually get.
+    """
+    df = _fetch_ohlcv(asset, timeframe)
+    if df is None or df.empty:
+        return {'asset': asset, 'timeframe': timeframe, 'available': False,
+                'bars': 0, 'start': None, 'end': None}
+    return {
+        'asset':     asset,
+        'timeframe': timeframe,
+        'available': True,
+        'bars':      len(df),
+        'start':     str(df.index[0].date()),
+        'end':       str(df.index[-1].date()),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  MARKET SNAPSHOT  (base64 PNG heatmap)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _generate_market_snapshot(df: pd.DataFrame, functions: list) -> tuple[str, dict]:
+    """
+    Build a compact market-condition heatmap image as base64 PNG.
+    Returns (b64_string, meta_dict).
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
+
+        window = df.iloc[-60:] if len(df) >= 60 else df
+
+        # Compute regime metrics
+        atr_val    = float(_atr(window).iloc[-1]) if len(window) >= 14 else 0
+        price      = float(window['Close'].iloc[-1])
+        vol_ratio  = atr_val / (price + 1e-9)
+        rsi_val    = float(_rsi(window['Close']).iloc[-1]) if len(window) >= 14 else 50
+        ema20_slope = float(_ema(window['Close'], 20).diff().iloc[-1]) if len(window) >= 20 else 0
+        vol_ratio_norm = min(vol_ratio * 40, 1.0)
+
+        # 8-cell heatmap: [ATR, RSI, Trend, Volume, Ranging, Stable, Uptrend, Downtrend]
+        labels  = ['ATR', 'RSI', 'Trend\nSlope', 'Vol\nRatio',
+                   'Ranging', 'Stable', 'Uptrend', 'Downtrend']
+        values  = [
+            vol_ratio_norm,
+            rsi_val / 100,
+            min(max((ema20_slope / (price + 1e-9)) * 500 + 0.5, 0), 1),
+            min(vol_ratio * 20, 1.0),
+            1.0 if is_ranging_market(window) else 0.0,
+            1.0 if is_stable_market(window)  else 0.0,
+            1.0 if is_uptrend(window)         else 0.0,
+            1.0 if is_downtrend(window)       else 0.0,
+        ]
+
+        fig, axes = plt.subplots(2, 4, figsize=(6, 2.4))
+        fig.patch.set_facecolor('#0d1117')
+        cmap = plt.cm.get_cmap('RdYlGn')
+
+        for ax, label, val in zip(axes.flat, labels, values):
+            color = cmap(val)
+            ax.set_facecolor('#0d1117')
+            rect = mpatches.FancyBboxPatch(
+                (0.05, 0.05), 0.9, 0.9,
+                boxstyle='round,pad=0.05',
+                facecolor=(*color[:3], 0.85),
+                edgecolor='#ffffff22', linewidth=0.5,
+                transform=ax.transAxes
+            )
+            ax.add_patch(rect)
+            ax.text(0.5, 0.62, f'{val:.2f}',
+                    ha='center', va='center',
+                    transform=ax.transAxes,
+                    fontsize=9, fontweight='bold',
+                    color='white', fontfamily='monospace')
+            ax.text(0.5, 0.28, label,
+                    ha='center', va='center',
+                    transform=ax.transAxes,
+                    fontsize=6.5, color='#aaaaaa', fontfamily='monospace')
+            ax.set_xticks([]); ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+
+        plt.tight_layout(pad=0.3)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=80,
+                    facecolor='#0d1117', bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode()
+
+        meta = {
+            'atr':        round(atr_val, 6),
+            'vol_ratio':  round(vol_ratio, 6),
+            'rsi':        round(rsi_val, 2),
+            'ema20_slope': round(ema20_slope, 6),
+            'is_uptrend':  is_uptrend(window),
+            'is_ranging':  is_ranging_market(window),
+            'is_stable':   is_stable_market(window),
+        }
+        return b64, meta
+
+    except Exception as e:
+        print(f'[SnowAI] snapshot error: {e}')
+        return '', {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  STRATEGY EVALUATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _evaluate_chromosome(functions: list, datasets: dict, config: dict) -> dict:
+    """
+    Vectorised backtest across all datasets.
+    Returns fitness, win_rate, total_trades, total_pnl, sharpe, max_drawdown, trades_log.
+    """
+    tp_pct = config.get('take_profit', 4.0) / 100
+    sl_pct = config.get('stop_loss',   2.0) / 100
+    equity = config.get('initial_capital', 10000.0)
+    all_returns = []
+    all_trades  = []
+    total_wins  = 0
+
+    for asset, df in datasets.items():
+        if df is None or len(df) < 50:
+            continue
+
+        in_pos      = False
+        entry_price = 0.0
+        entry_time  = None
+        step        = max(1, len(df) // 8000)
+
+        for i in range(50, len(df), step):
+            window = df.iloc[i - 50: i]
+
+            try:
+                signal = all(
+                    FUNC_MAP[f](window)
+                    for f in functions
+                    if f in FUNC_MAP
+                )
+            except Exception:
+                continue
+
+            cur_price = float(df['Close'].iloc[i])
+            cur_time  = df.index[i]
+
+            if not in_pos and signal:
+                in_pos      = True
+                entry_price = cur_price
+                entry_time  = cur_time
+                continue
+
+            if in_pos:
+                chg = (cur_price - entry_price) / entry_price
+                if chg >= tp_pct:
+                    pnl = equity * tp_pct
+                    equity += pnl
+                    all_returns.append(tp_pct)
+                    all_trades.append({
+                        'asset': asset,
+                        'entry_time':  str(entry_time),
+                        'exit_time':   str(cur_time),
+                        'entry_price': round(entry_price, 6),
+                        'exit_price':  round(cur_price, 6),
+                        'direction':   'BUY',
+                        'pnl':         round(pnl, 4),
+                        'hit_tp':      True,
+                        'hit_sl':      False,
+                    })
+                    total_wins += 1
+                    in_pos = False
+
+                elif chg <= -sl_pct:
+                    pnl = -equity * sl_pct
+                    equity += pnl
+                    all_returns.append(-sl_pct)
+                    all_trades.append({
+                        'asset': asset,
+                        'entry_time':  str(entry_time),
+                        'exit_time':   str(cur_time),
+                        'entry_price': round(entry_price, 6),
+                        'exit_price':  round(cur_price, 6),
+                        'direction':   'BUY',
+                        'pnl':         round(pnl, 4),
+                        'hit_tp':      False,
+                        'hit_sl':      True,
+                    })
+                    in_pos = False
+
+    n = len(all_returns)
+    if n == 0:
+        return dict(fitness=0, win_rate=0, total_trades=0,
+                    total_pnl=0, sharpe=0, max_drawdown=0, trades=[])
+
+    arr        = np.array(all_returns)
+    win_rate   = total_wins / n * 100
+    total_pnl  = float(sum(t['pnl'] for t in all_trades))
+    sharpe     = float(arr.mean() / (arr.std() + 1e-9) * math.sqrt(252))
+
+    # max drawdown
+    cumulative = np.cumprod(1 + arr)
+    peak       = np.maximum.accumulate(cumulative)
+    drawdown   = (cumulative - peak) / (peak + 1e-9)
+    max_dd     = float(drawdown.min()) * 100
+
+    fitness = (
+        win_rate * 0.4
+        + (total_pnl / config.get('initial_capital', 10000) * 50)
+        + max(sharpe, 0) * 5
+        - abs(max_dd) * 0.1
+    )
+    return dict(
+        fitness=round(fitness, 4),
+        win_rate=round(win_rate, 2),
+        total_trades=n,
+        total_pnl=round(total_pnl, 2),
+        sharpe=round(sharpe, 4),
+        max_drawdown=round(max_dd, 2),
+        trades=all_trades,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  RL Q-TABLE  (epsilon-greedy function-combo selection)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _rl_select_combo(q_table: dict, available: list, n_funcs: int, epsilon: float = 0.2) -> list:
+    """Select a function combination via epsilon-greedy on the Q-table."""
+    if random.random() < epsilon or not q_table:
+        size = random.randint(2, min(4, len(available)))
+        return random.sample(available, size)
+
+    # Greedy: pick from combos with highest Q value if we've seen enough
+    scored = sorted(q_table.items(), key=lambda x: x[1], reverse=True)
+    for key, _ in scored[:10]:
+        funcs = key.split('|')
+        if all(f in available for f in funcs):
+            return funcs
+
+    size = random.randint(2, min(4, len(available)))
+    return random.sample(available, size)
+
+
+def _rl_update_q(q_table: dict, combo_key: str, reward: float, lr: float = 0.01) -> dict:
+    old = q_table.get(combo_key, 0.0)
+    q_table[combo_key] = old + lr * (reward - old)
+    return q_table
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  GENETIC ALGORITHM  (runs in background thread)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_ga(model_id: str):
+    """
+    Full GA+RL training loop.  Runs in a daemon thread triggered by the
+    scheduler or the /start/ endpoint.
+    """
+    # Ensure session exists and is marked running — don't wipe logs if the
+    # scheduler already pre-initialized the session dict.
+    # No in-memory session — all state lives in the DB.
+
+    try:
+        model = SnowAIGAModel.objects.get(id=model_id)
+
+        # Only update status/started_at if not already running
+        # (scheduler pre-sets status='running' before spawning the thread)
+        update_fields = []
+        if model.status != 'running':
+            model.status = 'running'
+            update_fields.append('status')
+        if not model.started_at:
+            model.started_at = timezone.now()
+            update_fields.append('started_at')
+        if update_fields:
+            model.save(update_fields=update_fields)
+
+        config = {
+            'take_profit':    model.take_profit,
+            'stop_loss':      model.stop_loss,
+            'initial_capital': model.initial_capital,
+            'population_size': model.population_size,
+            'max_generations': model.max_generations,
+            'mutation_rate':   model.mutation_rate,
+            'elite_fraction':  model.elite_fraction,
+            'rl_lr':           model.rl_learning_rate,
+        }
+        allowed = model.get_allowed_functions() or AVAILABLE_FUNCTIONS
+        assets  = model.get_assets_list()
+
+        def _log(msg):
+            model.append_log(msg)
+
+        _log('📡 Fetching market data…')
+        _log(f'  ⏱ Timeframe: {model.timeframe} — pulling max available history')
+        datasets = {}
+        for asset in assets:
+            df = _fetch_ohlcv(asset, model.timeframe)
+            if df is not None:
+                start_date = str(df.index[0].date())
+                end_date   = str(df.index[-1].date())
+                datasets[asset] = df
+                _log(f'  ✓ {asset}  {start_date} → {end_date}  ({len(df)} bars)')
+            else:
+                _log(f'  ✗ {asset}  (no data available for {model.timeframe})')
+
+        if not datasets:
+            raise ValueError('No valid datasets loaded.')
+
+        q_table = model.get_rl_q_table()
+
+        # ── Initialise population ──────────────────────────────────────
+        population = []
+        seen_keys  = set()
+        attempts   = 0
+        while len(population) < config['population_size'] and attempts < config['population_size'] * 20:
+            attempts += 1
+            funcs = _rl_select_combo(q_table, allowed, 3, epsilon=0.5)
+            key   = '|'.join(sorted(funcs))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                population.append({'functions': funcs, 'result': None})
+
+        _log(f'🧬 Population initialised: {len(population)} individuals')
+
+        best_fitness_history = []
+
+        for gen in range(model.current_generation, config['max_generations']):
+
+            # ── Check for pause ────────────────────────────────────────
+            while SnowAIGAModel.objects.filter(id=model_id, status='paused').exists():
+                import time; time.sleep(2)
+                # Check if model was deleted or force-stopped
+                if not SnowAIGAModel.objects.filter(id=model_id).exists():
+                    return
+
+            _log(f'🔬 Generation {gen + 1}/{config["max_generations"]}')
+
+            # ── Evaluate unevaluated individuals ───────────────────────
+            for idx, ind in enumerate(population):
+                if ind['result'] is None:
+                    ind['result'] = _evaluate_chromosome(ind['functions'], datasets, config)
+                    q_table = _rl_update_q(
+                        q_table,
+                        '|'.join(sorted(ind['functions'])),
+                        ind['result']['fitness'],
+                        config['rl_lr'],
+                    )
+                    if (idx + 1) % 5 == 0:
+                        _log(f'  … {idx + 1}/{len(population)} evaluated')
+
+            # ── Sort ───────────────────────────────────────────────────
+            population.sort(key=lambda x: x['result']['fitness'], reverse=True)
+            best = population[0]
+            best_fitness_history.append(best['result']['fitness'])
+
+            _log(
+                f'  🏆 Best: [{" + ".join(best["functions"])}]  '
+                f'fit={best["result"]["fitness"]:.2f}  '
+                f'wr={best["result"]["win_rate"]:.1f}%  '
+                f'trades={best["result"]["total_trades"]}'
+            )
+
+            # ── Save generation summary ────────────────────────────────
+            fitnesses = [i['result']['fitness'] for i in population]
+            GAGenerationSummary.objects.update_or_create(
+                model=model, generation=gen,
+                defaults=dict(
+                    best_fitness=max(fitnesses),
+                    avg_fitness=sum(fitnesses) / len(fitnesses),
+                    worst_fitness=min(fitnesses),
+                    diversity=len({i['result']['fitness'] for i in population}) / len(population),
+                    top_combos=json.dumps([
+                        '|'.join(sorted(i['functions']))
+                        for i in population[:3]
+                    ]),
+                ),
+            )
+
+            # ── Persist top chromosomes ────────────────────────────────
+            elite_count = max(3, int(len(population) * config['elite_fraction']))
+            with transaction.atomic():
+                for rank, ind in enumerate(population[:elite_count]):
+                    r = ind['result']
+
+                    # Market snapshot from first dataset
+                    first_df = next(iter(datasets.values()))
+                    snapshot_b64, snapshot_meta = _generate_market_snapshot(
+                        first_df, ind['functions']
+                    )
+
+                    chrom = GAChromosome.objects.create(
+                        model=model,
+                        generation=gen,
+                        functions=json.dumps(ind['functions']),
+                        fitness=r['fitness'],
+                        win_rate=r['win_rate'],
+                        total_trades=r['total_trades'],
+                        total_pnl=r['total_pnl'],
+                        sharpe_ratio=r['sharpe'],
+                        max_drawdown=r['max_drawdown'],
+                        is_elite=(rank == 0),
+                        market_snapshot=snapshot_b64,
+                        market_snapshot_meta=json.dumps(snapshot_meta),
+                    )
+
+                    # Save trade logs
+                    trade_objs = []
+                    for t in r.get('trades', [])[:200]:  # cap per chromosome
+                        try:
+                            trade_objs.append(GATradeLog(
+                                chromosome=chrom,
+                                asset=t['asset'],
+                                entry_time=datetime.fromisoformat(t['entry_time'].replace(' ', 'T').split('+')[0]),
+                                exit_time=datetime.fromisoformat(t['exit_time'].replace(' ', 'T').split('+')[0]),
+                                entry_price=t['entry_price'],
+                                exit_price=t['exit_price'],
+                                direction=t['direction'],
+                                pnl=t['pnl'],
+                                hit_tp=t['hit_tp'],
+                                hit_sl=t['hit_sl'],
+                            ))
+                        except Exception:
+                            pass
+                    if trade_objs:
+                        GATradeLog.objects.bulk_create(trade_objs, ignore_conflicts=True)
+
+            # ── Update model state ─────────────────────────────────────
+            model.current_generation = gen + 1
+            model.progress           = int((gen + 1) / config['max_generations'] * 100)
+            model.set_rl_q_table(q_table)
+            model.save(update_fields=['current_generation', 'progress', 'rl_q_table'])
+            # progress already saved via model.save() above
+
+            # ── Selection + crossover + mutation ──────────────────────
+            elites    = population[:elite_count]
+            next_gen  = [dict(functions=e['functions'], result=None) for e in elites]
+
+            while len(next_gen) < config['population_size']:
+                # Tournament selection
+                p1 = max(random.sample(elites, min(3, len(elites))),
+                         key=lambda x: x['result']['fitness'])
+                p2 = max(random.sample(elites, min(3, len(elites))),
+                         key=lambda x: x['result']['fitness'])
+
+                pool  = list(set(p1['functions'] + p2['functions']))
+                size  = random.randint(2, min(4, len(pool)))
+                child = random.sample(pool, size)
+
+                # Mutation
+                if random.random() < config['mutation_rate']:
+                    action = random.choice(['add', 'remove', 'replace'])
+                    if action == 'add' and len(child) < 5:
+                        others = [f for f in allowed if f not in child]
+                        if others: child.append(random.choice(others))
+                    elif action == 'remove' and len(child) > 2:
+                        child.pop(random.randint(0, len(child) - 1))
+                    elif action == 'replace':
+                        others = [f for f in allowed if f not in child]
+                        if others:
+                            child[random.randint(0, len(child) - 1)] = random.choice(others)
+
+                # RL-guided injection every 5th slot
+                if len(next_gen) % 5 == 0:
+                    child = _rl_select_combo(q_table, allowed, 3, epsilon=0.1)
+
+                next_gen.append({'functions': child, 'result': None})
+
+            population = next_gen
+            import time; time.sleep(0.02)
+
+        # ── Finished ───────────────────────────────────────────────────
+        model.status      = 'completed'
+        model.progress    = 100
+        model.finished_at = timezone.now()
+        model.save(update_fields=['status', 'progress', 'finished_at'])
+        _log('🎉 Training complete!')
+
+    except Exception as e:
+        traceback.print_exc()
+        try:
+            model = SnowAIGAModel.objects.get(id=model_id)
+            model.status        = 'failed'
+            model.error_message = str(e)
+            model.save(update_fields=['status', 'error_message'])
+        except Exception:
+            pass
+        try:
+            SnowAIGAModel.objects.filter(id=model_id).first().append_log(f'❌ Error: {e}')
+        except Exception:
+            pass
+    finally:
+        pass  # All state is in DB; nothing to clean up in memory.
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SCHEDULER JOB  (called by APScheduler every N minutes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def ga_scheduler_run_pending():
+    """
+    Entry point for the APScheduler job.
+    Picks up any 'pending' models and starts them in background threads.
+    Guards against double-starting via the DB status field.
+    Works correctly across redeployments — no in-memory state used.
+    """
+    try:
+        pending = SnowAIGAModel.objects.filter(status='pending')
+        for model in pending:
+            mid = str(model.id)
+
+            # Guard: DB status check (works across restarts/redeployments)
+
+            # Guard 2: atomically flip status to 'running' so a second
+            # scheduler tick can't pick it up again before the thread starts
+            updated = SnowAIGAModel.objects.filter(
+                id=model.id, status='pending'
+            ).update(status='running')
+
+            if not updated:
+                # Another process/tick already grabbed it
+                continue
+
+            # Clear stale logs from previous run so the log tab starts fresh
+            model.clear_logs()
+            model.append_log(f'🚀 Scheduler picked up model: {model.name}')
+
+            print(f'[SnowAI Scheduler] Starting model "{model.name}" ({mid})')
+            t = threading.Thread(target=_run_ga, args=(mid,), daemon=True)
+            t.start()
+
+    except Exception as e:
+        print(f'[SnowAI Scheduler] Error in ga_scheduler_run_pending: {e}')
+        traceback.print_exc()
+
+
+# ── Add this next to your other scheduler.add_job() calls ─────────────────────
+# scheduler is already defined & started elsewhere in your views.py.
+# Just drop this in alongside your existing jobs:
+#
+# scheduler.add_job(
+#     ga_scheduler_run_pending,
+#     trigger=IntervalTrigger(minutes=5),
+#     id='snowai_ga_runner',
+#     name='SnowAI: pick up pending GA models every 5 min',
+#     replace_existing=True,
+# )
+#
+# Safe to leave running permanently — when there are no pending models
+# it does a single cheap DB query (.filter(status='pending')) and exits.
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ga_json(data, status=200):
+    return JsonResponse(data, status=status, safe=isinstance(data, dict))
+
+
+def _ga_model_summary(m: SnowAIGAModel) -> dict:
+    best = m.get_best_chromosome()
+    gen_sums = list(
+        m.generation_summaries
+         .values('generation', 'best_fitness', 'avg_fitness')
+         .order_by('generation')
+    )
+    return {
+        'id':               str(m.id),
+        'name':             m.name,
+        'assets':           m.get_assets_list(),
+        'timeframe':        m.timeframe,
+        'start_year':       m.start_year,
+        'end_year':         m.end_year,
+        'initial_capital':  m.initial_capital,
+        'take_profit':      m.take_profit,
+        'stop_loss':        m.stop_loss,
+        'population_size':  m.population_size,
+        'max_generations':  m.max_generations,
+        'mutation_rate':    m.mutation_rate,
+        'rl_enabled':       m.rl_enabled,
+        'rl_learning_rate': m.rl_learning_rate,
+        'allowed_functions': m.get_allowed_functions(),
+        'status':           m.status,
+        'progress':         m.progress,
+        'current_generation': m.current_generation,
+        'error_message':    m.error_message,
+        'created_at':       m.created_at.isoformat(),
+        'updated_at':       m.updated_at.isoformat(),
+        'started_at':       m.started_at.isoformat() if m.started_at else None,
+        'finished_at':      m.finished_at.isoformat() if m.finished_at else None,
+        'best_chromosome': {
+            'id':          str(best.id),
+            'generation':  best.generation,
+            'functions':   best.get_functions(),
+            'fitness':     best.fitness,
+            'win_rate':    best.win_rate,
+            'total_trades': best.total_trades,
+            'total_pnl':   best.total_pnl,
+            'sharpe_ratio': best.sharpe_ratio,
+            'max_drawdown': best.max_drawdown,
+            'market_snapshot': best.market_snapshot,
+            'market_snapshot_meta': best.get_market_snapshot_meta(),
+        } if best else None,
+        'fitness_history': gen_sums,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  API VIEWS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+def ga_model_list_create(request):
+    """GET list (search/filter) | POST create."""
+
+    if request.method == 'GET':
+        try:
+            qs = SnowAIGAModel.objects.all()
+
+            q = request.GET.get('q', '').strip()
+            if q:
+                qs = qs.filter(Q(name__icontains=q) | Q(assets__icontains=q))
+
+            status = request.GET.get('status')
+            if status:
+                qs = qs.filter(status=status)
+
+            timeframe = request.GET.get('timeframe')
+            if timeframe:
+                qs = qs.filter(timeframe=timeframe)
+
+            func_filter = request.GET.get('function')
+            if func_filter:
+                qs = qs.filter(allowed_functions__icontains=func_filter)
+
+            return _ga_json({'models': [_ga_model_summary(m) for m in qs[:100]]})
+        except Exception as e:
+            traceback.print_exc()
+            return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+        except Exception as e:
+            return _ga_json({'error': f'Invalid JSON body: {e}'}, 400)
+
+        try:
+            # Duplicate check
+            assets_sorted = ','.join(sorted(data.get('assets', [])))
+            funcs_key     = json.dumps(sorted(data.get('allowed_functions', [])))
+
+            if SnowAIGAModel.objects.filter(
+                assets=assets_sorted,
+                timeframe=data.get('timeframe', '1d'),
+                allowed_functions=funcs_key,
+            ).exists():
+                return _ga_json(
+                    {'error': 'A model with this exact combo/asset/timeframe already exists.'}, 409
+                )
+
+            m = SnowAIGAModel.objects.create(
+                name=data.get('name', f'Model {uuid.uuid4().hex[:6]}'),
+                assets=assets_sorted,
+                timeframe=data.get('timeframe', '1d'),
+                start_year=0,   # not used — actual range detected at runtime from yfinance
+                end_year=0,     # not used — actual range detected at runtime from yfinance
+                initial_capital=float(data.get('initial_capital', 10000)),
+                take_profit=float(data.get('take_profit', 4.0)),
+                stop_loss=float(data.get('stop_loss', 2.0)),
+                population_size=int(data.get('population_size', 30)),
+                max_generations=int(data.get('max_generations', 20)),
+                mutation_rate=float(data.get('mutation_rate', 0.2)),
+                elite_fraction=float(data.get('elite_fraction', 0.3)),
+                rl_enabled=bool(data.get('rl_enabled', True)),
+                rl_learning_rate=float(data.get('rl_learning_rate', 0.01)),
+                allowed_functions=funcs_key,
+                status='pending',
+            )
+            return _ga_json({'model': _ga_model_summary(m)}, 201)
+
+        except Exception as e:
+            traceback.print_exc()
+            return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+    return _ga_json({'error': 'Method not allowed'}, 405)
+
+
+@csrf_exempt
+def ga_model_detail(request, model_id):
+    """GET detail | DELETE."""
+    try:
+        m = SnowAIGAModel.objects.get(id=model_id)
+    except SnowAIGAModel.DoesNotExist:
+        return _ga_json({'error': 'Not found'}, 404)
+    except Exception as e:
+        return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+    try:
+        if request.method == 'GET':
+            return _ga_json({'model': _ga_model_summary(m)})
+
+        if request.method == 'PATCH':
+            try:
+                data = json.loads(request.body)
+            except Exception as e:
+                return _ga_json({'error': f'Invalid JSON: {e}'}, 400)
+            try:
+                updatable = [
+                    'name', 'timeframe', 'initial_capital', 'take_profit',
+                    'stop_loss', 'population_size', 'max_generations',
+                    'mutation_rate', 'elite_fraction', 'rl_enabled', 'rl_learning_rate',
+                ]
+                for field in updatable:
+                    if field in data:
+                        val = data[field]
+                        if field in ('initial_capital','take_profit','stop_loss',
+                                     'mutation_rate','elite_fraction','rl_learning_rate'):
+                            val = float(val)
+                        elif field in ('population_size','max_generations'):
+                            val = int(val)
+                        elif field == 'rl_enabled':
+                            val = bool(val)
+                        setattr(m, field, val)
+
+                if 'assets' in data:
+                    m.assets = ','.join(data['assets'])
+
+                if 'allowed_functions' in data:
+                    m.allowed_functions = json.dumps(sorted(data['allowed_functions']))
+
+                m.save()
+                return _ga_json({'model': _ga_model_summary(m)})
+            except Exception as e:
+                traceback.print_exc()
+                return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+        if request.method == 'DELETE':
+            m.delete()
+            return _ga_json({'deleted': True})
+
+        return _ga_json({'error': 'Method not allowed'}, 405)
+    except Exception as e:
+        traceback.print_exc()
+        return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+
+@csrf_exempt
+def ga_model_start(request, model_id):
+    """POST – kick off GA training."""
+    if request.method != 'POST':
+        return _ga_json({'error': 'POST required'}, 405)
+    try:
+        m = SnowAIGAModel.objects.get(id=model_id)
+    except SnowAIGAModel.DoesNotExist:
+        return _ga_json({'error': 'Not found'}, 404)
+    except Exception as e:
+        return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+    try:
+        if m.status == 'running':
+            return _ga_json({'error': 'Already running'}, 400)
+
+        m.status = 'pending'
+        m.clear_logs()
+        m.save(update_fields=['status'])
+
+        t = threading.Thread(target=_run_ga, args=(str(model_id),), daemon=True)
+        t.start()
+        return _ga_json({'started': True})
+    except Exception as e:
+        traceback.print_exc()
+        return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+
+@csrf_exempt
+def ga_model_pause(request, model_id):
+    if request.method != 'POST':
+        return _ga_json({'error': 'POST required'}, 405)
+    # Status updated in DB below; no in-memory session needed
+    try:
+        SnowAIGAModel.objects.filter(id=model_id).update(status='paused')
+    except Exception:
+        pass
+    return _ga_json({'paused': True})
+
+
+@csrf_exempt
+def ga_model_resume(request, model_id):
+    if request.method != 'POST':
+        return _ga_json({'error': 'POST required'}, 405)
+    # Status updated in DB below; no in-memory session needed
+    try:
+        SnowAIGAModel.objects.filter(id=model_id).update(status='running')
+    except Exception:
+        pass
+    return _ga_json({'resumed': True})
+
+
+@csrf_exempt
+def ga_model_status(request, model_id):
+    """GET – live progress for polling."""
+    try:
+        m = SnowAIGAModel.objects.get(id=model_id)
+    except SnowAIGAModel.DoesNotExist:
+        return _ga_json({'error': 'Not found'}, 404)
+    except Exception as e:
+        return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+    try:
+        all_logs  = m.get_logs()
+        last_seen = int(request.GET.get('last_log', 0))
+        new_logs  = all_logs[last_seen:]
+
+        return _ga_json({
+            'status':          m.status,
+            'progress':        m.progress,
+            'generation':      m.current_generation,
+            'max_generations': m.max_generations,
+            'logs':            new_logs,
+            'log_offset':      last_seen + len(new_logs),
+            'paused':          m.status == 'paused',
+            'error':           m.error_message,
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+
+@csrf_exempt
+def ga_model_chart_data(request, model_id, asset):
+    """
+    GET – OHLCV bars + trade markers for TradingView Lightweight Charts.
+    Returns {bars: [{time, open, high, low, close}], trades: [{time, price, type, pnl}]}
+    """
+    try:
+        m = SnowAIGAModel.objects.get(id=model_id)
+    except SnowAIGAModel.DoesNotExist:
+        return _ga_json({'error': 'Not found'}, 404)
+
+    df = _fetch_ohlcv(asset, m.timeframe, m.start_year, m.end_year)
+    if df is None:
+        return _ga_json({'error': 'No data'}, 404)
+
+    bars = []
+    for ts, row in df.iterrows():
+        epoch = int(ts.timestamp()) if hasattr(ts, 'timestamp') else int(ts.value // 1e9)
+        bars.append({
+            'time':  epoch,
+            'open':  round(float(row['Open']),  6),
+            'high':  round(float(row['High']),  6),
+            'low':   round(float(row['Low']),   6),
+            'close': round(float(row['Close']), 6),
+        })
+
+    # Best chromosome trades for this asset
+    best = m.get_best_chromosome()
+    trade_markers = []
+    if best:
+        for t in best.trades.filter(asset=asset).order_by('entry_time'):
+            trade_markers.append({
+                'time':       int(t.entry_time.timestamp()),
+                'price':      t.entry_price,
+                'exit_price': t.exit_price,
+                'type':       t.direction,
+                'pnl':        t.pnl,
+                'hit_tp':     t.hit_tp,
+                'hit_sl':     t.hit_sl,
+            })
+
+    return _ga_json({'bars': bars, 'trades': trade_markers, 'asset': asset})
+
+
+@csrf_exempt
+def ga_model_chromosomes(request, model_id):
+    """GET – list chromosomes for a model (with optional gen filter)."""
+    try:
+        m = SnowAIGAModel.objects.get(id=model_id)
+    except SnowAIGAModel.DoesNotExist:
+        return _ga_json({'error': 'Not found'}, 404)
+
+    gen = request.GET.get('generation')
+    qs  = m.chromosomes.all()
+    if gen is not None:
+        qs = qs.filter(generation=int(gen))
+    elite_only = request.GET.get('elite_only') == '1'
+    if elite_only:
+        qs = qs.filter(is_elite=True)
+
+    return _ga_json({'chromosomes': [
+        {
+            'id':           str(c.id),
+            'generation':   c.generation,
+            'functions':    c.get_functions(),
+            'fitness':      c.fitness,
+            'win_rate':     c.win_rate,
+            'total_trades': c.total_trades,
+            'total_pnl':    c.total_pnl,
+            'sharpe_ratio': c.sharpe_ratio,
+            'max_drawdown': c.max_drawdown,
+            'is_elite':     c.is_elite,
+            'market_snapshot': c.market_snapshot,
+            'market_snapshot_meta': c.get_market_snapshot_meta(),
+        }
+        for c in qs[:50]
+    ]})
+
+
+@csrf_exempt
+def ga_check_combo(request):
+    """
+    POST {functions: [...], assets: [...], timeframe: "1d"}
+    Returns whether an identical combo already exists.
+    Accepts POST (JSON body) to avoid URL length limits when many
+    functions/assets are selected.
+    """
+    if request.method not in ('GET', 'POST'):
+        return _ga_json({'error': 'GET or POST required'}, 405)
+
+    try:
+        if request.method == 'POST':
+            data         = json.loads(request.body)
+            functions    = data.get('functions', [])
+            assets       = data.get('assets', [])
+            tf           = data.get('timeframe', '1d')
+        else:
+            funcs_param  = request.GET.get('functions', '')
+            assets_param = request.GET.get('assets', '')
+            tf           = request.GET.get('timeframe', '1d')
+            functions    = [f for f in funcs_param.split(',') if f] if funcs_param else []
+            assets       = [a.strip() for a in assets_param.split(',') if a.strip()]
+
+        funcs_key     = json.dumps(sorted(functions))
+        assets_sorted = ','.join(sorted(assets))
+
+        exists = SnowAIGAModel.objects.filter(
+            allowed_functions=funcs_key,
+            assets=assets_sorted,
+            timeframe=tf,
+        ).exists()
+
+        return _ga_json({'exists': exists})
+
+    except Exception as e:
+        traceback.print_exc()
+        return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+
+@csrf_exempt
+def ga_detect_data_range(request):
+    """
+    GET ?asset=AAPL&timeframe=1h
+    Returns the actual available date range yfinance has for that combo.
+    Called by the frontend when the user picks a timeframe so they can
+    see exactly what data they'll get before creating the model.
+    """
+    asset     = request.GET.get('asset', '').strip()
+    timeframe = request.GET.get('timeframe', '1d').strip()
+
+    if not asset:
+        return _ga_json({'error': 'asset param required'}, 400)
+
+    try:
+        info = _ga_detect_range(asset, timeframe)
+        info['yf_max_period'] = _YF_MAX_HISTORY.get(timeframe, 'max')
+        return _ga_json(info)
+    except Exception as e:
+        traceback.print_exc()
+        return _ga_json({'error': f'Server error: {type(e).__name__}: {e}'}, 500)
+
+
+@csrf_exempt
+def ga_function_list(request):
+    return _ga_json({'functions': AVAILABLE_FUNCTIONS})
+
+
+@csrf_exempt
+def ga_asset_catalogue(request):
+    return _ga_json({'assets': ASSET_CATALOGUE})
+
+
+scheduler.add_job(
+    ga_scheduler_run_pending,
+    trigger=IntervalTrigger(minutes=5),
+    id='snowai_ga_runner',
+    name='SnowAI: pick up pending GA models every 5 min',
+    replace_existing=True,
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD THESE VIEWS TO YOUR EXISTING views.py
+# Prefix: snowai_stream_transcript_  — safe alongside your existing codebase
+# These handle transcripts captured via the Web Speech API in SnowAI Stream.
+# They reuse your existing SnowAIVideoTranscriptRecord model — no new model needed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import json
+import uuid as uuid_lib
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+# ── Import your existing model ────────────────────────────────────────────────
+# This already exists in your codebase — just import it here
+from .models import SnowAIVideoTranscriptRecord
+
+
+# ── UTILITY ───────────────────────────────────────────────────────────────────
+
+def snowai_stream_transcript_safe_truncate(value, max_length):
+    """Safely truncate a string field to max_length. Returns empty string for None."""
+    if not value:
+        return ''
+    return str(value)[:max_length]
+
+
+def snowai_stream_transcript_serialize(record):
+    """Serialize a SnowAIVideoTranscriptRecord to a dict for API responses."""
+    return {
+        'id':                   record.id,
+        'transcript_uuid':      record.transcript_uuid,
+        'video_title':          record.video_title,
+        'primary_speaker_name': record.primary_speaker_name,
+        'content_category':     record.content_category,
+        'transcription_method': record.transcription_method,
+        'transcript_language':  record.transcript_language,
+        'word_count':           record.word_count,
+        'processing_status':    record.processing_status,
+        'created_at':           record.created_at.isoformat() if record.created_at else None,
+        # Truncated preview — full text can be large
+        'text_preview':         (record.full_transcript_text or '')[:300] + ('…' if len(record.full_transcript_text or '') > 300 else ''),
+    }
+
+
+# ── SAVE TRANSCRIPT ───────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_stream_transcript_save(request):
+    """
+    Save a transcript captured via the Web Speech API in SnowAI Stream.
+
+    Accepts JSON body with:
+        transcript_uuid      (str, optional — generated server-side if missing)
+        video_title          (str, required)
+        full_transcript_text (str, required)
+        primary_speaker_name (str, optional)
+        content_category     (str, optional, default 'youtube')
+        transcription_method (str, optional, default 'web_speech_api')
+        transcript_language  (str, optional, default 'en')
+        youtube_video_id     (str, optional)
+        youtube_url          (str, optional)
+        processing_status    (str, optional, default 'completed')
+
+    Returns:
+        201 on success with transcript_uuid and word_count
+        400 on validation error
+        409 if transcript_uuid already exists
+    """
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON body.'}, status=400)
+
+    # ── Validate required fields ──────────────────────────────────────────────
+    full_text = (data.get('full_transcript_text') or '').strip()
+    if not full_text:
+        return JsonResponse({'error': 'full_transcript_text is required and cannot be empty.'}, status=400)
+
+    video_title = (data.get('video_title') or '').strip()
+    if not video_title:
+        return JsonResponse({'error': 'video_title is required.'}, status=400)
+
+    # ── Generate or validate UUID ─────────────────────────────────────────────
+    raw_uuid = data.get('transcript_uuid', '').strip()
+    if raw_uuid:
+        # Check for duplicates — idempotent saves are fine
+        existing = SnowAIVideoTranscriptRecord.objects.filter(
+            transcript_uuid=raw_uuid
+        ).first()
+        if existing:
+            return JsonResponse({
+                'message':        'Transcript already saved.',
+                'transcript_uuid': existing.transcript_uuid,
+                'word_count':      existing.word_count,
+                'existing':        True,
+            }, status=409)
+        transcript_uuid = raw_uuid[:100]
+    else:
+        transcript_uuid = str(uuid_lib.uuid4())
+
+    # ── Safely build field values ─────────────────────────────────────────────
+    t = snowai_stream_transcript_safe_truncate  # alias
+
+    video_title_clean          = t(video_title, 300)
+    primary_speaker_name_clean = t(data.get('primary_speaker_name'), 200) or None
+    content_category_clean     = t(data.get('content_category', 'youtube'), 100)
+    transcription_method_clean = t(data.get('transcription_method', 'web_speech_api'), 50)
+    transcript_language_clean  = t(data.get('transcript_language', 'en'), 10)
+    processing_status_clean    = t(data.get('processing_status', 'completed'), 30)
+    youtube_video_id_clean     = t(data.get('youtube_video_id'), 50) or None
+    youtube_url_clean          = t(data.get('youtube_url'), 500) or None
+
+    # ── Create the record ─────────────────────────────────────────────────────
+    try:
+        record = SnowAIVideoTranscriptRecord.objects.create(
+            transcript_uuid      = transcript_uuid,
+            youtube_video_id     = youtube_video_id_clean,
+            youtube_url          = youtube_url_clean,
+            video_title          = video_title_clean,
+            full_transcript_text = full_text,
+            primary_speaker_name = primary_speaker_name_clean,
+            content_category     = content_category_clean,
+            transcription_method = transcription_method_clean,
+            transcript_language  = transcript_language_clean,
+            processing_status    = processing_status_clean,
+            # Fields not set by Web Speech API captures — left at model defaults
+            # word_count is auto-set by SnowAIVideoTranscriptRecord.save()
+        )
+    except Exception as e:
+        error_str = str(e).lower()
+        if 'unique' in error_str or 'duplicate' in error_str:
+            return JsonResponse({
+                'error': f'A transcript with uuid "{transcript_uuid}" already exists.',
+                'transcript_uuid': transcript_uuid,
+            }, status=409)
+        if 'value too long' in error_str:
+            return JsonResponse({
+                'error': 'A field value exceeds the database column length. Check title, speaker name, etc.',
+                'debug': str(e)[:200],
+            }, status=400)
+        return JsonResponse({
+            'error': f'Database error while saving transcript: {str(e)[:200]}',
+        }, status=500)
+
+    return JsonResponse({
+        'message':         'Transcript saved successfully.',
+        'transcript_uuid': record.transcript_uuid,
+        'word_count':      record.word_count,
+        'title':           record.video_title,
+        'category':        record.content_category,
+        'method':          record.transcription_method,
+        'created_at':      record.created_at.isoformat(),
+    }, status=201)
+
+
+# ── LIST STREAM TRANSCRIPTS ───────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_stream_transcript_list(request):
+    """
+    List all transcripts captured via Web Speech API in SnowAI Stream.
+    Filters to transcription_method='web_speech_api' so it doesn't clash
+    with your other yt-dlp transcripts.
+
+    Optional query params:
+        category  — filter by content_category
+        search    — search in video_title and primary_speaker_name
+        limit     — max records (default 50)
+    """
+    queryset = SnowAIVideoTranscriptRecord.objects.filter(
+        transcription_method='web_speech_api'
+    ).order_by('-created_at')
+
+    # Optional filters
+    category = request.GET.get('category', '').strip()
+    if category:
+        queryset = queryset.filter(content_category=category)
+
+    search = request.GET.get('search', '').strip()
+    if search:
+        from django.db.models import Q
+        queryset = queryset.filter(
+            Q(video_title__icontains=search) |
+            Q(primary_speaker_name__icontains=search) |
+            Q(full_transcript_text__icontains=search)
+        )
+
+    limit = min(int(request.GET.get('limit', 50)), 200)
+    records = queryset[:limit]
+
+    return JsonResponse({
+        'transcripts': [snowai_stream_transcript_serialize(r) for r in records],
+        'count':       queryset.count(),
+    })
+
+
+# ── GET SINGLE TRANSCRIPT (full text) ────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_stream_transcript_detail(request, transcript_uuid):
+    """
+    Get full transcript text for a specific record by UUID.
+    """
+    try:
+        record = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_uuid)
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'error': f'Transcript "{transcript_uuid}" not found.'}, status=404)
+
+    data = snowai_stream_transcript_serialize(record)
+    data['full_transcript_text'] = record.full_transcript_text  # include full text here
+    return JsonResponse(data)
+
+
+# ── DELETE TRANSCRIPT ─────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_stream_transcript_delete(request, transcript_uuid):
+    """
+    Delete a transcript by UUID.
+    Only allows deletion of web_speech_api transcripts as a safety guard —
+    won't touch your yt-dlp records.
+    """
+    try:
+        record = SnowAIVideoTranscriptRecord.objects.get(
+            transcript_uuid=transcript_uuid,
+            transcription_method='web_speech_api',
+        )
+    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({
+            'error': f'Transcript "{transcript_uuid}" not found or not a Web Speech API transcript.'
+        }, status=404)
+
+    record.delete()
+    return JsonResponse({'message': 'Transcript deleted.', 'transcript_uuid': transcript_uuid})
+
+
+"""
+ESI Market Pulse — Batch endpoints
+====================================
+Add to urls.py:
+    path('api/esi_batch_ohlcv_v1/',    views.esi_batch_ohlcv_v1),
+    path('api/esi_market_caps_v1/',    views.esi_market_caps_v1),
+
+Both @csrf_exempt, no auth.
+"""
+
+import json
+import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import pandas as pd
+import yfinance as yf
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+VALID_INTERVALS = {
+    '1m','2m','5m','15m','30m','60m','90m','1h','1d','5d','1wk','1mo','3mo'
+}
+VALID_PERIODS = {
+    '1d','5d','1mo','3mo','6mo','1y','2y','5y','10y','ytd','max'
+}
+
+def _fetch_single_ohlcv(ticker: str, interval: str, period: str) -> list:
+    """
+    Fetch OHLCV for one ticker. Returns list of {time, close} dicts.
+    Runs inside a thread — no Django ORM access.
+    """
+    try:
+        t    = yf.Ticker(ticker)
+        hist = t.history(period=period, interval=interval, auto_adjust=True)
+
+        if hist.empty:
+            return []
+
+        records = []
+        for ts, row in hist.iterrows():
+            try:
+                close_val = float(row['Close'])
+                if close_val != close_val:   # NaN
+                    continue
+                unix_ts = int(ts.timestamp()) if hasattr(ts, 'timestamp') else int(ts.value // 1_000_000_000)
+                records.append({'time': unix_ts, 'close': round(close_val, 6)})
+            except Exception:
+                continue
+        return records
+
+    except Exception as e:
+        print(f'[_fetch_single_ohlcv] {ticker}: {e}')
+        return []
+
+
+def _fetch_single_market_cap(ticker: str) -> int | None:
+    """
+    Fetch market cap for one ticker via yfinance .info.
+    Returns integer (USD) or None.
+    """
+    try:
+        info = yf.Ticker(ticker).info
+        mc   = info.get('marketCap') or info.get('market_cap')
+        return int(mc) if mc else None
+    except Exception as e:
+        print(f'[_fetch_single_market_cap] {ticker}: {e}')
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1.  BATCH OHLCV
+#     POST /api/esi_batch_ohlcv_v1/
+#
+#     Body:
+#       {
+#         "tickers":  ["AAPL", "MSFT", "NVDA"],
+#         "interval": "1d",
+#         "period":   "1y"
+#       }
+#
+#     Response:
+#       {
+#         "success": true,
+#         "data": {
+#           "AAPL": [{"time": 1700000000, "close": 182.5}, ...],
+#           "MSFT": [...],
+#           ...
+#         },
+#         "failed": ["BADTICKER"]
+#       }
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def esi_batch_ohlcv_v1(request):
+    """
+    Batch OHLCV fetch for MarketPulse sector + overview charts.
+    Uses a thread pool so all tickers are fetched in parallel.
+    Max 60 tickers per request to avoid memory/timeout issues.
+    No auth — single-user deployment.
+    Unique name: esi_batch_ohlcv_v1
+    """
+    try:
+        body     = json.loads(request.body)
+        tickers  = [str(t).strip().upper() for t in body.get('tickers', []) if t]
+        interval = body.get('interval', '1d')
+        period   = body.get('period',   '1y')
+
+        if not tickers:
+            return JsonResponse({'error': 'tickers list is required', 'success': False}, status=400)
+
+        # Sanitise
+        tickers  = list(dict.fromkeys(tickers))[:60]   # dedupe + cap
+        if interval not in VALID_INTERVALS:
+            interval = '1d'
+        if period not in VALID_PERIODS:
+            period = '1y'
+
+        results = {}
+        failed  = []
+
+        # Parallel fetch — up to 20 threads
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            future_map = {
+                pool.submit(_fetch_single_ohlcv, t, interval, period): t
+                for t in tickers
+            }
+            for future in as_completed(future_map):
+                ticker = future_map[future]
+                try:
+                    data = future.result()
+                    if data:
+                        results[ticker] = data
+                    else:
+                        failed.append(ticker)
+                except Exception as e:
+                    print(f'[esi_batch_ohlcv_v1] Future error for {ticker}: {e}')
+                    failed.append(ticker)
+
+        return JsonResponse({
+            'success': True,
+            'data':    results,
+            'failed':  failed,
+            'count':   len(results),
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON body', 'success': False}, status=400)
+    except Exception as e:
+        print(f'[esi_batch_ohlcv_v1] Unhandled: {e}\n{traceback.format_exc()}')
+        return JsonResponse({'error': str(e), 'success': False}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.  MARKET CAPS
+#     POST /api/esi_market_caps_v1/
+#
+#     Body:
+#       { "tickers": ["AAPL", "MSFT", "NVDA", ...] }
+#
+#     Response:
+#       {
+#         "success": true,
+#         "data": {
+#           "AAPL": 3050000000000,
+#           "MSFT": 2900000000000,
+#           "NVDA": 2200000000000,
+#           "BADTICKER": null
+#         }
+#       }
+#
+#     Notes:
+#       - Results are cached in-process for 6 hours (market caps don't change
+#         minute-to-minute and .info calls are slow).
+#       - Max 100 tickers per request.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import time as _time
+
+# Simple in-process cache: { ticker: (market_cap_int_or_none, fetched_at_unix) }
+_MC_CACHE: dict = {}
+_MC_CACHE_TTL   = 6 * 3600   # 6 hours
+
+
+def _get_market_cap_cached(ticker: str) -> int | None:
+    now    = _time.time()
+    cached = _MC_CACHE.get(ticker)
+    if cached and (now - cached[1]) < _MC_CACHE_TTL:
+        return cached[0]
+    mc = _fetch_single_market_cap(ticker)
+    _MC_CACHE[ticker] = (mc, now)
+    return mc
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def esi_market_caps_v1(request):
+    """
+    Live market caps for a list of tickers, used by MarketPulse to build
+    market-cap-weighted sector indices. Cached in-process for 6 hours.
+    No auth — single-user deployment.
+    Unique name: esi_market_caps_v1
+    """
+    try:
+        body    = json.loads(request.body)
+        tickers = [str(t).strip().upper() for t in body.get('tickers', []) if t]
+
+        if not tickers:
+            return JsonResponse({'error': 'tickers list is required', 'success': False}, status=400)
+
+        tickers = list(dict.fromkeys(tickers))[:100]   # dedupe + cap
+
+        results = {}
+
+        # Check cache first — only fetch what's missing or stale
+        to_fetch = []
+        now      = _time.time()
+        for t in tickers:
+            cached = _MC_CACHE.get(t)
+            if cached and (now - cached[1]) < _MC_CACHE_TTL:
+                results[t] = cached[0]
+            else:
+                to_fetch.append(t)
+
+        # Parallel fetch for cache misses
+        if to_fetch:
+            with ThreadPoolExecutor(max_workers=20) as pool:
+                future_map = {
+                    pool.submit(_get_market_cap_cached, t): t
+                    for t in to_fetch
+                }
+                for future in as_completed(future_map):
+                    ticker = future_map[future]
+                    try:
+                        results[ticker] = future.result()
+                    except Exception as e:
+                        print(f'[esi_market_caps_v1] Future error for {ticker}: {e}')
+                        results[ticker] = None
+
+        return JsonResponse({
+            'success':    True,
+            'data':       results,
+            'from_cache': len(tickers) - len(to_fetch),
+            'fetched':    len(to_fetch),
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON body', 'success': False}, status=400)
+    except Exception as e:
+        print(f'[esi_market_caps_v1] Unhandled: {e}\n{traceback.format_exc()}')
+        return JsonResponse({'error': str(e), 'success': False}, status=500)
+
+
+"""
+sector_helpers.py
+
+Sector analysis helper functions that are auto-available to all trading model signals.
+These fetch sector ETF data and determine if a sector is bullish/bearish.
+"""
+
+import yfinance as yf
+import pandas as pd
+from datetime import datetime, timedelta
+
+
+# Sector ETF mapping — major US sectors
+SECTOR_ETFS = {
+    'technology':           'XLK',   # Technology
+    'financials':           'XLF',   # Financials
+    'healthcare':           'XLV',   # Healthcare
+    'energy':               'XLE',   # Energy
+    'consumer_discretionary': 'XLY', # Consumer Discretionary
+    'consumer_staples':     'XLP',   # Consumer Staples
+    'industrials':          'XLI',   # Industrials
+    'materials':            'XLB',   # Materials
+    'real_estate':          'XLRE',  # Real Estate
+    'utilities':            'XLU',   # Utilities
+    'communication':        'XLC',   # Communication Services
+}
+
+
+def _fetch_sector_data(sector_etf: str, period: str = '3mo') -> pd.DataFrame:
+    """
+    Internal: Fetch OHLC data for a sector ETF.
+    Returns DataFrame with columns: open, high, low, close, volume.
+    """
+    try:
+        ticker = yf.Ticker(sector_etf)
+        hist = ticker.history(period=period, interval='1d')
+        if hist.empty:
+            return pd.DataFrame()
+        
+        # Normalize column names to match trading model format
+        df = pd.DataFrame({
+            'open':   hist['Open'].values,
+            'high':   hist['High'].values,
+            'low':    hist['Low'].values,
+            'close':  hist['Close'].values,
+            'volume': hist['Volume'].values,
+        })
+        return df
+    except Exception as e:
+        print(f"Error fetching sector data for {sector_etf}: {e}")
+        return pd.DataFrame()
+
+
+def is_sector_bullish(sector: str = 'technology', lookback: int = 50) -> bool:
+    """
+    Check if a sector is in a bullish trend.
+    
+    Args:
+        sector: Sector name (e.g. 'technology', 'financials', 'healthcare')
+                or direct ETF ticker (e.g. 'XLK')
+        lookback: Number of days to analyze (default 50)
+    
+    Returns:
+        True if sector is bullish, False otherwise
+    
+    Bullish criteria:
+        - 20-day SMA > 50-day SMA (short-term momentum above long-term)
+        - Price > 20-day SMA (current price in uptrend)
+        - Last 5 days show net positive movement
+    
+    Example:
+        def my_signal(df):
+            if not is_sector_bullish('technology'):
+                return False
+            # ... rest of your logic
+            return True
+    """
+    # Map sector name to ETF, or use directly if it's an ETF ticker
+    etf = SECTOR_ETFS.get(sector.lower(), sector.upper())
+    
+    # Fetch sector data
+    sector_df = _fetch_sector_data(etf, period='3mo')
+    if sector_df.empty or len(sector_df) < lookback:
+        return False
+    
+    # Calculate SMAs
+    sma_20 = sector_df['close'].rolling(20).mean().iloc[-1]
+    sma_50 = sector_df['close'].rolling(50).mean().iloc[-1]
+    current_price = sector_df['close'].iloc[-1]
+    
+    # Check bullish conditions
+    short_above_long = sma_20 > sma_50
+    price_above_sma = current_price > sma_20
+    
+    # Recent momentum: last 5 days net positive
+    recent_5d = sector_df['close'].tail(5)
+    recent_momentum = (recent_5d.iloc[-1] - recent_5d.iloc[0]) > 0
+    
+    return short_above_long and price_above_sma and recent_momentum
+
+
+def is_sector_bearish(sector: str = 'technology', lookback: int = 50) -> bool:
+    """
+    Check if a sector is in a bearish trend.
+    
+    Args:
+        sector: Sector name (e.g. 'technology', 'financials', 'healthcare')
+                or direct ETF ticker (e.g. 'XLK')
+        lookback: Number of days to analyze (default 50)
+    
+    Returns:
+        True if sector is bearish, False otherwise
+    
+    Bearish criteria:
+        - 20-day SMA < 50-day SMA (short-term momentum below long-term)
+        - Price < 20-day SMA (current price in downtrend)
+        - Last 5 days show net negative movement
+    
+    Example:
+        def my_signal(df):
+            if is_sector_bearish('financials'):
+                return False  # Don't trade if sector is bearish
+            # ... rest of your logic
+            return True
+    """
+    # Map sector name to ETF, or use directly if it's an ETF ticker
+    etf = SECTOR_ETFS.get(sector.lower(), sector.upper())
+    
+    # Fetch sector data
+    sector_df = _fetch_sector_data(etf, period='3mo')
+    if sector_df.empty or len(sector_df) < lookback:
+        return False
+    
+    # Calculate SMAs
+    sma_20 = sector_df['close'].rolling(20).mean().iloc[-1]
+    sma_50 = sector_df['close'].rolling(50).mean().iloc[-1]
+    current_price = sector_df['close'].iloc[-1]
+    
+    # Check bearish conditions
+    short_below_long = sma_20 < sma_50
+    price_below_sma = current_price < sma_20
+    
+    # Recent momentum: last 5 days net negative
+    recent_5d = sector_df['close'].tail(5)
+    recent_momentum = (recent_5d.iloc[-1] - recent_5d.iloc[0]) < 0
+    
+    return short_below_long and price_below_sma and recent_momentum
+
+
+def get_sector_strength(sector: str = 'technology') -> dict:
+    """
+    Get detailed sector strength metrics.
+    
+    Args:
+        sector: Sector name or ETF ticker
+    
+    Returns:
+        Dictionary with:
+            - trend: 'bullish', 'bearish', or 'neutral'
+            - sma_20: Current 20-day SMA
+            - sma_50: Current 50-day SMA
+            - price: Current price
+            - momentum_5d: 5-day price change percentage
+            - momentum_20d: 20-day price change percentage
+    
+    Example:
+        def my_signal(df):
+            tech = get_sector_strength('technology')
+            if tech['trend'] == 'bullish' and tech['momentum_20d'] > 5:
+                # Strong tech sector momentum
+                return True
+            return False
+    """
+    etf = SECTOR_ETFS.get(sector.lower(), sector.upper())
+    sector_df = _fetch_sector_data(etf, period='3mo')
+    
+    if sector_df.empty or len(sector_df) < 50:
+        return {
+            'trend': 'unknown',
+            'sma_20': None,
+            'sma_50': None,
+            'price': None,
+            'momentum_5d': None,
+            'momentum_20d': None,
+        }
+    
+    sma_20 = sector_df['close'].rolling(20).mean().iloc[-1]
+    sma_50 = sector_df['close'].rolling(50).mean().iloc[-1]
+    current_price = sector_df['close'].iloc[-1]
+    
+    # Momentum calculations
+    price_5d_ago = sector_df['close'].iloc[-6] if len(sector_df) >= 6 else sector_df['close'].iloc[0]
+    price_20d_ago = sector_df['close'].iloc[-21] if len(sector_df) >= 21 else sector_df['close'].iloc[0]
+    
+    momentum_5d = ((current_price - price_5d_ago) / price_5d_ago) * 100
+    momentum_20d = ((current_price - price_20d_ago) / price_20d_ago) * 100
+    
+    # Determine trend
+    if is_sector_bullish(sector):
+        trend = 'bullish'
+    elif is_sector_bearish(sector):
+        trend = 'bearish'
+    else:
+        trend = 'neutral'
+    
+    return {
+        'trend': trend,
+        'sma_20': float(sma_20),
+        'sma_50': float(sma_50),
+        'price': float(current_price),
+        'momentum_5d': float(momentum_5d),
+        'momentum_20d': float(momentum_20d),
+    }
+
+
+# List of available sectors for reference
+AVAILABLE_SECTORS = list(SECTOR_ETFS.keys())
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.core.paginator import Paginator
+from django.db.models import Q
+import json
+from datetime import datetime
+from .models import SnowAIMomentEntry, SnowAIMomentSlideshow
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_create_moment_entry(request):
+    """Create a new moment entry"""
+    try:
+        data = json.loads(request.body)
+        
+        moment = SnowAIMomentEntry.objects.create(
+            title=data.get('title', 'Untitled Moment'),
+            description=data.get('description', ''),
+            image_data=data.get('image_data'),
+            video_data=data.get('video_data'),
+            media_type=data.get('media_type', 'image'),
+            tags=data.get('tags', ''),
+            event_name=data.get('event_name'),
+            location=data.get('location'),
+            moment_date=data.get('moment_date', datetime.now()),
+            file_size_kb=data.get('file_size_kb', 0),
+            is_favorite=data.get('is_favorite', False)
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Moment created successfully',
+            'moment': {
+                'uuid': str(moment.moment_uuid),
+                'title': moment.title,
+                'created_at': moment.created_at.isoformat()
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_list_moments(request):
+    """List all moments with optional filtering and pagination"""
+    try:
+        # Get query parameters
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 20))
+        search = request.GET.get('search', '')
+        event_name = request.GET.get('event_name', '')
+        favorites_only = request.GET.get('favorites_only', 'false').lower() == 'true'
+        media_type = request.GET.get('media_type', '')
+        
+        # Build query
+        moments = SnowAIMomentEntry.objects.all()
+        
+        # Apply filters
+        if search:
+            moments = moments.filter(
+                Q(title__icontains=search) |
+                Q(description__icontains=search) |
+                Q(tags__icontains=search) |
+                Q(location__icontains=search)
+            )
+        
+        if event_name:
+            moments = moments.filter(event_name__icontains=event_name)
+        
+        if favorites_only:
+            moments = moments.filter(is_favorite=True)
+        
+        if media_type:
+            moments = moments.filter(media_type=media_type)
+        
+        # Paginate
+        paginator = Paginator(moments, page_size)
+        page_obj = paginator.get_page(page)
+        
+        # Serialize moments
+        moments_data = []
+        for moment in page_obj:
+            moments_data.append({
+                'uuid': str(moment.moment_uuid),
+                'title': moment.title,
+                'description': moment.description,
+                'image_data': moment.image_data if moment.image_data else None,
+                'video_data': moment.video_data if moment.video_data else None,
+                'media_type': moment.media_type,
+                'tags': moment.tags,
+                'event_name': moment.event_name,
+                'location': moment.location,
+                'moment_date': moment.moment_date.isoformat(),
+                'is_favorite': moment.is_favorite,
+                'file_size_kb': moment.file_size_kb,
+                'created_at': moment.created_at.isoformat()
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'moments': moments_data,
+            'pagination': {
+                'page': page,
+                'total_pages': paginator.num_pages,
+                'total_count': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_moment_detail(request, moment_uuid):
+    """Get a single moment by UUID"""
+    try:
+        moment = SnowAIMomentEntry.objects.get(moment_uuid=moment_uuid)
+        
+        return JsonResponse({
+            'success': True,
+            'moment': {
+                'uuid': str(moment.moment_uuid),
+                'title': moment.title,
+                'description': moment.description,
+                'image_data': moment.image_data,
+                'video_data': moment.video_data,
+                'media_type': moment.media_type,
+                'tags': moment.tags,
+                'event_name': moment.event_name,
+                'location': moment.location,
+                'moment_date': moment.moment_date.isoformat(),
+                'is_favorite': moment.is_favorite,
+                'file_size_kb': moment.file_size_kb,
+                'created_at': moment.created_at.isoformat(),
+                'updated_at': moment.updated_at.isoformat()
+            }
+        })
+    
+    except SnowAIMomentEntry.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Moment not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["PUT", "PATCH", "POST"])
+def snowai_update_moment(request, moment_uuid):
+    """Update a moment"""
+    try:
+        moment = SnowAIMomentEntry.objects.get(moment_uuid=moment_uuid)
+        data = json.loads(request.body)
+        
+        # Update fields
+        if 'title' in data:
+            moment.title = data['title']
+        if 'description' in data:
+            moment.description = data['description']
+        if 'image_data' in data:
+            moment.image_data = data['image_data']
+        if 'video_data' in data:
+            moment.video_data = data['video_data']
+        if 'media_type' in data:
+            moment.media_type = data['media_type']
+        if 'tags' in data:
+            moment.tags = data['tags']
+        if 'event_name' in data:
+            moment.event_name = data['event_name']
+        if 'location' in data:
+            moment.location = data['location']
+        if 'moment_date' in data:
+            moment.moment_date = data['moment_date']
+        if 'is_favorite' in data:
+            moment.is_favorite = data['is_favorite']
+        
+        moment.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Moment updated successfully',
+            'moment': {
+                'uuid': str(moment.moment_uuid),
+                'title': moment.title,
+                'updated_at': moment.updated_at.isoformat()
+            }
+        })
+    
+    except SnowAIMomentEntry.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Moment not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_moment(request, moment_uuid):
+    """Delete a moment"""
+    try:
+        moment = SnowAIMomentEntry.objects.get(moment_uuid=moment_uuid)
+        moment.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Moment deleted successfully'
+        })
+    
+    except SnowAIMomentEntry.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Moment not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_create_slideshow(request):
+    """Create a slideshow from selected moments with audio"""
+    try:
+        data = json.loads(request.body)
+        moment_uuids = data.get('moment_uuids', [])
+        
+        # Fetch the moments
+        moments = SnowAIMomentEntry.objects.filter(
+            moment_uuid__in=moment_uuids
+        )
+        
+        if not moments.exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'No moments found for slideshow'
+            }, status=400)
+        
+        # Create slideshow record
+        slideshow = SnowAIMomentSlideshow.objects.create(
+            title=data.get('title', f'Slideshow - {datetime.now().strftime("%Y-%m-%d")}'),
+            description=data.get('description', ''),
+            moment_uuids=','.join(moment_uuids),
+            audio_data=data.get('audio_data', ''),
+            audio_duration_seconds=data.get('audio_duration_seconds', 0),
+            total_moments=len(moment_uuids),
+            event_name=data.get('event_name')
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Slideshow created successfully',
+            'slideshow': {
+                'uuid': str(slideshow.slideshow_uuid),
+                'title': slideshow.title,
+                'total_moments': slideshow.total_moments,
+                'created_at': slideshow.created_at.isoformat()
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_list_slideshows(request):
+    """List all slideshows"""
+    try:
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 12))
+        
+        slideshows = SnowAIMomentSlideshow.objects.all()
+        
+        # Paginate
+        paginator = Paginator(slideshows, page_size)
+        page_obj = paginator.get_page(page)
+        
+        slideshows_data = []
+        for slideshow in page_obj:
+            # Get the first moment for preview
+            moment_uuids = slideshow.moment_uuids.split(',')
+            preview_image = None
+            if moment_uuids:
+                try:
+                    first_moment = SnowAIMomentEntry.objects.get(moment_uuid=moment_uuids[0])
+                    preview_image = first_moment.image_data or first_moment.video_data
+                except:
+                    pass
+            
+            slideshows_data.append({
+                'uuid': str(slideshow.slideshow_uuid),
+                'title': slideshow.title,
+                'description': slideshow.description,
+                'moment_uuids': slideshow.moment_uuids,
+                'audio_data': slideshow.audio_data,
+                'audio_duration_seconds': slideshow.audio_duration_seconds,
+                'total_moments': slideshow.total_moments,
+                'event_name': slideshow.event_name,
+                'preview_image': preview_image,
+                'created_at': slideshow.created_at.isoformat()
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'slideshows': slideshows_data,
+            'pagination': {
+                'page': page,
+                'total_pages': paginator.num_pages,
+                'total_count': paginator.count
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_get_slideshow_detail(request, slideshow_uuid):
+    """Get a single slideshow with all its moments"""
+    try:
+        slideshow = SnowAIMomentSlideshow.objects.get(slideshow_uuid=slideshow_uuid)
+        
+        # Fetch all moments in this slideshow
+        moment_uuids = slideshow.moment_uuids.split(',')
+        moments = SnowAIMomentEntry.objects.filter(moment_uuid__in=moment_uuids)
+        
+        moments_data = []
+        for uuid in moment_uuids:
+            try:
+                moment = moments.get(moment_uuid=uuid)
+                moments_data.append({
+                    'uuid': str(moment.moment_uuid),
+                    'title': moment.title,
+                    'image_data': moment.image_data,
+                    'video_data': moment.video_data,
+                    'media_type': moment.media_type
+                })
+            except:
+                pass
+        
+        return JsonResponse({
+            'success': True,
+            'slideshow': {
+                'uuid': str(slideshow.slideshow_uuid),
+                'title': slideshow.title,
+                'description': slideshow.description,
+                'audio_data': slideshow.audio_data,
+                'audio_duration_seconds': slideshow.audio_duration_seconds,
+                'total_moments': slideshow.total_moments,
+                'event_name': slideshow.event_name,
+                'moments': moments_data,
+                'created_at': slideshow.created_at.isoformat()
+            }
+        })
+    
+    except SnowAIMomentSlideshow.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Slideshow not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_delete_slideshow(request, slideshow_uuid):
+    """Delete a slideshow"""
+    try:
+        slideshow = SnowAIMomentSlideshow.objects.get(slideshow_uuid=slideshow_uuid)
+        slideshow.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Slideshow deleted successfully'
+        })
+    
+    except SnowAIMomentSlideshow.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Slideshow not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_search_suggestions(request):
+    """Get search suggestions for events, tags, and locations"""
+    try:
+        query = request.GET.get('query', '')
+        
+        # Get unique events
+        events = SnowAIMomentEntry.objects.filter(
+            event_name__icontains=query
+        ).values_list('event_name', flat=True).distinct()[:10]
+        
+        # Get unique locations
+        locations = SnowAIMomentEntry.objects.filter(
+            location__icontains=query
+        ).values_list('location', flat=True).distinct()[:10]
+        
+        # Get unique tags
+        all_tags = set()
+        moments_with_tags = SnowAIMomentEntry.objects.exclude(
+            tags__isnull=True
+        ).exclude(tags='').values_list('tags', flat=True)
+        
+        for tags_string in moments_with_tags:
+            tags = [t.strip() for t in tags_string.split(',')]
+            all_tags.update([t for t in tags if query.lower() in t.lower()])
+        
+        return JsonResponse({
+            'success': True,
+            'suggestions': {
+                'events': list(events),
+                'locations': list(locations),
+                'tags': list(all_tags)[:10]
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_stats(request):
+    """Get statistics about moments"""
+    try:
+        total_moments = SnowAIMomentEntry.objects.count()
+        total_favorites = SnowAIMomentEntry.objects.filter(is_favorite=True).count()
+        total_slideshows = SnowAIMomentSlideshow.objects.count()
+        
+        # Get unique events count
+        unique_events = SnowAIMomentEntry.objects.exclude(
+            event_name__isnull=True
+        ).exclude(event_name='').values('event_name').distinct().count()
+        
+        # Media type breakdown
+        image_count = SnowAIMomentEntry.objects.filter(media_type='image').count()
+        video_count = SnowAIMomentEntry.objects.filter(media_type='video').count()
+        mixed_count = SnowAIMomentEntry.objects.filter(media_type='mixed').count()
+        
+        return JsonResponse({
+            'success': True,
+            'stats': {
+                'total_moments': total_moments,
+                'total_favorites': total_favorites,
+                'total_slideshows': total_slideshows,
+                'unique_events': unique_events,
+                'media_breakdown': {
+                    'images': image_count,
+                    'videos': video_count,
+                    'mixed': mixed_count
+                }
+            }
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADD THESE VIEWS TO YOUR EXISTING views.py
+# Prefix: snowai_spotify_ — safe alongside your existing codebase
+# ─────────────────────────────────────────────────────────────────────────────
+
+import json
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+from .models import SnowAISpotifyCategory, SnowAISpotifyEntry
+
+
+# ── SERIALIZERS ───────────────────────────────────────────────────────────────
+
+def snowai_spotify_serialize_category(cat):
+    return {'id': cat.id, 'category_name': cat.category_name}
+
+
+def snowai_spotify_serialize_entry(e):
+    return {
+        'id':            e.id,
+        'spotify_type':  e.spotify_type,
+        'spotify_id':    e.spotify_id,
+        'spotify_url':   e.spotify_url,
+        'title':         e.title,
+        'artist':        e.artist,
+        'notes':         e.notes,
+        'category_id':   e.category_id,
+        'category_name': e.category.category_name if e.category else None,
+        'date_added':    e.date_added.isoformat() if e.date_added else None,
+        'updated_at':    e.updated_at.isoformat() if e.updated_at else None,
+    }
+
+
+# ── CATEGORIES ────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_spotify_get_all_categories(request):
+    cats = SnowAISpotifyCategory.objects.all()
+    return JsonResponse({'categories': [snowai_spotify_serialize_category(c) for c in cats]})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_spotify_create_category(request):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON.'}, status=400)
+
+    name = (data.get('category_name') or '').strip()[:100]
+    if not name:
+        return JsonResponse({'error': 'category_name is required.'}, status=400)
+
+    cat, created = SnowAISpotifyCategory.objects.get_or_create(category_name=name)
+    return JsonResponse({'category': snowai_spotify_serialize_category(cat), 'created': created},
+                        status=201 if created else 200)
+
+
+# ── ENTRIES ───────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_spotify_get_all_entries(request):
+    qs = SnowAISpotifyEntry.objects.select_related('category').all()
+
+    # Optional filters
+    cat_id = request.GET.get('category_id', '').strip()
+    if cat_id:
+        qs = qs.filter(category_id=cat_id)
+
+    spotify_type = request.GET.get('type', '').strip()
+    if spotify_type:
+        qs = qs.filter(spotify_type=spotify_type)
+
+    search = request.GET.get('search', '').strip()
+    if search:
+        from django.db.models import Q
+        qs = qs.filter(Q(title__icontains=search) | Q(artist__icontains=search) | Q(notes__icontains=search))
+
+    return JsonResponse({'entries': [snowai_spotify_serialize_entry(e) for e in qs]})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_spotify_create_entry(request):
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON.'}, status=400)
+
+    # Required fields
+    title       = (data.get('title') or '').strip()[:300]
+    spotify_url = (data.get('spotify_url') or '').strip()[:500]
+    spotify_type = (data.get('spotify_type') or '').strip()[:20]
+    spotify_id   = (data.get('spotify_id') or '').strip()[:100]
+    category_id  = data.get('category_id')
+
+    if not title:
+        return JsonResponse({'error': 'title is required.'}, status=400)
+    if not spotify_type or not spotify_id:
+        return JsonResponse({'error': 'spotify_type and spotify_id are required.'}, status=400)
+    if not category_id:
+        return JsonResponse({'error': 'category_id is required.'}, status=400)
+
+    # Validate category
+    try:
+        category = SnowAISpotifyCategory.objects.get(id=category_id)
+    except SnowAISpotifyCategory.DoesNotExist:
+        return JsonResponse({'error': f'Category {category_id} not found.'}, status=404)
+
+    # Check for duplicate (same type + id)
+    if SnowAISpotifyEntry.objects.filter(spotify_type=spotify_type, spotify_id=spotify_id).exists():
+        return JsonResponse({'error': 'This Spotify item is already saved.'}, status=409)
+
+    entry = SnowAISpotifyEntry.objects.create(
+        spotify_type = spotify_type,
+        spotify_id   = spotify_id,
+        spotify_url  = spotify_url or None,
+        title        = title,
+        artist       = (data.get('artist') or '').strip()[:300] or None,
+        notes        = (data.get('notes') or '').strip() or None,
+        category     = category,
+    )
+
+    return JsonResponse({'entry': snowai_spotify_serialize_entry(entry)}, status=201)
+
+
+@csrf_exempt
+@require_http_methods(["PUT"])
+def snowai_spotify_update_entry(request, entry_id):
+    try:
+        entry = SnowAISpotifyEntry.objects.get(id=entry_id)
+    except SnowAISpotifyEntry.DoesNotExist:
+        return JsonResponse({'error': f'Entry {entry_id} not found.'}, status=404)
+
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON.'}, status=400)
+
+    if 'title' in data:
+        entry.title = (data['title'] or '').strip()[:300]
+    if 'artist' in data:
+        entry.artist = (data['artist'] or '').strip()[:300] or None
+    if 'notes' in data:
+        entry.notes = (data['notes'] or '').strip() or None
+    if 'spotify_url' in data:
+        entry.spotify_url = (data['spotify_url'] or '').strip()[:500] or None
+    if 'category_id' in data:
+        try:
+            entry.category = SnowAISpotifyCategory.objects.get(id=data['category_id'])
+        except SnowAISpotifyCategory.DoesNotExist:
+            return JsonResponse({'error': f"Category {data['category_id']} not found."}, status=404)
+
+    entry.save()
+    return JsonResponse({'entry': snowai_spotify_serialize_entry(entry)})
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def snowai_spotify_delete_entry(request, entry_id):
+    try:
+        entry = SnowAISpotifyEntry.objects.get(id=entry_id)
+    except SnowAISpotifyEntry.DoesNotExist:
+        return JsonResponse({'error': f'Entry {entry_id} not found.'}, status=404)
+
+    title = entry.title
+    entry.delete()
+    return JsonResponse({'message': f'"{title}" deleted.', 'id': entry_id})
+
+
+import csv
+import io
+import logging
+import traceback
+from datetime import date, datetime, timedelta
+
+import numpy as np
+import yfinance as yf
+from django.http import HttpResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
+from sklearn.linear_model import LinearRegression
+import pytz
+
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# MSS ASSET LISTS (UPDATED WITH FULL LISTS)
+# ============================================================
+
+ASSET_LISTS = {
+    'forex': [
+        'EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'AUDUSD=X', 
+        'USDCAD=X', 'USDCHF=X', 'NZDUSD=X', 'EURGBP=X',
+        'EURJPY=X', 'GBPJPY=X', 'AUDJPY=X', 'EURCHF=X'
+    ],
+    'stocks': [
+        # Tech Giants & Semiconductors
+        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 
+        'TSLA', 'META', 'AMD', 'INTC', 'ORCL', 'CSCO',
+        'ADBE', 'CRM', 'AVGO', 'QCOM', 'TXN', 'AMAT',
+        'LRCX', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'NXPI',
+        'MU', 'ADI', 'MPWR', 'SWKS', 'QRVO', 'ON',
+        'IBM', 'AAOI', 'ACLS', 'ACN', 'ADSK', 'AKAM', 
+        'ANSS', 'APH', 'ANET', 'ASML', 'AVAV', 'KEYS',
+        'MCHP', 'MTSI', 'MSI', 'MDB', 'NTAP', 'NTNX',
+        'PAYC', 'PTC', 'ROP', 'SAP', 'SLAB', 'STX', 
+        'TER', 'TSM', 'TYL', 'UMC', 'VRSN', 'WDC', 
+        'XLNX', 'ZBRA',
+        
+        # Software & Cloud
+        'NOW', 'INTU', 'WDAY', 'PANW', 'CRWD', 'ZS',
+        'DDOG', 'NET', 'SNOW', 'PLTR', 'TEAM', 'FTNT',
+        'OKTA', 'S', 'CYBR',
+        
+        # Fintech & Payments
+        'V', 'MA', 'PYPL', 'ADP', 'FISV', 'FIS',
+        'ZM', 'DOCU', 'TWLO', 'SQ', 'UBER', 'LYFT', 
+        'DASH', 'PINS', 'SNAP', 'SPOT', 'ROKU', 'Z', 
+        'ZG', 'AFRM', 'COIN', 'HOOD', 'SOFI', 'RBLX', 
+        'ASTS',
+        
+        # Financial Services & Banks
+        'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'BLK',
+        'SCHW', 'AXP', 'SPGI', 'CME', 'ICE', 'MCO',
+        'BK', 'USB', 'PNC', 'TFC', 'COF',
+        'AFL', 'AMG', 'AON', 'AJG', 'AMP', 'BEN', 
+        'CBOE', 'CINF', 'DFS', 'ERIE', 'FITB', 'FRC',
+        'GL', 'HBAN', 'HIG', 'IVZ', 'JKHY', 'KEY', 
+        'L', 'LNC', 'MTB', 'NTRS', 'NDAQ', 'PFG',
+        'RF', 'RJF', 'SIVB', 'STT', 'SYF', 'TROW', 
+        'WRB', 'ZION', 'CFG', 'CMA', 'FHN', 'EWBC',
+        'WAL', 'WBS', 'ALLY',
+        
+        # Insurance
+        'BRK-B', 'PGR', 'ALL', 'TRV', 'AIG', 'MET', 'PRU',
+        
+        # Healthcare & Pharma
+        'JNJ', 'LLY', 'UNH', 'PFE', 'ABBV', 'MRK', 'TMO',
+        'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS',
+        'CI', 'ELV', 'HUM', 'VRTX', 'REGN', 'ISRG',
+        'BIIB', 'MRNA', 'BNTX', 'SGEN', 'ALNY', 'BGNE',
+        'MCK', 'CAH', 'COR', 'IDXX', 'A', 'WAT',
+        'ALGN', 'ATRC', 'BAX', 'BDX', 'BIO', 'BSX', 
+        'CERN', 'DXCM', 'EW', 'EXAS', 'HOLX', 'HSIC',
+        'ILMN', 'INCY', 'IQV', 'LH', 'MDT', 'MOH', 
+        'NBIX', 'PKI', 'PODD', 'RMD', 'STE', 'SYK',
+        'TFX', 'UHS', 'WST', 'XRAY', 'ZBH', 'ZTS', 
+        'TDOC', 'DOCS', 'VEEV', 'HALO', 'NVAX', 'IONS', 
+        'UTHR',
+        
+        # Consumer Discretionary & Retail
+        'HD', 'MCD', 'NKE', 'SBUX', 'TJX', 'LOW', 
+        'BKNG', 'MAR', 'CMG', 'F', 'GM', 'ABNB',
+        'SHOP', 'MELI', 'EBAY', 'ETSY', 'TGT', 'ROST',
+        'YUM', 'DPZ', 'QSR', 'AAL', 'DAL', 'UAL',
+        'LUV', 'CCL', 'RCL', 'EA', 'TTWO',
+        'U', 'RIVN', 'LCID',
+        'AZO', 'BBY', 'BURL', 'CPRT', 'DHI', 'DRI',
+        'EXPE', 'GPC', 'GRMN', 'HAS', 'HLT', 'KMX',
+        'LEN', 'LVS', 'MGM', 'MHK', 'NVR', 'ORLY',
+        'PHM', 'POOL', 'RL', 'TSCO', 'TPR', 'ULTA',
+        'VFC', 'WHR', 'WYNN', 'APTV', 'BWA', 'DG',
+        'DLTR', 'DDS', 'FIVE', 'FL', 'FOXA', 'FOX',
+        'GPS', 'GT', 'HBI', 'LAD', 'LKQ', 'M',
+        'NCLH', 'NWL', 'PVH',
+        
+        # Consumer Staples
+        'WMT', 'PG', 'KO', 'PEP', 'COST', 'PM', 'MO',
+        'MDLZ', 'CL', 'KMB', 'GIS', 'KHC', 'STZ',
+        'ADM', 'BF-B', 'CAG', 'CHD', 'CLX', 'CPB',
+        'EL', 'HSY', 'K', 'KDP', 'KR', 'KVUE', 
+        'MKC', 'MNST', 'SJM', 'SYY', 'TAP', 'TSN', 
+        'WBA', 'BGS', 'BG', 'COKE', 'FLO', 'HRL', 
+        'LANC', 'POST',
+        
+        # Energy
+        'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX',
+        'VLO', 'OXY', 'HAL', 'DVN', 'HES', 'BKR',
+        'APA', 'CTRA', 'FANG', 'KMI', 'LNG', 'MRO', 
+        'NOV', 'OKE', 'TRGP', 'WMB', 'EQT', 'AR',
+        'CLR', 'CNX', 'CQP', 'EXE', 'FTI', 'HP', 
+        'MTDR', 'NBL', 'OVV', 'PBF', 'PR', 'RIG',
+        'SM', 'VAL', 'XEC',
+        
+        # Industrials
+        'BA', 'HON', 'UNP', 'CAT', 'GE', 'RTX', 'LMT',
+        'UPS', 'DE', 'MMM', 'GD', 'NOC', 'FDX', 'CSX',
+        'HWM', 'TDG', 'HEI', 'LHX', 'TXT',
+        'AOS', 'CARR', 'CHRW', 'CMI', 'DOV', 'EMR', 
+        'ETN', 'EXPD', 'FAST', 'FTV', 'GNRC', 'GWW',
+        'IEX', 'IR', 'ITW', 'J', 'JBHT', 'JCI', 
+        'LDOS', 'MAS', 'NSC', 'ODFL', 'OTIS', 'PCAR',
+        'PH', 'PWR', 'ROK', 'ROL', 'RSG', 'SNA', 
+        'SWK', 'TT', 'URI', 'VRSK', 'WAB', 'WM', 
+        'XYL', 'ALK', 'JBLU', 'SAVE',
+        
+        # Communication Services & Media
+        'T', 'VZ', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR',
+        'LYV', 'MTCH', 'NWSA', 'NWS', 'OMC', 'PARA',
+        'WBD', 'IPG', 'DISH',
+        
+        # Real Estate & REITs
+        'AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'SPG', 'O',
+        'AVB', 'ARE', 'BXP', 'CBRE', 'DLR', 'EQR', 
+        'ESS', 'EXR', 'FRT', 'HST', 'IRM', 'KIM',
+        'MAA', 'REG', 'SBAC', 'SLG', 'UDR', 'VTR', 
+        'WELL', 'WY', 'INVH', 'PEAK', 'VNO',
+        
+        # Materials & Chemicals
+        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'NEM', 'FCX',
+        'DOW', 'LYB', 'CE', 'ALB', 'EMN', 'SQM',
+        'AMCR', 'BALL', 'CF', 'CLF', 'CTVA', 'FMC', 
+        'IP', 'MLM', 'MOS', 'NUE', 'PKG', 'PPG',
+        'SEE', 'STLD', 'SW', 'VMC', 'AVY', 'AA', 
+        'MP', 'RS',
+        
+        # Utilities
+        'NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE',
+        'AEE', 'AES', 'AWK', 'CMS', 'CNP', 'DTE', 
+        'ED', 'EIX', 'ES', 'ETR', 'EVRG', 'FE',
+        'LNT', 'NI', 'NRG', 'PCG', 'PEG', 'PNW', 
+        'PPL', 'VST', 'WEC', 'XEL', 'CEG',
+        
+        # Chinese ADRs
+        'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV', 'LI',
+    ],
+    'indices': [
+        # US Indices
+        '^GSPC', '^DJI', '^IXIC', '^RUT', '^VIX',
+        
+        # European Indices
+        '^FTSE', '^GDAXI', '^FCHI', '^IBEX', '^AEX',
+        '^SSMI', '^OMXS30', '^BFX',
+        
+        # Asian Indices
+        '^N225', '^HSI', '000001.SS', '^STI', '^BSESN',
+        '^NSEI', '^KS11', '^TWII', '^JKSE',
+        
+        # Other Global Indices
+        '^AXJO', '^GSPTSE', '^MXX', '^BVSP', '^MERV',
+    ],
+    'commodities': [
+        # Precious Metals
+        'GC=F', 'SI=F', 'PL=F', 'PA=F',
+        
+        # Energy
+        'CL=F', 'BZ=F', 'NG=F', 'RB=F', 'HO=F',
+        
+        # Base Metals
+        'HG=F', 'ALI=F',
+        
+        # Agricultural
+        'ZC=F', 'ZW=F', 'ZS=F', 'KC=F', 'SB=F',
+        'CT=F', 'CC=F', 'LBS=F',
+    ],
+    'bonds': [
+        # US Treasury Yields
+        '^TNX', '^TYX', '^FVX', '^IRX',
+        
+        # Treasury Futures
+        'ZN=F', 'ZB=F', 'ZT=F', 'ZF=F',
+    ],
+}
+
+PERIODS = [10, 15, 20, 30, 45, 60, 90, 180]
+
+# ============================================================
+# COMPLETE SECTOR MAPPINGS (ALL 500+ STOCKS)
+# ============================================================
+
+SECTOR_MAP = {
+    # Tech Giants
+    'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
+    'AMZN': 'Consumer Cyclical', 'NVDA': 'Technology', 'TSLA': 'Consumer Cyclical',
+    'META': 'Technology', 'AMD': 'Technology', 'INTC': 'Technology', 'ORCL': 'Technology',
+    'CSCO': 'Technology', 'ADBE': 'Technology', 'CRM': 'Technology', 'AVGO': 'Technology',
+    'QCOM': 'Technology', 'TXN': 'Technology', 'AMAT': 'Technology', 'LRCX': 'Technology',
+    'KLAC': 'Technology', 'SNPS': 'Technology', 'CDNS': 'Technology', 'MRVL': 'Technology',
+    'NXPI': 'Technology', 'MU': 'Technology', 'ADI': 'Technology', 'MPWR': 'Technology',
+    'SWKS': 'Technology', 'QRVO': 'Technology', 'ON': 'Technology',
+    
+    # Financial Services
+    'JPM': 'Financial', 'BAC': 'Financial', 'WFC': 'Financial', 'C': 'Financial',
+    'GS': 'Financial', 'MS': 'Financial', 'BLK': 'Financial', 'SCHW': 'Financial',
+    'AXP': 'Financial', 'SPGI': 'Financial', 'CME': 'Financial', 'ICE': 'Financial',
+    'MCO': 'Financial', 'BK': 'Financial', 'USB': 'Financial', 'PNC': 'Financial',
+    'TFC': 'Financial', 'COF': 'Financial', 'V': 'Financial', 'MA': 'Financial',
+    'PYPL': 'Financial', 'ADP': 'Financial', 'FISV': 'Financial', 'FIS': 'Financial',
+    
+    # Healthcare & Pharma
+    'JNJ': 'Healthcare', 'LLY': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare',
+    'ABBV': 'Healthcare', 'MRK': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
+    'DHR': 'Healthcare', 'BMY': 'Healthcare', 'AMGN': 'Healthcare', 'GILD': 'Healthcare',
+    'CVS': 'Healthcare', 'CI': 'Healthcare', 'ELV': 'Healthcare', 'HUM': 'Healthcare',
+    'VRTX': 'Healthcare', 'REGN': 'Healthcare', 'ISRG': 'Healthcare', 'BIIB': 'Healthcare',
+    'MRNA': 'Healthcare', 'BNTX': 'Healthcare', 'SGEN': 'Healthcare', 'ALNY': 'Healthcare',
+    'BGNE': 'Healthcare', 'MCK': 'Healthcare', 'CAH': 'Healthcare', 'COR': 'Healthcare',
+    'IDXX': 'Healthcare', 'A': 'Healthcare', 'WAT': 'Healthcare',
+    
+    # Consumer Discretionary
+    'HD': 'Consumer Cyclical', 'MCD': 'Consumer Cyclical', 'NKE': 'Consumer Cyclical',
+    'SBUX': 'Consumer Cyclical', 'TJX': 'Consumer Cyclical', 'LOW': 'Consumer Cyclical',
+    'BKNG': 'Consumer Cyclical', 'MAR': 'Consumer Cyclical', 'CMG': 'Consumer Cyclical',
+    'F': 'Consumer Cyclical', 'GM': 'Consumer Cyclical', 'ABNB': 'Consumer Cyclical',
+    'SHOP': 'Consumer Cyclical', 'MELI': 'Consumer Cyclical', 'EBAY': 'Consumer Cyclical',
+    'ETSY': 'Consumer Cyclical', 'TGT': 'Consumer Cyclical', 'ROST': 'Consumer Cyclical',
+    'YUM': 'Consumer Cyclical', 'DPZ': 'Consumer Cyclical', 'QSR': 'Consumer Cyclical',
+    'AAL': 'Consumer Cyclical', 'DAL': 'Consumer Cyclical', 'UAL': 'Consumer Cyclical',
+    'LUV': 'Consumer Cyclical', 'CCL': 'Consumer Cyclical', 'RCL': 'Consumer Cyclical',
+    'EA': 'Consumer Cyclical', 'TTWO': 'Consumer Cyclical', 'RBLX': 'Consumer Cyclical',
+    'U': 'Consumer Cyclical', 'RIVN': 'Consumer Cyclical', 'LCID': 'Consumer Cyclical',
+    
+    # Consumer Staples
+    'WMT': 'Consumer Defensive', 'PG': 'Consumer Defensive', 'KO': 'Consumer Defensive',
+    'PEP': 'Consumer Defensive', 'COST': 'Consumer Defensive', 'PM': 'Consumer Defensive',
+    'MO': 'Consumer Defensive', 'MDLZ': 'Consumer Defensive', 'CL': 'Consumer Defensive',
+    'KMB': 'Consumer Defensive', 'GIS': 'Consumer Defensive', 'KHC': 'Consumer Defensive',
+    'STZ': 'Consumer Defensive',
+    
+    # Energy
+    'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy', 'EOG': 'Energy', 'SLB': 'Energy',
+    'MPC': 'Energy', 'PSX': 'Energy', 'VLO': 'Energy', 'OXY': 'Energy', 'HAL': 'Energy',
+    'DVN': 'Energy', 'HES': 'Energy', 'BKR': 'Energy',
+    
+    # Industrials
+    'BA': 'Industrials', 'HON': 'Industrials', 'UNP': 'Industrials', 'CAT': 'Industrials',
+    'GE': 'Industrials', 'RTX': 'Industrials', 'LMT': 'Industrials', 'UPS': 'Industrials',
+    'DE': 'Industrials', 'MMM': 'Industrials', 'GD': 'Industrials', 'NOC': 'Industrials',
+    'FDX': 'Industrials', 'CSX': 'Industrials', 'HWM': 'Industrials', 'TDG': 'Industrials',
+    'HEI': 'Industrials', 'LHX': 'Industrials', 'TXT': 'Industrials',
+    
+    # Communication Services
+    'T': 'Communication', 'VZ': 'Communication', 'CMCSA': 'Communication',
+    'NFLX': 'Communication', 'DIS': 'Communication', 'TMUS': 'Communication',
+    'CHTR': 'Communication',
+    
+    # Real Estate
+    'AMT': 'Real Estate', 'PLD': 'Real Estate', 'CCI': 'Real Estate',
+    'EQIX': 'Real Estate', 'PSA': 'Real Estate', 'SPG': 'Real Estate', 'O': 'Real Estate',
+    
+    # Materials
+    'LIN': 'Materials', 'APD': 'Materials', 'SHW': 'Materials', 'ECL': 'Materials',
+    'DD': 'Materials', 'NEM': 'Materials', 'FCX': 'Materials', 'DOW': 'Materials',
+    'LYB': 'Materials', 'CE': 'Materials', 'ALB': 'Materials', 'EMN': 'Materials',
+    'SQM': 'Materials',
+    
+    # Utilities
+    'NEE': 'Utilities', 'DUK': 'Utilities', 'SO': 'Utilities', 'D': 'Utilities',
+    'AEP': 'Utilities', 'EXC': 'Utilities', 'SRE': 'Utilities',
+    
+    # Software & Cloud
+    'NOW': 'Technology', 'INTU': 'Technology', 'WDAY': 'Technology', 'PANW': 'Technology',
+    'CRWD': 'Technology', 'ZS': 'Technology', 'DDOG': 'Technology', 'NET': 'Technology',
+    'SNOW': 'Technology', 'PLTR': 'Technology', 'TEAM': 'Technology', 'FTNT': 'Technology',
+    'OKTA': 'Technology', 'S': 'Technology', 'CYBR': 'Technology',
+    
+    # Insurance
+    'BRK-B': 'Financial', 'PGR': 'Financial', 'ALL': 'Financial', 'TRV': 'Financial',
+    'AIG': 'Financial', 'MET': 'Financial', 'PRU': 'Financial',
+    
+    # Chinese ADRs
+    'BABA': 'Technology', 'JD': 'Consumer Cyclical', 'PDD': 'Consumer Cyclical',
+    'BIDU': 'Technology', 'NIO': 'Consumer Cyclical', 'XPEV': 'Consumer Cyclical',
+    'LI': 'Consumer Cyclical',
+    
+    # Additional Technology
+    'IBM': 'Technology', 'AAOI': 'Technology', 'ACLS': 'Technology', 'ACN': 'Technology',
+    'ADSK': 'Technology', 'AKAM': 'Technology', 'ANSS': 'Technology', 'APH': 'Technology',
+    'ANET': 'Technology', 'ASML': 'Technology', 'AVAV': 'Technology', 'KEYS': 'Technology',
+    'MCHP': 'Technology', 'MTSI': 'Technology', 'MSI': 'Technology', 'MDB': 'Technology',
+    'NTAP': 'Technology', 'NTNX': 'Technology', 'PAYC': 'Technology', 'PTC': 'Technology',
+    'ROP': 'Technology', 'SAP': 'Technology', 'SLAB': 'Technology', 'STX': 'Technology',
+    'TER': 'Technology', 'TSM': 'Technology', 'TYL': 'Technology', 'UMC': 'Technology',
+    'VRSN': 'Technology', 'WDC': 'Technology', 'XLNX': 'Technology', 'ZBRA': 'Technology',
+    'ZM': 'Technology', 'DOCU': 'Technology', 'TWLO': 'Technology', 'SQ': 'Technology',
+    'UBER': 'Technology', 'LYFT': 'Technology', 'DASH': 'Technology', 'PINS': 'Technology',
+    'SNAP': 'Technology', 'SPOT': 'Technology', 'ROKU': 'Technology', 'Z': 'Technology',
+    'ZG': 'Technology', 'AFRM': 'Technology', 'COIN': 'Technology', 'HOOD': 'Technology',
+    'SOFI': 'Technology', 'ASTS': 'Technology',
+    
+    # Additional Financial Services
+    'AFL': 'Financial', 'AMG': 'Financial', 'AON': 'Financial', 'AJG': 'Financial',
+    'AMP': 'Financial', 'BEN': 'Financial', 'CBOE': 'Financial', 'CINF': 'Financial',
+    'DFS': 'Financial', 'ERIE': 'Financial', 'FITB': 'Financial', 'FRC': 'Financial',
+    'GL': 'Financial', 'HBAN': 'Financial', 'HIG': 'Financial', 'IVZ': 'Financial',
+    'JKHY': 'Financial', 'KEY': 'Financial', 'L': 'Financial', 'LNC': 'Financial',
+    'MTB': 'Financial', 'NTRS': 'Financial', 'NDAQ': 'Financial', 'PFG': 'Financial',
+    'RF': 'Financial', 'RJF': 'Financial', 'SIVB': 'Financial', 'STT': 'Financial',
+    'SYF': 'Financial', 'TROW': 'Financial', 'WRB': 'Financial', 'ZION': 'Financial',
+    'CFG': 'Financial', 'CMA': 'Financial', 'FHN': 'Financial', 'EWBC': 'Financial',
+    'WAL': 'Financial', 'WBS': 'Financial', 'ALLY': 'Financial',
+    
+    # Additional Healthcare
+    'ALGN': 'Healthcare', 'ATRC': 'Healthcare', 'BAX': 'Healthcare', 'BDX': 'Healthcare',
+    'BIO': 'Healthcare', 'BSX': 'Healthcare', 'CERN': 'Healthcare', 'DXCM': 'Healthcare',
+    'EW': 'Healthcare', 'EXAS': 'Healthcare', 'HOLX': 'Healthcare', 'HSIC': 'Healthcare',
+    'ILMN': 'Healthcare', 'INCY': 'Healthcare', 'IQV': 'Healthcare', 'LH': 'Healthcare',
+    'MDT': 'Healthcare', 'MOH': 'Healthcare', 'NBIX': 'Healthcare', 'PKI': 'Healthcare',
+    'PODD': 'Healthcare', 'RMD': 'Healthcare', 'STE': 'Healthcare', 'SYK': 'Healthcare',
+    'TFX': 'Healthcare', 'UHS': 'Healthcare', 'WST': 'Healthcare', 'XRAY': 'Healthcare',
+    'ZBH': 'Healthcare', 'ZTS': 'Healthcare', 'TDOC': 'Healthcare', 'DOCS': 'Healthcare',
+    'VEEV': 'Healthcare', 'HALO': 'Healthcare', 'NVAX': 'Healthcare', 'IONS': 'Healthcare',
+    'UTHR': 'Healthcare',
+    
+    # Additional Consumer Cyclical
+    'AZO': 'Consumer Cyclical', 'BBY': 'Consumer Cyclical', 'BURL': 'Consumer Cyclical',
+    'CPRT': 'Consumer Cyclical', 'DHI': 'Consumer Cyclical', 'DRI': 'Consumer Cyclical',
+    'EXPE': 'Consumer Cyclical', 'GPC': 'Consumer Cyclical', 'GRMN': 'Consumer Cyclical',
+    'HAS': 'Consumer Cyclical', 'HLT': 'Consumer Cyclical', 'KMX': 'Consumer Cyclical',
+    'LEN': 'Consumer Cyclical', 'LVS': 'Consumer Cyclical', 'MGM': 'Consumer Cyclical',
+    'MHK': 'Consumer Cyclical', 'NVR': 'Consumer Cyclical', 'ORLY': 'Consumer Cyclical',
+    'PHM': 'Consumer Cyclical', 'POOL': 'Consumer Cyclical', 'RL': 'Consumer Cyclical',
+    'TSCO': 'Consumer Cyclical', 'TPR': 'Consumer Cyclical', 'ULTA': 'Consumer Cyclical',
+    'VFC': 'Consumer Cyclical', 'WHR': 'Consumer Cyclical', 'WYNN': 'Consumer Cyclical',
+    'APTV': 'Consumer Cyclical', 'BWA': 'Consumer Cyclical', 'DG': 'Consumer Cyclical',
+    'DLTR': 'Consumer Cyclical', 'DDS': 'Consumer Cyclical', 'FIVE': 'Consumer Cyclical',
+    'FL': 'Consumer Cyclical', 'FOXA': 'Consumer Cyclical', 'FOX': 'Consumer Cyclical',
+    'GPS': 'Consumer Cyclical', 'GT': 'Consumer Cyclical', 'HBI': 'Consumer Cyclical',
+    'LAD': 'Consumer Cyclical', 'LKQ': 'Consumer Cyclical', 'M': 'Consumer Cyclical',
+    'NCLH': 'Consumer Cyclical', 'NWL': 'Consumer Cyclical', 'PVH': 'Consumer Cyclical',
+    
+    # Additional Consumer Staples
+    'ADM': 'Consumer Defensive', 'BF-B': 'Consumer Defensive', 'CAG': 'Consumer Defensive',
+    'CHD': 'Consumer Defensive', 'CLX': 'Consumer Defensive', 'CPB': 'Consumer Defensive',
+    'EL': 'Consumer Defensive', 'HSY': 'Consumer Defensive', 'K': 'Consumer Defensive',
+    'KDP': 'Consumer Defensive', 'KR': 'Consumer Defensive', 'KVUE': 'Consumer Defensive',
+    'MKC': 'Consumer Defensive', 'MNST': 'Consumer Defensive', 'SJM': 'Consumer Defensive',
+    'SYY': 'Consumer Defensive', 'TAP': 'Consumer Defensive', 'TSN': 'Consumer Defensive',
+    'WBA': 'Consumer Defensive', 'BGS': 'Consumer Defensive', 'BG': 'Consumer Defensive',
+    'COKE': 'Consumer Defensive', 'FLO': 'Consumer Defensive', 'HRL': 'Consumer Defensive',
+    'LANC': 'Consumer Defensive', 'POST': 'Consumer Defensive',
+    
+    # Additional Energy
+    'APA': 'Energy', 'CTRA': 'Energy', 'FANG': 'Energy', 'KMI': 'Energy',
+    'LNG': 'Energy', 'MRO': 'Energy', 'NOV': 'Energy', 'OKE': 'Energy',
+    'TRGP': 'Energy', 'WMB': 'Energy', 'EQT': 'Energy', 'AR': 'Energy',
+    'CLR': 'Energy', 'CNX': 'Energy', 'CQP': 'Energy', 'EXE': 'Energy',
+    'FTI': 'Energy', 'HP': 'Energy', 'MTDR': 'Energy', 'NBL': 'Energy',
+    'OVV': 'Energy', 'PBF': 'Energy', 'PR': 'Energy', 'RIG': 'Energy',
+    'SM': 'Energy', 'VAL': 'Energy', 'XEC': 'Energy',
+    
+    # Additional Industrials
+    'AOS': 'Industrials', 'CARR': 'Industrials', 'CHRW': 'Industrials', 'CMI': 'Industrials',
+    'DOV': 'Industrials', 'EMR': 'Industrials', 'ETN': 'Industrials', 'EXPD': 'Industrials',
+    'FAST': 'Industrials', 'FTV': 'Industrials', 'GNRC': 'Industrials', 'GWW': 'Industrials',
+    'IEX': 'Industrials', 'IR': 'Industrials', 'ITW': 'Industrials', 'J': 'Industrials',
+    'JBHT': 'Industrials', 'JCI': 'Industrials', 'LDOS': 'Industrials', 'MAS': 'Industrials',
+    'NSC': 'Industrials', 'ODFL': 'Industrials', 'OTIS': 'Industrials', 'PCAR': 'Industrials',
+    'PH': 'Industrials', 'PWR': 'Industrials', 'ROK': 'Industrials', 'ROL': 'Industrials',
+    'RSG': 'Industrials', 'SNA': 'Industrials', 'SWK': 'Industrials', 'TT': 'Industrials',
+    'URI': 'Industrials', 'VRSK': 'Industrials', 'WAB': 'Industrials', 'WM': 'Industrials',
+    'XYL': 'Industrials', 'ALK': 'Industrials', 'JBLU': 'Industrials', 'SAVE': 'Industrials',
+    
+    # Additional Communication
+    'LYV': 'Communication', 'MTCH': 'Communication', 'NWSA': 'Communication',
+    'NWS': 'Communication', 'OMC': 'Communication', 'PARA': 'Communication',
+    'WBD': 'Communication', 'IPG': 'Communication', 'DISH': 'Communication',
+    
+    # Additional Real Estate
+    'AVB': 'Real Estate', 'ARE': 'Real Estate', 'BXP': 'Real Estate', 'CBRE': 'Real Estate',
+    'DLR': 'Real Estate', 'EQR': 'Real Estate', 'ESS': 'Real Estate', 'EXR': 'Real Estate',
+    'FRT': 'Real Estate', 'HST': 'Real Estate', 'IRM': 'Real Estate', 'KIM': 'Real Estate',
+    'MAA': 'Real Estate', 'REG': 'Real Estate', 'SBAC': 'Real Estate', 'SLG': 'Real Estate',
+    'UDR': 'Real Estate', 'VTR': 'Real Estate', 'WELL': 'Real Estate', 'WY': 'Real Estate',
+    'INVH': 'Real Estate', 'PEAK': 'Real Estate', 'VNO': 'Real Estate',
+    
+    # Additional Materials
+    'AMCR': 'Materials', 'BALL': 'Materials', 'CF': 'Materials', 'CLF': 'Materials',
+    'CTVA': 'Materials', 'FMC': 'Materials', 'IP': 'Materials', 'MLM': 'Materials',
+    'MOS': 'Materials', 'NUE': 'Materials', 'PKG': 'Materials', 'PPG': 'Materials',
+    'SEE': 'Materials', 'STLD': 'Materials', 'SW': 'Materials', 'VMC': 'Materials',
+    'AVY': 'Materials', 'AA': 'Materials', 'MP': 'Materials', 'RS': 'Materials',
+    
+    # Additional Utilities
+    'AEE': 'Utilities', 'AES': 'Utilities', 'AWK': 'Utilities', 'CMS': 'Utilities',
+    'CNP': 'Utilities', 'DTE': 'Utilities', 'ED': 'Utilities', 'EIX': 'Utilities',
+    'ES': 'Utilities', 'ETR': 'Utilities', 'EVRG': 'Utilities', 'FE': 'Utilities',
+    'LNT': 'Utilities', 'NI': 'Utilities', 'NRG': 'Utilities', 'PCG': 'Utilities',
+    'PEG': 'Utilities', 'PNW': 'Utilities', 'PPL': 'Utilities', 'VST': 'Utilities',
+    'WEC': 'Utilities', 'XEL': 'Utilities', 'CEG': 'Utilities',
+}
+
+# ============================================================
+# MSS HELPER FUNCTIONS
+# ============================================================
+def _get_analyst_data(symbol):
+    """Fetch real analyst ratings from yfinance - UPDATED to use correct API endpoints."""
+    try:
+        ticker = yf.Ticker(symbol)
+        
+        # Method 1: Try recommendations_summary (most reliable)
+        try:
+            rec_summary = ticker.recommendations_summary
+            if rec_summary is not None and not rec_summary.empty:
+                # Get the most recent recommendation period
+                latest = rec_summary.iloc[-1]
+                
+                # Calculate bullish percentage from strongBuy + buy vs total
+                if 'strongBuy' in latest and 'buy' in latest and 'hold' in latest:
+                    total = (latest.get('strongBuy', 0) + latest.get('buy', 0) + 
+                            latest.get('hold', 0) + latest.get('sell', 0) + 
+                            latest.get('strongSell', 0))
+                    if total > 0:
+                        bullish_score = (latest.get('strongBuy', 0) * 100 + latest.get('buy', 0) * 75)
+                        rating_pct = min(100, (bullish_score / total) * 1.0)
+                        
+                        if rating_pct >= 60:
+                            bias = 'bullish'
+                        elif rating_pct <= 40:
+                            bias = 'bearish'
+                        else:
+                            bias = 'neutral'
+                        return round(rating_pct, 1), bias
+        except Exception as e:
+            logger.debug(f"recommendations_summary failed for {symbol}: {e}")
+        
+        # Method 2: Use analyst_price_targets as fallback
+        try:
+            price_targets = ticker.analyst_price_targets
+            if price_targets and isinstance(price_targets, dict):
+                current_price = price_targets.get('current')
+                mean_target = price_targets.get('mean')
+                
+                if current_price and mean_target:
+                    # Higher mean target relative to current price = bullish
+                    upside_pct = ((mean_target - current_price) / current_price) * 100
+                    
+                    if upside_pct > 15:
+                        rating_pct = 85.0
+                        bias = 'bullish'
+                    elif upside_pct < -5:
+                        rating_pct = 25.0
+                        bias = 'bearish'
+                    else:
+                        rating_pct = 50.0
+                        bias = 'neutral'
+                    return rating_pct, bias
+        except Exception as e:
+            logger.debug(f"analyst_price_targets failed for {symbol}: {e}")
+        
+        # Method 3: Check info dict for recommendation key
+        try:
+            info = ticker.info
+            if info:
+                rec_key = info.get('recommendationKey', '').lower()
+                if rec_key in ['buy', 'strong_buy']:
+                    return 85.0, 'bullish'
+                elif rec_key == 'hold':
+                    return 50.0, 'neutral'
+                elif rec_key in ['sell', 'strong_sell']:
+                    return 15.0, 'bearish'
+                
+                # Also check number of analyst opinions
+                num_analysts = info.get('numberOfAnalystOpinions', 0)
+                if num_analysts > 0:
+                    # Default to neutral if we have analysts but no clear rating
+                    return 50.0, 'neutral'
+        except Exception as e:
+            logger.debug(f"info dict failed for {symbol}: {e}")
+        
+        # Default fallback - no analyst data available
+        return None, None
+        
+    except Exception as e:
+        logger.warning(f"Could not fetch analyst data for {symbol}: {e}")
+        return None, None
+
+
+def _get_options_data(symbol):
+    """Fetch real put/call ratio from yfinance options data."""
+    try:
+        ticker = yf.Ticker(symbol)
+        expirations = ticker.options
+        
+        if not expirations:
+            return None, None
+            
+        # Try multiple expiration dates to find one with data
+        for expiry in expirations[:3]:  # Check first 3 expiration dates
+            try:
+                opt_chain = ticker.option_chain(expiry)
+                
+                if opt_chain.calls is not None and opt_chain.puts is not None:
+                    # Use volume instead of open interest (more real-time)
+                    total_call_vol = opt_chain.calls['volume'].sum() if 'volume' in opt_chain.calls.columns else 0
+                    total_put_vol = opt_chain.puts['volume'].sum() if 'volume' in opt_chain.puts.columns else 0
+                    
+                    # Fall back to open interest if volume is zero
+                    if total_call_vol == 0:
+                        total_call_vol = opt_chain.calls['openInterest'].sum() if 'openInterest' in opt_chain.calls.columns else 0
+                        total_put_vol = opt_chain.puts['openInterest'].sum() if 'openInterest' in opt_chain.puts.columns else 0
+                    
+                    if total_call_vol > 0:
+                        put_call_ratio = total_put_vol / total_call_vol
+                        
+                        if put_call_ratio > 1.2:
+                            return round(put_call_ratio, 3), 'bearish'
+                        elif put_call_ratio < 0.8:
+                            return round(put_call_ratio, 3), 'bullish'
+                        else:
+                            return round(put_call_ratio, 3), 'neutral'
+            except Exception:
+                continue  # Try next expiry
+                
+        return None, None
+    except Exception as e:
+        logger.warning(f"Could not fetch options data for {symbol}: {e}")
+        return None, None
+
+def _compute_mss_for_symbol(symbol: str, period_days: int, all_volatilities: list):
+    """Returns a dict of raw metrics with real analyst and options data."""
+    min_required_bars = max(min(period_days, 15), 5)
+
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=f"{period_days}d")
+
+        if hist.empty or len(hist) < min_required_bars:
+            return None
+
+        hist['returns'] = hist['Close'].pct_change()
+        returns = hist['returns'].dropna()
+        if len(returns) < 2:
+            return None
+
+        volatility = float(returns.std())
+
+        prices = hist['Close'].values
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
+        model = LinearRegression()
+        model.fit(X, y)
+        r_squared = float(max(0, min(model.score(X, y), 1.0)))
+
+        positive_days = (returns > 0).sum()
+        trend_consistency = float(abs(positive_days / len(returns) - 0.5) * 2)
+
+        slope_per_day = model.coef_[0][0]
+        avg_price = float(np.mean(prices))
+        if len(prices) > 1 and avg_price > 0:
+            trend_strength = float(min(abs(slope_per_day * len(prices)) / avg_price, 1.0))
+        else:
+            trend_strength = 0.0
+
+        avg_volume = float(hist['Volume'].mean())
+        if avg_volume > 10_000_000:
+            liquidity_factor = 1.2
+        elif avg_volume > 5_000_000:
+            liquidity_factor = 1.1
+        elif avg_volume > 1_000_000:
+            liquidity_factor = 1.0
+        elif avg_volume > 500_000:
+            liquidity_factor = 0.95
+        elif avg_volume > 100_000:
+            liquidity_factor = 0.9
+        else:
+            liquidity_factor = 0.8
+
+        current_price = float(hist['Close'].iloc[-1])
+        start_price = float(hist['Close'].iloc[0])
+        price_change = ((current_price - start_price) / start_price * 100) if start_price else 0.0
+
+        analyst_rating_pct, analyst_bias = _get_analyst_data(symbol)
+        put_call_ratio, put_call_bias = _get_options_data(symbol)
+
+        all_volatilities.append(volatility)
+
+        return {
+            'symbol': symbol,
+            'volatility': volatility,
+            'r_squared': r_squared,
+            'trend_consistency': trend_consistency,
+            'trend_strength': trend_strength,
+            'liquidity_factor': liquidity_factor,
+            'current_price': current_price,
+            'price_change': price_change,
+            'data_points': len(hist),
+            'avg_volume': int(avg_volume),
+            'analyst_rating_pct': analyst_rating_pct,
+            'analyst_bias': analyst_bias,
+            'put_call_ratio': put_call_ratio,
+            'put_call_bias': put_call_bias,
+        }
+    except Exception as e:
+        logger.error(f"Error processing {symbol}: {e}")
+        return None
+
+def _finalise_and_save(temp_results: list, period_days: int, today: date, asset_class: str):
+    """Normalise volatility, compute MSS, persist to DB."""
+    if not temp_results:
+        return 0
+
+    all_vols = [r['volatility'] for r in temp_results]
+    max_volatility = max(all_vols) or 1.0
+
+    saved = 0
+    for t in temp_results:
+        try:
+            norm_vol = t['volatility'] / max_volatility
+            trend_score = (
+                t['r_squared'] * 0.5 +
+                t['trend_consistency'] * 0.3 +
+                t['trend_strength'] * 0.2
+            ) * 100
+            stability_factor = (1 - norm_vol) ** 0.6
+            mss = min(max(trend_score * stability_factor * t['liquidity_factor'], 0), 100)
+
+            if mss >= 47:
+                category = 'stable'
+            elif mss >= 30:
+                category = 'choppy'
+            else:
+                category = 'volatile'
+
+            symbol = t['symbol']
+            MSSHistoricalRecord.objects.update_or_create(
+                symbol=symbol,
+                date_taken=today,
+                period_days=period_days,
+                defaults=dict(
+                    asset_class=asset_class,
+                    sector=SECTOR_MAP.get(symbol),
+                    mss=round(mss, 4),
+                    r_squared=round(t['r_squared'], 6),
+                    volatility=round(t['volatility'], 6),
+                    normalized_volatility=round(norm_vol, 6),
+                    trend_consistency=round(t['trend_consistency'], 6),
+                    trend_strength=round(t['trend_strength'], 6),
+                    liquidity_factor=round(t['liquidity_factor'], 4),
+                    category=category,
+                    current_price=round(t['current_price'], 4),
+                    price_change=round(t['price_change'], 4),
+                    avg_volume=t['avg_volume'],
+                    data_points=t['data_points'],
+                    analyst_rating_pct=round(t['analyst_rating_pct'], 2) if t['analyst_rating_pct'] is not None else None,
+                    analyst_bias=t['analyst_bias'],
+                    put_call_ratio=round(t['put_call_ratio'], 4) if t['put_call_ratio'] is not None else None,
+                    put_call_bias=t['put_call_bias'],
+                )
+            )
+            saved += 1
+        except Exception as e:
+            logger.error(f"DB save error for {t['symbol']}: {e}")
+
+    return saved
+
+def run_daily_mss_snapshot():
+    """Main job function - runs daily MSS calculations."""
+    today = date.today()
+    logger.info(f"[MSS Scheduler] Starting daily snapshot for {today}")
+    total_saved = 0
+
+    for asset_class, symbols in ASSET_LISTS.items():
+        for period in PERIODS:
+            logger.info(f"  → {asset_class.upper()} | {period}d period ({len(symbols)} symbols)")
+            temp_results = []
+            all_volatilities = []
+
+            for symbol in symbols:
+                result = _compute_mss_for_symbol(symbol, period, all_volatilities)
+                if result:
+                    temp_results.append(result)
+
+            saved = _finalise_and_save(temp_results, period, today, asset_class)
+            total_saved += saved
+            logger.info(f"     ✓ Saved {saved}/{len(temp_results)} records")
+
+    logger.info(f"[MSS Scheduler] Snapshot complete. Total records saved: {total_saved}")
+    return total_saved
+
+# ============================================================
+# SCHEDULE JOBS
+# ============================================================
+
+# Set to New York timezone
+NY_TIMEZONE = pytz.timezone('America/New_York')
+
+# MSS daily snapshot job - runs at NYC lunch hour (12:00 PM ET)
+scheduler.add_job(
+    run_daily_mss_snapshot,
+    trigger=CronTrigger(hour=12, minute=0, timezone=NY_TIMEZONE),
+    id='daily_mss_snapshot',
+    name='Daily MSS snapshot for all assets × all periods',
+    replace_existing=True
+)
+
+# ============================================================
+# MSS API VIEWS
+# ============================================================
+
+@csrf_exempt
+@require_GET
+def mss_history(request):
+    """
+    GET /api/mss/history/?symbol=AAPL&period=60&days=90&page=1&limit=100
+    Returns paginated history for one symbol + period.
+    """
+    symbol = request.GET.get('symbol', '').upper().strip()
+    period = request.GET.get('period')
+    days_back = int(request.GET.get('days', 365))
+    page = max(int(request.GET.get('page', 1)), 1)
+    limit = min(int(request.GET.get('limit', 100)), 500)
+
+    qs = MSSHistoricalRecord.objects.all()
+    if symbol:
+        qs = qs.filter(symbol=symbol)
+    if period:
+        qs = qs.filter(period_days=int(period))
+
+    since = date.today() - timedelta(days=days_back)
+    qs = qs.filter(date_taken__gte=since).order_by('-date_taken')
+
+    total = qs.count()
+    offset = (page - 1) * limit
+    records = list(qs[offset:offset + limit])
+
+    def record_to_dict(r):
+        return {
+            'id': r.id,
+            'symbol': r.symbol,
+            'asset_class': r.asset_class,
+            'sector': r.sector,
+            'date_taken': str(r.date_taken),
+            'period_days': r.period_days,
+            'mss': r.mss,
+            'r_squared': r.r_squared,
+            'volatility': r.volatility,
+            'normalized_volatility': r.normalized_volatility,
+            'trend_consistency': r.trend_consistency,
+            'trend_strength': r.trend_strength,
+            'liquidity_factor': r.liquidity_factor,
+            'category': r.category,
+            'current_price': r.current_price,
+            'price_change': r.price_change,
+            'avg_volume': r.avg_volume,
+            'data_points': r.data_points,
+            'analyst_rating_pct': r.analyst_rating_pct,
+            'analyst_bias': r.analyst_bias,
+            'put_call_ratio': r.put_call_ratio,
+            'put_call_bias': r.put_call_bias,
+        }
+
+    return JsonResponse({
+        'success': True,
+        'total': total,
+        'page': page,
+        'limit': limit,
+        'data': [record_to_dict(r) for r in records],
+    })
+
+@csrf_exempt
+@require_GET
+def mss_symbol_list(request):
+    """GET /api/mss/symbols/  – distinct symbols we have data for."""
+    symbols = (
+        MSSHistoricalRecord.objects
+        .values('symbol', 'asset_class', 'sector')
+        .distinct()
+        .order_by('symbol')
+    )
+    return JsonResponse({'success': True, 'data': list(symbols)})
+
+@csrf_exempt
+@require_GET
+def mss_summary(request):
+    """
+    GET /api/mss/summary/?period=60&date=2024-01-15
+    Latest snapshot for every symbol at a given period on a given date.
+    """
+    period = int(request.GET.get('period', 60))
+    date_str = request.GET.get('date', str(date.today()))
+
+    try:
+        snap_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        snap_date = date.today()
+
+    records = MSSHistoricalRecord.objects.filter(
+        period_days=period,
+        date_taken=snap_date,
+    ).order_by('-mss')
+
+    def record_to_dict(r):
+        return {
+            'symbol': r.symbol,
+            'asset_class': r.asset_class,
+            'sector': r.sector,
+            'mss': r.mss,
+            'category': r.category,
+            'r_squared': r.r_squared,
+            'volatility': r.volatility,
+            'current_price': r.current_price,
+            'price_change': r.price_change,
+            'analyst_rating_pct': r.analyst_rating_pct,
+            'analyst_bias': r.analyst_bias,
+            'put_call_ratio': r.put_call_ratio,
+            'put_call_bias': r.put_call_bias,
+        }
+
+    return JsonResponse({
+        'success': True,
+        'date': str(snap_date),
+        'period': period,
+        'count': records.count(),
+        'data': [record_to_dict(r) for r in records],
+    })
+
+@csrf_exempt
+@require_GET
+def mss_download(request, symbol):
+    """
+    GET /api/mss/download/<SYMBOL>/?format=csv&period=60&days=365
+    """
+    fmt = request.GET.get('format', 'csv').lower()
+    period = request.GET.get('period')
+    days_back = int(request.GET.get('days', 365))
+
+    since = date.today() - timedelta(days=days_back)
+    qs = MSSHistoricalRecord.objects.filter(
+        symbol=symbol.upper(),
+        date_taken__gte=since,
+    )
+    if period:
+        qs = qs.filter(period_days=int(period))
+
+    qs = qs.order_by('-date_taken', 'period_days')
+    
+    export_columns = [
+        'symbol', 'asset_class', 'sector', 'date_taken', 'period_days',
+        'mss', 'r_squared', 'volatility', 'normalized_volatility',
+        'trend_consistency', 'trend_strength', 'liquidity_factor', 'category',
+        'current_price', 'price_change', 'avg_volume', 'data_points',
+        'analyst_rating_pct', 'analyst_bias', 'put_call_ratio', 'put_call_bias',
+    ]
+    
+    rows = []
+    for r in qs:
+        row = {}
+        for col in export_columns:
+            val = getattr(r, col)
+            if isinstance(val, date):
+                val = str(val)
+            row[col] = val
+        rows.append(row)
+
+    if fmt == 'csv':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{symbol}_mss_history.csv"'
+        
+        writer = csv.DictWriter(response, fieldnames=export_columns)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        
+        return response
+    else:
+        return JsonResponse({
+            'success': False, 
+            'error': f'Format {fmt} not supported. Use csv.'
+        }, status=400)
+
+@csrf_exempt
+@require_POST
+def mss_trigger_update(request):
+    """Manual trigger for MSS update."""
+    try:
+        total_saved = run_daily_mss_snapshot()
+        return JsonResponse({
+            'success': True,
+            'message': 'MSS update completed successfully',
+            'records_saved': total_saved
+        })
+    except Exception as e:
+        logger.error(f"Manual MSS update failed: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_GET
+def mss_scheduler_status(request):
+    """Check if scheduler is running."""
+    jobs = []
+    for job in scheduler.get_jobs():
+        jobs.append({
+            'id': job.id,
+            'name': job.name,
+            'next_run_time': str(job.next_run_time) if job.next_run_time else None
+        })
+    
+    return JsonResponse({
+        'success': True,
+        'scheduler_running': scheduler.running,
+        'jobs': jobs
+    })
+
+    
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
