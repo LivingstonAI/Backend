@@ -48177,84 +48177,85 @@ def _get_options_data(symbol):
         logger.warning(f"Could not fetch options data for {symbol}: {e}")
         return None, None
 
-def _compute_mss_for_symbol(symbol: str, period_days: int, all_volatilities: list):
-    """Returns a dict of raw metrics with real analyst and options data."""
-    min_required_bars = max(min(period_days, 15), 5)
-
+@csrf_exempt
+@require_GET
+def mss_filtered_data(request):
+    """
+    GET /api/mss/filtered-data/?period=60&days=365&filters={...}
+    Server-side filtering for ALL data, not just current page
+    """
     try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=f"{period_days}d")
-
-        if hist.empty or len(hist) < min_required_bars:
-            return None
-
-        hist['returns'] = hist['Close'].pct_change()
-        returns = hist['returns'].dropna()
-        if len(returns) < 2:
-            return None
-
-        volatility = float(returns.std())
-
-        prices = hist['Close'].values
-        X = np.arange(len(prices)).reshape(-1, 1)
-        y = prices.reshape(-1, 1)
-        model = LinearRegression()
-        model.fit(X, y)
-        r_squared = float(max(0, min(model.score(X, y), 1.0)))
-
-        positive_days = (returns > 0).sum()
-        trend_consistency = float(abs(positive_days / len(returns) - 0.5) * 2)
-
-        slope_per_day = model.coef_[0][0]
-        avg_price = float(np.mean(prices))
-        if len(prices) > 1 and avg_price > 0:
-            trend_strength = float(min(abs(slope_per_day * len(prices)) / avg_price, 1.0))
-        else:
-            trend_strength = 0.0
-
-        avg_volume = float(hist['Volume'].mean())
-        if avg_volume > 10_000_000:
-            liquidity_factor = 1.2
-        elif avg_volume > 5_000_000:
-            liquidity_factor = 1.1
-        elif avg_volume > 1_000_000:
-            liquidity_factor = 1.0
-        elif avg_volume > 500_000:
-            liquidity_factor = 0.95
-        elif avg_volume > 100_000:
-            liquidity_factor = 0.9
-        else:
-            liquidity_factor = 0.8
-
-        current_price = float(hist['Close'].iloc[-1])
-        start_price = float(hist['Close'].iloc[0])
-        price_change = ((current_price - start_price) / start_price * 100) if start_price else 0.0
-
-        analyst_rating_pct, analyst_bias = _get_analyst_data(symbol)
-        put_call_ratio, put_call_bias = _get_options_data(symbol)
-
-        all_volatilities.append(volatility)
-
-        return {
-            'symbol': symbol,
-            'volatility': volatility,
-            'r_squared': r_squared,
-            'trend_consistency': trend_consistency,
-            'trend_strength': trend_strength,
-            'liquidity_factor': liquidity_factor,
-            'current_price': current_price,
-            'price_change': price_change,
-            'data_points': len(hist),
-            'avg_volume': int(avg_volume),
-            'analyst_rating_pct': analyst_rating_pct,
-            'analyst_bias': analyst_bias,
-            'put_call_ratio': put_call_ratio,
-            'put_call_bias': put_call_bias,
-        }
+        period = int(request.GET.get('period', 60))
+        days_back = int(request.GET.get('days', 365))
+        symbol_filter = request.GET.get('symbol', '').upper().strip()
+        asset_class_filter = request.GET.get('asset_class', '')
+        
+        # Parse advanced filters from JSON
+        filters_json = request.GET.get('filters', '{}')
+        try:
+            advanced_filters = json.loads(filters_json)
+        except:
+            advanced_filters = {}
+        
+        # Base query
+        since = date.today() - timedelta(days=days_back)
+        qs = MSSHistoricalRecord.objects.filter(
+            date_taken__gte=since,
+            period_days=period
+        )
+        
+        # Apply symbol filter
+        if symbol_filter:
+            qs = qs.filter(symbol=symbol_filter)
+        
+        # Apply asset class filter
+        if asset_class_filter and asset_class_filter != 'all':
+            qs = qs.filter(asset_class=asset_class_filter)
+        
+        # Apply numeric range filters
+        numeric_filters = advanced_filters.get('numeric', {})
+        for key, range_vals in numeric_filters.items():
+            if range_vals.get('min') is not None and range_vals['min'] != '':
+                qs = qs.filter(**{f"{key}__gte": float(range_vals['min'])})
+            if range_vals.get('max') is not None and range_vals['max'] != '':
+                qs = qs.filter(**{f"{key}__lte": float(range_vals['max'])})
+        
+        # Apply text filters (exact matches for dropdowns)
+        text_filters = advanced_filters.get('text', {})
+        for key, value in text_filters.items():
+            if value and value != 'all':
+                qs = qs.filter(**{key: value})
+        
+        # Order by date
+        qs = qs.order_by('-date_taken', 'symbol')
+        
+        # Convert to list of dicts
+        records = []
+        for r in qs:
+            records.append({
+                'id': r.id, 'symbol': r.symbol, 'asset_class': r.asset_class,
+                'sector': r.sector, 'date_taken': str(r.date_taken), 'period_days': r.period_days,
+                'mss': r.mss, 'r_squared': r.r_squared, 'volatility': r.volatility,
+                'normalized_volatility': r.normalized_volatility, 'trend_consistency': r.trend_consistency,
+                'trend_strength': r.trend_strength, 'liquidity_factor': r.liquidity_factor,
+                'category': r.category, 'current_price': r.current_price, 'price_change': r.price_change,
+                'avg_volume': r.avg_volume, 'data_points': r.data_points,
+                'analyst_rating_pct': r.analyst_rating_pct, 'analyst_bias': r.analyst_bias,
+                'put_call_ratio': r.put_call_ratio, 'put_call_bias': r.put_call_bias,
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'total': len(records),
+            'data': records,
+            'filters_applied': advanced_filters
+        })
+        
     except Exception as e:
-        logger.error(f"Error processing {symbol}: {e}")
-        return None
+        logger.error(f"Filtered data error: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+        
 def _finalise_and_save(temp_results: list, period_days: int, today: date, asset_class: str):
     """Normalise volatility, compute MSS, persist to DB."""
     if not temp_results:

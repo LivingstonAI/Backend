@@ -943,6 +943,7 @@ urlpatterns = [
     path('api/mss/download/<str:symbol>/', mss_download,   name='mss_download'),
     path('api/mss/trigger-update/',  mss_trigger_update,   name='mss_trigger_update'),
     path('api/mss/scheduler-status/', mss_scheduler_status, name='mss_scheduler_status'),
+    path('api/mss/filtered-data/', mss_filtered_data, name='mss_filtered_data'),
 
 
 
