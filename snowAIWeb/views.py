@@ -47636,6 +47636,8 @@ import csv
 import io
 import logging
 import traceback
+import time
+import json
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -47649,12 +47651,27 @@ from apscheduler.triggers.cron import CronTrigger
 from sklearn.linear_model import LinearRegression
 import pytz
 
+from .models_mss import MSSHistoricalRecord
 
 logger = logging.getLogger(__name__)
 
+# ============================================================
+# SCHEDULER SETUP
+# ============================================================
+
+scheduler = BackgroundScheduler()
+scheduler.start()
 
 # ============================================================
-# MSS ASSET LISTS (UPDATED WITH FULL LISTS)
+# YOUR EXISTING FUNCTIONS (keep your update_daily_brief here)
+# ============================================================
+
+def update_daily_brief():
+    """Your existing function - keep as is"""
+    pass
+
+# ============================================================
+# COMPLETE ASSET LISTS (ALL 500+ STOCKS + FOREX + INDICES + COMMODITIES + BONDS)
 # ============================================================
 
 ASSET_LISTS = {
@@ -47665,131 +47682,89 @@ ASSET_LISTS = {
     ],
     'stocks': [
         # Tech Giants & Semiconductors
-        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 
-        'TSLA', 'META', 'AMD', 'INTC', 'ORCL', 'CSCO',
-        'ADBE', 'CRM', 'AVGO', 'QCOM', 'TXN', 'AMAT',
-        'LRCX', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'NXPI',
-        'MU', 'ADI', 'MPWR', 'SWKS', 'QRVO', 'ON',
-        'IBM', 'AAOI', 'ACLS', 'ACN', 'ADSK', 'AKAM', 
-        'ANSS', 'APH', 'ANET', 'ASML', 'AVAV', 'KEYS',
-        'MCHP', 'MTSI', 'MSI', 'MDB', 'NTAP', 'NTNX',
-        'PAYC', 'PTC', 'ROP', 'SAP', 'SLAB', 'STX', 
-        'TER', 'TSM', 'TYL', 'UMC', 'VRSN', 'WDC', 
-        'XLNX', 'ZBRA',
-        
-        # Software & Cloud
-        'NOW', 'INTU', 'WDAY', 'PANW', 'CRWD', 'ZS',
-        'DDOG', 'NET', 'SNOW', 'PLTR', 'TEAM', 'FTNT',
-        'OKTA', 'S', 'CYBR',
+        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'TSLA', 'META', 'AMD', 'INTC',
+        'ORCL', 'CSCO', 'ADBE', 'CRM', 'AVGO', 'QCOM', 'TXN', 'AMAT', 'LRCX', 'KLAC',
+        'SNPS', 'CDNS', 'MRVL', 'NXPI', 'MU', 'ADI', 'MPWR', 'SWKS', 'QRVO', 'ON',
+        'IBM', 'AAOI', 'ACLS', 'ACN', 'ADSK', 'AKAM', 'ANSS', 'APH', 'ANET', 'ASML',
+        'AVAV', 'KEYS', 'MCHP', 'MTSI', 'MSI', 'MDB', 'NTAP', 'NTNX', 'PAYC', 'PTC',
+        'ROP', 'SAP', 'SLAB', 'STX', 'TER', 'TSM', 'TYL', 'UMC', 'VRSN', 'WDC', 
+        'XLNX', 'ZBRA', 'NOW', 'INTU', 'WDAY', 'PANW', 'CRWD', 'ZS', 'DDOG', 'NET',
+        'SNOW', 'PLTR', 'TEAM', 'FTNT', 'OKTA', 'S', 'CYBR',
         
         # Fintech & Payments
-        'V', 'MA', 'PYPL', 'ADP', 'FISV', 'FIS',
-        'ZM', 'DOCU', 'TWLO', 'SQ', 'UBER', 'LYFT', 
-        'DASH', 'PINS', 'SNAP', 'SPOT', 'ROKU', 'Z', 
-        'ZG', 'AFRM', 'COIN', 'HOOD', 'SOFI', 'RBLX', 
-        'ASTS',
+        'V', 'MA', 'PYPL', 'ADP', 'FISV', 'FIS', 'ZM', 'DOCU', 'TWLO', 'SQ', 
+        'UBER', 'LYFT', 'DASH', 'PINS', 'SNAP', 'SPOT', 'ROKU', 'Z', 'ZG', 
+        'AFRM', 'COIN', 'HOOD', 'SOFI', 'RBLX', 'ASTS',
         
         # Financial Services & Banks
-        'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'BLK',
-        'SCHW', 'AXP', 'SPGI', 'CME', 'ICE', 'MCO',
-        'BK', 'USB', 'PNC', 'TFC', 'COF',
-        'AFL', 'AMG', 'AON', 'AJG', 'AMP', 'BEN', 
-        'CBOE', 'CINF', 'DFS', 'ERIE', 'FITB', 'FRC',
-        'GL', 'HBAN', 'HIG', 'IVZ', 'JKHY', 'KEY', 
-        'L', 'LNC', 'MTB', 'NTRS', 'NDAQ', 'PFG',
-        'RF', 'RJF', 'SIVB', 'STT', 'SYF', 'TROW', 
-        'WRB', 'ZION', 'CFG', 'CMA', 'FHN', 'EWBC',
-        'WAL', 'WBS', 'ALLY',
+        'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'BLK', 'SCHW', 'AXP', 'SPGI', 
+        'CME', 'ICE', 'MCO', 'BK', 'USB', 'PNC', 'TFC', 'COF', 'AFL', 'AMG', 
+        'AON', 'AJG', 'AMP', 'BEN', 'CBOE', 'CINF', 'DFS', 'ERIE', 'FITB', 'FRC',
+        'GL', 'HBAN', 'HIG', 'IVZ', 'JKHY', 'KEY', 'L', 'LNC', 'MTB', 'NTRS', 
+        'NDAQ', 'PFG', 'RF', 'RJF', 'SIVB', 'STT', 'SYF', 'TROW', 'WRB', 'ZION', 
+        'CFG', 'CMA', 'FHN', 'EWBC', 'WAL', 'WBS', 'ALLY',
         
         # Insurance
         'BRK-B', 'PGR', 'ALL', 'TRV', 'AIG', 'MET', 'PRU',
         
         # Healthcare & Pharma
-        'JNJ', 'LLY', 'UNH', 'PFE', 'ABBV', 'MRK', 'TMO',
-        'ABT', 'DHR', 'BMY', 'AMGN', 'GILD', 'CVS',
-        'CI', 'ELV', 'HUM', 'VRTX', 'REGN', 'ISRG',
-        'BIIB', 'MRNA', 'BNTX', 'SGEN', 'ALNY', 'BGNE',
-        'MCK', 'CAH', 'COR', 'IDXX', 'A', 'WAT',
-        'ALGN', 'ATRC', 'BAX', 'BDX', 'BIO', 'BSX', 
-        'CERN', 'DXCM', 'EW', 'EXAS', 'HOLX', 'HSIC',
-        'ILMN', 'INCY', 'IQV', 'LH', 'MDT', 'MOH', 
-        'NBIX', 'PKI', 'PODD', 'RMD', 'STE', 'SYK',
-        'TFX', 'UHS', 'WST', 'XRAY', 'ZBH', 'ZTS', 
-        'TDOC', 'DOCS', 'VEEV', 'HALO', 'NVAX', 'IONS', 
-        'UTHR',
+        'JNJ', 'LLY', 'UNH', 'PFE', 'ABBV', 'MRK', 'TMO', 'ABT', 'DHR', 'BMY', 
+        'AMGN', 'GILD', 'CVS', 'CI', 'ELV', 'HUM', 'VRTX', 'REGN', 'ISRG', 'BIIB', 
+        'MRNA', 'BNTX', 'SGEN', 'ALNY', 'BGNE', 'MCK', 'CAH', 'COR', 'IDXX', 'A', 
+        'WAT', 'ALGN', 'ATRC', 'BAX', 'BDX', 'BIO', 'BSX', 'CERN', 'DXCM', 'EW', 
+        'EXAS', 'HOLX', 'HSIC', 'ILMN', 'INCY', 'IQV', 'LH', 'MDT', 'MOH', 'NBIX', 
+        'PKI', 'PODD', 'RMD', 'STE', 'SYK', 'TFX', 'UHS', 'WST', 'XRAY', 'ZBH', 
+        'ZTS', 'TDOC', 'DOCS', 'VEEV', 'HALO', 'NVAX', 'IONS', 'UTHR',
         
         # Consumer Discretionary & Retail
-        'HD', 'MCD', 'NKE', 'SBUX', 'TJX', 'LOW', 
-        'BKNG', 'MAR', 'CMG', 'F', 'GM', 'ABNB',
-        'SHOP', 'MELI', 'EBAY', 'ETSY', 'TGT', 'ROST',
-        'YUM', 'DPZ', 'QSR', 'AAL', 'DAL', 'UAL',
-        'LUV', 'CCL', 'RCL', 'EA', 'TTWO',
-        'U', 'RIVN', 'LCID',
-        'AZO', 'BBY', 'BURL', 'CPRT', 'DHI', 'DRI',
-        'EXPE', 'GPC', 'GRMN', 'HAS', 'HLT', 'KMX',
-        'LEN', 'LVS', 'MGM', 'MHK', 'NVR', 'ORLY',
-        'PHM', 'POOL', 'RL', 'TSCO', 'TPR', 'ULTA',
-        'VFC', 'WHR', 'WYNN', 'APTV', 'BWA', 'DG',
-        'DLTR', 'DDS', 'FIVE', 'FL', 'FOXA', 'FOX',
-        'GPS', 'GT', 'HBI', 'LAD', 'LKQ', 'M',
-        'NCLH', 'NWL', 'PVH',
+        'HD', 'MCD', 'NKE', 'SBUX', 'TJX', 'LOW', 'BKNG', 'MAR', 'CMG', 'F', 
+        'GM', 'ABNB', 'SHOP', 'MELI', 'EBAY', 'ETSY', 'TGT', 'ROST', 'YUM', 'DPZ', 
+        'QSR', 'AAL', 'DAL', 'UAL', 'LUV', 'CCL', 'RCL', 'EA', 'TTWO', 'U', 
+        'RIVN', 'LCID', 'AZO', 'BBY', 'BURL', 'CPRT', 'DHI', 'DRI', 'EXPE', 'GPC', 
+        'GRMN', 'HAS', 'HLT', 'KMX', 'LEN', 'LVS', 'MGM', 'MHK', 'NVR', 'ORLY', 
+        'PHM', 'POOL', 'RL', 'TSCO', 'TPR', 'ULTA', 'VFC', 'WHR', 'WYNN', 'APTV', 
+        'BWA', 'DG', 'DLTR', 'DDS', 'FIVE', 'FL', 'FOXA', 'FOX', 'GPS', 'GT', 
+        'HBI', 'LAD', 'LKQ', 'M', 'NCLH', 'NWL', 'PVH',
         
         # Consumer Staples
-        'WMT', 'PG', 'KO', 'PEP', 'COST', 'PM', 'MO',
-        'MDLZ', 'CL', 'KMB', 'GIS', 'KHC', 'STZ',
-        'ADM', 'BF-B', 'CAG', 'CHD', 'CLX', 'CPB',
-        'EL', 'HSY', 'K', 'KDP', 'KR', 'KVUE', 
-        'MKC', 'MNST', 'SJM', 'SYY', 'TAP', 'TSN', 
-        'WBA', 'BGS', 'BG', 'COKE', 'FLO', 'HRL', 
-        'LANC', 'POST',
+        'WMT', 'PG', 'KO', 'PEP', 'COST', 'PM', 'MO', 'MDLZ', 'CL', 'KMB', 
+        'GIS', 'KHC', 'STZ', 'ADM', 'BF-B', 'CAG', 'CHD', 'CLX', 'CPB', 'EL', 
+        'HSY', 'K', 'KDP', 'KR', 'KVUE', 'MKC', 'MNST', 'SJM', 'SYY', 'TAP', 
+        'TSN', 'WBA', 'BGS', 'BG', 'COKE', 'FLO', 'HRL', 'LANC', 'POST',
         
         # Energy
-        'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX',
-        'VLO', 'OXY', 'HAL', 'DVN', 'HES', 'BKR',
-        'APA', 'CTRA', 'FANG', 'KMI', 'LNG', 'MRO', 
-        'NOV', 'OKE', 'TRGP', 'WMB', 'EQT', 'AR',
-        'CLR', 'CNX', 'CQP', 'EXE', 'FTI', 'HP', 
-        'MTDR', 'NBL', 'OVV', 'PBF', 'PR', 'RIG',
-        'SM', 'VAL', 'XEC',
+        'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX', 'VLO', 'OXY', 'HAL', 
+        'DVN', 'HES', 'BKR', 'APA', 'CTRA', 'FANG', 'KMI', 'LNG', 'MRO', 'NOV', 
+        'OKE', 'TRGP', 'WMB', 'EQT', 'AR', 'CLR', 'CNX', 'CQP', 'EXE', 'FTI', 
+        'HP', 'MTDR', 'NBL', 'OVV', 'PBF', 'PR', 'RIG', 'SM', 'VAL', 'XEC',
         
         # Industrials
-        'BA', 'HON', 'UNP', 'CAT', 'GE', 'RTX', 'LMT',
-        'UPS', 'DE', 'MMM', 'GD', 'NOC', 'FDX', 'CSX',
-        'HWM', 'TDG', 'HEI', 'LHX', 'TXT',
-        'AOS', 'CARR', 'CHRW', 'CMI', 'DOV', 'EMR', 
-        'ETN', 'EXPD', 'FAST', 'FTV', 'GNRC', 'GWW',
-        'IEX', 'IR', 'ITW', 'J', 'JBHT', 'JCI', 
-        'LDOS', 'MAS', 'NSC', 'ODFL', 'OTIS', 'PCAR',
-        'PH', 'PWR', 'ROK', 'ROL', 'RSG', 'SNA', 
-        'SWK', 'TT', 'URI', 'VRSK', 'WAB', 'WM', 
-        'XYL', 'ALK', 'JBLU', 'SAVE',
+        'BA', 'HON', 'UNP', 'CAT', 'GE', 'RTX', 'LMT', 'UPS', 'DE', 'MMM', 
+        'GD', 'NOC', 'FDX', 'CSX', 'HWM', 'TDG', 'HEI', 'LHX', 'TXT', 'AOS', 
+        'CARR', 'CHRW', 'CMI', 'DOV', 'EMR', 'ETN', 'EXPD', 'FAST', 'FTV', 'GNRC', 
+        'GWW', 'IEX', 'IR', 'ITW', 'J', 'JBHT', 'JCI', 'LDOS', 'MAS', 'NSC', 
+        'ODFL', 'OTIS', 'PCAR', 'PH', 'PWR', 'ROK', 'ROL', 'RSG', 'SNA', 'SWK', 
+        'TT', 'URI', 'VRSK', 'WAB', 'WM', 'XYL', 'ALK', 'JBLU', 'SAVE',
         
         # Communication Services & Media
-        'T', 'VZ', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR',
-        'LYV', 'MTCH', 'NWSA', 'NWS', 'OMC', 'PARA',
-        'WBD', 'IPG', 'DISH',
+        'T', 'VZ', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR', 'LYV', 'MTCH', 'NWSA', 
+        'NWS', 'OMC', 'PARA', 'WBD', 'IPG', 'DISH',
         
         # Real Estate & REITs
-        'AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'SPG', 'O',
-        'AVB', 'ARE', 'BXP', 'CBRE', 'DLR', 'EQR', 
-        'ESS', 'EXR', 'FRT', 'HST', 'IRM', 'KIM',
-        'MAA', 'REG', 'SBAC', 'SLG', 'UDR', 'VTR', 
-        'WELL', 'WY', 'INVH', 'PEAK', 'VNO',
+        'AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'SPG', 'O', 'AVB', 'ARE', 'BXP', 
+        'CBRE', 'DLR', 'EQR', 'ESS', 'EXR', 'FRT', 'HST', 'IRM', 'KIM', 'MAA', 
+        'REG', 'SBAC', 'SLG', 'UDR', 'VTR', 'WELL', 'WY', 'INVH', 'PEAK', 'VNO',
         
         # Materials & Chemicals
-        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'NEM', 'FCX',
-        'DOW', 'LYB', 'CE', 'ALB', 'EMN', 'SQM',
-        'AMCR', 'BALL', 'CF', 'CLF', 'CTVA', 'FMC', 
-        'IP', 'MLM', 'MOS', 'NUE', 'PKG', 'PPG',
-        'SEE', 'STLD', 'SW', 'VMC', 'AVY', 'AA', 
-        'MP', 'RS',
+        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'NEM', 'FCX', 'DOW', 'LYB', 'CE', 
+        'ALB', 'EMN', 'SQM', 'AMCR', 'BALL', 'CF', 'CLF', 'CTVA', 'FMC', 'IP', 
+        'MLM', 'MOS', 'NUE', 'PKG', 'PPG', 'SEE', 'STLD', 'SW', 'VMC', 'AVY', 
+        'AA', 'MP', 'RS',
         
         # Utilities
-        'NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE',
-        'AEE', 'AES', 'AWK', 'CMS', 'CNP', 'DTE', 
-        'ED', 'EIX', 'ES', 'ETR', 'EVRG', 'FE',
-        'LNT', 'NI', 'NRG', 'PCG', 'PEG', 'PNW', 
-        'PPL', 'VST', 'WEC', 'XEL', 'CEG',
+        'NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE', 'AEE', 'AES', 'AWK', 
+        'CMS', 'CNP', 'DTE', 'ED', 'EIX', 'ES', 'ETR', 'EVRG', 'FE', 'LNT', 
+        'NI', 'NRG', 'PCG', 'PEG', 'PNW', 'PPL', 'VST', 'WEC', 'XEL', 'CEG',
         
         # Chinese ADRs
         'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV', 'LI',
@@ -47797,28 +47772,22 @@ ASSET_LISTS = {
     'indices': [
         # US Indices
         '^GSPC', '^DJI', '^IXIC', '^RUT', '^VIX',
-        
         # European Indices
         '^FTSE', '^GDAXI', '^FCHI', '^IBEX', '^AEX',
         '^SSMI', '^OMXS30', '^BFX',
-        
         # Asian Indices
         '^N225', '^HSI', '000001.SS', '^STI', '^BSESN',
         '^NSEI', '^KS11', '^TWII', '^JKSE',
-        
         # Other Global Indices
         '^AXJO', '^GSPTSE', '^MXX', '^BVSP', '^MERV',
     ],
     'commodities': [
         # Precious Metals
         'GC=F', 'SI=F', 'PL=F', 'PA=F',
-        
         # Energy
         'CL=F', 'BZ=F', 'NG=F', 'RB=F', 'HO=F',
-        
         # Base Metals
         'HG=F', 'ALI=F',
-        
         # Agricultural
         'ZC=F', 'ZW=F', 'ZS=F', 'KC=F', 'SB=F',
         'CT=F', 'CC=F', 'LBS=F',
@@ -47826,7 +47795,6 @@ ASSET_LISTS = {
     'bonds': [
         # US Treasury Yields
         '^TNX', '^TYX', '^FVX', '^IRX',
-        
         # Treasury Futures
         'ZN=F', 'ZB=F', 'ZT=F', 'ZF=F',
     ],
@@ -47834,12 +47802,15 @@ ASSET_LISTS = {
 
 PERIODS = [10, 15, 20, 30, 45, 60, 90, 180]
 
+# Track progress for each period
+period_progress = {p: {'status': 'pending', 'last_run': None, 'records': 0, 'current_asset': ''} for p in PERIODS}
+
 # ============================================================
 # COMPLETE SECTOR MAPPINGS (ALL 500+ STOCKS)
 # ============================================================
 
 SECTOR_MAP = {
-    # Tech Giants
+    # Tech Giants & Semiconductors
     'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
     'AMZN': 'Consumer Cyclical', 'NVDA': 'Technology', 'TSLA': 'Consumer Cyclical',
     'META': 'Technology', 'AMD': 'Technology', 'INTC': 'Technology', 'ORCL': 'Technology',
@@ -47847,108 +47818,32 @@ SECTOR_MAP = {
     'QCOM': 'Technology', 'TXN': 'Technology', 'AMAT': 'Technology', 'LRCX': 'Technology',
     'KLAC': 'Technology', 'SNPS': 'Technology', 'CDNS': 'Technology', 'MRVL': 'Technology',
     'NXPI': 'Technology', 'MU': 'Technology', 'ADI': 'Technology', 'MPWR': 'Technology',
-    'SWKS': 'Technology', 'QRVO': 'Technology', 'ON': 'Technology',
+    'SWKS': 'Technology', 'QRVO': 'Technology', 'ON': 'Technology', 'IBM': 'Technology',
+    'AAOI': 'Technology', 'ACLS': 'Technology', 'ACN': 'Technology', 'ADSK': 'Technology',
+    'AKAM': 'Technology', 'ANSS': 'Technology', 'APH': 'Technology', 'ANET': 'Technology',
+    'ASML': 'Technology', 'AVAV': 'Technology', 'KEYS': 'Technology', 'MCHP': 'Technology',
+    'MTSI': 'Technology', 'MSI': 'Technology', 'MDB': 'Technology', 'NTAP': 'Technology',
+    'NTNX': 'Technology', 'PAYC': 'Technology', 'PTC': 'Technology', 'ROP': 'Technology',
+    'SAP': 'Technology', 'SLAB': 'Technology', 'STX': 'Technology', 'TER': 'Technology',
+    'TSM': 'Technology', 'TYL': 'Technology', 'UMC': 'Technology', 'VRSN': 'Technology',
+    'WDC': 'Technology', 'XLNX': 'Technology', 'ZBRA': 'Technology', 'NOW': 'Technology',
+    'INTU': 'Technology', 'WDAY': 'Technology', 'PANW': 'Technology', 'CRWD': 'Technology',
+    'ZS': 'Technology', 'DDOG': 'Technology', 'NET': 'Technology', 'SNOW': 'Technology',
+    'PLTR': 'Technology', 'TEAM': 'Technology', 'FTNT': 'Technology', 'OKTA': 'Technology',
+    'S': 'Technology', 'CYBR': 'Technology', 'ZM': 'Technology', 'DOCU': 'Technology',
+    'TWLO': 'Technology', 'SQ': 'Technology', 'UBER': 'Technology', 'LYFT': 'Technology',
+    'DASH': 'Technology', 'PINS': 'Technology', 'SNAP': 'Technology', 'SPOT': 'Technology',
+    'ROKU': 'Technology', 'Z': 'Technology', 'ZG': 'Technology', 'AFRM': 'Technology',
+    'COIN': 'Technology', 'HOOD': 'Technology', 'SOFI': 'Technology', 'RBLX': 'Technology',
+    'ASTS': 'Technology',
     
-    # Financial Services
+    # Financial Services & Banks
     'JPM': 'Financial', 'BAC': 'Financial', 'WFC': 'Financial', 'C': 'Financial',
     'GS': 'Financial', 'MS': 'Financial', 'BLK': 'Financial', 'SCHW': 'Financial',
     'AXP': 'Financial', 'SPGI': 'Financial', 'CME': 'Financial', 'ICE': 'Financial',
     'MCO': 'Financial', 'BK': 'Financial', 'USB': 'Financial', 'PNC': 'Financial',
     'TFC': 'Financial', 'COF': 'Financial', 'V': 'Financial', 'MA': 'Financial',
     'PYPL': 'Financial', 'ADP': 'Financial', 'FISV': 'Financial', 'FIS': 'Financial',
-    
-    # Healthcare & Pharma
-    'JNJ': 'Healthcare', 'LLY': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare',
-    'ABBV': 'Healthcare', 'MRK': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
-    'DHR': 'Healthcare', 'BMY': 'Healthcare', 'AMGN': 'Healthcare', 'GILD': 'Healthcare',
-    'CVS': 'Healthcare', 'CI': 'Healthcare', 'ELV': 'Healthcare', 'HUM': 'Healthcare',
-    'VRTX': 'Healthcare', 'REGN': 'Healthcare', 'ISRG': 'Healthcare', 'BIIB': 'Healthcare',
-    'MRNA': 'Healthcare', 'BNTX': 'Healthcare', 'SGEN': 'Healthcare', 'ALNY': 'Healthcare',
-    'BGNE': 'Healthcare', 'MCK': 'Healthcare', 'CAH': 'Healthcare', 'COR': 'Healthcare',
-    'IDXX': 'Healthcare', 'A': 'Healthcare', 'WAT': 'Healthcare',
-    
-    # Consumer Discretionary
-    'HD': 'Consumer Cyclical', 'MCD': 'Consumer Cyclical', 'NKE': 'Consumer Cyclical',
-    'SBUX': 'Consumer Cyclical', 'TJX': 'Consumer Cyclical', 'LOW': 'Consumer Cyclical',
-    'BKNG': 'Consumer Cyclical', 'MAR': 'Consumer Cyclical', 'CMG': 'Consumer Cyclical',
-    'F': 'Consumer Cyclical', 'GM': 'Consumer Cyclical', 'ABNB': 'Consumer Cyclical',
-    'SHOP': 'Consumer Cyclical', 'MELI': 'Consumer Cyclical', 'EBAY': 'Consumer Cyclical',
-    'ETSY': 'Consumer Cyclical', 'TGT': 'Consumer Cyclical', 'ROST': 'Consumer Cyclical',
-    'YUM': 'Consumer Cyclical', 'DPZ': 'Consumer Cyclical', 'QSR': 'Consumer Cyclical',
-    'AAL': 'Consumer Cyclical', 'DAL': 'Consumer Cyclical', 'UAL': 'Consumer Cyclical',
-    'LUV': 'Consumer Cyclical', 'CCL': 'Consumer Cyclical', 'RCL': 'Consumer Cyclical',
-    'EA': 'Consumer Cyclical', 'TTWO': 'Consumer Cyclical', 'RBLX': 'Consumer Cyclical',
-    'U': 'Consumer Cyclical', 'RIVN': 'Consumer Cyclical', 'LCID': 'Consumer Cyclical',
-    
-    # Consumer Staples
-    'WMT': 'Consumer Defensive', 'PG': 'Consumer Defensive', 'KO': 'Consumer Defensive',
-    'PEP': 'Consumer Defensive', 'COST': 'Consumer Defensive', 'PM': 'Consumer Defensive',
-    'MO': 'Consumer Defensive', 'MDLZ': 'Consumer Defensive', 'CL': 'Consumer Defensive',
-    'KMB': 'Consumer Defensive', 'GIS': 'Consumer Defensive', 'KHC': 'Consumer Defensive',
-    'STZ': 'Consumer Defensive',
-    
-    # Energy
-    'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy', 'EOG': 'Energy', 'SLB': 'Energy',
-    'MPC': 'Energy', 'PSX': 'Energy', 'VLO': 'Energy', 'OXY': 'Energy', 'HAL': 'Energy',
-    'DVN': 'Energy', 'HES': 'Energy', 'BKR': 'Energy',
-    
-    # Industrials
-    'BA': 'Industrials', 'HON': 'Industrials', 'UNP': 'Industrials', 'CAT': 'Industrials',
-    'GE': 'Industrials', 'RTX': 'Industrials', 'LMT': 'Industrials', 'UPS': 'Industrials',
-    'DE': 'Industrials', 'MMM': 'Industrials', 'GD': 'Industrials', 'NOC': 'Industrials',
-    'FDX': 'Industrials', 'CSX': 'Industrials', 'HWM': 'Industrials', 'TDG': 'Industrials',
-    'HEI': 'Industrials', 'LHX': 'Industrials', 'TXT': 'Industrials',
-    
-    # Communication Services
-    'T': 'Communication', 'VZ': 'Communication', 'CMCSA': 'Communication',
-    'NFLX': 'Communication', 'DIS': 'Communication', 'TMUS': 'Communication',
-    'CHTR': 'Communication',
-    
-    # Real Estate
-    'AMT': 'Real Estate', 'PLD': 'Real Estate', 'CCI': 'Real Estate',
-    'EQIX': 'Real Estate', 'PSA': 'Real Estate', 'SPG': 'Real Estate', 'O': 'Real Estate',
-    
-    # Materials
-    'LIN': 'Materials', 'APD': 'Materials', 'SHW': 'Materials', 'ECL': 'Materials',
-    'DD': 'Materials', 'NEM': 'Materials', 'FCX': 'Materials', 'DOW': 'Materials',
-    'LYB': 'Materials', 'CE': 'Materials', 'ALB': 'Materials', 'EMN': 'Materials',
-    'SQM': 'Materials',
-    
-    # Utilities
-    'NEE': 'Utilities', 'DUK': 'Utilities', 'SO': 'Utilities', 'D': 'Utilities',
-    'AEP': 'Utilities', 'EXC': 'Utilities', 'SRE': 'Utilities',
-    
-    # Software & Cloud
-    'NOW': 'Technology', 'INTU': 'Technology', 'WDAY': 'Technology', 'PANW': 'Technology',
-    'CRWD': 'Technology', 'ZS': 'Technology', 'DDOG': 'Technology', 'NET': 'Technology',
-    'SNOW': 'Technology', 'PLTR': 'Technology', 'TEAM': 'Technology', 'FTNT': 'Technology',
-    'OKTA': 'Technology', 'S': 'Technology', 'CYBR': 'Technology',
-    
-    # Insurance
-    'BRK-B': 'Financial', 'PGR': 'Financial', 'ALL': 'Financial', 'TRV': 'Financial',
-    'AIG': 'Financial', 'MET': 'Financial', 'PRU': 'Financial',
-    
-    # Chinese ADRs
-    'BABA': 'Technology', 'JD': 'Consumer Cyclical', 'PDD': 'Consumer Cyclical',
-    'BIDU': 'Technology', 'NIO': 'Consumer Cyclical', 'XPEV': 'Consumer Cyclical',
-    'LI': 'Consumer Cyclical',
-    
-    # Additional Technology
-    'IBM': 'Technology', 'AAOI': 'Technology', 'ACLS': 'Technology', 'ACN': 'Technology',
-    'ADSK': 'Technology', 'AKAM': 'Technology', 'ANSS': 'Technology', 'APH': 'Technology',
-    'ANET': 'Technology', 'ASML': 'Technology', 'AVAV': 'Technology', 'KEYS': 'Technology',
-    'MCHP': 'Technology', 'MTSI': 'Technology', 'MSI': 'Technology', 'MDB': 'Technology',
-    'NTAP': 'Technology', 'NTNX': 'Technology', 'PAYC': 'Technology', 'PTC': 'Technology',
-    'ROP': 'Technology', 'SAP': 'Technology', 'SLAB': 'Technology', 'STX': 'Technology',
-    'TER': 'Technology', 'TSM': 'Technology', 'TYL': 'Technology', 'UMC': 'Technology',
-    'VRSN': 'Technology', 'WDC': 'Technology', 'XLNX': 'Technology', 'ZBRA': 'Technology',
-    'ZM': 'Technology', 'DOCU': 'Technology', 'TWLO': 'Technology', 'SQ': 'Technology',
-    'UBER': 'Technology', 'LYFT': 'Technology', 'DASH': 'Technology', 'PINS': 'Technology',
-    'SNAP': 'Technology', 'SPOT': 'Technology', 'ROKU': 'Technology', 'Z': 'Technology',
-    'ZG': 'Technology', 'AFRM': 'Technology', 'COIN': 'Technology', 'HOOD': 'Technology',
-    'SOFI': 'Technology', 'ASTS': 'Technology',
-    
-    # Additional Financial Services
     'AFL': 'Financial', 'AMG': 'Financial', 'AON': 'Financial', 'AJG': 'Financial',
     'AMP': 'Financial', 'BEN': 'Financial', 'CBOE': 'Financial', 'CINF': 'Financial',
     'DFS': 'Financial', 'ERIE': 'Financial', 'FITB': 'Financial', 'FRC': 'Financial',
@@ -47960,202 +47855,196 @@ SECTOR_MAP = {
     'CFG': 'Financial', 'CMA': 'Financial', 'FHN': 'Financial', 'EWBC': 'Financial',
     'WAL': 'Financial', 'WBS': 'Financial', 'ALLY': 'Financial',
     
-    # Additional Healthcare
-    'ALGN': 'Healthcare', 'ATRC': 'Healthcare', 'BAX': 'Healthcare', 'BDX': 'Healthcare',
-    'BIO': 'Healthcare', 'BSX': 'Healthcare', 'CERN': 'Healthcare', 'DXCM': 'Healthcare',
-    'EW': 'Healthcare', 'EXAS': 'Healthcare', 'HOLX': 'Healthcare', 'HSIC': 'Healthcare',
-    'ILMN': 'Healthcare', 'INCY': 'Healthcare', 'IQV': 'Healthcare', 'LH': 'Healthcare',
-    'MDT': 'Healthcare', 'MOH': 'Healthcare', 'NBIX': 'Healthcare', 'PKI': 'Healthcare',
-    'PODD': 'Healthcare', 'RMD': 'Healthcare', 'STE': 'Healthcare', 'SYK': 'Healthcare',
-    'TFX': 'Healthcare', 'UHS': 'Healthcare', 'WST': 'Healthcare', 'XRAY': 'Healthcare',
-    'ZBH': 'Healthcare', 'ZTS': 'Healthcare', 'TDOC': 'Healthcare', 'DOCS': 'Healthcare',
-    'VEEV': 'Healthcare', 'HALO': 'Healthcare', 'NVAX': 'Healthcare', 'IONS': 'Healthcare',
-    'UTHR': 'Healthcare',
+    # Insurance
+    'BRK-B': 'Financial', 'PGR': 'Financial', 'ALL': 'Financial', 'TRV': 'Financial',
+    'AIG': 'Financial', 'MET': 'Financial', 'PRU': 'Financial',
     
-    # Additional Consumer Cyclical
-    'AZO': 'Consumer Cyclical', 'BBY': 'Consumer Cyclical', 'BURL': 'Consumer Cyclical',
-    'CPRT': 'Consumer Cyclical', 'DHI': 'Consumer Cyclical', 'DRI': 'Consumer Cyclical',
-    'EXPE': 'Consumer Cyclical', 'GPC': 'Consumer Cyclical', 'GRMN': 'Consumer Cyclical',
-    'HAS': 'Consumer Cyclical', 'HLT': 'Consumer Cyclical', 'KMX': 'Consumer Cyclical',
-    'LEN': 'Consumer Cyclical', 'LVS': 'Consumer Cyclical', 'MGM': 'Consumer Cyclical',
-    'MHK': 'Consumer Cyclical', 'NVR': 'Consumer Cyclical', 'ORLY': 'Consumer Cyclical',
-    'PHM': 'Consumer Cyclical', 'POOL': 'Consumer Cyclical', 'RL': 'Consumer Cyclical',
-    'TSCO': 'Consumer Cyclical', 'TPR': 'Consumer Cyclical', 'ULTA': 'Consumer Cyclical',
-    'VFC': 'Consumer Cyclical', 'WHR': 'Consumer Cyclical', 'WYNN': 'Consumer Cyclical',
-    'APTV': 'Consumer Cyclical', 'BWA': 'Consumer Cyclical', 'DG': 'Consumer Cyclical',
-    'DLTR': 'Consumer Cyclical', 'DDS': 'Consumer Cyclical', 'FIVE': 'Consumer Cyclical',
-    'FL': 'Consumer Cyclical', 'FOXA': 'Consumer Cyclical', 'FOX': 'Consumer Cyclical',
-    'GPS': 'Consumer Cyclical', 'GT': 'Consumer Cyclical', 'HBI': 'Consumer Cyclical',
-    'LAD': 'Consumer Cyclical', 'LKQ': 'Consumer Cyclical', 'M': 'Consumer Cyclical',
-    'NCLH': 'Consumer Cyclical', 'NWL': 'Consumer Cyclical', 'PVH': 'Consumer Cyclical',
+    # Healthcare & Pharma
+    'JNJ': 'Healthcare', 'LLY': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare',
+    'ABBV': 'Healthcare', 'MRK': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
+    'DHR': 'Healthcare', 'BMY': 'Healthcare', 'AMGN': 'Healthcare', 'GILD': 'Healthcare',
+    'CVS': 'Healthcare', 'CI': 'Healthcare', 'ELV': 'Healthcare', 'HUM': 'Healthcare',
+    'VRTX': 'Healthcare', 'REGN': 'Healthcare', 'ISRG': 'Healthcare', 'BIIB': 'Healthcare',
+    'MRNA': 'Healthcare', 'BNTX': 'Healthcare', 'SGEN': 'Healthcare', 'ALNY': 'Healthcare',
+    'BGNE': 'Healthcare', 'MCK': 'Healthcare', 'CAH': 'Healthcare', 'COR': 'Healthcare',
+    'IDXX': 'Healthcare', 'A': 'Healthcare', 'WAT': 'Healthcare', 'ALGN': 'Healthcare',
+    'ATRC': 'Healthcare', 'BAX': 'Healthcare', 'BDX': 'Healthcare', 'BIO': 'Healthcare',
+    'BSX': 'Healthcare', 'CERN': 'Healthcare', 'DXCM': 'Healthcare', 'EW': 'Healthcare',
+    'EXAS': 'Healthcare', 'HOLX': 'Healthcare', 'HSIC': 'Healthcare', 'ILMN': 'Healthcare',
+    'INCY': 'Healthcare', 'IQV': 'Healthcare', 'LH': 'Healthcare', 'MDT': 'Healthcare',
+    'MOH': 'Healthcare', 'NBIX': 'Healthcare', 'PKI': 'Healthcare', 'PODD': 'Healthcare',
+    'RMD': 'Healthcare', 'STE': 'Healthcare', 'SYK': 'Healthcare', 'TFX': 'Healthcare',
+    'UHS': 'Healthcare', 'WST': 'Healthcare', 'XRAY': 'Healthcare', 'ZBH': 'Healthcare',
+    'ZTS': 'Healthcare', 'TDOC': 'Healthcare', 'DOCS': 'Healthcare', 'VEEV': 'Healthcare',
+    'HALO': 'Healthcare', 'NVAX': 'Healthcare', 'IONS': 'Healthcare', 'UTHR': 'Healthcare',
     
-    # Additional Consumer Staples
-    'ADM': 'Consumer Defensive', 'BF-B': 'Consumer Defensive', 'CAG': 'Consumer Defensive',
-    'CHD': 'Consumer Defensive', 'CLX': 'Consumer Defensive', 'CPB': 'Consumer Defensive',
-    'EL': 'Consumer Defensive', 'HSY': 'Consumer Defensive', 'K': 'Consumer Defensive',
-    'KDP': 'Consumer Defensive', 'KR': 'Consumer Defensive', 'KVUE': 'Consumer Defensive',
-    'MKC': 'Consumer Defensive', 'MNST': 'Consumer Defensive', 'SJM': 'Consumer Defensive',
-    'SYY': 'Consumer Defensive', 'TAP': 'Consumer Defensive', 'TSN': 'Consumer Defensive',
-    'WBA': 'Consumer Defensive', 'BGS': 'Consumer Defensive', 'BG': 'Consumer Defensive',
-    'COKE': 'Consumer Defensive', 'FLO': 'Consumer Defensive', 'HRL': 'Consumer Defensive',
-    'LANC': 'Consumer Defensive', 'POST': 'Consumer Defensive',
+    # Consumer Discretionary & Retail
+    'HD': 'Consumer Cyclical', 'MCD': 'Consumer Cyclical', 'NKE': 'Consumer Cyclical',
+    'SBUX': 'Consumer Cyclical', 'TJX': 'Consumer Cyclical', 'LOW': 'Consumer Cyclical',
+    'BKNG': 'Consumer Cyclical', 'MAR': 'Consumer Cyclical', 'CMG': 'Consumer Cyclical',
+    'F': 'Consumer Cyclical', 'GM': 'Consumer Cyclical', 'ABNB': 'Consumer Cyclical',
+    'SHOP': 'Consumer Cyclical', 'MELI': 'Consumer Cyclical', 'EBAY': 'Consumer Cyclical',
+    'ETSY': 'Consumer Cyclical', 'TGT': 'Consumer Cyclical', 'ROST': 'Consumer Cyclical',
+    'YUM': 'Consumer Cyclical', 'DPZ': 'Consumer Cyclical', 'QSR': 'Consumer Cyclical',
+    'AAL': 'Consumer Cyclical', 'DAL': 'Consumer Cyclical', 'UAL': 'Consumer Cyclical',
+    'LUV': 'Consumer Cyclical', 'CCL': 'Consumer Cyclical', 'RCL': 'Consumer Cyclical',
+    'EA': 'Consumer Cyclical', 'TTWO': 'Consumer Cyclical', 'U': 'Consumer Cyclical',
+    'RIVN': 'Consumer Cyclical', 'LCID': 'Consumer Cyclical', 'AZO': 'Consumer Cyclical',
+    'BBY': 'Consumer Cyclical', 'BURL': 'Consumer Cyclical', 'CPRT': 'Consumer Cyclical',
+    'DHI': 'Consumer Cyclical', 'DRI': 'Consumer Cyclical', 'EXPE': 'Consumer Cyclical',
+    'GPC': 'Consumer Cyclical', 'GRMN': 'Consumer Cyclical', 'HAS': 'Consumer Cyclical',
+    'HLT': 'Consumer Cyclical', 'KMX': 'Consumer Cyclical', 'LEN': 'Consumer Cyclical',
+    'LVS': 'Consumer Cyclical', 'MGM': 'Consumer Cyclical', 'MHK': 'Consumer Cyclical',
+    'NVR': 'Consumer Cyclical', 'ORLY': 'Consumer Cyclical', 'PHM': 'Consumer Cyclical',
+    'POOL': 'Consumer Cyclical', 'RL': 'Consumer Cyclical', 'TSCO': 'Consumer Cyclical',
+    'TPR': 'Consumer Cyclical', 'ULTA': 'Consumer Cyclical', 'VFC': 'Consumer Cyclical',
+    'WHR': 'Consumer Cyclical', 'WYNN': 'Consumer Cyclical', 'APTV': 'Consumer Cyclical',
+    'BWA': 'Consumer Cyclical', 'DG': 'Consumer Cyclical', 'DLTR': 'Consumer Cyclical',
+    'DDS': 'Consumer Cyclical', 'FIVE': 'Consumer Cyclical', 'FL': 'Consumer Cyclical',
+    'FOXA': 'Consumer Cyclical', 'FOX': 'Consumer Cyclical', 'GPS': 'Consumer Cyclical',
+    'GT': 'Consumer Cyclical', 'HBI': 'Consumer Cyclical', 'LAD': 'Consumer Cyclical',
+    'LKQ': 'Consumer Cyclical', 'M': 'Consumer Cyclical', 'NCLH': 'Consumer Cyclical',
+    'NWL': 'Consumer Cyclical', 'PVH': 'Consumer Cyclical',
     
-    # Additional Energy
-    'APA': 'Energy', 'CTRA': 'Energy', 'FANG': 'Energy', 'KMI': 'Energy',
-    'LNG': 'Energy', 'MRO': 'Energy', 'NOV': 'Energy', 'OKE': 'Energy',
-    'TRGP': 'Energy', 'WMB': 'Energy', 'EQT': 'Energy', 'AR': 'Energy',
-    'CLR': 'Energy', 'CNX': 'Energy', 'CQP': 'Energy', 'EXE': 'Energy',
-    'FTI': 'Energy', 'HP': 'Energy', 'MTDR': 'Energy', 'NBL': 'Energy',
-    'OVV': 'Energy', 'PBF': 'Energy', 'PR': 'Energy', 'RIG': 'Energy',
-    'SM': 'Energy', 'VAL': 'Energy', 'XEC': 'Energy',
+    # Consumer Staples
+    'WMT': 'Consumer Defensive', 'PG': 'Consumer Defensive', 'KO': 'Consumer Defensive',
+    'PEP': 'Consumer Defensive', 'COST': 'Consumer Defensive', 'PM': 'Consumer Defensive',
+    'MO': 'Consumer Defensive', 'MDLZ': 'Consumer Defensive', 'CL': 'Consumer Defensive',
+    'KMB': 'Consumer Defensive', 'GIS': 'Consumer Defensive', 'KHC': 'Consumer Defensive',
+    'STZ': 'Consumer Defensive', 'ADM': 'Consumer Defensive', 'BF-B': 'Consumer Defensive',
+    'CAG': 'Consumer Defensive', 'CHD': 'Consumer Defensive', 'CLX': 'Consumer Defensive',
+    'CPB': 'Consumer Defensive', 'EL': 'Consumer Defensive', 'HSY': 'Consumer Defensive',
+    'K': 'Consumer Defensive', 'KDP': 'Consumer Defensive', 'KR': 'Consumer Defensive',
+    'KVUE': 'Consumer Defensive', 'MKC': 'Consumer Defensive', 'MNST': 'Consumer Defensive',
+    'SJM': 'Consumer Defensive', 'SYY': 'Consumer Defensive', 'TAP': 'Consumer Defensive',
+    'TSN': 'Consumer Defensive', 'WBA': 'Consumer Defensive', 'BGS': 'Consumer Defensive',
+    'BG': 'Consumer Defensive', 'COKE': 'Consumer Defensive', 'FLO': 'Consumer Defensive',
+    'HRL': 'Consumer Defensive', 'LANC': 'Consumer Defensive', 'POST': 'Consumer Defensive',
     
-    # Additional Industrials
-    'AOS': 'Industrials', 'CARR': 'Industrials', 'CHRW': 'Industrials', 'CMI': 'Industrials',
-    'DOV': 'Industrials', 'EMR': 'Industrials', 'ETN': 'Industrials', 'EXPD': 'Industrials',
-    'FAST': 'Industrials', 'FTV': 'Industrials', 'GNRC': 'Industrials', 'GWW': 'Industrials',
-    'IEX': 'Industrials', 'IR': 'Industrials', 'ITW': 'Industrials', 'J': 'Industrials',
-    'JBHT': 'Industrials', 'JCI': 'Industrials', 'LDOS': 'Industrials', 'MAS': 'Industrials',
-    'NSC': 'Industrials', 'ODFL': 'Industrials', 'OTIS': 'Industrials', 'PCAR': 'Industrials',
-    'PH': 'Industrials', 'PWR': 'Industrials', 'ROK': 'Industrials', 'ROL': 'Industrials',
-    'RSG': 'Industrials', 'SNA': 'Industrials', 'SWK': 'Industrials', 'TT': 'Industrials',
-    'URI': 'Industrials', 'VRSK': 'Industrials', 'WAB': 'Industrials', 'WM': 'Industrials',
-    'XYL': 'Industrials', 'ALK': 'Industrials', 'JBLU': 'Industrials', 'SAVE': 'Industrials',
+    # Energy
+    'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy', 'EOG': 'Energy', 'SLB': 'Energy',
+    'MPC': 'Energy', 'PSX': 'Energy', 'VLO': 'Energy', 'OXY': 'Energy', 'HAL': 'Energy',
+    'DVN': 'Energy', 'HES': 'Energy', 'BKR': 'Energy', 'APA': 'Energy', 'CTRA': 'Energy',
+    'FANG': 'Energy', 'KMI': 'Energy', 'LNG': 'Energy', 'MRO': 'Energy', 'NOV': 'Energy',
+    'OKE': 'Energy', 'TRGP': 'Energy', 'WMB': 'Energy', 'EQT': 'Energy', 'AR': 'Energy',
+    'CLR': 'Energy', 'CNX': 'Energy', 'CQP': 'Energy', 'EXE': 'Energy', 'FTI': 'Energy',
+    'HP': 'Energy', 'MTDR': 'Energy', 'NBL': 'Energy', 'OVV': 'Energy', 'PBF': 'Energy',
+    'PR': 'Energy', 'RIG': 'Energy', 'SM': 'Energy', 'VAL': 'Energy', 'XEC': 'Energy',
     
-    # Additional Communication
-    'LYV': 'Communication', 'MTCH': 'Communication', 'NWSA': 'Communication',
-    'NWS': 'Communication', 'OMC': 'Communication', 'PARA': 'Communication',
-    'WBD': 'Communication', 'IPG': 'Communication', 'DISH': 'Communication',
+    # Industrials
+    'BA': 'Industrials', 'HON': 'Industrials', 'UNP': 'Industrials', 'CAT': 'Industrials',
+    'GE': 'Industrials', 'RTX': 'Industrials', 'LMT': 'Industrials', 'UPS': 'Industrials',
+    'DE': 'Industrials', 'MMM': 'Industrials', 'GD': 'Industrials', 'NOC': 'Industrials',
+    'FDX': 'Industrials', 'CSX': 'Industrials', 'HWM': 'Industrials', 'TDG': 'Industrials',
+    'HEI': 'Industrials', 'LHX': 'Industrials', 'TXT': 'Industrials', 'AOS': 'Industrials',
+    'CARR': 'Industrials', 'CHRW': 'Industrials', 'CMI': 'Industrials', 'DOV': 'Industrials',
+    'EMR': 'Industrials', 'ETN': 'Industrials', 'EXPD': 'Industrials', 'FAST': 'Industrials',
+    'FTV': 'Industrials', 'GNRC': 'Industrials', 'GWW': 'Industrials', 'IEX': 'Industrials',
+    'IR': 'Industrials', 'ITW': 'Industrials', 'J': 'Industrials', 'JBHT': 'Industrials',
+    'JCI': 'Industrials', 'LDOS': 'Industrials', 'MAS': 'Industrials', 'NSC': 'Industrials',
+    'ODFL': 'Industrials', 'OTIS': 'Industrials', 'PCAR': 'Industrials', 'PH': 'Industrials',
+    'PWR': 'Industrials', 'ROK': 'Industrials', 'ROL': 'Industrials', 'RSG': 'Industrials',
+    'SNA': 'Industrials', 'SWK': 'Industrials', 'TT': 'Industrials', 'URI': 'Industrials',
+    'VRSK': 'Industrials', 'WAB': 'Industrials', 'WM': 'Industrials', 'XYL': 'Industrials',
+    'ALK': 'Industrials', 'JBLU': 'Industrials', 'SAVE': 'Industrials',
     
-    # Additional Real Estate
-    'AVB': 'Real Estate', 'ARE': 'Real Estate', 'BXP': 'Real Estate', 'CBRE': 'Real Estate',
-    'DLR': 'Real Estate', 'EQR': 'Real Estate', 'ESS': 'Real Estate', 'EXR': 'Real Estate',
-    'FRT': 'Real Estate', 'HST': 'Real Estate', 'IRM': 'Real Estate', 'KIM': 'Real Estate',
-    'MAA': 'Real Estate', 'REG': 'Real Estate', 'SBAC': 'Real Estate', 'SLG': 'Real Estate',
-    'UDR': 'Real Estate', 'VTR': 'Real Estate', 'WELL': 'Real Estate', 'WY': 'Real Estate',
-    'INVH': 'Real Estate', 'PEAK': 'Real Estate', 'VNO': 'Real Estate',
+    # Communication Services & Media
+    'T': 'Communication', 'VZ': 'Communication', 'CMCSA': 'Communication',
+    'NFLX': 'Communication', 'DIS': 'Communication', 'TMUS': 'Communication',
+    'CHTR': 'Communication', 'LYV': 'Communication', 'MTCH': 'Communication',
+    'NWSA': 'Communication', 'NWS': 'Communication', 'OMC': 'Communication',
+    'PARA': 'Communication', 'WBD': 'Communication', 'IPG': 'Communication',
+    'DISH': 'Communication',
     
-    # Additional Materials
-    'AMCR': 'Materials', 'BALL': 'Materials', 'CF': 'Materials', 'CLF': 'Materials',
-    'CTVA': 'Materials', 'FMC': 'Materials', 'IP': 'Materials', 'MLM': 'Materials',
-    'MOS': 'Materials', 'NUE': 'Materials', 'PKG': 'Materials', 'PPG': 'Materials',
-    'SEE': 'Materials', 'STLD': 'Materials', 'SW': 'Materials', 'VMC': 'Materials',
-    'AVY': 'Materials', 'AA': 'Materials', 'MP': 'Materials', 'RS': 'Materials',
+    # Real Estate & REITs
+    'AMT': 'Real Estate', 'PLD': 'Real Estate', 'CCI': 'Real Estate', 'EQIX': 'Real Estate',
+    'PSA': 'Real Estate', 'SPG': 'Real Estate', 'O': 'Real Estate', 'AVB': 'Real Estate',
+    'ARE': 'Real Estate', 'BXP': 'Real Estate', 'CBRE': 'Real Estate', 'DLR': 'Real Estate',
+    'EQR': 'Real Estate', 'ESS': 'Real Estate', 'EXR': 'Real Estate', 'FRT': 'Real Estate',
+    'HST': 'Real Estate', 'IRM': 'Real Estate', 'KIM': 'Real Estate', 'MAA': 'Real Estate',
+    'REG': 'Real Estate', 'SBAC': 'Real Estate', 'SLG': 'Real Estate', 'UDR': 'Real Estate',
+    'VTR': 'Real Estate', 'WELL': 'Real Estate', 'WY': 'Real Estate', 'INVH': 'Real Estate',
+    'PEAK': 'Real Estate', 'VNO': 'Real Estate',
     
-    # Additional Utilities
-    'AEE': 'Utilities', 'AES': 'Utilities', 'AWK': 'Utilities', 'CMS': 'Utilities',
-    'CNP': 'Utilities', 'DTE': 'Utilities', 'ED': 'Utilities', 'EIX': 'Utilities',
-    'ES': 'Utilities', 'ETR': 'Utilities', 'EVRG': 'Utilities', 'FE': 'Utilities',
-    'LNT': 'Utilities', 'NI': 'Utilities', 'NRG': 'Utilities', 'PCG': 'Utilities',
-    'PEG': 'Utilities', 'PNW': 'Utilities', 'PPL': 'Utilities', 'VST': 'Utilities',
-    'WEC': 'Utilities', 'XEL': 'Utilities', 'CEG': 'Utilities',
+    # Materials & Chemicals
+    'LIN': 'Materials', 'APD': 'Materials', 'SHW': 'Materials', 'ECL': 'Materials',
+    'DD': 'Materials', 'NEM': 'Materials', 'FCX': 'Materials', 'DOW': 'Materials',
+    'LYB': 'Materials', 'CE': 'Materials', 'ALB': 'Materials', 'EMN': 'Materials',
+    'SQM': 'Materials', 'AMCR': 'Materials', 'BALL': 'Materials', 'CF': 'Materials',
+    'CLF': 'Materials', 'CTVA': 'Materials', 'FMC': 'Materials', 'IP': 'Materials',
+    'MLM': 'Materials', 'MOS': 'Materials', 'NUE': 'Materials', 'PKG': 'Materials',
+    'PPG': 'Materials', 'SEE': 'Materials', 'STLD': 'Materials', 'SW': 'Materials',
+    'VMC': 'Materials', 'AVY': 'Materials', 'AA': 'Materials', 'MP': 'Materials',
+    'RS': 'Materials',
+    
+    # Utilities
+    'NEE': 'Utilities', 'DUK': 'Utilities', 'SO': 'Utilities', 'D': 'Utilities',
+    'AEP': 'Utilities', 'EXC': 'Utilities', 'SRE': 'Utilities', 'AEE': 'Utilities',
+    'AES': 'Utilities', 'AWK': 'Utilities', 'CMS': 'Utilities', 'CNP': 'Utilities',
+    'DTE': 'Utilities', 'ED': 'Utilities', 'EIX': 'Utilities', 'ES': 'Utilities',
+    'ETR': 'Utilities', 'EVRG': 'Utilities', 'FE': 'Utilities', 'LNT': 'Utilities',
+    'NI': 'Utilities', 'NRG': 'Utilities', 'PCG': 'Utilities', 'PEG': 'Utilities',
+    'PNW': 'Utilities', 'PPL': 'Utilities', 'VST': 'Utilities', 'WEC': 'Utilities',
+    'XEL': 'Utilities', 'CEG': 'Utilities',
+    
+    # Chinese ADRs
+    'BABA': 'Technology', 'JD': 'Consumer Cyclical', 'PDD': 'Consumer Cyclical',
+    'BIDU': 'Technology', 'NIO': 'Consumer Cyclical', 'XPEV': 'Consumer Cyclical',
+    'LI': 'Consumer Cyclical',
 }
 
 # ============================================================
-# MSS HELPER FUNCTIONS
+# IMPROVED MSS CALCULATION FUNCTIONS
 # ============================================================
+
 def _get_analyst_data(symbol):
-    """Fetch real analyst ratings from yfinance - UPDATED to use correct API endpoints."""
+    """Fetch real analyst ratings from yfinance."""
     try:
         ticker = yf.Ticker(symbol)
+        recommendations = ticker.recommendations
         
-        # Method 1: Try recommendations_summary (most reliable)
-        try:
-            rec_summary = ticker.recommendations_summary
-            if rec_summary is not None and not rec_summary.empty:
-                # Get the most recent recommendation period
-                latest = rec_summary.iloc[-1]
-                
-                # Calculate bullish percentage from strongBuy + buy vs total
-                if 'strongBuy' in latest and 'buy' in latest and 'hold' in latest:
-                    total = (latest.get('strongBuy', 0) + latest.get('buy', 0) + 
-                            latest.get('hold', 0) + latest.get('sell', 0) + 
-                            latest.get('strongSell', 0))
-                    if total > 0:
-                        bullish_score = (latest.get('strongBuy', 0) * 100 + latest.get('buy', 0) * 75)
-                        rating_pct = min(100, (bullish_score / total) * 1.0)
-                        
-                        if rating_pct >= 60:
-                            bias = 'bullish'
-                        elif rating_pct <= 40:
-                            bias = 'bearish'
-                        else:
-                            bias = 'neutral'
-                        return round(rating_pct, 1), bias
-        except Exception as e:
-            logger.debug(f"recommendations_summary failed for {symbol}: {e}")
+        if recommendations is not None and not recommendations.empty:
+            latest = recommendations.iloc[-1]
+            grade = str(latest.get('To Grade', latest.get('Firm', ''))).lower()
+            
+            if 'buy' in grade or 'outperform' in grade or 'overweight' in grade:
+                return 85.0, 'bullish'
+            elif 'hold' in grade or 'neutral' in grade or 'market perform' in grade:
+                return 50.0, 'neutral'
+            elif 'sell' in grade or 'underperform' in grade or 'underweight' in grade:
+                return 15.0, 'bearish'
         
-        # Method 2: Use analyst_price_targets as fallback
-        try:
-            price_targets = ticker.analyst_price_targets
-            if price_targets and isinstance(price_targets, dict):
-                current_price = price_targets.get('current')
-                mean_target = price_targets.get('mean')
-                
-                if current_price and mean_target:
-                    # Higher mean target relative to current price = bullish
-                    upside_pct = ((mean_target - current_price) / current_price) * 100
-                    
-                    if upside_pct > 15:
-                        rating_pct = 85.0
-                        bias = 'bullish'
-                    elif upside_pct < -5:
-                        rating_pct = 25.0
-                        bias = 'bearish'
-                    else:
-                        rating_pct = 50.0
-                        bias = 'neutral'
-                    return rating_pct, bias
-        except Exception as e:
-            logger.debug(f"analyst_price_targets failed for {symbol}: {e}")
+        info = ticker.info
+        if info:
+            rec = info.get('recommendationKey', '').lower()
+            if rec in ['buy', 'strong_buy']:
+                return 85.0, 'bullish'
+            elif rec == 'hold':
+                return 50.0, 'neutral'
+            elif rec in ['sell', 'strong_sell']:
+                return 15.0, 'bearish'
         
-        # Method 3: Check info dict for recommendation key
-        try:
-            info = ticker.info
-            if info:
-                rec_key = info.get('recommendationKey', '').lower()
-                if rec_key in ['buy', 'strong_buy']:
-                    return 85.0, 'bullish'
-                elif rec_key == 'hold':
-                    return 50.0, 'neutral'
-                elif rec_key in ['sell', 'strong_sell']:
-                    return 15.0, 'bearish'
-                
-                # Also check number of analyst opinions
-                num_analysts = info.get('numberOfAnalystOpinions', 0)
-                if num_analysts > 0:
-                    # Default to neutral if we have analysts but no clear rating
-                    return 50.0, 'neutral'
-        except Exception as e:
-            logger.debug(f"info dict failed for {symbol}: {e}")
-        
-        # Default fallback - no analyst data available
         return None, None
-        
     except Exception as e:
-        logger.warning(f"Could not fetch analyst data for {symbol}: {e}")
+        logger.debug(f"Analyst data error for {symbol}: {e}")
         return None, None
-
 
 def _get_options_data(symbol):
     """Fetch real put/call ratio from yfinance options data."""
     try:
         ticker = yf.Ticker(symbol)
         expirations = ticker.options
-        
         if not expirations:
             return None, None
             
-        # Try multiple expiration dates to find one with data
-        for expiry in expirations[:3]:  # Check first 3 expiration dates
+        for expiry in expirations[:3]:
             try:
                 opt_chain = ticker.option_chain(expiry)
                 
                 if opt_chain.calls is not None and opt_chain.puts is not None:
-                    # Use volume instead of open interest (more real-time)
                     total_call_vol = opt_chain.calls['volume'].sum() if 'volume' in opt_chain.calls.columns else 0
                     total_put_vol = opt_chain.puts['volume'].sum() if 'volume' in opt_chain.puts.columns else 0
                     
-                    # Fall back to open interest if volume is zero
                     if total_call_vol == 0:
                         total_call_vol = opt_chain.calls['openInterest'].sum() if 'openInterest' in opt_chain.calls.columns else 0
                         total_put_vol = opt_chain.puts['openInterest'].sum() if 'openInterest' in opt_chain.puts.columns else 0
@@ -48170,92 +48059,118 @@ def _get_options_data(symbol):
                         else:
                             return round(put_call_ratio, 3), 'neutral'
             except Exception:
-                continue  # Try next expiry
+                continue
                 
         return None, None
     except Exception as e:
-        logger.warning(f"Could not fetch options data for {symbol}: {e}")
+        logger.debug(f"Options data error for {symbol}: {e}")
         return None, None
 
-@csrf_exempt
-@require_GET
-def mss_filtered_data(request):
-    """
-    GET /api/mss/filtered-data/?period=60&days=365&filters={...}
-    Server-side filtering for ALL data, not just current page
-    """
-    try:
-        period = int(request.GET.get('period', 60))
-        days_back = int(request.GET.get('days', 365))
-        symbol_filter = request.GET.get('symbol', '').upper().strip()
-        asset_class_filter = request.GET.get('asset_class', '')
-        
-        # Parse advanced filters from JSON
-        filters_json = request.GET.get('filters', '{}')
-        try:
-            advanced_filters = json.loads(filters_json)
-        except:
-            advanced_filters = {}
-        
-        # Base query
-        since = date.today() - timedelta(days=days_back)
-        qs = MSSHistoricalRecord.objects.filter(
-            date_taken__gte=since,
-            period_days=period
-        )
-        
-        # Apply symbol filter
-        if symbol_filter:
-            qs = qs.filter(symbol=symbol_filter)
-        
-        # Apply asset class filter
-        if asset_class_filter and asset_class_filter != 'all':
-            qs = qs.filter(asset_class=asset_class_filter)
-        
-        # Apply numeric range filters
-        numeric_filters = advanced_filters.get('numeric', {})
-        for key, range_vals in numeric_filters.items():
-            if range_vals.get('min') is not None and range_vals['min'] != '':
-                qs = qs.filter(**{f"{key}__gte": float(range_vals['min'])})
-            if range_vals.get('max') is not None and range_vals['max'] != '':
-                qs = qs.filter(**{f"{key}__lte": float(range_vals['max'])})
-        
-        # Apply text filters (exact matches for dropdowns)
-        text_filters = advanced_filters.get('text', {})
-        for key, value in text_filters.items():
-            if value and value != 'all':
-                qs = qs.filter(**{key: value})
-        
-        # Order by date
-        qs = qs.order_by('-date_taken', 'symbol')
-        
-        # Convert to list of dicts
-        records = []
-        for r in qs:
-            records.append({
-                'id': r.id, 'symbol': r.symbol, 'asset_class': r.asset_class,
-                'sector': r.sector, 'date_taken': str(r.date_taken), 'period_days': r.period_days,
-                'mss': r.mss, 'r_squared': r.r_squared, 'volatility': r.volatility,
-                'normalized_volatility': r.normalized_volatility, 'trend_consistency': r.trend_consistency,
-                'trend_strength': r.trend_strength, 'liquidity_factor': r.liquidity_factor,
-                'category': r.category, 'current_price': r.current_price, 'price_change': r.price_change,
-                'avg_volume': r.avg_volume, 'data_points': r.data_points,
-                'analyst_rating_pct': r.analyst_rating_pct, 'analyst_bias': r.analyst_bias,
-                'put_call_ratio': r.put_call_ratio, 'put_call_bias': r.put_call_bias,
-            })
-        
-        return JsonResponse({
-            'success': True,
-            'total': len(records),
-            'data': records,
-            'filters_applied': advanced_filters
-        })
-        
-    except Exception as e:
-        logger.error(f"Filtered data error: {e}")
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+def _compute_mss_for_symbol(symbol: str, period_days: int, all_volatilities: list):
+    """Returns a dict of raw metrics with real analyst and options data."""
+    min_required_bars = max(min(period_days, 15), 5)
+    fetch_period = f"{period_days + 10}d" if period_days > 30 else f"{period_days}d"
 
+    try:
+        ticker = yf.Ticker(symbol)
         
+        # Retry logic for API rate limits
+        max_retries = 2
+        hist = None
+        for attempt in range(max_retries):
+            try:
+                hist = ticker.history(period=fetch_period)
+                if not hist.empty:
+                    break
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                else:
+                    raise e
+        
+        if hist.empty or len(hist) < min_required_bars:
+            return None
+        
+        if len(hist) > period_days:
+            hist = hist.tail(period_days)
+        
+        hist['returns'] = hist['Close'].pct_change()
+        returns = hist['returns'].dropna()
+        if len(returns) < 2:
+            return None
+        
+        try:
+            volatility = float(returns.std())
+            if volatility == 0:
+                volatility = 0.0001
+        except:
+            volatility = 0.01
+        
+        prices = hist['Close'].values
+        if len(prices) < 2:
+            return None
+            
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
+        model = LinearRegression()
+        model.fit(X, y)
+        r_squared = float(max(0, min(model.score(X, y), 1.0)))
+        
+        positive_days = (returns > 0).sum()
+        trend_consistency = float(abs(positive_days / len(returns) - 0.5) * 2)
+        
+        slope_per_day = model.coef_[0][0]
+        avg_price = float(np.mean(prices))
+        if len(prices) > 1 and avg_price > 0:
+            trend_strength = float(min(abs(slope_per_day * len(prices)) / avg_price, 1.0))
+        else:
+            trend_strength = 0.0
+        
+        avg_volume = float(hist['Volume'].mean())
+        if avg_volume > 10_000_000:
+            liquidity_factor = 1.2
+        elif avg_volume > 5_000_000:
+            liquidity_factor = 1.1
+        elif avg_volume > 1_000_000:
+            liquidity_factor = 1.0
+        elif avg_volume > 500_000:
+            liquidity_factor = 0.95
+        elif avg_volume > 100_000:
+            liquidity_factor = 0.9
+        else:
+            liquidity_factor = 0.8
+        
+        current_price = float(hist['Close'].iloc[-1])
+        start_price = float(hist['Close'].iloc[0])
+        price_change = ((current_price - start_price) / start_price * 100) if start_price and start_price > 0 else 0.0
+        
+        analyst_rating_pct, analyst_bias = _get_analyst_data(symbol)
+        put_call_ratio, put_call_bias = _get_options_data(symbol)
+        
+        all_volatilities.append(volatility)
+        
+        return {
+            'symbol': symbol,
+            'volatility': volatility,
+            'r_squared': r_squared,
+            'trend_consistency': trend_consistency,
+            'trend_strength': trend_strength,
+            'liquidity_factor': liquidity_factor,
+            'current_price': current_price,
+            'price_change': price_change,
+            'data_points': len(hist),
+            'avg_volume': int(avg_volume),
+            'analyst_rating_pct': analyst_rating_pct,
+            'analyst_bias': analyst_bias,
+            'put_call_ratio': put_call_ratio,
+            'put_call_bias': put_call_bias,
+        }
+    except Exception as e:
+        logger.error(f"Error processing {symbol} for period {period_days}: {e}")
+        return None
+
 def _finalise_and_save(temp_results: list, period_days: int, today: date, asset_class: str):
     """Normalise volatility, compute MSS, persist to DB."""
     if not temp_results:
@@ -48315,256 +48230,236 @@ def _finalise_and_save(temp_results: list, period_days: int, today: date, asset_
 
     return saved
 
-def run_daily_mss_snapshot():
-    """Main job function - runs daily MSS calculations."""
+def run_period_snapshot(period_days: int):
+    """Run MSS snapshot for a specific period only."""
     today = date.today()
-    logger.info(f"[MSS Scheduler] Starting daily snapshot for {today}")
+    logger.info(f"[MSS Scheduler] Starting snapshot for {period_days}d period")
+    period_progress[period_days]['status'] = 'running'
+    period_progress[period_days]['current_asset'] = 'Starting...'
+    
     total_saved = 0
-
-    for asset_class, symbols in ASSET_LISTS.items():
-        for period in PERIODS:
-            logger.info(f"  → {asset_class.upper()} | {period}d period ({len(symbols)} symbols)")
+    total_processed = 0
+    
+    try:
+        for asset_class, symbols in ASSET_LISTS.items():
+            logger.info(f"  → {asset_class.upper()} | {period_days}d period ({len(symbols)} symbols)")
             temp_results = []
             all_volatilities = []
 
-            for symbol in symbols:
-                result = _compute_mss_for_symbol(symbol, period, all_volatilities)
+            for i, symbol in enumerate(symbols):
+                period_progress[period_days]['current_asset'] = f"{asset_class}: {symbol} ({i+1}/{len(symbols)})"
+                
+                result = _compute_mss_for_symbol(symbol, period_days, all_volatilities)
+                total_processed += 1
                 if result:
                     temp_results.append(result)
+                
+                # Small delay to avoid rate limiting
+                if i % 10 == 0:
+                    time.sleep(0.5)
 
-            saved = _finalise_and_save(temp_results, period, today, asset_class)
+            saved = _finalise_and_save(temp_results, period_days, today, asset_class)
             total_saved += saved
-            logger.info(f"     ✓ Saved {saved}/{len(temp_results)} records")
-
-    logger.info(f"[MSS Scheduler] Snapshot complete. Total records saved: {total_saved}")
+            logger.info(f"     ✓ Saved {saved}/{len(temp_results)} records for {asset_class}")
+        
+        period_progress[period_days]['status'] = 'completed'
+        period_progress[period_days]['last_run'] = datetime.now().isoformat()
+        period_progress[period_days]['records'] = total_saved
+        period_progress[period_days]['current_asset'] = 'Done'
+        
+        logger.info(f"[MSS Scheduler] {period_days}d period complete. Saved: {total_saved} records")
+        
+    except Exception as e:
+        period_progress[period_days]['status'] = 'failed'
+        period_progress[period_days]['current_asset'] = str(e)
+        logger.error(f"[MSS Scheduler] {period_days}d period failed: {e}")
+    
     return total_saved
 
 # ============================================================
-# SCHEDULE JOBS
+# STAGGERED SCHEDULER - Each period runs at different times
 # ============================================================
 
-# Set to New York timezone
 NY_TIMEZONE = pytz.timezone('America/New_York')
 
-# MSS daily snapshot job - runs at NYC lunch hour (12:00 PM ET)
+# Your existing job
 scheduler.add_job(
-    run_daily_mss_snapshot,
-    trigger=CronTrigger(hour=12, minute=0, timezone=NY_TIMEZONE),
-    id='daily_mss_snapshot',
-    name='Daily MSS snapshot for all assets × all periods',
+    update_daily_brief,
+    trigger=IntervalTrigger(hours=1),
+    id='update_daily_brief_job',
+    name='Update daily brief every hour',
     replace_existing=True
 )
 
+# STAGGERED MSS JOBS - Each period runs at a different time to avoid rate limits
+# All run during NYC lunch hour but staggered by 5 minutes each
+
+scheduler.add_job(
+    lambda: run_period_snapshot(10),
+    trigger=CronTrigger(hour=12, minute=0, timezone=NY_TIMEZONE),
+    id='mss_period_10d',
+    name='MSS Snapshot - 10 Day Period',
+    replace_existing=True
+)
+
+scheduler.add_job(
+    lambda: run_period_snapshot(15),
+    trigger=CronTrigger(hour=12, minute=5, timezone=NY_TIMEZONE),
+    id='mss_period_15d',
+    name='MSS Snapshot - 15 Day Period',
+    replace_existing=True
+)
+
+scheduler.add_job(
+    lambda: run_period_snapshot(20),
+    trigger=CronTrigger(hour=12, minute=10, timezone=NY_TIMEZONE),
+    id='mss_period_20d',
+    name='MSS Snapshot - 20 Day Period',
+    replace_existing=True
+)
+
+scheduler.add_job(
+    lambda: run_period_snapshot(30),
+    trigger=CronTrigger(hour=12, minute=15, timezone=NY_TIMEZONE),
+    id='mss_period_30d',
+    name='MSS Snapshot - 30 Day Period',
+    replace_existing=True
+)
+
+scheduler.add_job(
+    lambda: run_period_snapshot(45),
+    trigger=CronTrigger(hour=12, minute=20, timezone=NY_TIMEZONE),
+    id='mss_period_45d',
+    name='MSS Snapshot - 45 Day Period',
+    replace_existing=True
+)
+
+scheduler.add_job(
+    lambda: run_period_snapshot(60),
+    trigger=CronTrigger(hour=12, minute=25, timezone=NY_TIMEZONE),
+    id='mss_period_60d',
+    name='MSS Snapshot - 60 Day Period',
+    replace_existing=True
+)
+
+scheduler.add_job(
+    lambda: run_period_snapshot(90),
+    trigger=CronTrigger(hour=12, minute=30, timezone=NY_TIMEZONE),
+    id='mss_period_90d',
+    name='MSS Snapshot - 90 Day Period',
+    replace_existing=True
+)
+
+scheduler.add_job(
+    lambda: run_period_snapshot(180),
+    trigger=CronTrigger(hour=12, minute=35, timezone=NY_TIMEZONE),
+    id='mss_period_180d',
+    name='MSS Snapshot - 180 Day Period',
+    replace_existing=True
+)
+
+logger.info("[MSS Scheduler] All staggered jobs registered - running at 12:00, 12:05, 12:10, 12:15, 12:20, 12:25, 12:30, 12:35 NYC time")
+
 # ============================================================
-# MSS API VIEWS
+# API VIEWS
 # ============================================================
 
 @csrf_exempt
 @require_GET
-def mss_history(request):
-    """
-    GET /api/mss/history/?symbol=AAPL&period=60&days=90&page=1&limit=100
-    Returns paginated history for one symbol + period.
-    """
-    symbol = request.GET.get('symbol', '').upper().strip()
-    period = request.GET.get('period')
-    days_back = int(request.GET.get('days', 365))
-    page = max(int(request.GET.get('page', 1)), 1)
-    limit = min(int(request.GET.get('limit', 100)), 500)
-
-    qs = MSSHistoricalRecord.objects.all()
-    if symbol:
-        qs = qs.filter(symbol=symbol)
-    if period:
-        qs = qs.filter(period_days=int(period))
-
-    since = date.today() - timedelta(days=days_back)
-    qs = qs.filter(date_taken__gte=since).order_by('-date_taken')
-
-    total = qs.count()
-    offset = (page - 1) * limit
-    records = list(qs[offset:offset + limit])
-
-    def record_to_dict(r):
-        return {
-            'id': r.id,
-            'symbol': r.symbol,
-            'asset_class': r.asset_class,
-            'sector': r.sector,
-            'date_taken': str(r.date_taken),
-            'period_days': r.period_days,
-            'mss': r.mss,
-            'r_squared': r.r_squared,
-            'volatility': r.volatility,
-            'normalized_volatility': r.normalized_volatility,
-            'trend_consistency': r.trend_consistency,
-            'trend_strength': r.trend_strength,
-            'liquidity_factor': r.liquidity_factor,
-            'category': r.category,
-            'current_price': r.current_price,
-            'price_change': r.price_change,
-            'avg_volume': r.avg_volume,
-            'data_points': r.data_points,
-            'analyst_rating_pct': r.analyst_rating_pct,
-            'analyst_bias': r.analyst_bias,
-            'put_call_ratio': r.put_call_ratio,
-            'put_call_bias': r.put_call_bias,
-        }
-
+def mss_period_status(request):
+    """Check status of each period's snapshot"""
     return JsonResponse({
         'success': True,
-        'total': total,
-        'page': page,
-        'limit': limit,
-        'data': [record_to_dict(r) for r in records],
+        'periods': period_progress
     })
-
-@csrf_exempt
-@require_GET
-def mss_symbol_list(request):
-    """GET /api/mss/symbols/  – distinct symbols we have data for."""
-    symbols = (
-        MSSHistoricalRecord.objects
-        .values('symbol', 'asset_class', 'sector')
-        .distinct()
-        .order_by('symbol')
-    )
-    return JsonResponse({'success': True, 'data': list(symbols)})
-
-@csrf_exempt
-@require_GET
-def mss_summary(request):
-    """
-    GET /api/mss/summary/?period=60&date=2024-01-15
-    Latest snapshot for every symbol at a given period on a given date.
-    """
-    period = int(request.GET.get('period', 60))
-    date_str = request.GET.get('date', str(date.today()))
-
-    try:
-        snap_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-    except ValueError:
-        snap_date = date.today()
-
-    records = MSSHistoricalRecord.objects.filter(
-        period_days=period,
-        date_taken=snap_date,
-    ).order_by('-mss')
-
-    def record_to_dict(r):
-        return {
-            'symbol': r.symbol,
-            'asset_class': r.asset_class,
-            'sector': r.sector,
-            'mss': r.mss,
-            'category': r.category,
-            'r_squared': r.r_squared,
-            'volatility': r.volatility,
-            'current_price': r.current_price,
-            'price_change': r.price_change,
-            'analyst_rating_pct': r.analyst_rating_pct,
-            'analyst_bias': r.analyst_bias,
-            'put_call_ratio': r.put_call_ratio,
-            'put_call_bias': r.put_call_bias,
-        }
-
-    return JsonResponse({
-        'success': True,
-        'date': str(snap_date),
-        'period': period,
-        'count': records.count(),
-        'data': [record_to_dict(r) for r in records],
-    })
-
-@csrf_exempt
-@require_GET
-def mss_download(request, symbol):
-    """
-    GET /api/mss/download/<SYMBOL>/?format=csv&period=60&days=365
-    """
-    fmt = request.GET.get('format', 'csv').lower()
-    period = request.GET.get('period')
-    days_back = int(request.GET.get('days', 365))
-
-    since = date.today() - timedelta(days=days_back)
-    qs = MSSHistoricalRecord.objects.filter(
-        symbol=symbol.upper(),
-        date_taken__gte=since,
-    )
-    if period:
-        qs = qs.filter(period_days=int(period))
-
-    qs = qs.order_by('-date_taken', 'period_days')
-    
-    export_columns = [
-        'symbol', 'asset_class', 'sector', 'date_taken', 'period_days',
-        'mss', 'r_squared', 'volatility', 'normalized_volatility',
-        'trend_consistency', 'trend_strength', 'liquidity_factor', 'category',
-        'current_price', 'price_change', 'avg_volume', 'data_points',
-        'analyst_rating_pct', 'analyst_bias', 'put_call_ratio', 'put_call_bias',
-    ]
-    
-    rows = []
-    for r in qs:
-        row = {}
-        for col in export_columns:
-            val = getattr(r, col)
-            if isinstance(val, date):
-                val = str(val)
-            row[col] = val
-        rows.append(row)
-
-    if fmt == 'csv':
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="{symbol}_mss_history.csv"'
-        
-        writer = csv.DictWriter(response, fieldnames=export_columns)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-        
-        return response
-    else:
-        return JsonResponse({
-            'success': False, 
-            'error': f'Format {fmt} not supported. Use csv.'
-        }, status=400)
 
 @csrf_exempt
 @require_POST
-def mss_trigger_update(request):
-    """Manual trigger for MSS update."""
+def mss_run_period(request, period):
+    """Manually run a specific period"""
+    period = int(period)
+    if period not in PERIODS:
+        return JsonResponse({'success': False, 'error': 'Invalid period'}, status=400)
+    
     try:
-        total_saved = run_daily_mss_snapshot()
+        total_saved = run_period_snapshot(period)
         return JsonResponse({
             'success': True,
-            'message': 'MSS update completed successfully',
+            'period': period,
             'records_saved': total_saved
         })
     except Exception as e:
-        logger.error(f"Manual MSS update failed: {e}")
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=500)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+# Keep all your existing API views (mss_history, mss_symbol_list, mss_summary, mss_download, mss_filtered_data, etc.)
+# ... (add them here, same as before) ...
 
 @csrf_exempt
 @require_GET
-def mss_scheduler_status(request):
-    """Check if scheduler is running."""
-    jobs = []
-    for job in scheduler.get_jobs():
-        jobs.append({
-            'id': job.id,
-            'name': job.name,
-            'next_run_time': str(job.next_run_time) if job.next_run_time else None
+def mss_filtered_data(request):
+    """GET /api/mss/filtered-data/ - Server-side filtering for ALL data"""
+    try:
+        period = int(request.GET.get('period', 60))
+        days_back = int(request.GET.get('days', 365))
+        symbol_filter = request.GET.get('symbol', '').upper().strip()
+        asset_class_filter = request.GET.get('asset_class', '')
+        
+        filters_json = request.GET.get('filters', '{}')
+        try:
+            advanced_filters = json.loads(filters_json)
+        except:
+            advanced_filters = {}
+        
+        since = date.today() - timedelta(days=days_back)
+        qs = MSSHistoricalRecord.objects.filter(
+            date_taken__gte=since,
+            period_days=period
+        )
+        
+        if symbol_filter:
+            qs = qs.filter(symbol=symbol_filter)
+        
+        if asset_class_filter and asset_class_filter != 'all':
+            qs = qs.filter(asset_class=asset_class_filter)
+        
+        numeric_filters = advanced_filters.get('numeric', {})
+        for key, range_vals in numeric_filters.items():
+            if range_vals.get('min') is not None and range_vals['min'] != '':
+                qs = qs.filter(**{f"{key}__gte": float(range_vals['min'])})
+            if range_vals.get('max') is not None and range_vals['max'] != '':
+                qs = qs.filter(**{f"{key}__lte": float(range_vals['max'])})
+        
+        text_filters = advanced_filters.get('text', {})
+        for key, value in text_filters.items():
+            if value and value != 'all':
+                qs = qs.filter(**{key: value})
+        
+        qs = qs.order_by('-date_taken', 'symbol')
+        
+        records = []
+        for r in qs:
+            records.append({
+                'id': r.id, 'symbol': r.symbol, 'asset_class': r.asset_class,
+                'sector': r.sector, 'date_taken': str(r.date_taken), 'period_days': r.period_days,
+                'mss': r.mss, 'r_squared': r.r_squared, 'volatility': r.volatility,
+                'normalized_volatility': r.normalized_volatility, 'trend_consistency': r.trend_consistency,
+                'trend_strength': r.trend_strength, 'liquidity_factor': r.liquidity_factor,
+                'category': r.category, 'current_price': r.current_price, 'price_change': r.price_change,
+                'avg_volume': r.avg_volume, 'data_points': r.data_points,
+                'analyst_rating_pct': r.analyst_rating_pct, 'analyst_bias': r.analyst_bias,
+                'put_call_ratio': r.put_call_ratio, 'put_call_bias': r.put_call_bias,
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'total': len(records),
+            'data': records,
+            'filters_applied': advanced_filters
         })
-    
-    return JsonResponse({
-        'success': True,
-        'scheduler_running': scheduler.running,
-        'jobs': jobs
-    })
+        
+    except Exception as e:
+        logger.error(f"Filtered data error: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
     
 def book_order(request):
