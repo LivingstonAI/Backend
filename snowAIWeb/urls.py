@@ -935,17 +935,18 @@ urlpatterns = [
     path('api/snowai-spotify-entries/<int:entry_id>/delete/',
          snowai_spotify_delete_entry,
          name='snowai_spotify_delete_entry'),
-
+    
     # MSS endpoints
-    path('api/mss/history/',         mss_history,          name='mss_history'),
-    path('api/mss/symbols/',         mss_symbol_list,      name='mss_symbol_list'),
-    path('api/mss/summary/',         mss_summary,          name='mss_summary'),
-    path('api/mss/download/<str:symbol>/', mss_download,   name='mss_download'),
-    path('api/mss/trigger-update/',  mss_trigger_update,   name='mss_trigger_update'),
-    path('api/mss/scheduler-status/', mss_scheduler_status, name='mss_scheduler_status'),
-    path('api/mss/filtered-data/', mss_filtered_data, name='mss_filtered_data'),
-    path('api/mss/period-status/', mss_period_status, name='mss_period_status'),
-    path('api/mss/run-period/<int:period>/', mss_run_period, name='mss_run_period'),
+    path('api/mss/history/', views.mss_history, name='mss_history'),
+    path('api/mss/symbols/', views.mss_symbol_list, name='mss_symbol_list'),
+    path('api/mss/summary/', views.mss_summary, name='mss_summary'),
+    path('api/mss/download/<str:symbol>/', views.mss_download, name='mss_download'),
+    path('api/mss/trigger-update/', views.mss_trigger_update, name='mss_trigger_update'),
+    path('api/mss/period-status/', views.mss_period_status, name='mss_period_status'),
+    path('api/mss/run-period/<int:period>/', views.mss_run_period, name='mss_run_period'),
+    path('api/mss/filtered-data/', views.mss_filtered_data, name='mss_filtered_data'),
+    path('api/mss/scheduler-status/', views.mss_scheduler_status, name='mss_scheduler_status'),
+
 
 
 
