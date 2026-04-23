@@ -947,6 +947,13 @@ urlpatterns = [
     path('api/mss/filtered-data/', views.mss_filtered_data, name='mss_filtered_data'),
     path('api/mss/scheduler-status/', views.mss_scheduler_status, name='mss_scheduler_status'),
 
+        # MSS Chart Endpoints (unique names)
+    path('api/mss-chart/v1/data/<str:symbol>/', views.mss_chart_asset_data_v1, name='mss_chart_data_v1'),
+    path('api/mss-chart/v1/mss-overlay/<str:symbol>/', views.mss_chart_mss_overlay_v1, name='mss_chart_mss_overlay_v1'),
+    path('api/mss-chart/v1/indicators/<str:symbol>/', views.mss_chart_indicators_v1, name='mss_chart_indicators_v1'),
+    path('api/mss-chart/v1/search/', views.mss_chart_search_v1, name='mss_chart_search_v1'),
+
+
 
 
 

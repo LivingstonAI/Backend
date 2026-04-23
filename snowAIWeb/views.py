@@ -48561,6 +48561,231 @@ def mss_scheduler_status(request):
         })
     return JsonResponse({'success': True, 'scheduler_running': scheduler.running, 'jobs': jobs})
 
+
+import yfinance as yf
+import pandas as pd
+import json
+from datetime import datetime, timedelta
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
+
+# ============================================================
+# CHART DATA ENDPOINTS (Unique names to avoid conflicts)
+# ============================================================
+
+@csrf_exempt
+@require_GET
+def mss_chart_asset_data_v1(request, symbol):
+    """
+    GET /api/mss-chart/v1/data/<symbol>/?period=1mo&interval=1d
+    Returns OHLCV data for TradingView Lightweight Chart
+    """
+    try:
+        period = request.GET.get('period', '1mo')
+        interval = request.GET.get('interval', '1d')
+        
+        # Map interval to yfinance format
+        interval_map = {
+            '5m': '5m',
+            '15m': '15m', 
+            '30m': '30m',
+            '1h': '1h',
+            '4h': '1h',  # yfinance doesn't have 4h, use 1h
+            '1d': '1d',
+            '1wk': '1wk',
+            '1mo': '1mo'
+        }
+        
+        # Map period to yfinance format
+        period_map = {
+            '1d': '1d',
+            '5d': '5d',
+            '1mo': '1mo',
+            '3mo': '3mo',
+            '6mo': '6mo',
+            '1y': '1y',
+            '2y': '2y',
+            '5y': '5y'
+        }
+        
+        yf_interval = interval_map.get(interval, '1d')
+        yf_period = period_map.get(period, '1mo')
+        
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=yf_period, interval=yf_interval)
+        
+        if hist.empty:
+            return JsonResponse({'success': False, 'error': 'No data available'}, status=404)
+        
+        # Format data for TradingView Lightweight Chart
+        chart_data = []
+        for idx, row in hist.iterrows():
+            chart_data.append({
+                'time': int(idx.timestamp()),
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close']),
+                'volume': float(row['Volume']) if 'Volume' in row else 0
+            })
+        
+        # Get additional metadata
+        info = ticker.info
+        metadata = {
+            'symbol': symbol,
+            'name': info.get('longName', symbol),
+            'sector': info.get('sector', 'N/A'),
+            'marketCap': info.get('marketCap', 0),
+            'currency': info.get('currency', 'USD')
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'data': chart_data,
+            'metadata': metadata,
+            'interval': interval,
+            'period': period,
+            'count': len(chart_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Chart data error for {symbol}: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_GET
+def mss_chart_mss_overlay_v1(request, symbol):
+    """
+    GET /api/mss-chart/v1/mss-overlay/<symbol>/?period=90
+    Returns MSS values over time to overlay on chart
+    """
+    try:
+        period_days = int(request.GET.get('period', 60))
+        days_back = int(request.GET.get('days', 365))
+        
+        since = date.today() - timedelta(days=days_back)
+        records = MSSHistoricalRecord.objects.filter(
+            symbol=symbol.upper(),
+            period_days=period_days,
+            date_taken__gte=since
+        ).order_by('date_taken')
+        
+        mss_data = []
+        for r in records:
+            mss_data.append({
+                'time': int(datetime.combine(r.date_taken, datetime.min.time()).timestamp()),
+                'value': r.mss,
+                'category': r.category,
+                'r_squared': r.r_squared,
+                'volatility': r.volatility
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'data': mss_data,
+            'period_days': period_days,
+            'count': len(mss_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"MSS overlay error for {symbol}: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_GET
+def mss_chart_indicators_v1(request, symbol):
+    """
+    GET /api/mss-chart/v1/indicators/<symbol>/?period=1mo&indicators=sma,ema,rsi
+    Returns technical indicators
+    """
+    try:
+        period = request.GET.get('period', '1mo')
+        indicators_param = request.GET.get('indicators', 'sma,ema,rsi')
+        indicators_list = [i.strip() for i in indicators_param.split(',')]
+        
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=period)
+        
+        if hist.empty:
+            return JsonResponse({'success': False, 'error': 'No data available'}, status=404)
+        
+        closes = hist['Close'].values
+        result = {'timestamps': [int(idx.timestamp()) for idx in hist.index]}
+        
+        # Simple Moving Average
+        if 'sma' in indicators_list:
+            sma_20 = pd.Series(closes).rolling(window=20).mean().fillna(0).tolist()
+            sma_50 = pd.Series(closes).rolling(window=50).mean().fillna(0).tolist()
+            result['sma_20'] = sma_20
+            result['sma_50'] = sma_50
+        
+        # Exponential Moving Average
+        if 'ema' in indicators_list:
+            ema_12 = pd.Series(closes).ewm(span=12, adjust=False).mean().fillna(0).tolist()
+            ema_26 = pd.Series(closes).ewm(span=26, adjust=False).mean().fillna(0).tolist()
+            result['ema_12'] = ema_12
+            result['ema_26'] = ema_26
+        
+        # RSI
+        if 'rsi' in indicators_list:
+            delta = pd.Series(closes).diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = (100 - (100 / (1 + rs))).fillna(50).tolist()
+            result['rsi'] = rsi
+        
+        # Bollinger Bands
+        if 'bb' in indicators_list:
+            sma_20 = pd.Series(closes).rolling(window=20).mean()
+            std_20 = pd.Series(closes).rolling(window=20).std()
+            result['bb_upper'] = (sma_20 + 2 * std_20).fillna(0).tolist()
+            result['bb_lower'] = (sma_20 - 2 * std_20).fillna(0).tolist()
+            result['bb_middle'] = sma_20.fillna(0).tolist()
+        
+        return JsonResponse({'success': True, 'data': result})
+        
+    except Exception as e:
+        logger.error(f"Indicators error for {symbol}: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_GET
+def mss_chart_search_v1(request):
+    """
+    GET /api/mss-chart/v1/search/?q=AAPL
+    Search for symbols
+    """
+    try:
+        query = request.GET.get('q', '').upper().strip()
+        if len(query) < 2:
+            return JsonResponse({'success': True, 'data': []})
+        
+        # Search in MSS records first
+        symbols = MSSHistoricalRecord.objects.filter(
+            symbol__icontains=query
+        ).values('symbol', 'asset_class').distinct()[:20]
+        
+        results = list(symbols)
+        
+        # If not enough results, suggest common stocks
+        common_stocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'AMD', 'INTC']
+        for stock in common_stocks:
+            if query in stock and stock not in [r['symbol'] for r in results]:
+                results.append({'symbol': stock, 'asset_class': 'stocks'})
+                if len(results) >= 20:
+                    break
+        
+        return JsonResponse({'success': True, 'data': results})
+        
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        return JsonResponse({'success': True, 'data': []})
+
     
 def book_order(request):
     if request.method == "POST":
