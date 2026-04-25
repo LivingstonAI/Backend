@@ -42608,6 +42608,94 @@ def snowai_earnings_calendar_vault(request):
             if not earnings_date:
                 return None
 
+            # ── EPS sentiment for upcoming earnings ───────────────────────────
+            # Uses past actuals from ed_df to build a weighted trend, then
+            # compares the upcoming estimate against it.
+            # Weights: most recent quarter gets weight N, oldest gets weight 1
+            # (linear decay so recent quarters matter more).
+            eps_sentiment      = None   # 'strongly_bullish'|'bullish'|'in_line'|'bearish'|'strongly_bearish'
+            eps_sentiment_label= None   # human-readable
+            eps_trend_avg      = None   # weighted avg of past actuals
+            eps_vs_trend_pct   = None   # how much estimate deviates from trend
+            past_actuals       = []     # last N quarters [oldest→newest]
+            past_surprises     = []     # surprise% history
+
+            is_upcoming = earnings_date >= today_str
+
+            if is_upcoming and eps_estimate is not None and ed_df is not None and not ed_df.empty:
+                try:
+                    def sf(v):
+                        try:
+                            f = float(v)
+                            return None if (f != f) else f
+                        except: return None
+
+                    # Collect past quarters (exclude upcoming row, take up to 8)
+                    for idx, row in ed_df.iterrows():
+                        row_date = str(idx)[:10]
+                        if row_date >= today_str:
+                            continue  # skip future/upcoming rows
+                        act  = sf(row.get('Reported EPS'))
+                        surp = sf(row.get('Surprise(%)'))
+                        if act is not None:
+                            past_actuals.append(act)
+                            if surp is not None:
+                                past_surprises.append(surp)
+                        if len(past_actuals) >= 8:
+                            break
+
+                    if len(past_actuals) >= 2:
+                        # Reverse so index 0 = oldest, -1 = most recent
+                        pa = list(reversed(past_actuals))
+                        n  = len(pa)
+                        # Linear weights: oldest=1, newest=n
+                        weights    = list(range(1, n + 1))
+                        total_w    = sum(weights)
+                        w_avg      = sum(pa[i] * weights[i] for i in range(n)) / total_w
+                        eps_trend_avg = round(w_avg, 4)
+
+                        # How does the estimate compare to weighted trend?
+                        if abs(w_avg) > 0.001:
+                            dev_pct = (eps_estimate - w_avg) / abs(w_avg) * 100
+                        else:
+                            # Near-zero trend avg — compare absolute difference
+                            dev_pct = (eps_estimate - w_avg) * 100
+
+                        eps_vs_trend_pct = round(dev_pct, 2)
+
+                        # Also factor in the average surprise history
+                        # Stocks that consistently beat tend to be bullish setups
+                        avg_surprise = round(sum(past_surprises) / len(past_surprises), 2) if past_surprises else None
+
+                        # ── Sentiment signal ──────────────────────────────────
+                        # Combine: estimate vs weighted trend + beat history
+                        # Score: deviation_pct contributes 70%, avg_surprise 30%
+                        score = dev_pct
+                        if avg_surprise is not None:
+                            score = dev_pct * 0.7 + avg_surprise * 0.3
+
+                        if   score >= 10:
+                            eps_sentiment = 'strongly_bullish'
+                            eps_sentiment_label = 'Strongly Bullish'
+                        elif score >= 4:
+                            eps_sentiment = 'bullish'
+                            eps_sentiment_label = 'Bullish'
+                        elif score >= -4:
+                            eps_sentiment = 'in_line'
+                            eps_sentiment_label = 'In Line'
+                        elif score >= -10:
+                            eps_sentiment = 'bearish'
+                            eps_sentiment_label = 'Bearish'
+                        else:
+                            eps_sentiment = 'strongly_bearish'
+                            eps_sentiment_label = 'Strongly Bearish'
+
+                        past_actuals   = [round(x, 4) for x in pa]
+                        past_surprises = [round(x, 2) for x in past_surprises]
+
+                except Exception as e:
+                    print(f"[EarningsSentiment] {sym}: {e}")
+
             # ── Market cap + name ─────────────────────────────────────────────
             market_cap = None
             short_name = sym
@@ -42621,23 +42709,33 @@ def snowai_earnings_calendar_vault(request):
             except Exception:
                 pass
 
-            is_upcoming = earnings_date >= today_str
             beat = None
             if eps_actual is not None and eps_estimate is not None:
                 beat = eps_actual >= eps_estimate
-            print(f"[EarningsCalendar] {sym} → {earnings_date} ({'upcoming' if is_upcoming else 'past'}) EPS:{eps_actual} est:{eps_estimate} surp:{surprise_pct}% rev:{revenue_actual}")
+
+            print(f"[EarningsCalendar] {sym} → {earnings_date} ({'upcoming' if is_upcoming else 'past'}) "
+                  f"EPS:{eps_actual} est:{eps_estimate} surp:{surprise_pct}% "
+                  f"sentiment:{eps_sentiment} trendAvg:{eps_trend_avg} dev:{eps_vs_trend_pct}%")
+
             return {
-                'ticker':          sym,
-                'name':            short_name,
-                'earningsDate':    earnings_date,
-                'epsEstimate':     eps_estimate,
-                'epsActual':       eps_actual,
-                'surprisePct':     surprise_pct if 'surprise_pct' in dir() else None,
-                'revenueActual':   revenue_actual,
-                'revenueEstimate': revenue_estimate,
-                'beat':            beat,
-                'marketCap':       market_cap,
-                'isUpcoming':      is_upcoming,
+                'ticker':             sym,
+                'name':               short_name,
+                'earningsDate':       earnings_date,
+                'epsEstimate':        eps_estimate,
+                'epsActual':          eps_actual,
+                'surprisePct':        surprise_pct if 'surprise_pct' in dir() else None,
+                'revenueActual':      revenue_actual,
+                'revenueEstimate':    revenue_estimate,
+                'beat':               beat,
+                'marketCap':          market_cap,
+                'isUpcoming':         is_upcoming,
+                # Upcoming sentiment fields
+                'epsSentiment':       eps_sentiment,
+                'epsSentimentLabel':  eps_sentiment_label,
+                'epsTrendAvg':        eps_trend_avg,
+                'epsVsTrendPct':      eps_vs_trend_pct,
+                'pastActuals':        past_actuals,      # [oldest → newest]
+                'pastSurprises':      past_surprises,    # avg surprise history
             }
         except Exception as e:
             print(f"[EarningsCalendar] {sym} FAILED: {e}")
