@@ -41896,6 +41896,7 @@ def ideas_hub_stock_info_v1(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+
 import json
 import math
 import numpy as np
@@ -42768,12 +42769,143 @@ def snowai_earnings_calendar_vault(request):
     return JsonResponse({'results': results, 'count': len(results)})
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Post-Earnings Price Reaction — single ticker or bulk
+# ─────────────────────────────────────────────────────────────────────────────
+@csrf_exempt
+def snowai_earnings_reaction_vault(request):
+    """
+    POST { "ticker": "AAPL", "earningsDate": "2024-12-31" }
+      → returns price reaction for that specific date
+    POST { "tickers": [{"ticker":"AAPL","earningsDate":"2024-12-31"}, ...] }
+      → bulk mode, returns reaction for each
+    """
+    import concurrent.futures
+    from datetime import datetime, timedelta, timezone
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    def fetch_reaction(ticker, earnings_date_str):
+        try:
+            ed = datetime.strptime(earnings_date_str, '%Y-%m-%d')
+            # Fetch 3 weeks of data around the earnings date
+            start = (ed - timedelta(days=5)).strftime('%Y-%m-%d')
+            end   = (ed + timedelta(days=16)).strftime('%Y-%m-%d')
+
+            hist = yf.download(ticker, start=start, end=end,
+                               auto_adjust=True, progress=False)
+            if hist.empty:
+                return None
+
+            hist.index = hist.index.tz_localize(None)
+            dates = [d.strftime('%Y-%m-%d') for d in hist.index]
+
+            # Find the earnings date or the next trading day after it
+            ed_idx = None
+            for i, d in enumerate(dates):
+                if d >= earnings_date_str:
+                    ed_idx = i
+                    break
+            if ed_idx is None:
+                return None
+
+            def safe_price(idx):
+                if idx < 0 or idx >= len(hist):
+                    return None
+                try:
+                    c = hist['Close'].iloc[idx]
+                    return round(float(c), 4)
+                except Exception:
+                    return None
+
+            pre_close  = safe_price(ed_idx - 1)   # day before earnings
+            earn_close = safe_price(ed_idx)        # earnings day close
+            d1_close   = safe_price(ed_idx + 1)
+            d3_close   = safe_price(ed_idx + 3)
+            d5_close   = safe_price(ed_idx + 5)
+            d10_close  = safe_price(ed_idx + 10)
+
+            def pct(base, val):
+                if base and val:
+                    return round((val - base) / base * 100, 2)
+                return None
+
+            # Build daily close series for sparkline (from day before to D+10)
+            sparkline = []
+            for i in range(max(0, ed_idx - 1), min(len(hist), ed_idx + 11)):
+                sparkline.append({
+                    'date':  dates[i],
+                    'close': safe_price(i),
+                    'dayN':  i - ed_idx,    # -1=pre, 0=earnings day, 1=D+1 etc
+                })
+
+            return {
+                'ticker':       ticker,
+                'earningsDate': earnings_date_str,
+                'earningsDay':  dates[ed_idx] if ed_idx < len(dates) else earnings_date_str,
+                'preClose':     pre_close,
+                'earnClose':    earn_close,
+                'pctEarnDay':   pct(pre_close, earn_close),
+                'd1Close':      d1_close,
+                'pctD1':        pct(pre_close, d1_close),
+                'd3Close':      d3_close,
+                'pctD3':        pct(pre_close, d3_close),
+                'd5Close':      d5_close,
+                'pctD5':        pct(pre_close, d5_close),
+                'd10Close':     d10_close,
+                'pctD10':       pct(pre_close, d10_close),
+                'sparkline':    sparkline,
+            }
+        except Exception as e:
+            print(f"[EarningsReaction] {ticker} {earnings_date_str}: {e}")
+            return None
+
+    # Single ticker mode
+    if 'ticker' in body and 'earningsDate' in body:
+        result = fetch_reaction(body['ticker'], body['earningsDate'])
+        if not result:
+            return JsonResponse({'error': 'No data found for that date'}, status=404)
+        return JsonResponse(result)
+
+    # Bulk mode
+    items = body.get('tickers', [])
+    if not items:
+        return JsonResponse({'error': 'No tickers provided'}, status=400)
+    items = items[:40]  # cap at 40 for bulk
+
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(fetch_reaction, it['ticker'], it['earningsDate']): it
+            for it in items if it.get('ticker') and it.get('earningsDate')
+        }
+        for future in concurrent.futures.as_completed(futures, timeout=55):
+            try:
+                res = future.result()
+                if res:
+                    results.append(res)
+            except Exception as e:
+                print(f"[EarningsReaction] bulk future error: {e}")
+
+    results.sort(key=lambda x: abs(x.get('pctD1') or 0), reverse=True)
+    return JsonResponse({'results': results, 'count': len(results)})
+
+
 # ── urls.py — add ALL endpoints: ─────────────────────────────────────────────
 # path('api/snowai_thundervault_ohlcv_chart_stream/',   views.snowai_thundervault_ohlcv_chart_stream),
 # path('api/snowai_vortex_analyst_ratings_vault/',      views.snowai_vortex_analyst_ratings_vault),
 # path('api/snowai_options_flow_vault/',                views.snowai_options_flow_vault),
 # path('api/snowai_correlation_matrix_vault/',          views.snowai_correlation_matrix_vault),
 # path('api/snowai_earnings_calendar_vault/',           views.snowai_earnings_calendar_vault),
+# path('api/snowai_earnings_reaction_vault/',          views.snowai_earnings_reaction_vault),
+
 
 
 from sklearn.linear_model import LinearRegression
