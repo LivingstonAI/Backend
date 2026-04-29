@@ -47937,6 +47937,7 @@ def snowai_spotify_delete_entry(request, entry_id):
     entry.delete()
     return JsonResponse({'message': f'"{title}" deleted.', 'id': entry_id})
 
+
 import csv
 import io
 import logging
@@ -47955,6 +47956,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 from sklearn.linear_model import LinearRegression
 import pytz
+import pandas as pd
 
 
 logger = logging.getLogger(__name__)
@@ -48566,18 +48568,10 @@ def run_period_snapshot(period_days: int):
     return total_saved
 
 # ============================================================
-# STAGGERED SCHEDULER
-# ============================================================
-
-# ============================================================
 # STAGGERED SCHEDULER - 20 MINUTE INTERVALS
 # ============================================================
 
 NY_TIMEZONE = pytz.timezone('America/New_York')
-
-# STAGGERED MSS JOBS - Each period runs 20 minutes apart
-# Starting at 12:00 PM NYC time, each subsequent period runs 20 minutes later
-# This gives each period plenty of time to complete and avoids rate limits
 
 scheduler.add_job(
     lambda: run_period_snapshot(10),
@@ -48645,6 +48639,7 @@ scheduler.add_job(
 
 logger.info("[MSS Scheduler] All staggered jobs registered with 20-minute intervals")
 logger.info("Schedule: 10d@12:00, 15d@12:20, 20d@12:40, 30d@13:00, 45d@13:20, 60d@13:40, 90d@14:00, 180d@14:20 NYC time")
+
 # ============================================================
 # API VIEWS - ALL THE ENDPOINTS
 # ============================================================
@@ -48798,17 +48793,26 @@ def mss_run_period(request, period):
 @csrf_exempt
 @require_GET
 def mss_filtered_data(request):
-    """GET /api/mss/filtered-data/ - Server-side filtering for ALL data"""
+    """
+    GET /api/mss/filtered-data/ - Server-side filtering with multi-value support.
+
+    Supports multi-select for:
+      - category  (comma-separated: stable,choppy)
+      - asset_class (comma-separated: stocks,forex)
+      - analyst_bias, put_call_bias
+
+    All other filters unchanged.
+    """
     try:
         period = int(request.GET.get('period', 60))
         days_back = int(request.GET.get('days', 365))
         symbol_filter = request.GET.get('symbol', '').upper().strip()
-        asset_class_filter = request.GET.get('asset_class', '')
+        asset_class_filter = request.GET.get('asset_class', '')  # kept for backwards compat
         
         filters_json = request.GET.get('filters', '{}')
         try:
             advanced_filters = json.loads(filters_json)
-        except:
+        except Exception:
             advanced_filters = {}
         
         since = date.today() - timedelta(days=days_back)
@@ -48817,19 +48821,37 @@ def mss_filtered_data(request):
         if symbol_filter:
             qs = qs.filter(symbol=symbol_filter)
         
-        if asset_class_filter and asset_class_filter != 'all':
-            qs = qs.filter(asset_class=asset_class_filter)
+        # ── asset_class: support both old single-value param and new multi-value in filters ──
+        asset_classes_raw = advanced_filters.get('text', {}).get('asset_class', asset_class_filter)
+        if asset_classes_raw and asset_classes_raw not in ('', 'all'):
+            ac_list = [v.strip() for v in asset_classes_raw.split(',') if v.strip() and v.strip() != 'all']
+            if ac_list:
+                qs = qs.filter(asset_class__in=ac_list)
         
+        # ── Numeric range filters ──
         numeric_filters = advanced_filters.get('numeric', {})
         for key, range_vals in numeric_filters.items():
-            if range_vals.get('min') is not None and range_vals['min'] != '':
+            if range_vals.get('min') not in (None, ''):
                 qs = qs.filter(**{f"{key}__gte": float(range_vals['min'])})
-            if range_vals.get('max') is not None and range_vals['max'] != '':
+            if range_vals.get('max') not in (None, ''):
                 qs = qs.filter(**{f"{key}__lte": float(range_vals['max'])})
+        
+        # ── Text / multi-value filters ──
+        # Fields that support multi-select (comma-separated list of values)
+        MULTI_SELECT_FIELDS = {'category', 'analyst_bias', 'put_call_bias', 'asset_class', 'sector'}
         
         text_filters = advanced_filters.get('text', {})
         for key, value in text_filters.items():
-            if value and value != 'all':
+            if key == 'asset_class':
+                continue  # already handled above
+            if not value or value == 'all':
+                continue
+            if key in MULTI_SELECT_FIELDS:
+                values = [v.strip() for v in value.split(',') if v.strip() and v.strip() != 'all']
+                if values:
+                    qs = qs.filter(**{f"{key}__in": values})
+            else:
+                # Plain text match (symbol already handled, sector exact match)
                 qs = qs.filter(**{key: value})
         
         qs = qs.order_by('-date_taken', 'symbol')
@@ -48848,7 +48870,12 @@ def mss_filtered_data(request):
                 'put_call_ratio': r.put_call_ratio, 'put_call_bias': r.put_call_bias,
             })
         
-        return JsonResponse({'success': True, 'total': len(records), 'data': records, 'filters_applied': advanced_filters})
+        return JsonResponse({
+            'success': True,
+            'total': len(records),
+            'data': records,
+            'filters_applied': advanced_filters,
+        })
         
     except Exception as e:
         logger.error(f"Filtered data error: {e}")
@@ -48868,93 +48895,174 @@ def mss_scheduler_status(request):
     return JsonResponse({'success': True, 'scheduler_running': scheduler.running, 'jobs': jobs})
 
 
-import yfinance as yf
-import pandas as pd
-import json
-from datetime import datetime, timedelta
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET
+# ============================================================
+# CHART DATA ENDPOINTS
+# ============================================================
 
-# ============================================================
-# CHART DATA ENDPOINTS (Unique names to avoid conflicts)
-# ============================================================
+# ---------------------------------------------------------------------------
+# yfinance intraday interval constraints
+#   interval  max_period (yf param)   notes
+#   1m        7d                      only last 7 calendar days
+#   2m        60d
+#   5m        60d
+#   15m       60d
+#   30m       60d
+#   60m / 1h  730d
+#   90m       60d
+#   1d        unlimited
+#   1wk       unlimited
+#   1mo       unlimited
+#
+# The frontend sends (period, interval) pairs.  We normalise them here
+# so that we never ask yf for something it can't deliver.
+# ---------------------------------------------------------------------------
+
+def _resolve_yf_params(period: str, interval: str):
+    """
+    Convert (period, interval) from the frontend into valid yfinance params.
+    Returns (yf_period, yf_interval, use_start_end, start, end).
+
+    For the tricky 1H view we fetch last 5d with interval='1m' — yfinance
+    supports up to 7 calendar days of 1m data, so 5d is always safe.
+    """
+    now = datetime.utcnow()
+
+    # Normalise interval aliases
+    interval_norm = {
+        '1m': '1m',
+        '5m': '5m',
+        '15m': '15m',
+        '30m': '30m',
+        '1h': '1h',
+        '60m': '1h',
+        '4h': '1h',  # yf has no 4h; use 1h
+        '1d': '1d',
+        '1wk': '1wk',
+        '1mo': '1mo',
+    }.get(interval, '1d')
+
+    period_norm = period  # pass through — validated below
+
+    # ── Special case: "last 1 hour" view ──
+    # Frontend passes period='1h_view' or we detect it from the GRID_TF label '1H'
+    # The frontend now sends period='1d' & interval='1m' for the 1H chart tile.
+    # yf supports 1m data only for the last 7 calendar days.
+    if interval_norm == '1m':
+        # fetch last 5 calendar days of 1-minute data — yf can always serve this
+        start = now - timedelta(days=5)
+        return None, '1m', True, start, now
+
+    # ── 5m / 15m / 30m — yf allows up to 60 days ──
+    if interval_norm in ('5m', '15m', '30m'):
+        # Map period to something within 60d
+        period_days_map = {
+            '1d': 1, '5d': 5, '1mo': 30, '3mo': 60,
+        }
+        pd_days = period_days_map.get(period_norm, 5)
+        pd_days = min(pd_days, 59)
+        start = now - timedelta(days=pd_days)
+        return None, interval_norm, True, start, now
+
+    # ── 1h — yf allows up to 730 days ──
+    if interval_norm == '1h':
+        period_days_map = {
+            '1d': 1, '5d': 5, '1mo': 30, '3mo': 90,
+            '6mo': 180, '1y': 365, '2y': 730,
+        }
+        pd_days = period_days_map.get(period_norm, 30)
+        pd_days = min(pd_days, 729)
+        start = now - timedelta(days=pd_days)
+        return None, '1h', True, start, now
+
+    # ── Daily / weekly / monthly — just pass period through ──
+    valid_periods = {'1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'}
+    if period_norm not in valid_periods:
+        period_norm = '1mo'
+
+    return period_norm, interval_norm, False, None, None
+
 
 @csrf_exempt
 @require_GET
 def mss_chart_asset_data_v1(request, symbol):
     """
     GET /api/mss-chart/v1/data/<symbol>/?period=1mo&interval=1d
-    Returns OHLCV data for TradingView Lightweight Chart
+
+    Returns OHLCV data for TradingView Lightweight Chart.
+    Handles the full matrix of (period, interval) combinations including
+    the previously-broken 1H and short intraday views.
     """
     try:
         period = request.GET.get('period', '1mo')
         interval = request.GET.get('interval', '1d')
-        
-        # Map interval to yfinance format
-        interval_map = {
-            '5m': '5m',
-            '15m': '15m', 
-            '30m': '30m',
-            '1h': '1h',
-            '4h': '1h',  # yfinance doesn't have 4h, use 1h
-            '1d': '1d',
-            '1wk': '1wk',
-            '1mo': '1mo'
-        }
-        
-        # Map period to yfinance format
-        period_map = {
-            '1d': '1d',
-            '5d': '5d',
-            '1mo': '1mo',
-            '3mo': '3mo',
-            '6mo': '6mo',
-            '1y': '1y',
-            '2y': '2y',
-            '5y': '5y'
-        }
-        
-        yf_interval = interval_map.get(interval, '1d')
-        yf_period = period_map.get(period, '1mo')
-        
+
+        yf_period, yf_interval, use_start_end, start, end = _resolve_yf_params(period, interval)
+
         ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=yf_period, interval=yf_interval)
-        
-        if hist.empty:
-            return JsonResponse({'success': False, 'error': 'No data available'}, status=404)
-        
-        # Format data for TradingView Lightweight Chart
+
+        if use_start_end:
+            hist = ticker.history(start=start, end=end, interval=yf_interval)
+        else:
+            hist = ticker.history(period=yf_period, interval=yf_interval)
+
+        # Fallback: if the resolved params returned nothing, retry with 1d / daily
+        if hist is None or hist.empty:
+            logger.warning(f"[chart] No data for {symbol} ({period}/{interval}) → retrying with 1d/1d")
+            hist = ticker.history(period='1d', interval='5m')
+
+        if hist is None or hist.empty:
+            return JsonResponse({'success': False, 'error': 'No data available for this symbol/timeframe.'}, status=404)
+
+        # Remove timezone info from index so timestamps are always UTC-naive ints
+        if hist.index.tzinfo is not None:
+            hist.index = hist.index.tz_convert('UTC').tz_localize(None)
+
         chart_data = []
         for idx, row in hist.iterrows():
+            ts = int(idx.timestamp())
+            o = float(row['Open'])
+            h = float(row['High'])
+            l = float(row['Low'])
+            c = float(row['Close'])
+            v = float(row.get('Volume', 0) or 0)
+
+            # Skip bad bars (yf sometimes emits rows where OHLC are all 0)
+            if h == 0 and l == 0:
+                continue
+
             chart_data.append({
-                'time': int(idx.timestamp()),
-                'open': float(row['Open']),
-                'high': float(row['High']),
-                'low': float(row['Low']),
-                'close': float(row['Close']),
-                'volume': float(row['Volume']) if 'Volume' in row else 0
+                'time': ts,
+                'open': round(o, 6),
+                'high': round(h, 6),
+                'low': round(l, 6),
+                'close': round(c, 6),
+                'volume': round(v, 0),
             })
-        
-        # Get additional metadata
-        info = ticker.info
-        metadata = {
-            'symbol': symbol,
-            'name': info.get('longName', symbol),
-            'sector': info.get('sector', 'N/A'),
-            'marketCap': info.get('marketCap', 0),
-            'currency': info.get('currency', 'USD')
-        }
-        
+
+        if not chart_data:
+            return JsonResponse({'success': False, 'error': 'All bars were empty for this timeframe.'}, status=404)
+
+        # Metadata (best-effort — info can be slow/unavailable for some symbols)
+        try:
+            info = ticker.fast_info
+            metadata = {
+                'symbol': symbol,
+                'name': getattr(info, 'name', symbol) or symbol,
+                'sector': SECTOR_MAP.get(symbol, 'N/A'),
+                'currency': getattr(info, 'currency', 'USD') or 'USD',
+            }
+        except Exception:
+            metadata = {'symbol': symbol, 'name': symbol, 'sector': SECTOR_MAP.get(symbol, 'N/A'), 'currency': 'USD'}
+
         return JsonResponse({
             'success': True,
             'data': chart_data,
             'metadata': metadata,
-            'interval': interval,
-            'period': period,
-            'count': len(chart_data)
+            'interval': yf_interval,
+            'period': yf_period or period,
+            'count': len(chart_data),
         })
-        
+
     except Exception as e:
         logger.error(f"Chart data error for {symbol}: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
@@ -48965,7 +49073,7 @@ def mss_chart_asset_data_v1(request, symbol):
 def mss_chart_mss_overlay_v1(request, symbol):
     """
     GET /api/mss-chart/v1/mss-overlay/<symbol>/?period=90
-    Returns MSS values over time to overlay on chart
+    Returns MSS values over time to overlay on chart.
     """
     try:
         period_days = int(request.GET.get('period', 60))
@@ -49005,7 +49113,7 @@ def mss_chart_mss_overlay_v1(request, symbol):
 def mss_chart_indicators_v1(request, symbol):
     """
     GET /api/mss-chart/v1/indicators/<symbol>/?period=1mo&indicators=sma,ema,rsi
-    Returns technical indicators
+    Returns technical indicators.
     """
     try:
         period = request.GET.get('period', '1mo')
@@ -49021,21 +49129,18 @@ def mss_chart_indicators_v1(request, symbol):
         closes = hist['Close'].values
         result = {'timestamps': [int(idx.timestamp()) for idx in hist.index]}
         
-        # Simple Moving Average
         if 'sma' in indicators_list:
             sma_20 = pd.Series(closes).rolling(window=20).mean().fillna(0).tolist()
             sma_50 = pd.Series(closes).rolling(window=50).mean().fillna(0).tolist()
             result['sma_20'] = sma_20
             result['sma_50'] = sma_50
         
-        # Exponential Moving Average
         if 'ema' in indicators_list:
             ema_12 = pd.Series(closes).ewm(span=12, adjust=False).mean().fillna(0).tolist()
             ema_26 = pd.Series(closes).ewm(span=26, adjust=False).mean().fillna(0).tolist()
             result['ema_12'] = ema_12
             result['ema_26'] = ema_26
         
-        # RSI
         if 'rsi' in indicators_list:
             delta = pd.Series(closes).diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -49044,7 +49149,6 @@ def mss_chart_indicators_v1(request, symbol):
             rsi = (100 - (100 / (1 + rs))).fillna(50).tolist()
             result['rsi'] = rsi
         
-        # Bollinger Bands
         if 'bb' in indicators_list:
             sma_20 = pd.Series(closes).rolling(window=20).mean()
             std_20 = pd.Series(closes).rolling(window=20).std()
@@ -49064,21 +49168,19 @@ def mss_chart_indicators_v1(request, symbol):
 def mss_chart_search_v1(request):
     """
     GET /api/mss-chart/v1/search/?q=AAPL
-    Search for symbols
+    Search for symbols.
     """
     try:
         query = request.GET.get('q', '').upper().strip()
         if len(query) < 2:
             return JsonResponse({'success': True, 'data': []})
         
-        # Search in MSS records first
         symbols = MSSHistoricalRecord.objects.filter(
             symbol__icontains=query
         ).values('symbol', 'asset_class').distinct()[:20]
         
         results = list(symbols)
         
-        # If not enough results, suggest common stocks
         common_stocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'AMD', 'INTC']
         for stock in common_stocks:
             if query in stock and stock not in [r['symbol'] for r in results]:
@@ -49091,7 +49193,6 @@ def mss_chart_search_v1(request):
     except Exception as e:
         logger.error(f"Search error: {e}")
         return JsonResponse({'success': True, 'data': []})
-
     
 def book_order(request):
     if request.method == "POST":
