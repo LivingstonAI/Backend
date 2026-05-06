@@ -42396,9 +42396,6 @@ def snowai_correlation_matrix_vault(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Earnings Calendar endpoint
-# ─────────────────────────────────────────────────────────────────────────────
 @csrf_exempt
 def snowai_earnings_calendar_vault(request):
     import concurrent.futures
@@ -42416,10 +42413,9 @@ def snowai_earnings_calendar_vault(request):
         return JsonResponse({'error': 'No tickers provided'}, status=400)
 
     def sf(v):
-        """Safe float — returns None for NaN/None/unparseable."""
         try:
             f = float(v)
-            return None if (f != f) else f  # NaN check
+            return None if (f != f) else f
         except Exception:
             return None
 
@@ -42434,7 +42430,7 @@ def snowai_earnings_calendar_vault(request):
             today_str     = now.strftime('%Y-%m-%d')
 
             # ── Strategy 1: tk.calendar ───────────────────────────────────────
-            cal = None  # always initialise so later revenue-estimate block is safe
+            cal = None
             try:
                 cal = tk.calendar
                 if isinstance(cal, dict) and cal:
@@ -42455,7 +42451,6 @@ def snowai_earnings_calendar_vault(request):
                         except Exception:
                             pass
                 elif hasattr(cal, 'get'):
-                    # Old yfinance DataFrame-style calendar
                     ed = cal.get('Earnings Date')
                     if ed is not None:
                         ed_list = list(ed) if hasattr(ed, '__iter__') else [ed]
@@ -42469,17 +42464,21 @@ def snowai_earnings_calendar_vault(request):
             except Exception as e:
                 print(f"[EarningsCalendar] {sym} calendar error: {e}")
 
-            # ── Strategy 2: earnings_dates DataFrame ──────────────────────────
-            # CRITICAL: initialise to None BEFORE the try so the variable always
-            # exists even if tk.get_earnings_dates() raises an exception.
+            # ── Strategy 2: earnings_dates — use limit=8 not 16 ──────────────
+            # limit=16 fetches 4 years of data and is the main timeout culprit.
+            # limit=8 = 2 years of quarters, plenty for history + sentiment.
             ed_df = None
             try:
-                ed_df = tk.get_earnings_dates(limit=16)
+                ed_df = tk.get_earnings_dates(limit=8)
             except Exception as e:
                 print(f"[EarningsCalendar] {sym} get_earnings_dates error: {e}")
+                # Fallback: try the property (older yfinance, already cached)
+                try:
+                    ed_df = tk.earnings_dates
+                except Exception:
+                    pass
 
             if ed_df is not None and not ed_df.empty:
-                # Fill upcoming date if calendar strategy missed it
                 if not earnings_date or earnings_date < today_str:
                     try:
                         future_rows = ed_df[ed_df.index >= now]
@@ -42490,7 +42489,6 @@ def snowai_earnings_calendar_vault(request):
                     except Exception:
                         pass
 
-                # Pull EPS + surprise for the matched date
                 if earnings_date:
                     try:
                         for idx, row in ed_df.iterrows():
@@ -42508,7 +42506,7 @@ def snowai_earnings_calendar_vault(request):
                     except Exception as e:
                         print(f"[EarningsCalendar] {sym} EPS row parse error: {e}")
 
-            # ── Revenue from quarterly_income_stmt ────────────────────────────
+            # ── Revenue ───────────────────────────────────────────────────────
             revenue_actual   = None
             revenue_estimate = None
             try:
@@ -42521,7 +42519,7 @@ def snowai_earnings_calendar_vault(request):
                             if abs((col_dt - ed_dt).days) <= 45:
                                 if 'Total Revenue' in qi.index:
                                     rv = qi.loc['Total Revenue'].get(col)
-                                    if rv is not None and rv == rv:  # not NaN
+                                    if rv is not None and rv == rv:
                                         revenue_actual = int(float(rv))
                                 break
                         except Exception:
@@ -42529,7 +42527,6 @@ def snowai_earnings_calendar_vault(request):
             except Exception:
                 pass
 
-            # Revenue estimate from calendar dict
             try:
                 if isinstance(cal, dict) and cal:
                     re_val = cal.get('Revenue Estimate') or cal.get('Revenue')
@@ -42546,15 +42543,14 @@ def snowai_earnings_calendar_vault(request):
 
             is_upcoming = earnings_date >= today_str
 
-            # ── Historical quarters (always — both upcoming and past) ──────────
-            # ed_df may be None if the fetch failed — guard every access.
+            # ── Historical quarters ───────────────────────────────────────────
             historical_quarters = []
             if ed_df is not None and not ed_df.empty:
                 try:
                     for idx, row in ed_df.iterrows():
                         row_date = str(idx)[:10]
                         if row_date >= today_str:
-                            continue  # skip future rows
+                            continue
                         act  = sf(row.get('Reported EPS'))
                         est  = sf(row.get('EPS Estimate'))
                         surp = sf(row.get('Surprise(%)'))
@@ -42625,7 +42621,7 @@ def snowai_earnings_calendar_vault(request):
                 except Exception as e:
                     print(f"[EarningsSentiment] {sym}: {e}")
 
-            # ── Market cap + short name ───────────────────────────────────────
+            # ── Market cap + name ─────────────────────────────────────────────
             market_cap = None
             short_name = sym
             try:
@@ -42660,14 +42656,12 @@ def snowai_earnings_calendar_vault(request):
                 'beat':               beat,
                 'marketCap':          market_cap,
                 'isUpcoming':         is_upcoming,
-                # Upcoming sentiment
                 'epsSentiment':       eps_sentiment,
                 'epsSentimentLabel':  eps_sentiment_label,
                 'epsTrendAvg':        eps_trend_avg,
                 'epsVsTrendPct':      eps_vs_trend_pct,
                 'pastActuals':        past_actuals,
                 'pastSurprises':      past_surprises,
-                # Rich historical data (both upcoming + past)
                 'historicalQuarters': historical_quarters,
             }
         except Exception as e:
@@ -42675,31 +42669,61 @@ def snowai_earnings_calendar_vault(request):
             return None
 
     # ── Dispatch ──────────────────────────────────────────────────────────────
+    results = []
+
     if len(tickers) == 1:
-        result  = fetch_one(tickers[0])
-        results = [result] if result else []
+        result = fetch_one(tickers[0])
+        if result:
+            results.append(result)
     else:
-        results    = []
-        batch_size = 25
-        for i in range(0, len(tickers), batch_size):
-            batch = tickers[i:i + batch_size]
-            print(f"[EarningsCalendar] batch {i // batch_size + 1} / "
-                  f"{(len(tickers) + batch_size - 1) // batch_size} ({len(batch)} tickers)")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-                futures = {executor.submit(fetch_one, sym): sym for sym in batch}
-                for future in concurrent.futures.as_completed(futures, timeout=60):
-                    try:
-                        res = future.result()
-                        if res:
-                            results.append(res)
-                    except concurrent.futures.TimeoutError:
-                        print("[EarningsCalendar] ticker timed out, skipping")
-                    except Exception as e:
-                        print(f"[EarningsCalendar] future error: {e}")
+        # Smaller batches + longer per-batch timeout + graceful partial return
+        # on timeout instead of 500-ing the whole request.
+        BATCH_SIZE     = 15   # was 25 — smaller = less likely to hit timeout wall
+        BATCH_TIMEOUT  = 110  # seconds per batch — generous but under gunicorn's 120s
+        WORKER_COUNT   = 6    # was 8 — fewer concurrent yfinance calls = less throttling
+
+        for batch_idx, i in enumerate(range(0, len(tickers), BATCH_SIZE)):
+            batch = tickers[i:i + BATCH_SIZE]
+            print(f"[EarningsCalendar] batch {batch_idx + 1} / "
+                  f"{(len(tickers) + BATCH_SIZE - 1) // BATCH_SIZE} ({len(batch)} tickers)")
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=WORKER_COUNT) as executor:
+                future_to_sym = {executor.submit(fetch_one, sym): sym for sym in batch}
+
+                # Collect completed futures one by one; cancel stragglers on timeout
+                deadline = __import__('time').time() + BATCH_TIMEOUT
+                pending  = set(future_to_sym.keys())
+
+                while pending:
+                    remaining = deadline - __import__('time').time()
+                    if remaining <= 0:
+                        # Cancel whatever is still running and move on with
+                        # partial results — DO NOT raise, just log and break
+                        slow = [future_to_sym[f] for f in pending]
+                        print(f"[EarningsCalendar] batch {batch_idx + 1} partial timeout — "
+                              f"skipping {len(slow)} slow tickers: {slow}")
+                        for f in pending:
+                            f.cancel()
+                        break
+
+                    done, pending = concurrent.futures.wait(
+                        pending,
+                        timeout=min(remaining, 10),  # check in 10-second slices
+                        return_when=concurrent.futures.FIRST_COMPLETED,
+                    )
+
+                    for future in done:
+                        sym = future_to_sym[future]
+                        try:
+                            res = future.result()
+                            if res:
+                                results.append(res)
+                        except Exception as e:
+                            print(f"[EarningsCalendar] {sym} future error: {e}")
 
     today = date_cls.today().isoformat()
     results.sort(key=lambda x: (
-        x['earningsDate'] < today,   # upcoming first
+        x['earningsDate'] < today,
         x['earningsDate'],
         -(x['marketCap'] or 0),
     ))
