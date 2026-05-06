@@ -41913,13 +41913,8 @@ def _to_series(candles, key='close'):
     return np.array([c[key] for c in candles], dtype=float)
 
 def compute_twap(candles):
-    """
-    Trapezoidal integration of close price over time.
-    TWAP(i) = integral[0..i](price · dt) / elapsed_time
-    Returns list of {time, value} dicts + summary stats.
-    """
     if len(candles) < 2:
-        return [], []
+        return [], [], [], {}
     integral = 0.0
     twap_pts = []
     for i, c in enumerate(candles):
@@ -41930,8 +41925,8 @@ def compute_twap(candles):
         elapsed = candles[i]['time'] - candles[0]['time'] or 1
         twap_pts.append({'time': c['time'], 'value': round(integral / elapsed, 4)})
 
-    closes   = _to_series(candles)
-    twap_arr = np.array([p['value'] for p in twap_pts])
+    closes     = _to_series(candles)
+    twap_arr   = np.array([p['value'] for p in twap_pts])
     deviations = closes - twap_arr
     std        = float(np.std(deviations))
     band_top   = [{'time': p['time'], 'value': round(p['value'] + std, 4)} for p in twap_pts]
@@ -41954,15 +41949,12 @@ def compute_twap(candles):
 
 
 def compute_rsi(candles, period=14):
-    """Standard Wilder RSI."""
     closes = _to_series(candles)
     if len(closes) < period + 1:
         return []
-    deltas = np.diff(closes)
-    gains  = np.where(deltas > 0, deltas, 0.0)
-    losses = np.where(deltas < 0, -deltas, 0.0)
-
-    # Wilder smoothing (EMA with α=1/period)
+    deltas   = np.diff(closes)
+    gains    = np.where(deltas > 0, deltas, 0.0)
+    losses   = np.where(deltas < 0, -deltas, 0.0)
     avg_gain = np.mean(gains[:period])
     avg_loss = np.mean(losses[:period])
     rsi_vals = []
@@ -41976,7 +41968,6 @@ def compute_rsi(candles, period=14):
 
 
 def compute_bollinger(candles, period=20, num_std=2):
-    """Bollinger Bands: SMA ± num_std × rolling stddev."""
     closes = _to_series(candles)
     if len(closes) < period:
         return [], [], []
@@ -41993,12 +41984,11 @@ def compute_bollinger(candles, period=20, num_std=2):
 
 
 def compute_ema(candles, period):
-    """Exponential moving average."""
     closes = _to_series(candles)
     if len(closes) < period:
         return []
-    k   = 2 / (period + 1)
-    ema = float(np.mean(closes[:period]))
+    k      = 2 / (period + 1)
+    ema    = float(np.mean(closes[:period]))
     result = []
     for i in range(period, len(closes)):
         ema = closes[i] * k + ema * (1 - k)
@@ -42011,11 +42001,6 @@ def compute_ema(candles, period):
 # ─────────────────────────────────────────────────────────────────────────────
 @csrf_exempt
 def snowai_thundervault_ohlcv_chart_stream(request):
-    """
-    Returns OHLCV candles + pre-computed indicators (TWAP, RSI, Bollinger, EMAs).
-    POST: { "ticker": "AAPL", "interval": "1D", "indicators": ["twap","rsi","bb","ema"] }
-    All indicator keys are optional — omit to skip computation.
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
 
@@ -42023,7 +42008,7 @@ def snowai_thundervault_ohlcv_chart_stream(request):
         body       = json.loads(request.body)
         ticker     = body.get('ticker', '').strip().upper()
         interval   = body.get('interval', '1D')
-        indicators = body.get('indicators', [])   # list of strings
+        indicators = body.get('indicators', [])
         pre_post   = bool(body.get('prePost', False))
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
@@ -42050,7 +42035,6 @@ def snowai_thundervault_ohlcv_chart_stream(request):
     cfg         = interval_map.get(interval, interval_map['1D'])
     resample_4h = (interval == '4h')
 
-    # Pre/post market only available on intraday intervals
     INTRADAY_INTERVALS = {'1m', '5m', '15m', '30m', '1h', '4h'}
     use_prepost = pre_post and (interval in INTRADAY_INTERVALS)
 
@@ -42089,17 +42073,15 @@ def snowai_thundervault_ohlcv_chart_stream(request):
                 continue
         except (TypeError, ValueError):
             continue
-        # Tag session type for frontend awareness
-        # NYSE: pre 04:00-09:30 ET, regular 09:30-16:00 ET, post 16:00-20:00 ET
         try:
             import pytz
-            et_tz    = pytz.timezone('America/New_York')
-            et_dt    = ts.astimezone(et_tz) if ts.tzinfo else ts.tz_localize('UTC').astimezone(et_tz)
-            et_mins  = et_dt.hour * 60 + et_dt.minute
+            et_tz       = pytz.timezone('America/New_York')
+            et_dt       = ts.astimezone(et_tz) if ts.tzinfo else ts.tz_localize('UTC').astimezone(et_tz)
+            et_mins     = et_dt.hour * 60 + et_dt.minute
             if   et_mins < 9 * 60 + 30:  session_tag = 'pre'
             elif et_mins < 16 * 60:       session_tag = 'regular'
             elif et_mins < 20 * 60:       session_tag = 'post'
-            else:                         session_tag = 'pre'  # next day pre
+            else:                         session_tag = 'pre'
         except Exception:
             session_tag = 'regular'
 
@@ -42113,15 +42095,20 @@ def snowai_thundervault_ohlcv_chart_stream(request):
             'session': session_tag,
         })
 
-    # ── Compute requested indicators ──────────────────────────────────────────
-    response = {'candles': candles, 'ticker': ticker, 'interval': interval, 'count': len(candles), 'prePost': use_prepost}
+    response = {
+        'candles':  candles,
+        'ticker':   ticker,
+        'interval': interval,
+        'count':    len(candles),
+        'prePost':  use_prepost,
+    }
 
     if 'twap' in indicators:
         twap, band_top, band_bot, stats = compute_twap(candles)
-        response['twap']      = twap
+        response['twap']        = twap
         response['twapBandTop'] = band_top
         response['twapBandBot'] = band_bot
-        response['twapStats'] = stats
+        response['twapStats']   = stats
 
     if 'rsi' in indicators:
         response['rsi'] = compute_rsi(candles, period=14)
@@ -42145,21 +42132,6 @@ def snowai_thundervault_ohlcv_chart_stream(request):
 # ─────────────────────────────────────────────────────────────────────────────
 @csrf_exempt
 def snowai_vortex_analyst_ratings_vault(request):
-    """
-    Returns comprehensive analyst ratings, price targets, and recommendation
-    history for a given ticker using yfinance.
-
-    POST: { "ticker": "AAPL" }
-
-    Returns:
-    {
-      "summary": { "strongBuy", "buy", "hold", "sell", "strongSell", "total",
-                   "bullishPct", "consensus" },
-      "priceTarget": { "current", "mean", "low", "high", "numberOfAnalysts" },
-      "recentRatings": [ { "date", "firm", "toGrade", "fromGrade", "action" }, ... ],
-      "history": [ { "period", "strongBuy", "buy", "hold", "sell", "strongSell" }, ... ]
-    }
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
 
@@ -42179,32 +42151,24 @@ def snowai_vortex_analyst_ratings_vault(request):
 
     response = {}
 
-    # ── 1. Recommendations summary (strongBuy / buy / hold / sell / strongSell) ──
     try:
         rec_summary = tk.recommendations_summary
         if rec_summary is not None and not rec_summary.empty:
-            # most recent period is index 0
             latest = rec_summary.iloc[0]
-            sb  = int(latest.get('strongBuy',  0))
-            b   = int(latest.get('buy',        0))
-            h   = int(latest.get('hold',       0))
-            s   = int(latest.get('sell',       0))
-            ss  = int(latest.get('strongSell', 0))
+            sb    = int(latest.get('strongBuy',  0))
+            b     = int(latest.get('buy',        0))
+            h     = int(latest.get('hold',       0))
+            s     = int(latest.get('sell',       0))
+            ss    = int(latest.get('strongSell', 0))
             total = sb + b + h + s + ss
             bullish_pct = round((sb + b) / total * 100, 1) if total else 0
             bearish_pct = round((s + ss) / total * 100, 1) if total else 0
 
-            # Consensus label
-            if bullish_pct >= 65:
-                consensus = 'STRONG BUY'
-            elif bullish_pct >= 50:
-                consensus = 'BUY'
-            elif bearish_pct >= 65:
-                consensus = 'STRONG SELL'
-            elif bearish_pct >= 50:
-                consensus = 'SELL'
-            else:
-                consensus = 'HOLD'
+            if   bullish_pct >= 65: consensus = 'STRONG BUY'
+            elif bullish_pct >= 50: consensus = 'BUY'
+            elif bearish_pct >= 65: consensus = 'STRONG SELL'
+            elif bearish_pct >= 50: consensus = 'SELL'
+            else:                   consensus = 'HOLD'
 
             response['summary'] = {
                 'strongBuy':  sb,
@@ -42218,7 +42182,6 @@ def snowai_vortex_analyst_ratings_vault(request):
                 'consensus':  consensus,
             }
 
-            # Full history (all periods)
             history = []
             for _, row in rec_summary.iterrows():
                 history.append({
@@ -42233,41 +42196,37 @@ def snowai_vortex_analyst_ratings_vault(request):
     except Exception as e:
         response['summaryError'] = str(e)
 
-    # ── 2. Analyst price targets ──
     try:
         pt = tk.analyst_price_targets
         if pt is not None:
-            # analyst_price_targets is a dict-like object
             def safe(val):
                 try:
                     v = float(val)
                     return round(v, 2) if not math.isnan(v) else None
                 except (TypeError, ValueError):
                     return None
-
             response['priceTarget'] = {
-                'current':           safe(pt.get('current')),
-                'mean':              safe(pt.get('mean')),
-                'low':               safe(pt.get('low')),
-                'high':              safe(pt.get('high')),
-                'numberOfAnalysts':  int(pt.get('numberOfAnalysts', 0)) if pt.get('numberOfAnalysts') else None,
+                'current':          safe(pt.get('current')),
+                'mean':             safe(pt.get('mean')),
+                'low':              safe(pt.get('low')),
+                'high':             safe(pt.get('high')),
+                'numberOfAnalysts': int(pt.get('numberOfAnalysts', 0)) if pt.get('numberOfAnalysts') else None,
             }
     except Exception as e:
         response['priceTargetError'] = str(e)
 
-    # ── 3. Recent individual ratings (upgrades / downgrades) ──
     try:
         recs = tk.recommendations
         if recs is not None and not recs.empty:
-            recent = recs.sort_index(ascending=False).head(20)
+            recent  = recs.sort_index(ascending=False).head(20)
             ratings = []
             for ts, row in recent.iterrows():
                 ratings.append({
                     'date':      ts.strftime('%Y-%m-%d') if hasattr(ts, 'strftime') else str(ts),
-                    'firm':      str(row.get('Firm', row.get('firm', ''))),
-                    'toGrade':   str(row.get('To Grade', row.get('toGrade', ''))),
+                    'firm':      str(row.get('Firm',       row.get('firm',       ''))),
+                    'toGrade':   str(row.get('To Grade',   row.get('toGrade',   ''))),
                     'fromGrade': str(row.get('From Grade', row.get('fromGrade', ''))),
-                    'action':    str(row.get('Action', row.get('action', ''))),
+                    'action':    str(row.get('Action',     row.get('action',     ''))),
                 })
             response['recentRatings'] = ratings
     except Exception as e:
@@ -42277,24 +42236,11 @@ def snowai_vortex_analyst_ratings_vault(request):
     return JsonResponse(response, safe=False)
 
 
-# ── urls.py — add BOTH to urlpatterns: ───────────────────────────────────────
-# path('api/snowai_thundervault_ohlcv_chart_stream/',
-#      views.snowai_thundervault_ohlcv_chart_stream,
-#      name='snowai_thundervault_ohlcv_chart_stream'),
-# path('api/snowai_vortex_analyst_ratings_vault/',
-#      views.snowai_vortex_analyst_ratings_vault,
-#      name='snowai_vortex_analyst_ratings_vault'),
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Options Flow endpoint
 # ─────────────────────────────────────────────────────────────────────────────
 @csrf_exempt
 def snowai_options_flow_vault(request):
-    """
-    POST: { "ticker": "AAPL", "expiry": "2025-01-17" (optional) }
-    Returns put/call ratio, volume breakdown, notable strikes near current price.
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
     try:
@@ -42310,7 +42256,7 @@ def snowai_options_flow_vault(request):
     def safe_int(val):
         try:
             v = float(val)
-            return 0 if (v != v) else int(v)   # NaN check
+            return 0 if (v != v) else int(v)
         except (TypeError, ValueError):
             return 0
 
@@ -42322,15 +42268,15 @@ def snowai_options_flow_vault(request):
             return default
 
     try:
-        tk = yf.Ticker(ticker)
-
-        # Get current price defensively — tk.info can throw in newer yfinance
+        tk            = yf.Ticker(ticker)
         current_price = None
+
         try:
-            info = tk.fast_info
+            info          = tk.fast_info
             current_price = getattr(info, 'last_price', None) or getattr(info, 'regular_market_price', None)
         except Exception:
             pass
+
         if not current_price:
             try:
                 hist = tk.history(period='1d', interval='1m')
@@ -42339,14 +42285,13 @@ def snowai_options_flow_vault(request):
             except Exception:
                 pass
 
-        # Options expiry list
         try:
             expiry_dates = list(tk.options)
         except Exception:
             expiry_dates = []
 
         if not expiry_dates:
-            return JsonResponse({'error': f'No options data available for {ticker}. Some tickers (ETFs, small-caps) have no listed options.'}, status=404)
+            return JsonResponse({'error': f'No options data available for {ticker}.'}, status=404)
 
         target_expiry = expiry if expiry and expiry in expiry_dates else expiry_dates[0]
 
@@ -42372,10 +42317,10 @@ def snowai_options_flow_vault(request):
                     if current_price and abs(strike - current_price) / current_price > 0.25:
                         continue
                     rows.append({
-                        'type':             stype,
-                        'strike':           round(strike, 2),
-                        'openInterest':     safe_int(row.get('openInterest', 0)),
-                        'volume':           safe_int(row.get('volume', 0)),
+                        'type':              stype,
+                        'strike':            round(strike, 2),
+                        'openInterest':      safe_int(row.get('openInterest',      0)),
+                        'volume':            safe_int(row.get('volume',            0)),
                         'impliedVolatility': safe_float(row.get('impliedVolatility', 0)),
                     })
                 except Exception:
@@ -42407,10 +42352,6 @@ def snowai_options_flow_vault(request):
 # ─────────────────────────────────────────────────────────────────────────────
 @csrf_exempt
 def snowai_correlation_matrix_vault(request):
-    """
-    POST: { "tickers": ["AAPL","MSFT","NVDA"], "period": "3mo" }
-    Returns a correlation matrix of 90-day daily returns.
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
     try:
@@ -42455,19 +42396,11 @@ def snowai_correlation_matrix_vault(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-
-
 # ─────────────────────────────────────────────────────────────────────────────
-#  Earnings Calendar — batch fetch upcoming/recent earnings dates
+# Earnings Calendar endpoint
 # ─────────────────────────────────────────────────────────────────────────────
 @csrf_exempt
 def snowai_earnings_calendar_vault(request):
-    """
-    POST { "tickers": ["AAPL","MSFT",...] }
-    Returns earnings dates, EPS estimates, market cap for each ticker.
-    Uses ThreadPoolExecutor for concurrent fetching — handles both single-ticker
-    (chart markers) and bulk (calendar UI) requests without timing out.
-    """
     import concurrent.futures
     from datetime import datetime, timezone, date as date_cls
 
@@ -42475,12 +42408,20 @@ def snowai_earnings_calendar_vault(request):
         return JsonResponse({'error': 'POST only'}, status=405)
     try:
         body    = json.loads(request.body)
-        tickers = [t.strip().upper() for t in body.get('tickers', []) if t.strip()][:100]  # Reduced from 150 to 100
+        tickers = [t.strip().upper() for t in body.get('tickers', []) if t.strip()][:100]
     except Exception:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     if not tickers:
         return JsonResponse({'error': 'No tickers provided'}, status=400)
+
+    def sf(v):
+        """Safe float — returns None for NaN/None/unparseable."""
+        try:
+            f = float(v)
+            return None if (f != f) else f  # NaN check
+        except Exception:
+            return None
 
     def fetch_one(sym):
         try:
@@ -42488,19 +42429,18 @@ def snowai_earnings_calendar_vault(request):
             earnings_date = None
             eps_estimate  = None
             eps_actual    = None
+            surprise_pct  = None
             now           = datetime.now(timezone.utc)
             today_str     = now.strftime('%Y-%m-%d')
-            surprise_pct  = None
 
-            # ── Strategy 1: tk.calendar (dict in newer yfinance) ──────────────
+            # ── Strategy 1: tk.calendar ───────────────────────────────────────
+            cal = None  # always initialise so later revenue-estimate block is safe
             try:
                 cal = tk.calendar
-                # New yfinance returns a plain dict
                 if isinstance(cal, dict) and cal:
                     ed = cal.get('Earnings Date')
                     if ed is not None:
                         ed_list = ed if isinstance(ed, list) else [ed]
-                        # calendar may have [upcoming, confirmed] — pick the future one
                         for d in ed_list:
                             ds = str(d)[:10]
                             if ds >= today_str:
@@ -42508,8 +42448,14 @@ def snowai_earnings_calendar_vault(request):
                                 break
                         if not earnings_date and ed_list:
                             earnings_date = str(ed_list[0])[:10]
-                # Old yfinance returns a DataFrame
+                    est = cal.get('EPS Estimate')
+                    if est is not None:
+                        try:
+                            eps_estimate = round(float(est), 4)
+                        except Exception:
+                            pass
                 elif hasattr(cal, 'get'):
+                    # Old yfinance DataFrame-style calendar
                     ed = cal.get('Earnings Date')
                     if ed is not None:
                         ed_list = list(ed) if hasattr(ed, '__iter__') else [ed]
@@ -42520,112 +42466,123 @@ def snowai_earnings_calendar_vault(request):
                                 break
                         if not earnings_date and ed_list:
                             earnings_date = str(ed_list[0])[:10]
-                # EPS from calendar
-                if isinstance(cal, dict):
-                    est = cal.get('EPS Estimate')
-                    if est is not None:
-                        try: eps_estimate = round(float(est), 4)
-                        except: pass
             except Exception as e:
                 print(f"[EarningsCalendar] {sym} calendar error: {e}")
 
             # ── Strategy 2: earnings_dates DataFrame ──────────────────────────
+            # CRITICAL: initialise to None BEFORE the try so the variable always
+            # exists even if tk.get_earnings_dates() raises an exception.
+            ed_df = None
             try:
-                ed_df = tk.get_earnings_dates(limit=16)  # was tk.earnings_dates (default limit=4)
-            except Exception:
-                pass
+                ed_df = tk.get_earnings_dates(limit=16)
+            except Exception as e:
+                print(f"[EarningsCalendar] {sym} get_earnings_dates error: {e}")
 
             if ed_df is not None and not ed_df.empty:
-                # Prefer any future date from this dataframe
+                # Fill upcoming date if calendar strategy missed it
                 if not earnings_date or earnings_date < today_str:
-                    future_rows = ed_df[ed_df.index >= now]
-                    if not future_rows.empty:
-                        earnings_date = str(future_rows.index[-1])[:10]
-                    elif not earnings_date:
-                        earnings_date = str(ed_df.index[0])[:10]
+                    try:
+                        future_rows = ed_df[ed_df.index >= now]
+                        if not future_rows.empty:
+                            earnings_date = str(future_rows.index[-1])[:10]
+                        elif not earnings_date:
+                            earnings_date = str(ed_df.index[0])[:10]
+                    except Exception:
+                        pass
 
-                # EPS + Surprise from earnings_dates row matching our date
+                # Pull EPS + surprise for the matched date
                 if earnings_date:
                     try:
                         for idx, row in ed_df.iterrows():
-                            row_date = str(idx)[:10]
-                            if row_date == earnings_date:
-                                def sf(v):
-                                    try:
-                                        f = float(v)
-                                        return None if f != f else f
-                                    except: return None
-                                eps_estimate = sf(row.get('EPS Estimate'))
-                                if eps_estimate: eps_estimate = round(eps_estimate, 4)
-                                eps_actual   = sf(row.get('Reported EPS'))
-                                if eps_actual:   eps_actual   = round(eps_actual, 4)
-                                surprise_val = sf(row.get('Surprise(%)'))
-                                if surprise_val is not None:
-                                    surprise_pct = round(surprise_val, 2)
+                            if str(idx)[:10] == earnings_date:
+                                v_est  = sf(row.get('EPS Estimate'))
+                                v_act  = sf(row.get('Reported EPS'))
+                                v_surp = sf(row.get('Surprise(%)'))
+                                if eps_estimate is None and v_est is not None:
+                                    eps_estimate = round(v_est, 4)
+                                if v_act is not None:
+                                    eps_actual = round(v_act, 4)
+                                if v_surp is not None:
+                                    surprise_pct = round(v_surp, 2)
                                 break
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[EarningsCalendar] {sym} EPS row parse error: {e}")
 
             # ── Revenue from quarterly_income_stmt ────────────────────────────
             revenue_actual   = None
             revenue_estimate = None
             try:
                 qi = tk.quarterly_income_stmt
-                if qi is not None and not qi.empty:
-                    if earnings_date:
-                        ed_dt = datetime.strptime(earnings_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                        for col in qi.columns:
-                            col_str = str(col)[:10]
-                            try:
-                                col_dt = datetime.strptime(col_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                                diff = abs((col_dt - ed_dt).days)
-                                if diff <= 45:
-                                    rev_row = qi.loc['Total Revenue'] if 'Total Revenue' in qi.index else None
-                                    if rev_row is not None:
-                                        rv = rev_row.get(col)
-                                        if rv == rv and rv is not None:
-                                            revenue_actual = int(float(rv))
-                                    break
-                            except Exception:
-                                continue
+                if qi is not None and not qi.empty and earnings_date:
+                    ed_dt = datetime.strptime(earnings_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                    for col in qi.columns:
+                        try:
+                            col_dt = datetime.strptime(str(col)[:10], '%Y-%m-%d').replace(tzinfo=timezone.utc)
+                            if abs((col_dt - ed_dt).days) <= 45:
+                                if 'Total Revenue' in qi.index:
+                                    rv = qi.loc['Total Revenue'].get(col)
+                                    if rv is not None and rv == rv:  # not NaN
+                                        revenue_actual = int(float(rv))
+                                break
+                        except Exception:
+                            continue
             except Exception:
                 pass
 
-            # Revenue estimate from calendar
+            # Revenue estimate from calendar dict
             try:
-                cal = tk.calendar
                 if isinstance(cal, dict) and cal:
                     re_val = cal.get('Revenue Estimate') or cal.get('Revenue')
                     if re_val is not None:
-                        try: revenue_estimate = int(float(re_val))
-                        except: pass
+                        try:
+                            revenue_estimate = int(float(re_val))
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
             if not earnings_date:
                 return None
 
-            # ── EPS sentiment for upcoming earnings ───────────────────────────
-            eps_sentiment      = None
-            eps_sentiment_label= None
-            eps_trend_avg      = None
-            eps_vs_trend_pct   = None
-            past_actuals       = []
-            past_surprises     = []
-
             is_upcoming = earnings_date >= today_str
 
-            if is_upcoming and eps_estimate is not None and ed_df is not None and not ed_df.empty:
+            # ── Historical quarters (always — both upcoming and past) ──────────
+            # ed_df may be None if the fetch failed — guard every access.
+            historical_quarters = []
+            if ed_df is not None and not ed_df.empty:
                 try:
-                    def sf(v):
-                        try:
-                            f = float(v)
-                            return None if (f != f) else f
-                        except: return None
-
                     for idx, row in ed_df.iterrows():
                         row_date = str(idx)[:10]
                         if row_date >= today_str:
+                            continue  # skip future rows
+                        act  = sf(row.get('Reported EPS'))
+                        est  = sf(row.get('EPS Estimate'))
+                        surp = sf(row.get('Surprise(%)'))
+                        if act is not None or est is not None:
+                            historical_quarters.append({
+                                'date':        row_date,
+                                'epsActual':   round(act,  4) if act  is not None else None,
+                                'epsEstimate': round(est,  4) if est  is not None else None,
+                                'surprisePct': round(surp, 2) if surp is not None else None,
+                                'beat':        (act >= est) if (act is not None and est is not None) else None,
+                            })
+                        if len(historical_quarters) >= 8:
+                            break
+                except Exception as e:
+                    print(f"[EarningsCalendar] {sym} historical_quarters error: {e}")
+
+            # ── EPS sentiment (upcoming only) ─────────────────────────────────
+            eps_sentiment       = None
+            eps_sentiment_label = None
+            eps_trend_avg       = None
+            eps_vs_trend_pct    = None
+            past_actuals        = []
+            past_surprises      = []
+
+            if is_upcoming and eps_estimate is not None and ed_df is not None and not ed_df.empty:
+                try:
+                    for idx, row in ed_df.iterrows():
+                        if str(idx)[:10] >= today_str:
                             continue
                         act  = sf(row.get('Reported EPS'))
                         surp = sf(row.get('Surprise(%)'))
@@ -42637,53 +42594,42 @@ def snowai_earnings_calendar_vault(request):
                             break
 
                     if len(past_actuals) >= 2:
-                        pa = list(reversed(past_actuals))
-                        n  = len(pa)
-                        weights    = list(range(1, n + 1))
-                        total_w    = sum(weights)
-                        w_avg      = sum(pa[i] * weights[i] for i in range(n)) / total_w
+                        pa      = list(reversed(past_actuals))
+                        n       = len(pa)
+                        weights = list(range(1, n + 1))
+                        total_w = sum(weights)
+                        w_avg   = sum(pa[i] * weights[i] for i in range(n)) / total_w
                         eps_trend_avg = round(w_avg, 4)
 
-                        if abs(w_avg) > 0.001:
-                            dev_pct = (eps_estimate - w_avg) / abs(w_avg) * 100
-                        else:
-                            dev_pct = (eps_estimate - w_avg) * 100
-
+                        dev_pct = (
+                            (eps_estimate - w_avg) / abs(w_avg) * 100
+                            if abs(w_avg) > 0.001
+                            else (eps_estimate - w_avg) * 100
+                        )
                         eps_vs_trend_pct = round(dev_pct, 2)
 
-                        avg_surprise = round(sum(past_surprises) / len(past_surprises), 2) if past_surprises else None
+                        avg_surprise = (
+                            round(sum(past_surprises) / len(past_surprises), 2)
+                            if past_surprises else None
+                        )
+                        score = dev_pct * 0.7 + (avg_surprise or 0) * 0.3
 
-                        score = dev_pct
-                        if avg_surprise is not None:
-                            score = dev_pct * 0.7 + avg_surprise * 0.3
-
-                        if   score >= 10:
-                            eps_sentiment = 'strongly_bullish'
-                            eps_sentiment_label = 'Strongly Bullish'
-                        elif score >= 4:
-                            eps_sentiment = 'bullish'
-                            eps_sentiment_label = 'Bullish'
-                        elif score >= -4:
-                            eps_sentiment = 'in_line'
-                            eps_sentiment_label = 'In Line'
-                        elif score >= -10:
-                            eps_sentiment = 'bearish'
-                            eps_sentiment_label = 'Bearish'
-                        else:
-                            eps_sentiment = 'strongly_bearish'
-                            eps_sentiment_label = 'Strongly Bearish'
+                        if   score >= 10:  eps_sentiment = 'strongly_bullish'; eps_sentiment_label = 'Strongly Bullish'
+                        elif score >= 4:   eps_sentiment = 'bullish';          eps_sentiment_label = 'Bullish'
+                        elif score >= -4:  eps_sentiment = 'in_line';          eps_sentiment_label = 'In Line'
+                        elif score >= -10: eps_sentiment = 'bearish';          eps_sentiment_label = 'Bearish'
+                        else:              eps_sentiment = 'strongly_bearish'; eps_sentiment_label = 'Strongly Bearish'
 
                         past_actuals   = [round(x, 4) for x in pa]
                         past_surprises = [round(x, 2) for x in past_surprises]
-
                 except Exception as e:
                     print(f"[EarningsSentiment] {sym}: {e}")
 
-            # ── Market cap + name ─────────────────────────────────────────────
+            # ── Market cap + short name ───────────────────────────────────────
             market_cap = None
             short_name = sym
             try:
-                fi = tk.fast_info
+                fi         = tk.fast_info
                 market_cap = int(fi.market_cap) if fi.market_cap else None
             except Exception:
                 pass
@@ -42694,38 +42640,12 @@ def snowai_earnings_calendar_vault(request):
             except Exception:
                 pass
 
-            beat = None
-            if eps_actual is not None and eps_estimate is not None:
-                beat = eps_actual >= eps_estimate
-            
-            revenue_beat = None
-            if revenue_actual is not None and revenue_estimate is not None:
-                revenue_beat = revenue_actual >= revenue_estimate
-            
-            # Add this block before the return statement:
-            historical_quarters = []
-            if ed_df is not None and not ed_df.empty:
-                def sf(v):
-                    try:
-                        f = float(v)
-                        return None if (f != f) else f
-                    except: return None
-                
-                for idx, row in ed_df.iterrows():
-                    row_date = str(idx)[:10]
-                    if row_date >= today_str:
-                        continue
-                    act  = sf(row.get('Reported EPS'))
-                    est  = sf(row.get('EPS Estimate'))
-                    surp = sf(row.get('Surprise(%)'))
-                    if act is not None or est is not None:
-                        historical_quarters.append({
-                            'date':        row_date,
-                            'epsActual':   round(act, 4) if act is not None else None,
-                            'epsEstimate': round(est, 4) if est is not None else None,
-                            'surprisePct': round(surp, 2) if surp is not None else None,
-                            'beat':        (act >= est) if (act is not None and est is not None) else None,
-                        })
+            beat         = (eps_actual >= eps_estimate) if (eps_actual is not None and eps_estimate is not None) else None
+            revenue_beat = (revenue_actual >= revenue_estimate) if (revenue_actual is not None and revenue_estimate is not None) else None
+
+            print(f"[EarningsCalendar] {sym} → {earnings_date} ({'upcoming' if is_upcoming else 'past'}) "
+                  f"EPS act:{eps_actual} est:{eps_estimate} surp:{surprise_pct}% "
+                  f"histQ:{len(historical_quarters)} sentiment:{eps_sentiment}")
 
             return {
                 'ticker':             sym,
@@ -42740,31 +42660,31 @@ def snowai_earnings_calendar_vault(request):
                 'beat':               beat,
                 'marketCap':          market_cap,
                 'isUpcoming':         is_upcoming,
+                # Upcoming sentiment
                 'epsSentiment':       eps_sentiment,
                 'epsSentimentLabel':  eps_sentiment_label,
                 'epsTrendAvg':        eps_trend_avg,
                 'epsVsTrendPct':      eps_vs_trend_pct,
                 'pastActuals':        past_actuals,
                 'pastSurprises':      past_surprises,
-                'historicalQuarters': historical_quarters[:8],  # last 8 quarters
+                # Rich historical data (both upcoming + past)
+                'historicalQuarters': historical_quarters,
             }
         except Exception as e:
             print(f"[EarningsCalendar] {sym} FAILED: {e}")
             return None
 
-    # Single ticker — no threading needed, fast path
+    # ── Dispatch ──────────────────────────────────────────────────────────────
     if len(tickers) == 1:
-        result = fetch_one(tickers[0])
+        result  = fetch_one(tickers[0])
         results = [result] if result else []
     else:
-        # Concurrent fetch with smaller batch and longer timeout
-        results = []
-        # Process in smaller batches to avoid timeout
+        results    = []
         batch_size = 25
         for i in range(0, len(tickers), batch_size):
-            batch = tickers[i:i+batch_size]
-            print(f"[EarningsCalendar] Processing batch {i//batch_size + 1}/{(len(tickers)+batch_size-1)//batch_size} ({len(batch)} tickers)")
-            
+            batch = tickers[i:i + batch_size]
+            print(f"[EarningsCalendar] batch {i // batch_size + 1} / "
+                  f"{(len(tickers) + batch_size - 1) // batch_size} ({len(batch)} tickers)")
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 futures = {executor.submit(fetch_one, sym): sym for sym in batch}
                 for future in concurrent.futures.as_completed(futures, timeout=60):
@@ -42773,15 +42693,13 @@ def snowai_earnings_calendar_vault(request):
                         if res:
                             results.append(res)
                     except concurrent.futures.TimeoutError:
-                        print(f"[EarningsCalendar] Timeout for a ticker in batch")
-                        continue
+                        print("[EarningsCalendar] ticker timed out, skipping")
                     except Exception as e:
                         print(f"[EarningsCalendar] future error: {e}")
-                        continue
 
     today = date_cls.today().isoformat()
     results.sort(key=lambda x: (
-        x['earningsDate'] < today,
+        x['earningsDate'] < today,   # upcoming first
         x['earningsDate'],
         -(x['marketCap'] or 0),
     ))
@@ -42789,20 +42707,13 @@ def snowai_earnings_calendar_vault(request):
     return JsonResponse({'results': results, 'count': len(results)})
 
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-#  Post-Earnings Price Reaction — single ticker or bulk
+# Post-Earnings Price Reaction endpoint
 # ─────────────────────────────────────────────────────────────────────────────
 @csrf_exempt
 def snowai_earnings_reaction_vault(request):
-    """
-    POST { "ticker": "AAPL", "earningsDate": "2024-12-31" }
-      → returns price reaction for that specific date
-    POST { "tickers": [{"ticker":"AAPL","earningsDate":"2024-12-31"}, ...] }
-      → bulk mode, returns reaction for each
-    """
     import concurrent.futures
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
@@ -42813,8 +42724,7 @@ def snowai_earnings_reaction_vault(request):
 
     def fetch_reaction(ticker, earnings_date_str):
         try:
-            ed = datetime.strptime(earnings_date_str, '%Y-%m-%d')
-            # Fetch 3 weeks of data around the earnings date
+            ed    = datetime.strptime(earnings_date_str, '%Y-%m-%d')
             start = (ed - timedelta(days=5)).strftime('%Y-%m-%d')
             end   = (ed + timedelta(days=16)).strftime('%Y-%m-%d')
 
@@ -42824,9 +42734,8 @@ def snowai_earnings_reaction_vault(request):
                 return None
 
             hist.index = hist.index.tz_localize(None)
-            dates = [d.strftime('%Y-%m-%d') for d in hist.index]
+            dates      = [d.strftime('%Y-%m-%d') for d in hist.index]
 
-            # Find the earnings date or the next trading day after it
             ed_idx = None
             for i, d in enumerate(dates):
                 if d >= earnings_date_str:
@@ -42839,13 +42748,12 @@ def snowai_earnings_reaction_vault(request):
                 if idx < 0 or idx >= len(hist):
                     return None
                 try:
-                    c = hist['Close'].iloc[idx]
-                    return round(float(c), 4)
+                    return round(float(hist['Close'].iloc[idx]), 4)
                 except Exception:
                     return None
 
-            pre_close  = safe_price(ed_idx - 1)   # day before earnings
-            earn_close = safe_price(ed_idx)        # earnings day close
+            pre_close  = safe_price(ed_idx - 1)
+            earn_close = safe_price(ed_idx)
             d1_close   = safe_price(ed_idx + 1)
             d3_close   = safe_price(ed_idx + 3)
             d5_close   = safe_price(ed_idx + 5)
@@ -42856,13 +42764,12 @@ def snowai_earnings_reaction_vault(request):
                     return round((val - base) / base * 100, 2)
                 return None
 
-            # Build daily close series for sparkline (from day before to D+10)
             sparkline = []
             for i in range(max(0, ed_idx - 1), min(len(hist), ed_idx + 11)):
                 sparkline.append({
                     'date':  dates[i],
                     'close': safe_price(i),
-                    'dayN':  i - ed_idx,    # -1=pre, 0=earnings day, 1=D+1 etc
+                    'dayN':  i - ed_idx,
                 })
 
             return {
@@ -42886,7 +42793,7 @@ def snowai_earnings_reaction_vault(request):
             print(f"[EarningsReaction] {ticker} {earnings_date_str}: {e}")
             return None
 
-    # Single ticker mode
+    # Single mode
     if 'ticker' in body and 'earningsDate' in body:
         result = fetch_reaction(body['ticker'], body['earningsDate'])
         if not result:
@@ -42897,7 +42804,7 @@ def snowai_earnings_reaction_vault(request):
     items = body.get('tickers', [])
     if not items:
         return JsonResponse({'error': 'No tickers provided'}, status=400)
-    items = items[:40]  # cap at 40 for bulk
+    items = items[:40]
 
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
@@ -42917,14 +42824,13 @@ def snowai_earnings_reaction_vault(request):
     return JsonResponse({'results': results, 'count': len(results)})
 
 
-# ── urls.py — add ALL endpoints: ─────────────────────────────────────────────
-# path('api/snowai_thundervault_ohlcv_chart_stream/',   views.snowai_thundervault_ohlcv_chart_stream),
-# path('api/snowai_vortex_analyst_ratings_vault/',      views.snowai_vortex_analyst_ratings_vault),
-# path('api/snowai_options_flow_vault/',                views.snowai_options_flow_vault),
-# path('api/snowai_correlation_matrix_vault/',          views.snowai_correlation_matrix_vault),
-# path('api/snowai_earnings_calendar_vault/',           views.snowai_earnings_calendar_vault),
+# ── urls.py ───────────────────────────────────────────────────────────────────
+# path('api/snowai_thundervault_ohlcv_chart_stream/',  views.snowai_thundervault_ohlcv_chart_stream),
+# path('api/snowai_vortex_analyst_ratings_vault/',     views.snowai_vortex_analyst_ratings_vault),
+# path('api/snowai_options_flow_vault/',               views.snowai_options_flow_vault),
+# path('api/snowai_correlation_matrix_vault/',         views.snowai_correlation_matrix_vault),
+# path('api/snowai_earnings_calendar_vault/',          views.snowai_earnings_calendar_vault),
 # path('api/snowai_earnings_reaction_vault/',          views.snowai_earnings_reaction_vault),
-
 
 
 from sklearn.linear_model import LinearRegression
