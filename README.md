@@ -1,1 +1,1 @@
-# snowAI
+# SnowAI

@@ -42956,6 +42956,203 @@ def snowai_earnings_reaction_vault(request):
     return JsonResponse({'results': results, 'count': len(results)})
 
 
+@csrf_exempt
+def snowai_earnings_search_vault(request):
+    """
+    POST { "ticker": "AAPL" }
+    Returns comprehensive earnings history for a single ticker using
+    multiple yfinance sources combined for maximum coverage.
+    """
+    from datetime import datetime, timezone
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body   = json.loads(request.body)
+        ticker = body.get('ticker', '').strip().upper()
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not ticker:
+        return JsonResponse({'error': 'Missing ticker'}, status=400)
+
+    def sf(v):
+        try:
+            f = float(v)
+            return None if (f != f) else f
+        except Exception:
+            return None
+
+    def fmt_rev(v):
+        if v is None: return None
+        try:
+            v = float(v)
+            if abs(v) >= 1e12: return f'${v/1e12:.2f}T'
+            if abs(v) >= 1e9:  return f'${v/1e9:.2f}B'
+            if abs(v) >= 1e6:  return f'${v/1e6:.0f}M'
+            return f'${v:.0f}'
+        except Exception:
+            return None
+
+    try:
+        tk        = yf.Ticker(ticker)
+        now       = datetime.now(timezone.utc)
+        today_str = now.strftime('%Y-%m-%d')
+
+        # ── Source 1: get_earnings_dates (up to 40 quarters) ─────────────────
+        ed_df = None
+        try:
+            ed_df = tk.get_earnings_dates(limit=40)
+        except Exception as e:
+            print(f"[EarningsSearch] {ticker} get_earnings_dates: {e}")
+            try:
+                ed_df = tk.earnings_dates
+            except Exception:
+                pass
+
+        # ── Source 2: quarterly_financials for revenue history ────────────────
+        revenue_by_quarter = {}
+        try:
+            qi = tk.quarterly_income_stmt
+            if qi is not None and not qi.empty and 'Total Revenue' in qi.index:
+                for col in qi.columns:
+                    col_str = str(col)[:10]
+                    rv = sf(qi.loc['Total Revenue'].get(col))
+                    if rv is not None:
+                        revenue_by_quarter[col_str] = int(rv)
+        except Exception as e:
+            print(f"[EarningsSearch] {ticker} quarterly_income_stmt: {e}")
+
+        # ── Source 3: earnings history (older yfinance property) ──────────────
+        eps_history = {}
+        try:
+            eh = tk.earnings_history
+            if eh is not None and not eh.empty:
+                for idx, row in eh.iterrows():
+                    d = str(idx)[:10]
+                    eps_history[d] = {
+                        'epsActual':   sf(row.get('epsActual')   or row.get('Reported EPS')),
+                        'epsEstimate': sf(row.get('epsEstimate') or row.get('EPS Estimate')),
+                    }
+        except Exception:
+            pass
+
+        # ── Source 4: stock info for context ─────────────────────────────────
+        stock_info = {}
+        try:
+            fi = tk.fast_info
+            stock_info['currentPrice'] = sf(getattr(fi, 'last_price', None))
+            stock_info['marketCap']    = int(fi.market_cap) if fi.market_cap else None
+        except Exception:
+            pass
+        try:
+            info = tk.info or {}
+            stock_info['name']     = info.get('longName') or info.get('shortName') or ticker
+            stock_info['sector']   = info.get('sector', '')
+            stock_info['industry'] = info.get('industry', '')
+            stock_info['pe']       = sf(info.get('trailingPE'))
+            stock_info['fwdPE']    = sf(info.get('forwardPE'))
+        except Exception:
+            pass
+
+        # ── Merge all sources into unified quarters list ──────────────────────
+        quarters    = {}  # keyed by YYYY-MM-DD
+
+        if ed_df is not None and not ed_df.empty:
+            for idx, row in ed_df.iterrows():
+                date_str = str(idx)[:10]
+                act      = sf(row.get('Reported EPS'))
+                est      = sf(row.get('EPS Estimate'))
+                surp     = sf(row.get('Surprise(%)'))
+
+                # Find closest revenue entry (within 45 days)
+                rev = None
+                try:
+                    ed_dt = datetime.strptime(date_str, '%Y-%m-%d')
+                    for rev_date, rev_val in revenue_by_quarter.items():
+                        rev_dt = datetime.strptime(rev_date, '%Y-%m-%d')
+                        if abs((rev_dt - ed_dt).days) <= 45:
+                            rev = rev_val
+                            break
+                except Exception:
+                    pass
+
+                beat = (act >= est) if (act is not None and est is not None) else None
+
+                quarters[date_str] = {
+                    'date':        date_str,
+                    'epsActual':   round(act,  4) if act  is not None else None,
+                    'epsEstimate': round(est,  4) if est  is not None else None,
+                    'surprisePct': round(surp, 2) if surp is not None else None,
+                    'beat':        beat,
+                    'revenue':     rev,
+                    'revenueFmt':  fmt_rev(rev),
+                    'upcoming':    date_str >= today_str,
+                }
+
+        # Fill in any eps_history entries not already covered
+        for date_str, eh_data in eps_history.items():
+            if date_str not in quarters:
+                act = eh_data.get('epsActual')
+                est = eh_data.get('epsEstimate')
+                quarters[date_str] = {
+                    'date':        date_str,
+                    'epsActual':   round(act, 4) if act is not None else None,
+                    'epsEstimate': round(est, 4) if est is not None else None,
+                    'surprisePct': None,
+                    'beat':        (act >= est) if (act is not None and est is not None) else None,
+                    'revenue':     None,
+                    'revenueFmt':  None,
+                    'upcoming':    date_str >= today_str,
+                }
+
+        all_quarters = sorted(quarters.values(), key=lambda x: x['date'], reverse=True)
+        past         = [q for q in all_quarters if not q['upcoming']]
+        upcoming     = [q for q in all_quarters if q['upcoming']]
+
+        # ── Beat rate stats ───────────────────────────────────────────────────
+        beats       = [q for q in past if q['beat'] is True]
+        misses      = [q for q in past if q['beat'] is False]
+        beat_rate   = round(len(beats) / len(past) * 100, 1) if past else None
+        avg_surprise = None
+        surprises    = [q['surprisePct'] for q in past if q['surprisePct'] is not None]
+        if surprises:
+            avg_surprise = round(sum(surprises) / len(surprises), 2)
+
+        # ── EPS trend (last 8 quarters) ───────────────────────────────────────
+        eps_trend = []
+        for q in past[:8]:
+            if q['epsActual'] is not None:
+                eps_trend.append({
+                    'date':  q['date'][:7],
+                    'eps':   q['epsActual'],
+                    'beat':  q['beat'],
+                })
+        eps_trend.reverse()  # chronological order
+
+        print(f"[EarningsSearch] {ticker} → {len(past)} past + {len(upcoming)} upcoming | "
+              f"beat_rate:{beat_rate}% avg_surp:{avg_surprise}%")
+
+        return JsonResponse({
+            'ticker':      ticker,
+            'stockInfo':   stock_info,
+            'past':        past,
+            'upcoming':    upcoming,
+            'stats': {
+                'totalQuarters': len(past),
+                'beatCount':     len(beats),
+                'missCount':     len(misses),
+                'beatRate':      beat_rate,
+                'avgSurprise':   avg_surprise,
+            },
+            'epsTrend': eps_trend,
+        })
+
+    except Exception as e:
+        print(f"[EarningsSearch] {ticker} FAILED: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 # ── urls.py ───────────────────────────────────────────────────────────────────
 # path('api/snowai_thundervault_ohlcv_chart_stream/',  views.snowai_thundervault_ohlcv_chart_stream),
 # path('api/snowai_vortex_analyst_ratings_vault/',     views.snowai_vortex_analyst_ratings_vault),

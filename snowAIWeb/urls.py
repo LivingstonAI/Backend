@@ -954,20 +954,7 @@ urlpatterns = [
     path('api/mss-chart/v1/indicators/<str:symbol>/', views.mss_chart_indicators_v1, name='mss_chart_indicators_v1'),
     path('api/mss-chart/v1/search/', views.mss_chart_search_v1, name='mss_chart_search_v1'),
     path('api/snowai_earnings_reaction_vault/', views.snowai_earnings_reaction_vault),
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    path('api/snowai_earnings_search_vault/', views.snowai_earnings_search_vault),
 
 
     # create appproprate urls.py here
