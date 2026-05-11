@@ -894,6 +894,7 @@ urlpatterns = [
 
     path('api/snowai_earnings_calendar_vault/',           views.snowai_earnings_calendar_vault),
     path('api/snowai_earnings_history_chart_vault/', views.snowai_earnings_history_chart_vault),
+    path('api/snowai_earnings_preview_vault/', views.snowai_earnings_preview_vault),
 
  # Moment CRUD operations
     path('snowai/moments/create/', views.snowai_create_moment_entry, name='snowai_create_moment'),

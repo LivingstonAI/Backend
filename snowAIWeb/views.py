@@ -42955,6 +42955,271 @@ def snowai_earnings_reaction_vault(request):
     results.sort(key=lambda x: abs(x.get('pctD1') or 0), reverse=True)
     return JsonResponse({'results': results, 'count': len(results)})
 
+@csrf_exempt
+def snowai_earnings_preview_vault(request):
+    """
+    POST { "ticker": "AAPL" }
+    Aggregates all data needed for Sabrina's earnings preview:
+    earnings trend, options IV, recent estimates, price context.
+    """
+    from datetime import datetime, timezone
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body   = json.loads(request.body)
+        ticker = body.get('ticker', '').strip().upper()
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not ticker:
+        return JsonResponse({'error': 'Missing ticker'}, status=400)
+
+    def sf(v):
+        try:
+            f = float(v)
+            return None if (f != f) else f
+        except Exception:
+            return None
+
+    try:
+        tk        = yf.Ticker(ticker)
+        now       = datetime.now(timezone.utc)
+        today_str = now.strftime('%Y-%m-%d')
+
+        # ── 1. Stock info ─────────────────────────────────────────────────────
+        stock_info = {}
+        try:
+            fi = tk.fast_info
+            stock_info['currentPrice'] = sf(getattr(fi, 'last_price', None))
+            stock_info['marketCap']    = int(fi.market_cap) if fi.market_cap else None
+            stock_info['fiftyTwoWeekHigh'] = sf(getattr(fi, 'fifty_two_week_high', None))
+            stock_info['fiftyTwoWeekLow']  = sf(getattr(fi, 'fifty_two_week_low',  None))
+        except Exception:
+            pass
+        try:
+            info = tk.info or {}
+            stock_info.update({
+                'name':          info.get('longName') or info.get('shortName') or ticker,
+                'sector':        info.get('sector', ''),
+                'industry':      info.get('industry', ''),
+                'trailingPE':    sf(info.get('trailingPE')),
+                'forwardPE':     sf(info.get('forwardPE')),
+                'pegRatio':      sf(info.get('pegRatio')),
+                'revenueGrowth': sf(info.get('revenueGrowth')),
+                'earningsGrowth':sf(info.get('earningsGrowth')),
+                'profitMargins': sf(info.get('profitMargins')),
+                'shortRatio':    sf(info.get('shortRatio')),
+                'beta':          sf(info.get('beta')),
+            })
+        except Exception:
+            pass
+
+        # ── 2. Upcoming earnings date ─────────────────────────────────────────
+        upcoming_date    = None
+        upcoming_eps_est = None
+        upcoming_rev_est = None
+        try:
+            cal = tk.calendar
+            if isinstance(cal, dict) and cal:
+                ed = cal.get('Earnings Date')
+                if ed is not None:
+                    ed_list = ed if isinstance(ed, list) else [ed]
+                    for d in ed_list:
+                        ds = str(d)[:10]
+                        if ds >= today_str:
+                            upcoming_date = ds
+                            break
+                upcoming_eps_est = sf(cal.get('EPS Estimate'))
+                re_val = cal.get('Revenue Estimate') or cal.get('Revenue')
+                if re_val is not None:
+                    try:
+                        upcoming_rev_est = int(float(re_val))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # ── 3. Historical earnings (last 8 quarters) ──────────────────────────
+        ed_df = None
+        try:
+            ed_df = tk.get_earnings_dates(limit=12)
+        except Exception:
+            try:
+                ed_df = tk.earnings_dates
+            except Exception:
+                pass
+
+        historical = []
+        if ed_df is not None and not ed_df.empty:
+            for idx, row in ed_df.iterrows():
+                row_date = str(idx)[:10]
+                if row_date >= today_str:
+                    continue
+                act  = sf(row.get('Reported EPS'))
+                est  = sf(row.get('EPS Estimate'))
+                surp = sf(row.get('Surprise(%)'))
+                if act is not None or est is not None:
+                    historical.append({
+                        'date':        row_date,
+                        'epsActual':   round(act,  4) if act  is not None else None,
+                        'epsEstimate': round(est,  4) if est  is not None else None,
+                        'surprisePct': round(surp, 2) if surp is not None else None,
+                        'beat':        (act >= est) if (act is not None and est is not None) else None,
+                    })
+                if len(historical) >= 8:
+                    break
+
+        # ── 4. Earnings trend / estimate revisions ────────────────────────────
+        earnings_trend = []
+        try:
+            et = tk.earnings_trend
+            if et is not None and not et.empty:
+                for idx, row in et.iterrows():
+                    earnings_trend.append({
+                        'period':          str(row.get('period',       idx)),
+                        'growth':          sf(row.get('earningsEstimateGrowth')),
+                        'epsAvg':          sf(row.get('earningsEstimateAvg')),
+                        'epsLow':          sf(row.get('earningsEstimateLow')),
+                        'epsHigh':         sf(row.get('earningsEstimateHigh')),
+                        'revenueAvg':      sf(row.get('revenueEstimateAvg')),
+                        'numAnalysts':     sf(row.get('earningsEstimateNumberOfAnalysts')),
+                        'epsTrend':        sf(row.get('epsTrendCurrent')),
+                        'eps7dAgo':        sf(row.get('epsTrend7daysAgo')),
+                        'eps30dAgo':       sf(row.get('epsTrend30daysAgo')),
+                        'eps60dAgo':       sf(row.get('epsTrend60daysAgo')),
+                        'eps90dAgo':       sf(row.get('epsTrend90daysAgo')),
+                    })
+        except Exception:
+            pass
+
+        # ── 5. Options IV for expected move ───────────────────────────────────
+        implied_move     = None
+        atm_iv           = None
+        expiry_used      = None
+        try:
+            options_dates = list(tk.options)
+            # Find the expiry closest to (but after) earnings date
+            target = upcoming_date or today_str
+            best   = None
+            for d in options_dates:
+                if d >= target:
+                    best = d
+                    break
+            if not best and options_dates:
+                best = options_dates[0]
+
+            if best:
+                chain = tk.option_chain(best)
+                price = stock_info.get('currentPrice')
+                if price:
+                    # ATM straddle price ≈ expected move
+                    calls = chain.calls
+                    puts  = chain.puts
+                    # Find ATM strike
+                    all_strikes = sorted(calls['strike'].tolist())
+                    atm_strike  = min(all_strikes, key=lambda x: abs(x - price))
+
+                    c_row = calls[calls['strike'] == atm_strike]
+                    p_row = puts[puts['strike']   == atm_strike]
+
+                    c_price = sf(c_row['lastPrice'].iloc[0]) if not c_row.empty else None
+                    p_price = sf(p_row['lastPrice'].iloc[0]) if not p_row.empty else None
+                    c_iv    = sf(c_row['impliedVolatility'].iloc[0]) if not c_row.empty else None
+                    p_iv    = sf(p_row['impliedVolatility'].iloc[0]) if not p_row.empty else None
+
+                    if c_price and p_price:
+                        straddle      = c_price + p_price
+                        implied_move  = round((straddle / price) * 100, 2)
+                    if c_iv and p_iv:
+                        atm_iv = round(((c_iv + p_iv) / 2) * 100, 2)
+                    expiry_used = best
+        except Exception as e:
+            print(f"[EarningsPreview] {ticker} options error: {e}")
+
+        # ── 6. Historical move on earnings days ───────────────────────────────
+        # Compare implied move to historical avg move
+        hist_moves = []
+        if historical:
+            import concurrent.futures as cf
+            from datetime import timedelta
+
+            def get_move(q):
+                try:
+                    ed   = datetime.strptime(q['date'], '%Y-%m-%d')
+                    start = (ed - timedelta(days=3)).strftime('%Y-%m-%d')
+                    end   = (ed + timedelta(days=3)).strftime('%Y-%m-%d')
+                    h = yf.download(ticker, start=start, end=end,
+                                    auto_adjust=True, progress=False)
+                    if h.empty or len(h) < 2:
+                        return None
+                    h.index = h.index.tz_localize(None)
+                    dates   = [d.strftime('%Y-%m-%d') for d in h.index]
+                    ed_idx  = next((i for i, d in enumerate(dates) if d >= q['date']), None)
+                    if ed_idx is None or ed_idx == 0:
+                        return None
+                    pre   = float(h['Close'].iloc[ed_idx - 1])
+                    close = float(h['Close'].iloc[ed_idx])
+                    return round((close - pre) / pre * 100, 2)
+                except Exception:
+                    return None
+
+            with cf.ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {executor.submit(get_move, q): q for q in historical[:6]}
+                for future in cf.as_completed(futures, timeout=20):
+                    try:
+                        move = future.result()
+                        if move is not None:
+                            hist_moves.append(move)
+                    except Exception:
+                        pass
+
+        avg_hist_move = round(sum(abs(m) for m in hist_moves) / len(hist_moves), 2) if hist_moves else None
+
+        # ── 7. Beat rate stats ────────────────────────────────────────────────
+        beats      = [q for q in historical if q['beat'] is True]
+        misses     = [q for q in historical if q['beat'] is False]
+        beat_rate  = round(len(beats) / len(historical) * 100, 1) if historical else None
+        surprises  = [q['surprisePct'] for q in historical if q['surprisePct'] is not None]
+        avg_surp   = round(sum(surprises) / len(surprises), 2) if surprises else None
+
+        # Days until earnings
+        days_until = None
+        if upcoming_date:
+            try:
+                diff       = datetime.strptime(upcoming_date, '%Y-%m-%d') - datetime.now()
+                days_until = diff.days
+            except Exception:
+                pass
+
+        print(f"[EarningsPreview] {ticker} → upcoming:{upcoming_date} "
+              f"implied_move:{implied_move}% hist_avg:{avg_hist_move}% "
+              f"beat_rate:{beat_rate}% iv:{atm_iv}%")
+
+        return JsonResponse({
+            'ticker':         ticker,
+            'stockInfo':      stock_info,
+            'upcomingDate':   upcoming_date,
+            'daysUntil':      days_until,
+            'epsEstimate':    upcoming_eps_est,
+            'revenueEstimate':upcoming_rev_est,
+            'historical':     historical,
+            'earningsTrend':  earnings_trend,
+            'impliedMove':    implied_move,
+            'atmIV':          atm_iv,
+            'expiryUsed':     expiry_used,
+            'histMoves':      hist_moves,
+            'avgHistMove':    avg_hist_move,
+            'beatRate':       beat_rate,
+            'avgSurprise':    avg_surp,
+            'beatCount':      len(beats),
+            'missCount':      len(misses),
+            'totalQuarters':  len(historical),
+        })
+
+    except Exception as e:
+        print(f"[EarningsPreview] {ticker} FAILED: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
 def snowai_earnings_search_vault(request):
@@ -49458,6 +49723,8 @@ def mss_chart_search_v1(request):
     except Exception as e:
         logger.error(f"Search error: {e}")
         return JsonResponse({'success': True, 'data': []})
+
+
     
 def book_order(request):
     if request.method == "POST":
