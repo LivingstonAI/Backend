@@ -956,7 +956,7 @@ urlpatterns = [
     path('api/mss-chart/v1/search/', views.mss_chart_search_v1, name='mss_chart_search_v1'),
     path('api/snowai_earnings_reaction_vault/', views.snowai_earnings_reaction_vault),
     path('api/snowai_earnings_search_vault/', views.snowai_earnings_search_vault),
-
+    path('api/snowai_momentum_velocity_vault/', views.snowai_momentum_velocity_vault),
 
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

@@ -43221,6 +43221,7 @@ def snowai_earnings_preview_vault(request):
         print(f"[EarningsPreview] {ticker} FAILED: {e}")
         return JsonResponse({'error': str(e)}, status=500)
 
+
 @csrf_exempt
 def snowai_earnings_search_vault(request):
     """
@@ -43417,6 +43418,280 @@ def snowai_earnings_search_vault(request):
         print(f"[EarningsSearch] {ticker} FAILED: {e}")
         return JsonResponse({'error': str(e)}, status=500)
 
+
+@csrf_exempt
+def snowai_momentum_velocity_vault(request):
+    """
+    POST { "ticker": "AAPL", "interval": "1D" }
+    Returns momentum velocity metrics:
+    - Rate of Change (ROC) at multiple timeframes
+    - Momentum acceleration (is momentum speeding up or slowing down?)
+    - Volume velocity (is volume confirming price movement?)
+    - ADX (trend strength — is it trending or idling?)
+    - Relative momentum vs sector/SPY
+    """
+    from datetime import datetime, timezone
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body     = json.loads(request.body)
+        ticker   = body.get('ticker', '').strip().upper()
+        interval = body.get('interval', '1D')
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not ticker:
+        return JsonResponse({'error': 'Missing ticker'}, status=400)
+
+    def sf(v):
+        try:
+            f = float(v)
+            return None if (f != f) else f
+        except Exception:
+            return None
+
+    interval_map = {
+        '1D': {'period': '6mo',  'interval': '1d'},
+        '1W': {'period': '2y',   'interval': '1wk'},
+        '1h': {'period': '3mo',  'interval': '1h'},
+        '15m':{'period': '60d',  'interval': '15m'},
+    }
+    cfg = interval_map.get(interval, interval_map['1D'])
+
+    try:
+        # ── Fetch OHLCV ───────────────────────────────────────────────────────
+        hist = yf.Ticker(ticker).history(
+            period=cfg['period'],
+            interval=cfg['interval'],
+            auto_adjust=True,
+        )
+        if hist.empty:
+            return JsonResponse({'error': f'No data for {ticker}'}, status=404)
+
+        closes  = hist['Close'].values.astype(float)
+        volumes = hist['Volume'].values.astype(float)
+        highs   = hist['High'].values.astype(float)
+        lows    = hist['Low'].values.astype(float)
+        dates   = [d.strftime('%Y-%m-%d') for d in hist.index]
+        n       = len(closes)
+
+        if n < 30:
+            return JsonResponse({'error': 'Not enough data'}, status=400)
+
+        # ── 1. Rate of Change (ROC) ───────────────────────────────────────────
+        # ROC(n) = (close - close[n periods ago]) / close[n periods ago] * 100
+        def roc(period):
+            if n <= period:
+                return None
+            return round((closes[-1] - closes[-period-1]) / closes[-period-1] * 100, 2)
+
+        roc5  = roc(5)
+        roc10 = roc(10)
+        roc20 = roc(20)
+        roc60 = roc(60) if n > 60 else None
+
+        # ── 2. ROC series for chart (20-period ROC across all bars) ───────────
+        roc_period = 10
+        roc_series = []
+        for i in range(roc_period, n):
+            val = (closes[i] - closes[i - roc_period]) / closes[i - roc_period] * 100
+            roc_series.append({
+                'date':  dates[i],
+                'value': round(val, 3),
+            })
+
+        # ── 3. Momentum acceleration ──────────────────────────────────────────
+        # Is the rate of change itself speeding up or slowing down?
+        # Compare recent ROC to its own moving average
+        if len(roc_series) >= 10:
+            recent_roc_vals = [r['value'] for r in roc_series[-10:]]
+            roc_now         = recent_roc_vals[-1]
+            roc_avg         = sum(recent_roc_vals) / len(recent_roc_vals)
+            roc_prev5       = sum(recent_roc_vals[:5]) / 5
+            roc_last5       = sum(recent_roc_vals[5:]) / 5
+            acceleration    = round(roc_last5 - roc_prev5, 3)  # positive = accelerating
+        else:
+            roc_now      = None
+            roc_avg      = None
+            acceleration = None
+
+        # ── 4. ADX — Average Directional Index (trend strength) ───────────────
+        # ADX > 25 = trending, ADX < 20 = idling/ranging
+        # Uses Wilder's smoothing
+        adx_period = 14
+        adx_val    = None
+        plus_di    = None
+        minus_di   = None
+
+        if n >= adx_period * 2:
+            tr_list, pdm_list, ndm_list = [], [], []
+            for i in range(1, n):
+                tr  = max(
+                    highs[i] - lows[i],
+                    abs(highs[i] - closes[i-1]),
+                    abs(lows[i]  - closes[i-1]),
+                )
+                pdm = max(highs[i] - highs[i-1], 0) if (highs[i] - highs[i-1]) > (lows[i-1] - lows[i]) else 0
+                ndm = max(lows[i-1] - lows[i],  0) if (lows[i-1] - lows[i])  > (highs[i] - highs[i-1]) else 0
+                tr_list.append(tr)
+                pdm_list.append(pdm)
+                ndm_list.append(ndm)
+
+            def wilder_smooth(data, period):
+                result = [sum(data[:period])]
+                for i in range(period, len(data)):
+                    result.append(result[-1] - result[-1]/period + data[i])
+                return result
+
+            atr_s  = wilder_smooth(tr_list,  adx_period)
+            pdm_s  = wilder_smooth(pdm_list, adx_period)
+            ndm_s  = wilder_smooth(ndm_list, adx_period)
+
+            pdi_list, ndi_list, dx_list = [], [], []
+            for i in range(len(atr_s)):
+                pdi = (pdm_s[i] / atr_s[i] * 100) if atr_s[i] else 0
+                ndi = (ndm_s[i] / atr_s[i] * 100) if atr_s[i] else 0
+                dx  = (abs(pdi - ndi) / (pdi + ndi) * 100) if (pdi + ndi) else 0
+                pdi_list.append(pdi)
+                ndi_list.append(ndi)
+                dx_list.append(dx)
+
+            if len(dx_list) >= adx_period:
+                adx_series = wilder_smooth(dx_list, adx_period)
+                adx_val  = round(adx_series[-1], 2)
+                plus_di  = round(pdi_list[-1],   2)
+                minus_di = round(ndi_list[-1],   2)
+
+        # ── 5. Volume velocity ────────────────────────────────────────────────
+        # Is volume rising or falling relative to its average?
+        # Volume ratio > 1.5 = high velocity, < 0.7 = low velocity
+        vol_sma20     = float(np.mean(volumes[-20:])) if n >= 20 else None
+        vol_sma5      = float(np.mean(volumes[-5:]))  if n >= 5  else None
+        vol_ratio     = round(vol_sma5 / vol_sma20, 2) if (vol_sma20 and vol_sma5 and vol_sma20 > 0) else None
+        current_vol   = int(volumes[-1]) if n > 0 else None
+
+        # Volume trend series (ratio of each day's volume to 20-day avg)
+        vol_series = []
+        for i in range(20, n):
+            avg = float(np.mean(volumes[max(0, i-20):i]))
+            ratio = round(volumes[i] / avg, 3) if avg > 0 else 1.0
+            vol_series.append({
+                'date':  dates[i],
+                'value': ratio,
+            })
+
+        # ── 6. Price velocity (1st derivative of price) ───────────────────────
+        # How fast is the price actually moving per bar?
+        price_changes = np.diff(closes)
+        vel_now       = round(float(price_changes[-1]),  4) if len(price_changes) > 0 else None
+        vel_5avg      = round(float(np.mean(np.abs(price_changes[-5:]))),  4) if len(price_changes) >= 5  else None
+        vel_20avg     = round(float(np.mean(np.abs(price_changes[-20:]))), 4) if len(price_changes) >= 20 else None
+        vel_ratio     = round(vel_5avg / vel_20avg, 2) if (vel_5avg and vel_20avg and vel_20avg > 0) else None
+
+        # ── 7. Relative momentum vs SPY ───────────────────────────────────────
+        spy_roc20 = None
+        rel_strength = None
+        try:
+            spy_hist = yf.Ticker('SPY').history(
+                period=cfg['period'],
+                interval=cfg['interval'],
+                auto_adjust=True,
+            )
+            if not spy_hist.empty:
+                spy_closes = spy_hist['Close'].values.astype(float)
+                if len(spy_closes) > 20:
+                    spy_roc20    = round((spy_closes[-1] - spy_closes[-21]) / spy_closes[-21] * 100, 2)
+                    rel_strength = round((roc20 or 0) - spy_roc20, 2)
+        except Exception:
+            pass
+
+        # ── 8. Overall velocity score (0-100) ────────────────────────────────
+        # Composite score combining ADX, volume ratio, price velocity, ROC
+        score_components = []
+
+        # ADX component (0-40 maps to 0-40 score points)
+        if adx_val is not None:
+            score_components.append(min(40, adx_val))
+
+        # Volume ratio component (0-2+ maps to 0-25 score points)
+        if vol_ratio is not None:
+            score_components.append(min(25, vol_ratio * 12.5))
+
+        # Price velocity ratio component (0-2+ maps to 0-20 score points)
+        if vel_ratio is not None:
+            score_components.append(min(20, vel_ratio * 10))
+
+        # ROC component (absolute 20-day ROC, capped at 15 points)
+        if roc20 is not None:
+            score_components.append(min(15, abs(roc20) * 0.5))
+
+        velocity_score = round(sum(score_components)) if score_components else None
+
+        # ── 9. Velocity state classification ─────────────────────────────────
+        if velocity_score is None:
+            state = 'UNKNOWN'
+        elif velocity_score >= 70:
+            state = 'HIGH_VELOCITY'    # strong momentum, trending hard
+        elif velocity_score >= 45:
+            state = 'BUILDING'         # momentum picking up
+        elif velocity_score >= 25:
+            state = 'LOW_VELOCITY'     # weak momentum
+        else:
+            state = 'IDLE'             # going nowhere
+
+        # Direction: is momentum bullish or bearish?
+        direction = 'NEUTRAL'
+        if plus_di is not None and minus_di is not None:
+            if plus_di > minus_di and (roc20 or 0) > 0:
+                direction = 'BULLISH'
+            elif minus_di > plus_di and (roc20 or 0) < 0:
+                direction = 'BEARISH'
+
+        print(f"[MomentumVelocity] {ticker} → score:{velocity_score} state:{state} "
+              f"adx:{adx_val} vol_ratio:{vol_ratio} roc20:{roc20}% rel:{rel_strength}%")
+
+        return JsonResponse({
+            'ticker':        ticker,
+            'interval':      interval,
+            'currentPrice':  round(float(closes[-1]), 4),
+            'velocityScore': velocity_score,
+            'velocityState': state,
+            'direction':     direction,
+            # ROC
+            'roc5':          roc5,
+            'roc10':         roc10,
+            'roc20':         roc20,
+            'roc60':         roc60,
+            'rocSeries':     roc_series[-60:],
+            # Acceleration
+            'acceleration':  acceleration,
+            'rocNow':        round(roc_now,  3) if roc_now  is not None else None,
+            'rocAvg':        round(roc_avg,  3) if roc_avg  is not None else None,
+            # ADX
+            'adx':           adx_val,
+            'plusDI':        plus_di,
+            'minusDI':       minus_di,
+            # Volume
+            'volRatio':      vol_ratio,
+            'volSma5':       int(vol_sma5)  if vol_sma5  else None,
+            'volSma20':      int(vol_sma20) if vol_sma20 else None,
+            'currentVolume': current_vol,
+            'volSeries':     vol_series[-60:],
+            # Price velocity
+            'velNow':        vel_now,
+            'vel5Avg':       vel_5avg,
+            'vel20Avg':      vel_20avg,
+            'velRatio':      vel_ratio,
+            # Relative strength
+            'spyRoc20':      spy_roc20,
+            'relStrength':   rel_strength,
+        })
+
+    except Exception as e:
+        print(f"[MomentumVelocity] {ticker} FAILED: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+        
 
 # ── urls.py ───────────────────────────────────────────────────────────────────
 # path('api/snowai_thundervault_ohlcv_chart_stream/',  views.snowai_thundervault_ohlcv_chart_stream),
