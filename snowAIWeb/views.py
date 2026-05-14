@@ -43693,6 +43693,355 @@ def snowai_momentum_velocity_vault(request):
         return JsonResponse({'error': str(e)}, status=500)
         
 
+
+@csrf_exempt
+def snowai_trend_reversal_scanner_vault(request):
+    """
+    POST { "tickers": [...], "minMarketCap": 10000000000 }
+    Scans a universe of stocks for:
+    - Ranging → trending transitions (ADX crossover)
+    - Rising velocity (ROC acceleration)
+    - Volume confirmation
+    - Recent earnings correlation (best effort)
+    Ranked by composite score, filtered by market cap.
+    """
+    import concurrent.futures
+    from datetime import datetime, timezone, timedelta
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body          = json.loads(request.body)
+        tickers       = [t.strip().upper() for t in body.get('tickers', []) if t.strip()][:200]
+        min_market_cap = body.get('minMarketCap', 10_000_000_000)  # default $10B+
+        top_n          = body.get('topN', 20)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not tickers:
+        return JsonResponse({'error': 'No tickers provided'}, status=400)
+
+    def sf(v):
+        try:
+            f = float(v)
+            return None if (f != f) else f
+        except Exception:
+            return None
+
+    def analyse_one(sym):
+        try:
+            tk = yf.Ticker(sym)
+
+            # ── Market cap filter (fast_info is cheap) ────────────────────────
+            market_cap  = None
+            short_name  = sym
+            sector      = ''
+            industry    = ''
+            curr_price  = None
+            try:
+                fi         = tk.fast_info
+                market_cap = int(fi.market_cap) if fi.market_cap else None
+                curr_price = sf(getattr(fi, 'last_price', None))
+            except Exception:
+                pass
+
+            if market_cap is not None and market_cap < min_market_cap:
+                return None  # skip small caps early — saves time
+
+            try:
+                info       = tk.info or {}
+                short_name = info.get('shortName') or info.get('longName') or sym
+                sector     = info.get('sector',   '')
+                industry   = info.get('industry', '')
+                if curr_price is None:
+                    curr_price = sf(info.get('currentPrice') or info.get('regularMarketPrice'))
+            except Exception:
+                pass
+
+            # ── Fetch 6 months daily OHLCV ────────────────────────────────────
+            hist = yf.Ticker(sym).history(
+                period='6mo', interval='1d', auto_adjust=True
+            )
+            if hist.empty or len(hist) < 40:
+                return None
+
+            closes  = hist['Close'].values.astype(float)
+            volumes = hist['Volume'].values.astype(float)
+            highs   = hist['High'].values.astype(float)
+            lows    = hist['Low'].values.astype(float)
+            dates   = [d.strftime('%Y-%m-%d') for d in hist.index]
+            n       = len(closes)
+
+            # ── ADX calculation ───────────────────────────────────────────────
+            def calc_adx(period=14):
+                if n < period * 2:
+                    return None, None, None, None, None
+                tr_l, pdm_l, ndm_l = [], [], []
+                for i in range(1, n):
+                    tr  = max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1]))
+                    pdm = max(highs[i]-highs[i-1], 0) if (highs[i]-highs[i-1]) > (lows[i-1]-lows[i]) else 0
+                    ndm = max(lows[i-1]-lows[i],  0) if (lows[i-1]-lows[i])  > (highs[i]-highs[i-1]) else 0
+                    tr_l.append(tr); pdm_l.append(pdm); ndm_l.append(ndm)
+
+                def ws(data, p):
+                    r = [sum(data[:p])]
+                    for i in range(p, len(data)):
+                        r.append(r[-1] - r[-1]/p + data[i])
+                    return r
+
+                atr_s = ws(tr_l, period)
+                pdm_s = ws(pdm_l, period)
+                ndm_s = ws(ndm_l, period)
+
+                pdi_l, ndi_l, dx_l = [], [], []
+                for i in range(len(atr_s)):
+                    pdi = (pdm_s[i]/atr_s[i]*100) if atr_s[i] else 0
+                    ndi = (ndm_s[i]/atr_s[i]*100) if atr_s[i] else 0
+                    dx  = (abs(pdi-ndi)/(pdi+ndi)*100) if (pdi+ndi) else 0
+                    pdi_l.append(pdi); ndi_l.append(ndi); dx_l.append(dx)
+
+                if len(dx_l) < period:
+                    return None, None, None, None, None
+
+                adx_s = ws(dx_l, period)
+                # Return current + previous 5/10/20 bars for trend detection
+                return (
+                    round(adx_s[-1],  2),
+                    round(adx_s[-6],  2) if len(adx_s) >= 6  else None,
+                    round(adx_s[-11], 2) if len(adx_s) >= 11 else None,
+                    round(pdi_l[-1],  2),
+                    round(ndi_l[-1],  2),
+                )
+
+            adx_now, adx_5ago, adx_20ago, plus_di, minus_di = calc_adx()
+            if adx_now is None:
+                return None
+
+            # ── ROC + acceleration ────────────────────────────────────────────
+            def roc(period):
+                if n <= period:
+                    return None
+                return round((closes[-1] - closes[-period-1]) / closes[-period-1] * 100, 2)
+
+            roc5  = roc(5)
+            roc10 = roc(10)
+            roc20 = roc(20)
+
+            # ROC series for acceleration calc
+            roc_vals = []
+            for i in range(10, n):
+                roc_vals.append((closes[i] - closes[i-10]) / closes[i-10] * 100)
+
+            acceleration = None
+            if len(roc_vals) >= 10:
+                prev5 = sum(roc_vals[-10:-5]) / 5
+                last5 = sum(roc_vals[-5:])    / 5
+                acceleration = round(last5 - prev5, 3)
+
+            # ── Volume velocity ───────────────────────────────────────────────
+            vol_sma20 = float(np.mean(volumes[-20:])) if n >= 20 else None
+            vol_sma5  = float(np.mean(volumes[-5:]))  if n >= 5  else None
+            vol_ratio = round(vol_sma5 / vol_sma20, 2) if (vol_sma20 and vol_sma5 and vol_sma20 > 0) else None
+
+            # ── 52-week context ───────────────────────────────────────────────
+            high_52w = round(float(np.max(closes)), 2)
+            low_52w  = round(float(np.min(closes)), 2)
+            pct_from_high = round((closes[-1] - high_52w) / high_52w * 100, 2) if high_52w else None
+            pct_from_low  = round((closes[-1] - low_52w)  / low_52w  * 100, 2) if low_52w  else None
+
+            # ── Trend reversal detection ──────────────────────────────────────
+            # Pattern 1: Was ranging (ADX < 20), now trending (ADX > 22)
+            was_ranging  = adx_20ago is not None and adx_20ago < 22
+            now_trending = adx_now > 22
+            range_to_trend = was_ranging and now_trending
+
+            # Pattern 2: ADX rising strongly (momentum building)
+            adx_rising = adx_5ago is not None and (adx_now - adx_5ago) > 3
+
+            # Pattern 3: ROC acceleration (momentum speeding up)
+            roc_accelerating = acceleration is not None and acceleration > 1.0
+
+            # Pattern 4: Volume confirming
+            vol_confirming = vol_ratio is not None and vol_ratio >= 1.2
+
+            # Pattern 5: Price breaking above recent range
+            # Compare last 5 closes to prior 15 closes
+            if n >= 20:
+                prior_high = float(np.max(closes[-20:-5]))
+                recent_avg = float(np.mean(closes[-5:]))
+                breaking_out = recent_avg > prior_high * 0.99  # within 1% of or above prior high
+            else:
+                breaking_out = False
+
+            # Direction
+            bullish = plus_di > minus_di and (roc20 or 0) > 0
+            bearish = minus_di > plus_di and (roc20 or 0) < 0
+
+            # ── Earnings correlation (best effort) ────────────────────────────
+            earnings_nearby    = False
+            last_earnings_date = None
+            days_since_earnings = None
+            earnings_beat      = None
+            try:
+                ed_df = tk.get_earnings_dates(limit=4)
+                if ed_df is not None and not ed_df.empty:
+                    today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+                    for idx, row in ed_df.iterrows():
+                        row_date = str(idx)[:10]
+                        if row_date < today_str:
+                            last_earnings_date  = row_date
+                            ed_dt               = datetime.strptime(row_date, '%Y-%m-%d')
+                            days_since_earnings = (datetime.now() - ed_dt).days
+                            act  = sf(row.get('Reported EPS'))
+                            est  = sf(row.get('EPS Estimate'))
+                            if act is not None and est is not None:
+                                earnings_beat = act >= est
+                            # "Nearby" = within 30 days — trend may be earnings-driven
+                            earnings_nearby = days_since_earnings <= 30
+                            break
+            except Exception:
+                pass
+
+            # ── Composite score ───────────────────────────────────────────────
+            score = 0
+
+            # Range-to-trend transition (biggest signal) — 35 pts
+            if range_to_trend:
+                score += 35
+            elif adx_rising and adx_now > 18:
+                score += 20
+
+            # ADX strength — up to 20 pts
+            score += min(20, max(0, (adx_now - 15) * 1.0))
+
+            # ROC acceleration — up to 15 pts
+            if roc_accelerating:
+                score += min(15, acceleration * 3)
+
+            # Volume confirmation — up to 15 pts
+            if vol_ratio is not None:
+                score += min(15, (vol_ratio - 1.0) * 15)
+
+            # Breakout — 10 pts
+            if breaking_out:
+                score += 10
+
+            # Earnings beat nearby — 5 pts bonus
+            if earnings_nearby and earnings_beat:
+                score += 5
+
+            score = round(min(100, max(0, score)), 1)
+
+            if score < 20:
+                return None  # not interesting enough
+
+            # ── Signal label ──────────────────────────────────────────────────
+            if range_to_trend and bullish:
+                signal = 'RANGE_BREAKOUT_BULL'
+            elif range_to_trend and bearish:
+                signal = 'RANGE_BREAKOUT_BEAR'
+            elif adx_rising and roc_accelerating and bullish:
+                signal = 'ACCELERATING_BULL'
+            elif adx_rising and roc_accelerating and bearish:
+                signal = 'ACCELERATING_BEAR'
+            elif breaking_out and bullish:
+                signal = 'BREAKOUT'
+            elif adx_rising:
+                signal = 'TREND_BUILDING'
+            else:
+                signal = 'WATCH'
+
+            print(f"[Scanner] {sym} score:{score} signal:{signal} adx:{adx_now} "
+                  f"roc20:{roc20}% accel:{acceleration} vol:{vol_ratio}x "
+                  f"range_to_trend:{range_to_trend}")
+
+            return {
+                'ticker':           sym,
+                'name':             short_name,
+                'sector':           sector,
+                'industry':         industry,
+                'marketCap':        market_cap,
+                'currentPrice':     round(float(curr_price), 2) if curr_price else None,
+                'score':            score,
+                'signal':           signal,
+                'direction':        'BULLISH' if bullish else 'BEARISH' if bearish else 'NEUTRAL',
+                # ADX
+                'adxNow':           adx_now,
+                'adx5Ago':          adx_5ago,
+                'adx20Ago':         adx_20ago,
+                'plusDI':           plus_di,
+                'minusDI':          minus_di,
+                'rangeToTrend':     range_to_trend,
+                'adxRising':        adx_rising,
+                # ROC
+                'roc5':             roc5,
+                'roc10':            roc10,
+                'roc20':            roc20,
+                'acceleration':     acceleration,
+                'rocAccelerating':  roc_accelerating,
+                # Volume
+                'volRatio':         vol_ratio,
+                'volConfirming':    vol_confirming,
+                # Price context
+                'high52w':          high_52w,
+                'low52w':           low_52w,
+                'pctFromHigh':      pct_from_high,
+                'pctFromLow':       pct_from_low,
+                'breakingOut':      breaking_out,
+                # Earnings
+                'lastEarningsDate':  last_earnings_date,
+                'daysSinceEarnings': days_since_earnings,
+                'earningsNearby':    earnings_nearby,
+                'earningsBeat':      earnings_beat,
+            }
+
+        except Exception as e:
+            print(f"[Scanner] {sym} FAILED: {e}")
+            return None
+
+    # ── Parallel scan ─────────────────────────────────────────────────────────
+    results  = []
+    BATCH    = 20
+    TIMEOUT  = 90
+    WORKERS  = 8
+
+    for i in range(0, len(tickers), BATCH):
+        batch = tickers[i:i+BATCH]
+        print(f"[Scanner] batch {i//BATCH+1}/{(len(tickers)+BATCH-1)//BATCH} ({len(batch)} tickers)")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as executor:
+            future_map = {executor.submit(analyse_one, sym): sym for sym in batch}
+            deadline   = __import__('time').time() + TIMEOUT
+            pending    = set(future_map.keys())
+            while pending:
+                remaining = deadline - __import__('time').time()
+                if remaining <= 0:
+                    print(f"[Scanner] batch timeout, skipping {len(pending)} remaining")
+                    for f in pending: f.cancel()
+                    break
+                done, pending = concurrent.futures.wait(
+                    pending, timeout=min(remaining, 10),
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                for future in done:
+                    try:
+                        res = future.result()
+                        if res:
+                            results.append(res)
+                    except Exception as e:
+                        print(f"[Scanner] future error: {e}")
+
+    # Sort by score descending, take top N
+    results.sort(key=lambda x: x['score'], reverse=True)
+    results = results[:top_n]
+
+    return JsonResponse({
+        'results':      results,
+        'count':        len(results),
+        'totalScanned': len(tickers),
+        'minMarketCap': min_market_cap,
+        'scannedAt':    __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    })
+
 # ── urls.py ───────────────────────────────────────────────────────────────────
 # path('api/snowai_thundervault_ohlcv_chart_stream/',  views.snowai_thundervault_ohlcv_chart_stream),
 # path('api/snowai_vortex_analyst_ratings_vault/',     views.snowai_vortex_analyst_ratings_vault),
