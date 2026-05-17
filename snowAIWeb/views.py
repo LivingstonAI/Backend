@@ -43889,30 +43889,49 @@ def snowai_trend_reversal_scanner_vault(request):
             bullish = plus_di > minus_di and (roc20 or 0) > 0
             bearish = minus_di > plus_di and (roc20 or 0) < 0
 
-            # ── Earnings correlation (best effort) ────────────────────────────
-            earnings_nearby    = False
-            last_earnings_date = None
+            # ── Earnings correlation (best effort) ────────────────────────────────
+            earnings_nearby     = False
+            last_earnings_date  = None
             days_since_earnings = None
-            earnings_beat      = None
+            earnings_beat       = None
             try:
-                ed_df = tk.get_earnings_dates(limit=4)
+                now_dt    = datetime.now(timezone.utc)
+                today_str = now_dt.strftime('%Y-%m-%d')
+                # Only look back 90 days max — anything older is irrelevant
+                cutoff    = (now_dt - timedelta(days=90)).strftime('%Y-%m-%d')
+
+                ed_df = None
+                try:
+                    ed_df = tk.get_earnings_dates(limit=8)
+                except Exception:
+                    try:
+                        ed_df = tk.earnings_dates
+                    except Exception:
+                        pass
+
                 if ed_df is not None and not ed_df.empty:
-                    today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
                     for idx, row in ed_df.iterrows():
                         row_date = str(idx)[:10]
-                        if row_date < today_str:
-                            last_earnings_date  = row_date
-                            ed_dt               = datetime.strptime(row_date, '%Y-%m-%d')
-                            days_since_earnings = (datetime.now() - ed_dt).days
-                            act  = sf(row.get('Reported EPS'))
-                            est  = sf(row.get('EPS Estimate'))
-                            if act is not None and est is not None:
-                                earnings_beat = act >= est
-                            # "Nearby" = within 30 days — trend may be earnings-driven
-                            earnings_nearby = days_since_earnings <= 30
-                            break
-            except Exception:
-                pass
+                        # Must be in the past AND within 90 days
+                        if row_date >= today_str:
+                            continue
+                        if row_date < cutoff:
+                            break  # sorted newest first, so we can stop here
+                        act  = sf(row.get('Reported EPS'))
+                        est  = sf(row.get('EPS Estimate'))
+                        # Only count it if we have actual reported data
+                        # (future estimates sometimes leak into past rows)
+                        if act is None:
+                            continue
+                        last_earnings_date  = row_date
+                        ed_dt               = datetime.strptime(row_date, '%Y-%m-%d')
+                        days_since_earnings = (datetime.now() - ed_dt).days
+                        if est is not None:
+                            earnings_beat = act >= est
+                        earnings_nearby = days_since_earnings <= 30
+                        break
+            except Exception as e:
+                print(f"[Scanner] {sym} earnings error: {e}")
 
             # ── Composite score ───────────────────────────────────────────────
             score = 0
