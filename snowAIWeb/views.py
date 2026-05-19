@@ -1429,13 +1429,13 @@ def reflections_summary(request, asset):
         
 
 # Schedule the update_daily_brief function to run every hour
-scheduler.add_job(
-    update_daily_brief,
-    trigger=IntervalTrigger(hours=1),
-    id='update_daily_brief_job',
-    name='Update daily brief every hour',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     update_daily_brief,
+#     trigger=IntervalTrigger(hours=1),
+#     id='update_daily_brief_job',
+#     name='Update daily brief every hour',
+#     replace_existing=True
+# )
 
 
 
@@ -14053,14 +14053,14 @@ def schedule_ai_council_conversations():
 # scheduler = BackgroundScheduler()  # You already have this
 
 # Schedule AI Council conversations to run every 24 hours
-scheduler.add_job(
-    schedule_ai_council_conversations,
-    'interval',
-    hours=24,
-    id='ai_trading_council_conversations',
-    replace_existing=True,
-    max_instances=1
-)
+# scheduler.add_job(
+#     schedule_ai_council_conversations,
+#     'interval',
+#     hours=24,
+#     id='ai_trading_council_conversations',
+#     replace_existing=True,
+#     max_instances=1
+# )
 
 # # You can also add different schedules:
 
@@ -30079,13 +30079,13 @@ def manual_trigger_stock_scan():
 
 
 # Schedule the stock scanner to run every 10 minutes
-scheduler.add_job(
-    scan_and_deploy_stocks,
-    trigger=IntervalTrigger(minutes=10),
-    id='auto_stock_scanner_job',
-    name='Scan stocks and auto-deploy trading models',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     scan_and_deploy_stocks,
+#     trigger=IntervalTrigger(minutes=10),
+#     id='auto_stock_scanner_job',
+#     name='Scan stocks and auto-deploy trading models',
+#     replace_existing=True
+# )
 
 @csrf_exempt
 def detect_trend_endpoint(request):
@@ -47716,13 +47716,13 @@ def ga_asset_catalogue(request):
     return _ga_json({'assets': ASSET_CATALOGUE})
 
 
-scheduler.add_job(
-    ga_scheduler_run_pending,
-    trigger=IntervalTrigger(minutes=5),
-    id='snowai_ga_runner',
-    name='SnowAI: pick up pending GA models every 5 min',
-    replace_existing=True,
-)
+# scheduler.add_job(
+#     ga_scheduler_run_pending,
+#     trigger=IntervalTrigger(minutes=5),
+#     id='snowai_ga_runner',
+#     name='SnowAI: pick up pending GA models every 5 min',
+#     replace_existing=True,
+# )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ADD THESE VIEWS TO YOUR EXISTING views.py
@@ -49758,72 +49758,72 @@ def run_period_snapshot(period_days: int):
 
 NY_TIMEZONE = pytz.timezone('America/New_York')
 
-scheduler.add_job(
-    lambda: run_period_snapshot(10),
-    trigger=CronTrigger(hour=12, minute=0, timezone=NY_TIMEZONE),
-    id='mss_period_10d',
-    name='MSS Snapshot - 10 Day Period',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     lambda: run_period_snapshot(10),
+#     trigger=CronTrigger(hour=12, minute=0, timezone=NY_TIMEZONE),
+#     id='mss_period_10d',
+#     name='MSS Snapshot - 10 Day Period',
+#     replace_existing=True
+# )
 
-scheduler.add_job(
-    lambda: run_period_snapshot(15),
-    trigger=CronTrigger(hour=12, minute=20, timezone=NY_TIMEZONE),
-    id='mss_period_15d',
-    name='MSS Snapshot - 15 Day Period',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     lambda: run_period_snapshot(15),
+#     trigger=CronTrigger(hour=12, minute=20, timezone=NY_TIMEZONE),
+#     id='mss_period_15d',
+#     name='MSS Snapshot - 15 Day Period',
+#     replace_existing=True
+# )
 
-scheduler.add_job(
-    lambda: run_period_snapshot(20),
-    trigger=CronTrigger(hour=12, minute=40, timezone=NY_TIMEZONE),
-    id='mss_period_20d',
-    name='MSS Snapshot - 20 Day Period',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     lambda: run_period_snapshot(20),
+#     trigger=CronTrigger(hour=12, minute=40, timezone=NY_TIMEZONE),
+#     id='mss_period_20d',
+#     name='MSS Snapshot - 20 Day Period',
+#     replace_existing=True
+# )
 
-scheduler.add_job(
-    lambda: run_period_snapshot(30),
-    trigger=CronTrigger(hour=13, minute=0, timezone=NY_TIMEZONE),
-    id='mss_period_30d',
-    name='MSS Snapshot - 30 Day Period',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     lambda: run_period_snapshot(30),
+#     trigger=CronTrigger(hour=13, minute=0, timezone=NY_TIMEZONE),
+#     id='mss_period_30d',
+#     name='MSS Snapshot - 30 Day Period',
+#     replace_existing=True
+# )
 
-scheduler.add_job(
-    lambda: run_period_snapshot(45),
-    trigger=CronTrigger(hour=13, minute=20, timezone=NY_TIMEZONE),
-    id='mss_period_45d',
-    name='MSS Snapshot - 45 Day Period',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     lambda: run_period_snapshot(45),
+#     trigger=CronTrigger(hour=13, minute=20, timezone=NY_TIMEZONE),
+#     id='mss_period_45d',
+#     name='MSS Snapshot - 45 Day Period',
+#     replace_existing=True
+# )
 
-scheduler.add_job(
-    lambda: run_period_snapshot(60),
-    trigger=CronTrigger(hour=13, minute=40, timezone=NY_TIMEZONE),
-    id='mss_period_60d',
-    name='MSS Snapshot - 60 Day Period',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     lambda: run_period_snapshot(60),
+#     trigger=CronTrigger(hour=13, minute=40, timezone=NY_TIMEZONE),
+#     id='mss_period_60d',
+#     name='MSS Snapshot - 60 Day Period',
+#     replace_existing=True
+# )
 
-scheduler.add_job(
-    lambda: run_period_snapshot(90),
-    trigger=CronTrigger(hour=14, minute=0, timezone=NY_TIMEZONE),
-    id='mss_period_90d',
-    name='MSS Snapshot - 90 Day Period',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     lambda: run_period_snapshot(90),
+#     trigger=CronTrigger(hour=14, minute=0, timezone=NY_TIMEZONE),
+#     id='mss_period_90d',
+#     name='MSS Snapshot - 90 Day Period',
+#     replace_existing=True
+# )
 
-scheduler.add_job(
-    lambda: run_period_snapshot(180),
-    trigger=CronTrigger(hour=14, minute=20, timezone=NY_TIMEZONE),
-    id='mss_period_180d',
-    name='MSS Snapshot - 180 Day Period',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     lambda: run_period_snapshot(180),
+#     trigger=CronTrigger(hour=14, minute=20, timezone=NY_TIMEZONE),
+#     id='mss_period_180d',
+#     name='MSS Snapshot - 180 Day Period',
+#     replace_existing=True
+# )
 
-logger.info("[MSS Scheduler] All staggered jobs registered with 20-minute intervals")
-logger.info("Schedule: 10d@12:00, 15d@12:20, 20d@12:40, 30d@13:00, 45d@13:20, 60d@13:40, 90d@14:00, 180d@14:20 NYC time")
+# logger.info("[MSS Scheduler] All staggered jobs registered with 20-minute intervals")
+# logger.info("Schedule: 10d@12:00, 15d@12:20, 20d@12:40, 30d@13:00, 45d@13:20, 60d@13:40, 90d@14:00, 180d@14:20 NYC time")
 
 # ============================================================
 # API VIEWS - ALL THE ENDPOINTS
