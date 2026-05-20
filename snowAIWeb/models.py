@@ -3044,6 +3044,28 @@ class MSSHistoricalRecord(models.Model):
     def __str__(self):
         return f"{self.symbol} | {self.date_taken} | {self.period_days}d | MSS={self.mss:.1f}"
 
+
+from django.db import models
+
+class TradePosition(models.Model):
+    DIRECTION_CHOICES = [('long', 'Long'), ('short', 'Short')]
+
+    asset = models.CharField(max_length=20)
+    direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES, default='long')
+    entry_price = models.FloatField()
+    sl_dollars = models.FloatField(help_text="Dollar amount you lose if SL hits")
+    tp_dollars = models.FloatField(help_text="Dollar amount you gain if TP hits")
+    current_price = models.FloatField(null=True, blank=True)
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.asset} {self.direction} @ {self.entry_price}"
+
         
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)

@@ -50380,6 +50380,168 @@ def mss_chart_search_v1(request):
         return JsonResponse({'success': True, 'data': []})
 
 
+import json
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from .models import TradePosition
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_trade_positions_list(request):
+    positions = TradePosition.objects.all()
+    data = []
+    for p in positions:
+        data.append(snowai_build_position_payload(p))
+    return JsonResponse(data, safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trade_position_add(request):
+    try:
+        body = json.loads(request.body)
+        asset = body.get('asset', '').strip().upper()
+        direction = body.get('direction', 'long').lower()
+        entry_price = float(body.get('entry_price', 0))
+        sl_dollars = float(body.get('sl_dollars', 0))
+        tp_dollars = float(body.get('tp_dollars', 0))
+        current_price = body.get('current_price')
+        notes = body.get('notes', '')
+
+        if not asset or entry_price <= 0 or sl_dollars <= 0 or tp_dollars <= 0:
+            return JsonResponse({'error': 'asset, entry_price, sl_dollars, tp_dollars are required'}, status=400)
+
+        pos = TradePosition.objects.create(
+            asset=asset,
+            direction=direction,
+            entry_price=entry_price,
+            sl_dollars=sl_dollars,
+            tp_dollars=tp_dollars,
+            current_price=float(current_price) if current_price else None,
+            notes=notes,
+        )
+        return JsonResponse(snowai_build_position_payload(pos), status=201)
+    except (ValueError, KeyError) as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trade_position_update_price(request):
+    """Update the current price for a position to recalculate P&L."""
+    try:
+        body = json.loads(request.body)
+        position_id = body.get('id')
+        current_price = float(body.get('current_price', 0))
+
+        pos = TradePosition.objects.get(id=position_id)
+        pos.current_price = current_price
+        pos.save()
+        return JsonResponse(snowai_build_position_payload(pos))
+    except TradePosition.DoesNotExist:
+        return JsonResponse({'error': 'Position not found'}, status=404)
+    except (ValueError, KeyError) as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trade_position_delete(request):
+    try:
+        body = json.loads(request.body)
+        position_id = body.get('id')
+        pos = TradePosition.objects.get(id=position_id)
+        pos.delete()
+        return JsonResponse({'deleted': True, 'id': position_id})
+    except TradePosition.DoesNotExist:
+        return JsonResponse({'error': 'Position not found'}, status=404)
+
+
+def snowai_build_position_payload(pos):
+    """
+    Core math:
+    - We know SL = X dollars loss and TP = Y dollars gain from entry.
+    - So we derive the implied SL price and TP price in pips/price terms
+      using a ratio of current_price movement vs entry_price.
+    - progress: 0 = at entry, -1 = at SL, +1 = at TP
+    - unrealised_dollars: proportional to where current price sits
+    """
+    entry = pos.entry_price
+    current = pos.current_price
+    sl_usd = pos.sl_dollars
+    tp_usd = pos.tp_dollars
+    direction = pos.direction
+
+    rr_ratio = round(tp_usd / sl_usd, 2) if sl_usd > 0 else None
+
+    unrealised = None
+    progress = None  # -1 to +1 scale: -1=SL, 0=entry, +1=TP
+    percent_to_sl = None
+    percent_to_tp = None
+    status = 'open'
+
+    if current is not None and entry > 0:
+        # Price movement as a fraction of entry
+        raw_move = (current - entry) / entry  # positive = price went up
+
+        # For long: up is good. For short: down is good.
+        signed_move = raw_move if direction == 'long' else -raw_move
+
+        # Estimate unrealised P&L in dollars proportionally.
+        # We don't know position size, but we know:
+        #   a 100% adverse move = -sl_usd loss (i.e. SL hit)
+        #   a 100% favourable move = +tp_usd gain (i.e. TP hit)
+        # So we need to figure out what price move % corresponds to hitting SL or TP.
+        # We treat sl_usd and tp_usd as "if price moves X% against/for you".
+        # Since we don't have lot size, we use a linear interpolation:
+        #   - negative signed_move maps linearly to -sl_usd at SL
+        #   - positive signed_move maps linearly to +tp_usd at TP
+
+        if signed_move >= 0:
+            # Moving toward TP
+            unrealised = round(signed_move * tp_usd * 10, 2)
+            unrealised = min(unrealised, tp_usd)
+            progress = round(min(unrealised / tp_usd, 1.0), 3)
+        else:
+            # Moving toward SL
+            unrealised = round(signed_move * sl_usd * 10, 2)
+            unrealised = max(unrealised, -sl_usd)
+            progress = round(max(unrealised / sl_usd, -1.0), 3)
+
+        # Percent remaining to SL/TP
+        if progress <= 0:
+            percent_to_sl = round((1 + progress) * 100, 1)
+            percent_to_tp = 100.0
+        else:
+            percent_to_sl = 100.0
+            percent_to_tp = round((1 - progress) * 100, 1)
+
+        if progress <= -1:
+            status = 'sl_hit'
+        elif progress >= 1:
+            status = 'tp_hit'
+
+    return {
+        'id': pos.id,
+        'asset': pos.asset,
+        'direction': pos.direction,
+        'entry_price': pos.entry_price,
+        'current_price': pos.current_price,
+        'sl_dollars': pos.sl_dollars,
+        'tp_dollars': pos.tp_dollars,
+        'notes': pos.notes,
+        'rr_ratio': rr_ratio,
+        'unrealised_dollars': unrealised,
+        'progress': progress,
+        'percent_to_sl': percent_to_sl,
+        'percent_to_tp': percent_to_tp,
+        'status': status,
+        'created_at': pos.created_at.isoformat(),
+    }
+
+
     
 def book_order(request):
     if request.method == "POST":
