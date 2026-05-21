@@ -50904,17 +50904,17 @@ def snowai_trade_positions_refresh_prices(request):
                     f'⚡ SL Hit — {pos.asset}',
                     f'{direction_label} @ {pos.entry_price} → SL {pos.sl_price} hit. –${pos.sl_dollars}',
                 ))
-            elif pct_tp is not None and pct_tp >= 10:
+            elif pct_tp is not None and pct_tp >= 1:
                 alerts.append((
                     f'📈 {pos.asset} near TP ({pct_tp:.0f}%)',
                     f'{direction_label} — P&L: +${pnl:.2f} | Price: {live_price}',
                 ))
-            elif pct_sl is not None and pct_sl >= 10:
+            elif pct_sl is not None and pct_sl >= 1:
                 alerts.append((
                     f'⚠️ {pos.asset} near SL ({pct_sl:.0f}%)',
                     f'{direction_label} — P&L: ${pnl:.2f} | Price: {live_price}',
                 ))
-            elif pnl is not None and abs(pnl) >= 10:
+            elif pnl is not None and abs(pnl) >= 1:
                 sign = '+' if pnl > 0 else ''
                 alerts.append((
                     f'💰 {pos.asset} P&L update',
