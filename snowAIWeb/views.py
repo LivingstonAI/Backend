@@ -50464,10 +50464,11 @@ def snowai_fetch_live_price(asset):
             ticker_sym = symbol
 
         ticker = yf.Ticker(ticker_sym)
-        data = ticker.history(period='1d', interval='1m')
+
+        data = ticker.history(period='1d', interval='1m', prepost=True)
 
         if data.empty:
-            data = ticker.history(period='2d', interval='5m')
+            data = ticker.history(period='2d', interval='5m', prepost=True)
 
         if not data.empty:
             return float(data['Close'].iloc[-1])
