@@ -965,6 +965,7 @@ urlpatterns = [
      path('snowai-trade-position-update-price/',  views.snowai_trade_position_update_price,   name='snowai_trade_position_update_price'),
      path('snowai-trade-position-delete/',        views.snowai_trade_position_delete,         name='snowai_trade_position_delete'),
      path('snowai-market-sessions/',              views.snowai_market_sessions,               name='snowai_market_sessions'),
+     path('snowai-trade-positions-refresh/', views.snowai_trade_positions_refresh_prices, name='snowai_trade_positions_refresh'),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

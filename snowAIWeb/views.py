@@ -50382,6 +50382,103 @@ def mss_chart_search_v1(request):
 
 from datetime import datetime, timezone, timedelta
 
+
+def snowai_fetch_live_price(asset):
+    try:
+        symbol = asset.upper()
+
+        # ── Forex pairs → append =X ──────────────────────────────────────────
+        FOREX_PAIRS = {
+            'EURUSD','GBPUSD','USDJPY','USDCHF','AUDUSD','USDCAD',
+            'NZDUSD','EURGBP','EURJPY','AUDJPY','EURCHF','GBPJPY',
+            'GBPCHF','CADJPY','NZDJPY','EURAUD','EURCAD','CHFJPY',
+            'USDSGD','USDHKD','USDMXN','USDZAR','USDTRY','USDSEK',
+            'USDDKK','USDNOK','USDPLN','USDHUF','USDCZK',
+        }
+
+        # ── Explicit ticker overrides ─────────────────────────────────────────
+        TICKER_MAP = {
+            # Metals & commodities
+            'XAUUSD':  'GC=F',
+            'XAGUSD':  'SI=F',
+            'XPTUSD':  'PL=F',
+            'XPDUSD':  'PA=F',
+            'USOIL':   'CL=F',
+            'UKOIL':   'BZ=F',
+            'NATGAS':  'NG=F',
+            'WHEAT':   'ZW=F',
+            'CORN':    'ZC=F',
+            'SOYBN':   'ZS=F',
+
+            # Crypto
+            'BTCUSD':  'BTC-USD',
+            'ETHUSD':  'ETH-USD',
+            'LTCUSD':  'LTC-USD',
+            'XRPUSD':  'XRP-USD',
+            'ADAUSD':  'ADA-USD',
+            'DOTUSD':  'DOT-USD',
+            'DOGEUSD': 'DOGE-USD',
+            'SOLUSD':  'SOL-USD',
+            'MATICUSD':'MATIC-USD',
+            'AVAXUSD': 'AVAX-USD',
+            'LINKUSD': 'LINK-USD',
+
+            # Indices
+            'US30':    'YM=F',
+            'NAS100':  'NQ=F',
+            'SPX500':  'ES=F',
+            'USTEC':   'NQ=F',
+            'US2000':  'RTY=F',
+            'VIX':     '^VIX',
+            'UK100':   '^FTSE',
+            'GER40':   '^GDAXI',
+            'FRA40':   '^FCHI',
+            'SPA35':   '^IBEX',
+            'NETH25':  '^AEX',
+            'JPN225':  '^N225',
+            'HK50':    '^HSI',
+            'CHINA50': '000016.SS',
+            'SING30':  '^STI',
+            'AUS200':  '^AXJO',
+            'CAN60':   '^GSPTSE',
+            'MEX35':   '^MXX',
+            'BRA60':   '^BVSP',
+            'ARG35':   '^MERV',
+
+            # Bonds (ETF proxies — no direct futures ticker on free yfinance)
+            'US10Y':   '^TNX',
+            'US30Y':   '^TYX',
+            'US2Y':    '^IRX',
+            'US5Y':    '^FVX',
+
+            # Special tickers that need renaming
+            'BRK-B':   'BRK-B',
+        }
+
+        if symbol in TICKER_MAP:
+            ticker_sym = TICKER_MAP[symbol]
+        elif symbol in FOREX_PAIRS:
+            ticker_sym = symbol + '=X'
+        else:
+            # US stocks, Chinese ADRs, ETFs — use symbol as-is
+            ticker_sym = symbol
+
+        ticker = yf.Ticker(ticker_sym)
+        data = ticker.history(period='1d', interval='1m')
+
+        if data.empty:
+            data = ticker.history(period='2d', interval='5m')
+
+        if not data.empty:
+            return float(data['Close'].iloc[-1])
+
+        return None
+
+    except Exception as e:
+        print(f"snowai_fetch_live_price error for {asset}: {e}")
+        return None
+
+
 # ─── MARKET SESSION HELPER ────────────────────────────────────────────────────
 
 def snowai_get_market_sessions():
@@ -50446,32 +50543,7 @@ def snowai_get_market_sessions():
 
 
 # ─── POSITION MATH ────────────────────────────────────────────────────────────
-
 def snowai_calculate_position(pos):
-    """
-    Core math using actual price levels:
-
-    We know:
-      entry_price, sl_price, tp_price  → the actual price levels
-      sl_dollars, tp_dollars           → dollar values at those levels
-
-    From this we can derive:
-      pip_value = sl_dollars / abs(entry_price - sl_price)
-        (how much $1 of price move is worth — i.e. implied position size)
-
-    Then for any current_price:
-      price_pnl   = current_price - entry_price  (signed, raw price difference)
-      dollar_pnl  = price_pnl * pip_value  (for long)
-                  = -price_pnl * pip_value  (for short)
-
-      progress_to_tp:  how far from entry to TP we've travelled  (0–100%)
-      progress_to_sl:  how far from entry to SL we've travelled  (0–100%)
-
-      bar_position (-1 to +1):
-        -1 = exactly at SL price
-         0 = exactly at entry price
-        +1 = exactly at TP price
-    """
     entry  = pos.entry_price
     sl_p   = pos.sl_price
     tp_p   = pos.tp_price
@@ -50480,11 +50552,37 @@ def snowai_calculate_position(pos):
     direction = pos.direction
     current = pos.current_price
 
-    sl_distance = abs(entry - sl_p)   # price distance entry→SL
-    tp_distance = abs(tp_p - entry)   # price distance entry→TP
+    # Guard: if any price field is None (old rows), return safe minimal payload
+    if entry is None or sl_p is None or tp_p is None:
+        return {
+            'id':             pos.id,
+            'asset':          pos.asset,
+            'direction':      pos.direction,
+            'entry_price':    pos.entry_price,
+            'sl_price':       pos.sl_price,
+            'tp_price':       pos.tp_price,
+            'sl_dollars':     pos.sl_dollars,
+            'tp_dollars':     pos.tp_dollars,
+            'current_price':  pos.current_price,
+            'notes':          pos.notes,
+            'rr_ratio':       None,
+            'pip_value':      None,
+            'unrealised_dollars': None,
+            'price_pnl':      None,
+            'bar_position':   None,
+            'pct_to_tp':      None,
+            'pct_to_sl':      None,
+            'status':         'open',
+            'created_at':     pos.created_at.isoformat(),
+            'sessions':       snowai_get_market_sessions(),
+            'live_price_used': False,
+        }
+
+    sl_distance = abs(entry - sl_p)
+    tp_distance = abs(tp_p - entry)
 
     pip_value = sl_usd / sl_distance if sl_distance > 0 else 0
-    rr_ratio  = round(tp_usd / sl_usd, 2) if sl_usd > 0 else None
+    rr_ratio  = round(tp_usd / sl_usd, 2) if sl_usd and sl_usd > 0 else None
 
     result = {
         'id':           pos.id,
@@ -50501,33 +50599,24 @@ def snowai_calculate_position(pos):
         'pip_value':    round(pip_value, 4),
         'unrealised_dollars': None,
         'price_pnl':    None,
-        'bar_position': None,    # -1 to +1
-        'pct_to_tp':    None,    # 0–100
-        'pct_to_sl':    None,    # 0–100
+        'bar_position': None,
+        'pct_to_tp':    None,
+        'pct_to_sl':    None,
         'status':       'open',
         'created_at':   pos.created_at.isoformat(),
         'sessions':     snowai_get_market_sessions(),
+        'live_price_used': False,
     }
 
     if current is not None and pip_value > 0:
-        # Signed price move (positive = price went up)
-        raw_move = current - entry
-
-        # For long: up = profit. For short: up = loss.
+        raw_move    = current - entry
         signed_move = raw_move if direction == 'long' else -raw_move
+        dollar_pnl  = round(signed_move * pip_value, 2)
+        price_pnl   = round(raw_move if direction == 'long' else -raw_move, 6)
 
-        price_pnl_display = raw_move if direction == 'long' else -raw_move
-
-        dollar_pnl = round(signed_move * pip_value, 2)
-        price_pnl  = round(price_pnl_display, 6)
-
-        # Progress toward TP (0–100%), capped
         pct_to_tp = round(min(max((signed_move / tp_distance) * 100, 0), 100), 1) if tp_distance > 0 else 0
-
-        # Progress toward SL (0–100%), capped
         pct_to_sl = round(min(max((-signed_move / sl_distance) * 100, 0), 100), 1) if sl_distance > 0 else 0
 
-        # Bar position: -1 at SL price, 0 at entry, +1 at TP price
         if signed_move >= 0:
             bar_position = round(min(signed_move / tp_distance, 1.0), 3) if tp_distance > 0 else 0
         else:
@@ -50535,10 +50624,10 @@ def snowai_calculate_position(pos):
 
         status = 'open'
         if direction == 'long':
-            if current <= sl_p: status = 'sl_hit'
+            if current <= sl_p:  status = 'sl_hit'
             elif current >= tp_p: status = 'tp_hit'
         else:
-            if current >= sl_p: status = 'sl_hit'
+            if current >= sl_p:  status = 'sl_hit'
             elif current <= tp_p: status = 'tp_hit'
 
         result.update({
@@ -50553,13 +50642,39 @@ def snowai_calculate_position(pos):
     return result
 
 
-# ─── VIEWS ────────────────────────────────────────────────────────────────────
-
 @csrf_exempt
 @require_http_methods(["GET"])
 def snowai_trade_positions_list(request):
     positions = TradePosition.objects.all()
     return JsonResponse([snowai_calculate_position(p) for p in positions], safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trade_positions_refresh_prices(request):
+    """
+    Fetches live prices for all positions via yfinance,
+    saves them to the DB, and returns the recalculated payloads.
+    """
+    positions = TradePosition.objects.all()
+    results = []
+    updated_count = 0
+
+    for pos in positions:
+        live_price = snowai_fetch_live_price(pos.asset)
+        if live_price is not None:
+            pos.current_price = live_price
+            pos.save(update_fields=['current_price'])
+            updated_count += 1
+        payload = snowai_calculate_position(pos)
+        payload['live_price_used'] = live_price is not None
+        results.append(payload)
+
+    return JsonResponse({
+        'positions': results,
+        'updated_count': updated_count,
+        'total': len(results),
+    })
 
 
 @csrf_exempt
