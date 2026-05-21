@@ -960,10 +960,11 @@ urlpatterns = [
     path('api/snowai_trend_reversal_scanner_vault/', views.snowai_trend_reversal_scanner_vault),
 
     # Trade Positions (SnowAI)
-    path('snowai-trade-positions/', views.snowai_trade_positions_list, name='snowai_trade_positions_list'),
-    path('snowai-trade-position-add/', views.snowai_trade_position_add, name='snowai_trade_position_add'),
-    path('snowai-trade-position-update-price/', views.snowai_trade_position_update_price, name='snowai_trade_position_update_price'),
-    path('snowai-trade-position-delete/', views.snowai_trade_position_delete, name='snowai_trade_position_delete'),
+     path('snowai-trade-positions/',              views.snowai_trade_positions_list,          name='snowai_trade_positions_list'),
+     path('snowai-trade-position-add/',           views.snowai_trade_position_add,            name='snowai_trade_position_add'),
+     path('snowai-trade-position-update-price/',  views.snowai_trade_position_update_price,   name='snowai_trade_position_update_price'),
+     path('snowai-trade-position-delete/',        views.snowai_trade_position_delete,         name='snowai_trade_position_delete'),
+     path('snowai-market-sessions/',              views.snowai_market_sessions,               name='snowai_market_sessions'),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
