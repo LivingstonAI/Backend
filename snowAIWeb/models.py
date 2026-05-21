@@ -3065,6 +3065,16 @@ class TradePosition(models.Model):
 
     def __str__(self):
         return f"{self.asset} {self.direction} @ {self.entry_price}"
+
+
+class PushSubscription(models.Model):
+    endpoint    = models.TextField(unique=True)
+    p256dh      = models.TextField()
+    auth        = models.TextField()
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.endpoint[:60]
         
 
 class ContactUs(models.Model):

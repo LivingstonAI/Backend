@@ -50747,7 +50747,191 @@ def snowai_market_sessions(request):
     """Standalone endpoint to check current session status."""
     return JsonResponse(snowai_get_market_sessions())
 
-    
+
+
+# import base64
+# from py_vapid import Vapid
+# from cryptography.hazmat.primitives import serialization
+
+# # 1. Initialize and generate keys
+# v = Vapid()
+# v.generate_keys()
+
+# # 2. Extract the raw Private Key bytes and encode to URL-safe Base64
+# private_num = v.private_key.private_numbers().private_value
+# # convert the big integer to exactly 32 bytes
+# private_bytes = private_num.to_bytes(32, byteorder='big') 
+# priv = base64.urlsafe_b64encode(private_bytes).decode('utf-8').rstrip('=')
+
+# # 3. Extract the raw Public Key bytes (Uncompressed X9.62 format) and encode
+# public_bytes = v.public_key.public_bytes(
+#     encoding=serialization.Encoding.X962,
+#     format=serialization.PublicFormat.UncompressedPoint
+# )
+# pub = base64.urlsafe_b64encode(public_bytes).decode('utf-8').rstrip('=')
+
+# print('PRIVATE:', priv)
+# print('PUBLIC:', pub)
+
+from pywebpush import webpush, WebPushException
+import json
+
+# ── Paste your generated keys here ──────────────────────────────────────────
+SNOWAI_VAPID_PRIVATE_KEY = os.environ['SNOWAI_VAPID_PRIVATE_KEY']
+SNOWAI_VAPID_PUBLIC_KEY  = os.environ['SNOWAI_VAPID_PUBLIC_KEY']
+SNOWAI_VAPID_CLAIMS      = {'sub': 'mailto:motingwetloto@yahoo.com'}
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_vapid_public_key(request):
+    """Frontend fetches this to register the push subscription."""
+    return JsonResponse({'public_key': SNOWAI_VAPID_PUBLIC_KEY})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_push_subscribe(request):
+    """Save a browser push subscription."""
+    try:
+        body = json.loads(request.body)
+        endpoint = body.get('endpoint')
+        p256dh   = body.get('keys', {}).get('p256dh')
+        auth     = body.get('keys', {}).get('auth')
+
+        if not endpoint or not p256dh or not auth:
+            return JsonResponse({'error': 'Missing fields'}, status=400)
+
+        sub, created = PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={'p256dh': p256dh, 'auth': auth}
+        )
+        return JsonResponse({'status': 'subscribed', 'created': created})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_push_unsubscribe(request):
+    """Remove a push subscription."""
+    try:
+        body = json.loads(request.body)
+        PushSubscription.objects.filter(endpoint=body.get('endpoint')).delete()
+        return JsonResponse({'status': 'unsubscribed'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+def snowai_send_push_notification(title, body, icon='/logo192.png', url='/'):
+    """
+    Sends a push notification to ALL saved subscriptions.
+    Call this from anywhere in your views.
+    """
+    subscriptions = PushSubscription.objects.all()
+    dead = []
+
+    payload = json.dumps({
+        'title': title,
+        'body':  body,
+        'icon':  icon,
+        'url':   url,
+    })
+
+    for sub in subscriptions:
+        try:
+            webpush(
+                subscription_info={
+                    'endpoint': sub.endpoint,
+                    'keys': {
+                        'p256dh': sub.p256dh,
+                        'auth':   sub.auth,
+                    }
+                },
+                data=payload,
+                vapid_private_key=SNOWAI_VAPID_PRIVATE_KEY,
+                vapid_claims=SNOWAI_VAPID_CLAIMS,
+            )
+        except WebPushException as e:
+            # 410 Gone = subscription expired/revoked, clean it up
+            if '410' in str(e) or '404' in str(e):
+                dead.append(sub.id)
+            else:
+                print(f'Push error for {sub.endpoint[:40]}: {e}')
+
+    if dead:
+        PushSubscription.objects.filter(id__in=dead).delete()
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trade_positions_refresh_prices(request):
+    """
+    Fetches live prices, saves them, sends push notifications
+    for significant P&L moves, TP hits, and SL hits.
+    """
+    positions = TradePosition.objects.all()
+    results = []
+    updated_count = 0
+    alerts = []
+
+    for pos in positions:
+        live_price = snowai_fetch_live_price(pos.asset)
+        if live_price is not None:
+            pos.current_price = live_price
+            pos.save(update_fields=['current_price'])
+            updated_count += 1
+
+        payload = snowai_calculate_position(pos)
+        payload['live_price_used'] = live_price is not None
+        results.append(payload)
+
+        # ── Fire notifications for notable events ────────────────────────────
+        if live_price is not None and payload.get('status') and pos.sl_price and pos.tp_price:
+            status = payload['status']
+            pnl    = payload.get('unrealised_dollars')
+            pct_tp = payload.get('pct_to_tp')
+            pct_sl = payload.get('pct_to_sl')
+            direction_label = '▲ LONG' if pos.direction == 'long' else '▼ SHORT'
+
+            if status == 'tp_hit':
+                alerts.append((
+                    f'🎯 TP Hit — {pos.asset}',
+                    f'{direction_label} @ {pos.entry_price} → TP {pos.tp_price} hit! +${pos.tp_dollars}',
+                ))
+            elif status == 'sl_hit':
+                alerts.append((
+                    f'⚡ SL Hit — {pos.asset}',
+                    f'{direction_label} @ {pos.entry_price} → SL {pos.sl_price} hit. –${pos.sl_dollars}',
+                ))
+            elif pct_tp is not None and pct_tp >= 75:
+                alerts.append((
+                    f'📈 {pos.asset} near TP ({pct_tp:.0f}%)',
+                    f'{direction_label} — P&L: +${pnl:.2f} | Price: {live_price}',
+                ))
+            elif pct_sl is not None and pct_sl >= 75:
+                alerts.append((
+                    f'⚠️ {pos.asset} near SL ({pct_sl:.0f}%)',
+                    f'{direction_label} — P&L: ${pnl:.2f} | Price: {live_price}',
+                ))
+            elif pnl is not None and abs(pnl) >= 50:
+                sign = '+' if pnl > 0 else ''
+                alerts.append((
+                    f'💰 {pos.asset} P&L update',
+                    f'{direction_label} — {sign}${pnl:.2f} | {live_price}',
+                ))
+
+    # Send all alerts
+    for title, body in alerts:
+        snowai_send_push_notification(title, body, url='/snowai-central-hub')
+
+    return JsonResponse({
+        'positions':     results,
+        'updated_count': updated_count,
+        'total':         len(results),
+        'alerts_sent':   len(alerts),
+    })
+
 def book_order(request):
     if request.method == "POST":
         # Get form data from request body
