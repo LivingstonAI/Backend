@@ -50932,6 +50932,96 @@ def snowai_trade_positions_refresh_prices(request):
         'alerts_sent':   len(alerts),
     })
 
+
+# ── SnowAI trade position alerts (runs every 5 minutes on the server) ────────
+def run_trade_position_alerts():
+    try:
+        if not PushSubscription.objects.exists():
+            return
+
+        positions = TradePosition.objects.all()
+        if not positions.exists():
+            return
+
+        alerts = []
+        summaries = []
+
+        for pos in positions:
+            live_price = snowai_fetch_live_price(pos.asset)
+            if live_price is None:
+                continue
+
+            pos.current_price = live_price
+            pos.save(update_fields=['current_price'])
+
+            payload = snowai_calculate_position(pos)
+            status  = payload.get('status', 'open')
+            pnl     = payload.get('unrealised_dollars')
+            pct_tp  = payload.get('pct_to_tp')
+            pct_sl  = payload.get('pct_to_sl')
+            dir_lbl = '▲' if pos.direction == 'long' else '▼'
+            pnl_str = f'{("+" if pnl >= 0 else "")}${pnl:.2f}' if pnl is not None else 'N/A'
+
+            summaries.append(f'{dir_lbl} {pos.asset}  {pnl_str}  @ {live_price}')
+
+            if status == 'tp_hit':
+                alerts.append((
+                    f'🎯 TP Hit — {pos.asset}',
+                    f'{dir_lbl} entry {pos.entry_price} → TP {pos.tp_price}  +${pos.tp_dollars}',
+                    'snowai-alert-tp',
+                ))
+            elif status == 'sl_hit':
+                alerts.append((
+                    f'⚡ SL Hit — {pos.asset}',
+                    f'{dir_lbl} entry {pos.entry_price} → SL {pos.sl_price}  –${pos.sl_dollars}',
+                    'snowai-alert-sl',
+                ))
+            elif pct_tp is not None and pct_tp >= 75:
+                alerts.append((
+                    f'📈 {pos.asset} near TP ({pct_tp:.0f}%)',
+                    f'{dir_lbl} P&L {pnl_str}  |  price {live_price}',
+                    f'snowai-alert-neartp-{pos.id}',
+                ))
+            elif pct_sl is not None and pct_sl >= 75:
+                alerts.append((
+                    f'⚠️ {pos.asset} near SL ({pct_sl:.0f}%)',
+                    f'{dir_lbl} P&L {pnl_str}  |  price {live_price}',
+                    f'snowai-alert-nearsl-{pos.id}',
+                ))
+            elif pnl is not None and abs(pnl) >= 50:
+                sign = '+' if pnl > 0 else ''
+                alerts.append((
+                    f'💰 {pos.asset} — {sign}${pnl:.2f}',
+                    f'{dir_lbl} entry {pos.entry_price}  |  now {live_price}',
+                    f'snowai-alert-pnl-{pos.id}',
+                ))
+
+        if summaries:
+            snowai_send_push_notification(
+                title=f'📊 SnowAI — {len(summaries)} open position{"s" if len(summaries) != 1 else ""}',
+                body='\n'.join(summaries),
+                url='/snowai_central_hub',
+                tag='snowai-summary',
+            )
+
+        for title, body, tag in alerts:
+            snowai_send_push_notification(title, body, url='/snowai_central_hub', tag=tag)
+
+    except Exception as e:
+        print(f'[SnowAI Scheduler] Error: {e}')
+
+
+scheduler.add_job(
+    run_trade_position_alerts,
+    trigger=IntervalTrigger(minutes=5),
+    id='snowai_trade_alerts_job',
+    name='SnowAI trade position alerts every 5 minutes',
+    replace_existing=True,
+    max_instances=1,
+    misfire_grace_time=60,
+)
+
+
 def book_order(request):
     if request.method == "POST":
         # Get form data from request body
