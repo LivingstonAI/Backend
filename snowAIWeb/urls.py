@@ -969,6 +969,21 @@ urlpatterns = [
      path('snowai-vapid-public-key/',   views.snowai_vapid_public_key,    name='snowai_vapid_public_key'),
      path('snowai-push-subscribe/',     views.snowai_push_subscribe,       name='snowai_push_subscribe'),
      path('snowai-push-unsubscribe/',   views.snowai_push_unsubscribe,     name='snowai_push_unsubscribe'),
+
+     # ── Companies of Interest ────────────────────────────────────────────────
+    path('snowai-companies-of-interest/',                                views.snowai_companies_of_interest_list,         name='snowai_companies_of_interest_list'),
+    path('snowai-companies-of-interest/add/',                            views.snowai_companies_of_interest_add,          name='snowai_companies_of_interest_add'),
+    path('snowai-companies-of-interest/<int:company_id>/',               views.snowai_companies_of_interest_detail,       name='snowai_companies_of_interest_detail'),
+    path('snowai-companies-of-interest/<int:company_id>/update/',        views.snowai_companies_of_interest_update,       name='snowai_companies_of_interest_update'),
+    path('snowai-companies-of-interest/<int:company_id>/delete/',        views.snowai_companies_of_interest_delete,       name='snowai_companies_of_interest_delete'),
+ 
+    # Key people
+    path('snowai-companies-of-interest/<int:company_id>/add-person/',    views.snowai_companies_of_interest_add_person,   name='snowai_companies_of_interest_add_person'),
+    path('snowai-companies-of-interest/delete-person/<int:person_id>/',  views.snowai_companies_of_interest_delete_person,name='snowai_companies_of_interest_delete_person'),
+ 
+    # Links / PDFs / YouTube
+    path('snowai-companies-of-interest/<int:company_id>/add-link/',      views.snowai_companies_of_interest_add_link,     name='snowai_companies_of_interest_add_link'),
+    path('snowai-companies-of-interest/delete-link/<int:link_id>/',      views.snowai_companies_of_interest_delete_link,  name='snowai_companies_of_interest_delete_link'),
     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

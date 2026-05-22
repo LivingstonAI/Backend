@@ -3075,6 +3075,58 @@ class PushSubscription(models.Model):
 
     def __str__(self):
         return self.endpoint[:60]
+
+
+from django.db import models
+
+
+class SnowAICompany(models.Model):
+    name         = models.CharField(max_length=255)
+    description  = models.TextField(blank=True, default='')
+    sector       = models.CharField(max_length=100, blank=True, default='')
+    logo_base64  = models.TextField(blank=True, default='', help_text='Base64-encoded logo image')
+    created_at   = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class SnowAICompanyKeyPerson(models.Model):
+    company      = models.ForeignKey(SnowAICompany, on_delete=models.CASCADE, related_name='key_people')
+    name         = models.CharField(max_length=255)
+    role         = models.CharField(max_length=255, blank=True, default='')
+    bio          = models.TextField(blank=True, default='')
+    photo_base64 = models.TextField(blank=True, default='', help_text='Base64-encoded profile photo')
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f'{self.name} @ {self.company.name}'
+
+
+class SnowAICompanyLink(models.Model):
+    LINK_TYPES = [
+        ('url',      'Web Link'),
+        ('pdf',      'PDF Document'),
+        ('youtube',  'YouTube Video'),
+    ]
+    company    = models.ForeignKey(SnowAICompany, on_delete=models.CASCADE, related_name='links')
+    link_type  = models.CharField(max_length=20, choices=LINK_TYPES, default='url')
+    title      = models.CharField(max_length=255)
+    url        = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['link_type', 'title']
+
+    def __str__(self):
+        return f'{self.title} ({self.link_type}) — {self.company.name}'
         
 
 class ContactUs(models.Model):
