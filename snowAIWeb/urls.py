@@ -970,6 +970,7 @@ urlpatterns = [
      path('snowai-push-subscribe/',     views.snowai_push_subscribe,       name='snowai_push_subscribe'),
      path('snowai-push-unsubscribe/',   views.snowai_push_unsubscribe,     name='snowai_push_unsubscribe'),
 
+     
      # ── Companies of Interest ────────────────────────────────────────────────
     path('snowai-companies-of-interest/',                                views.snowai_companies_of_interest_list,         name='snowai_companies_of_interest_list'),
     path('snowai-companies-of-interest/add/',                            views.snowai_companies_of_interest_add,          name='snowai_companies_of_interest_add'),
@@ -984,7 +985,11 @@ urlpatterns = [
     # Links / PDFs / YouTube
     path('snowai-companies-of-interest/<int:company_id>/add-link/',      views.snowai_companies_of_interest_add_link,     name='snowai_companies_of_interest_add_link'),
     path('snowai-companies-of-interest/delete-link/<int:link_id>/',      views.snowai_companies_of_interest_delete_link,  name='snowai_companies_of_interest_delete_link'),
-    # create appproprate urls.py here
+    # Edit / update
+    path('snowai-companies-of-interest/update-person/<int:person_id>/', views.snowai_companies_of_interest_update_person, name='snowai_companies_of_interest_update_person'),
+    path('snowai-companies-of-interest/update-link/<int:link_id>/',    views.snowai_companies_of_interest_update_link,   name='snowai_companies_of_interest_update_link'),
+
+     # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
 

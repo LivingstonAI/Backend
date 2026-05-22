@@ -51247,6 +51247,280 @@ def snowai_companies_of_interest_delete_link(request, link_id):
         return JsonResponse({'deleted': True, 'id': link_id})
     except SnowAICompanyLink.DoesNotExist:
         return JsonResponse({'error': 'Link not found'}, status=404)
+
+
+import json
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from .models import SnowAICompany, SnowAICompanyKeyPerson, SnowAICompanyLink
+
+
+# ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+def snowai_company_serialize(company):
+    return {
+        'id':          company.id,
+        'name':        company.name,
+        'description': company.description,
+        'sector':      company.sector,
+        'logo_base64': company.logo_base64,
+        'created_at':  company.created_at.isoformat(),
+        'key_people': [
+            {
+                'id':           p.id,
+                'name':         p.name,
+                'role':         p.role,
+                'bio':          p.bio,
+                'photo_base64': p.photo_base64,
+            }
+            for p in company.key_people.all()
+        ],
+        'links': [
+            {
+                'id':        l.id,
+                'link_type': l.link_type,
+                'title':     l.title,
+                'url':       l.url,
+            }
+            for l in company.links.all()
+        ],
+    }
+
+
+def snowai_extract_youtube_id(url):
+    """Extract YouTube video ID from various URL formats."""
+    import re
+    patterns = [
+        r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{11})',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+
+# ─── COMPANY CRUD ──────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_companies_of_interest_list(request):
+    companies = SnowAICompany.objects.prefetch_related('key_people', 'links').all()
+    return JsonResponse([snowai_company_serialize(c) for c in companies], safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_companies_of_interest_detail(request, company_id):
+    try:
+        company = SnowAICompany.objects.prefetch_related('key_people', 'links').get(id=company_id)
+        return JsonResponse(snowai_company_serialize(company))
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_add(request):
+    try:
+        body        = json.loads(request.body)
+        name        = body.get('name', '').strip()
+        description = body.get('description', '').strip()
+        sector      = body.get('sector', '').strip()
+        logo_base64 = body.get('logo_base64', '')
+
+        if not name:
+            return JsonResponse({'error': 'Company name is required'}, status=400)
+
+        company = SnowAICompany.objects.create(
+            name=name,
+            description=description,
+            sector=sector,
+            logo_base64=logo_base64,
+        )
+        return JsonResponse(snowai_company_serialize(company), status=201)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_update(request, company_id):
+    try:
+        company     = SnowAICompany.objects.get(id=company_id)
+        body        = json.loads(request.body)
+
+        company.name        = body.get('name', company.name).strip()
+        company.description = body.get('description', company.description)
+        company.sector      = body.get('sector', company.sector)
+        if 'logo_base64' in body:
+            company.logo_base64 = body['logo_base64']
+        company.save()
+
+        company.refresh_from_db()
+        return JsonResponse(snowai_company_serialize(
+            SnowAICompany.objects.prefetch_related('key_people', 'links').get(id=company_id)
+        ))
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_delete(request, company_id):
+    try:
+        company = SnowAICompany.objects.get(id=company_id)
+        company.delete()
+        return JsonResponse({'deleted': True, 'id': company_id})
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+
+
+# ─── KEY PEOPLE CRUD ───────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_add_person(request, company_id):
+    try:
+        company      = SnowAICompany.objects.get(id=company_id)
+        body         = json.loads(request.body)
+        name         = body.get('name', '').strip()
+        role         = body.get('role', '').strip()
+        bio          = body.get('bio', '').strip()
+        photo_base64 = body.get('photo_base64', '')
+
+        if not name:
+            return JsonResponse({'error': 'Person name is required'}, status=400)
+
+        person = SnowAICompanyKeyPerson.objects.create(
+            company=company,
+            name=name,
+            role=role,
+            bio=bio,
+            photo_base64=photo_base64,
+        )
+        return JsonResponse({
+            'id':           person.id,
+            'name':         person.name,
+            'role':         person.role,
+            'bio':          person.bio,
+            'photo_base64': person.photo_base64,
+        }, status=201)
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_delete_person(request, person_id):
+    try:
+        person = SnowAICompanyKeyPerson.objects.get(id=person_id)
+        person.delete()
+        return JsonResponse({'deleted': True, 'id': person_id})
+    except SnowAICompanyKeyPerson.DoesNotExist:
+        return JsonResponse({'error': 'Person not found'}, status=404)
+
+
+# ─── LINKS CRUD ────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_add_link(request, company_id):
+    try:
+        company   = SnowAICompany.objects.get(id=company_id)
+        body      = json.loads(request.body)
+        link_type = body.get('link_type', 'url')
+        title     = body.get('title', '').strip()
+        url       = body.get('url', '').strip()
+
+        if not title or not url:
+            return JsonResponse({'error': 'Title and URL are required'}, status=400)
+
+        if link_type not in ['url', 'pdf', 'youtube']:
+            return JsonResponse({'error': 'Invalid link type'}, status=400)
+
+        # Auto-detect YouTube
+        if link_type == 'youtube' and not snowai_extract_youtube_id(url):
+            return JsonResponse({'error': 'Invalid YouTube URL'}, status=400)
+
+        link = SnowAICompanyLink.objects.create(
+            company=company,
+            link_type=link_type,
+            title=title,
+            url=url,
+        )
+        return JsonResponse({
+            'id':        link.id,
+            'link_type': link.link_type,
+            'title':     link.title,
+            'url':       link.url,
+        }, status=201)
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_delete_link(request, link_id):
+    try:
+        link = SnowAICompanyLink.objects.get(id=link_id)
+        link.delete()
+        return JsonResponse({'deleted': True, 'id': link_id})
+    except SnowAICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_update_person(request, person_id):
+    try:
+        person       = SnowAICompanyKeyPerson.objects.get(id=person_id)
+        body         = json.loads(request.body)
+        person.name  = body.get('name', person.name).strip()
+        person.role  = body.get('role', person.role)
+        person.bio   = body.get('bio', person.bio)
+        if 'photo_base64' in body:
+            person.photo_base64 = body['photo_base64']
+        person.save()
+        return JsonResponse({
+            'id':           person.id,
+            'name':         person.name,
+            'role':         person.role,
+            'bio':          person.bio,
+            'photo_base64': person.photo_base64,
+        })
+    except SnowAICompanyKeyPerson.DoesNotExist:
+        return JsonResponse({'error': 'Person not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_update_link(request, link_id):
+    try:
+        link       = SnowAICompanyLink.objects.get(id=link_id)
+        body       = json.loads(request.body)
+        link.title = body.get('title', link.title).strip()
+        link.url   = body.get('url', link.url).strip()
+        link.save()
+        return JsonResponse({
+            'id':        link.id,
+            'link_type': link.link_type,
+            'title':     link.title,
+            'url':       link.url,
+        })
+    except SnowAICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
         
 
 def book_order(request):
