@@ -24412,7 +24412,6 @@ def mss_stock_sector_relativistic_performance_comparator(request):
         }, status=500)
 
 
-
 @csrf_exempt
 @require_http_methods(["GET"])
 def snowai_get_all_hedge_funds(request):
@@ -24429,7 +24428,7 @@ def snowai_get_all_hedge_funds(request):
             fund_data = {
                 'id': fund.id,
                 'name': fund.name,
-                'logo_url': fund.logo_url,
+                'logo_base64': fund.logo_base64,
                 'description': fund.description,
                 'founded_year': fund.founded_year,
                 'aum': fund.aum,
@@ -24444,7 +24443,7 @@ def snowai_get_all_hedge_funds(request):
                         'wikipedia_url': person.wikipedia_url,
                         'linkedin_url': person.linkedin_url,
                         'bio': person.bio,
-                        'photo_url': person.photo_url
+                        'photo_base64': person.photo_base64
                     } for person in key_people
                 ],
                 'resources': [
@@ -24481,7 +24480,7 @@ def snowai_create_hedge_fund(request):
         
         fund = SnowAIHedgeFundEntity.objects.create(
             name=data.get('name'),
-            logo_url=data.get('logo_url'),
+            logo_base64=data.get('logo_base64'),
             description=data.get('description'),
             founded_year=data.get('founded_year'),
             aum=data.get('aum'),
@@ -24551,7 +24550,7 @@ def snowai_add_key_person(request, fund_id):
             wikipedia_url=data.get('wikipedia_url'),
             linkedin_url=data.get('linkedin_url'),
             bio=data.get('bio'),
-            photo_url=data.get('photo_url')
+            photo_base64=data.get('photo_base64')
         )
         
         return JsonResponse({'success': True, 'data': {'id': person.id}})
@@ -24648,6 +24647,7 @@ def snowai_delete_performance(request, performance_id):
         return JsonResponse({'success': False, 'error': 'Performance data not found'}, status=404)
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 
 
 # Add these to your views.py file

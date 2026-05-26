@@ -1431,10 +1431,11 @@ class SnowAITranscriptAnalysis(models.Model):
         super().save(*args, **kwargs)
 
 
+from django.db import models
 
 class SnowAIHedgeFundEntity(models.Model):
     name = models.CharField(max_length=255)
-    logo_url = models.URLField(max_length=500, blank=True, null=True, help_text="External URL for logo (e.g., imgur, cloudinary)")
+    logo_base64 = models.TextField(blank=True, null=True, help_text="Base64 encoded logo image")
     description = models.TextField(blank=True, null=True)
     founded_year = models.IntegerField(blank=True, null=True)
     aum = models.CharField(max_length=100, blank=True, null=True, help_text="Assets Under Management")
@@ -1460,7 +1461,7 @@ class SnowAIHedgeFundKeyPerson(models.Model):
     wikipedia_url = models.URLField(max_length=500, blank=True, null=True)
     linkedin_url = models.URLField(max_length=500, blank=True, null=True)
     bio = models.TextField(blank=True, null=True)
-    photo_url = models.URLField(max_length=500, blank=True, null=True, help_text="External URL for photo")
+    photo_base64 = models.TextField(blank=True, null=True, help_text="Base64 encoded photo")
     
     class Meta:
         ordering = ['name']
