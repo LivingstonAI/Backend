@@ -7771,13 +7771,13 @@ def manage_alerts():
 
 
 # Schedule the alert_bot function to run every 5 minutes
-scheduler.add_job(
-    manage_alerts,
-    trigger=IntervalTrigger(minutes=5),
-    id='manage_alerts_job',
-    name='Check alerts every 5 minutes',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     manage_alerts,
+#     trigger=IntervalTrigger(minutes=5),
+#     id='manage_alerts_job',
+#     name='Check alerts every 5 minutes',
+#     replace_existing=True
+# )
 
 
 @csrf_exempt
