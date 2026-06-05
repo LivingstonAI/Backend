@@ -989,6 +989,34 @@ urlpatterns = [
     path('snowai-companies-of-interest/update-person/<int:person_id>/', views.snowai_companies_of_interest_update_person, name='snowai_companies_of_interest_update_person'),
     path('snowai-companies-of-interest/update-link/<int:link_id>/',    views.snowai_companies_of_interest_update_link,   name='snowai_companies_of_interest_update_link'),
 
+    # ── Sector breakdown (GET) ────────────────────────────────────────────────
+    path(
+        'mac_fetch_sector_performance_breakdown/',
+        views.mac_fetch_sector_performance_breakdown,
+        name='mac_fetch_sector_performance_breakdown',
+    ),
+ 
+    # ── Synthesise / combine accounts (POST) ─────────────────────────────────
+    path(
+        'mac_synthesize_accounts_combined/',
+        views.mac_synthesize_accounts_combined,
+        name='mac_synthesize_accounts_combined',
+    ),
+ 
+    # ── Fetch all trades for one account (GET) ────────────────────────────────
+    path(
+        'mac_fetch_account_trades_list/<int:account_id>/',
+        views.mac_fetch_account_trades_list,
+        name='mac_fetch_account_trades_list',
+    ),
+ 
+    # ── Edit (PATCH) a single trade entry ────────────────────────────────────
+    path(
+        'mac_edit_account_trade_entry/<int:trade_id>/',
+        views.mac_edit_account_trade_entry,
+        name='mac_edit_account_trade_entry',
+    ),
+
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

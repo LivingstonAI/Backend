@@ -51521,6 +51521,292 @@ def snowai_companies_of_interest_update_link(request, link_id):
         return JsonResponse({'error': 'Link not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.db.models import Sum, Avg, Count, Q
+from .models import Account, AccountTrades
+import json
+from datetime import datetime
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SECTOR PERFORMANCE BREAKDOWN
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def mac_fetch_sector_performance_breakdown(request):
+    """
+    Aggregates trade performance grouped by sector across ALL accounts.
+    Returns avg ROI (relative to account initial_capital), win rate,
+    total trades, winning trades, losing trades, and net P&L per sector.
+    """
+    try:
+        # Pull every trade together with its account's initial_capital
+        trades = AccountTrades.objects.select_related('account').all()
+
+        sector_map = {}  # sector_name -> { trades, wins, losses, pnl, capitals }
+
+        for trade in trades:
+            sector = (trade.sector or 'Unknown').strip() or 'Unknown'
+            if sector not in sector_map:
+                sector_map[sector] = {
+                    'total_trades': 0,
+                    'winning_trades': 0,
+                    'losing_trades': 0,
+                    'net_pnl': 0.0,
+                    # We accumulate per-trade ROI contributions so we can avg them
+                    'roi_sum': 0.0,
+                }
+
+            initial = trade.account.initial_capital or 1  # avoid div/0
+
+            if trade.outcome == 'Win':
+                pnl = abs(trade.amount)
+                sector_map[sector]['winning_trades'] += 1
+            else:
+                pnl = -abs(trade.amount)
+                sector_map[sector]['losing_trades'] += 1
+
+            sector_map[sector]['total_trades'] += 1
+            sector_map[sector]['net_pnl'] += pnl
+            sector_map[sector]['roi_sum'] += (pnl / initial) * 100
+
+        result = []
+        for sector, data in sector_map.items():
+            t = data['total_trades']
+            win_rate = round((data['winning_trades'] / t * 100), 2) if t > 0 else 0
+            avg_roi  = round(data['roi_sum'] / t, 2) if t > 0 else 0
+
+            result.append({
+                'sector':         sector,
+                'total_trades':   t,
+                'winning_trades': data['winning_trades'],
+                'losing_trades':  data['losing_trades'],
+                'win_rate':       win_rate,
+                'avg_roi':        avg_roi,
+                'net_pnl':        round(data['net_pnl'], 2),
+            })
+
+        # Sort best → worst
+        result.sort(key=lambda x: x['avg_roi'], reverse=True)
+
+        return JsonResponse({'success': True, 'sectors': result})
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SYNTHESISE (COMBINE) ACCOUNTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mac_synthesize_accounts_combined(request):
+    """
+    Combines 2+ accounts into a single synthetic performance view.
+    Body: { "account_ids": [1,2,3], "save": true/false }
+    If save=true a new Account + all its trades are written to the DB.
+    The synthesised account_name is "Acc1, Acc2 & Acc3" style.
+    """
+    try:
+        body        = json.loads(request.body)
+        account_ids = body.get('account_ids', [])
+        want_save   = body.get('save', False)
+
+        if len(account_ids) < 2:
+            return JsonResponse({'success': False, 'error': 'Select at least 2 accounts'}, status=400)
+
+        accounts = Account.objects.filter(id__in=account_ids)
+        if accounts.count() != len(account_ids):
+            return JsonResponse({'success': False, 'error': 'One or more accounts not found'}, status=404)
+
+        # Build composite name:  "Acc1, Acc2 & Acc3"
+        names = list(accounts.values_list('account_name', flat=True))
+        if len(names) == 2:
+            combined_name = f"{names[0]} & {names[1]}"
+        else:
+            combined_name = ', '.join(names[:-1]) + f' & {names[-1]}'
+
+        combined_assets = ', '.join(
+            set(a for acc in accounts for a in acc.main_assets.split(','))
+        )
+
+        # Aggregate metrics
+        total_initial = sum(acc.initial_capital for acc in accounts)
+        all_trades    = AccountTrades.objects.filter(account__in=accounts)
+        total_trades  = all_trades.count()
+        wins          = all_trades.filter(outcome='Win').count()
+        losses        = all_trades.filter(outcome='Loss').count()
+
+        total_wins_amt   = all_trades.filter(outcome='Win').aggregate(Sum('amount'))['amount__sum'] or 0
+        total_losses_amt = all_trades.filter(outcome='Loss').aggregate(Sum('amount'))['amount__sum'] or 0
+        net_pnl          = total_wins_amt - total_losses_amt
+
+        win_rate = round((wins / total_trades * 100), 2) if total_trades > 0 else 0
+        roi      = round((net_pnl / total_initial * 100), 2) if total_initial > 0 else 0
+
+        synthesized = {
+            'account_name':    combined_name,
+            'main_assets':     combined_assets,
+            'initial_capital': round(total_initial, 2),
+            'total_trades':    total_trades,
+            'winning_trades':  wins,
+            'losing_trades':   losses,
+            'net_pnl':         round(net_pnl, 2),
+            'win_rate':        win_rate,
+            'roi':             roi,
+            'current_balance': round(total_initial + net_pnl, 2),
+        }
+
+        saved = False
+        if want_save:
+            # Avoid duplicate name collision
+            base_name = combined_name
+            counter   = 1
+            while Account.objects.filter(account_name=combined_name).exists():
+                combined_name = f"{base_name} ({counter})"
+                counter += 1
+
+            new_account = Account.objects.create(
+                account_name    = combined_name,
+                main_assets     = combined_assets,
+                initial_capital = total_initial,
+            )
+
+            # Clone all trades into the new account
+            trade_objs = []
+            for trade in all_trades:
+                trade_objs.append(AccountTrades(
+                    account                  = new_account,
+                    asset                    = trade.asset,
+                    order_type               = trade.order_type,
+                    strategy                 = trade.strategy,
+                    sector                   = trade.sector,
+                    day_of_week_entered      = trade.day_of_week_entered,
+                    day_of_week_closed       = trade.day_of_week_closed,
+                    trading_session_entered  = trade.trading_session_entered,
+                    trading_session_closed   = trade.trading_session_closed,
+                    outcome                  = trade.outcome,
+                    amount                   = trade.amount,
+                    emotional_bias           = trade.emotional_bias,
+                    reflection               = trade.reflection,
+                    date_entered             = trade.date_entered,
+                ))
+            AccountTrades.objects.bulk_create(trade_objs)
+            synthesized['account_name'] = combined_name
+            saved = True
+
+        return JsonResponse({
+            'success':     True,
+            'synthesized': synthesized,
+            'saved':       saved,
+        })
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  FETCH TRADES LIST FOR AN ACCOUNT  (for the Trade Entries tab)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def mac_fetch_account_trades_list(request, account_id):
+    """
+    Returns every trade for a given account as a flat list, ordered by
+    date_entered (newest first).  Used by the Trade Entries tab.
+    """
+    try:
+        account = Account.objects.get(id=account_id)
+        trades  = AccountTrades.objects.filter(account=account).order_by('-date_entered')
+
+        trade_list = []
+        for t in trades:
+            trade_list.append({
+                'id':                       t.id,
+                'asset':                    t.asset,
+                'order_type':               t.order_type,
+                'strategy':                 t.strategy,
+                'sector':                   t.sector or 'Unknown',
+                'day_of_week_entered':      t.day_of_week_entered,
+                'day_of_week_closed':       t.day_of_week_closed or '',
+                'trading_session_entered':  t.trading_session_entered,
+                'trading_session_closed':   t.trading_session_closed or '',
+                'outcome':                  t.outcome,
+                'amount':                   t.amount,
+                'emotional_bias':           t.emotional_bias or '',
+                'reflection':               t.reflection or '',
+                'date_entered':             t.date_entered.isoformat() if t.date_entered else None,
+            })
+
+        return JsonResponse({
+            'success':      True,
+            'account_name': account.account_name,
+            'trades':       trade_list,
+            'total':        len(trade_list),
+        })
+
+    except Account.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Account not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  EDIT A SINGLE TRADE ENTRY
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["PATCH"])
+def mac_edit_account_trade_entry(request, trade_id):
+    """
+    Partially updates a single AccountTrades row.
+    Body can contain any subset of the editable fields.
+    Uses PATCH so only supplied fields are updated.
+    """
+    try:
+        trade = AccountTrades.objects.get(id=trade_id)
+        body  = json.loads(request.body)
+
+        EDITABLE_FIELDS = [
+            'asset', 'order_type', 'strategy', 'sector',
+            'day_of_week_entered', 'day_of_week_closed',
+            'trading_session_entered', 'trading_session_closed',
+            'outcome', 'amount', 'emotional_bias', 'reflection',
+        ]
+
+        for field in EDITABLE_FIELDS:
+            if field in body:
+                setattr(trade, field, body[field])
+
+        # Handle date separately (parse ISO string)
+        if 'date_entered' in body and body['date_entered']:
+            try:
+                # Accept both "2024-01-15T10:30" and "2024-01-15T10:30:00"
+                raw = body['date_entered']
+                if len(raw) == 16:          # "YYYY-MM-DDTHH:MM"
+                    raw += ':00'
+                trade.date_entered = datetime.fromisoformat(raw)
+            except ValueError:
+                return JsonResponse({'success': False, 'error': 'Invalid date_entered format'}, status=400)
+
+        trade.save()
+
+        return JsonResponse({
+            'success':  True,
+            'trade_id': trade.id,
+            'message':  'Trade updated successfully',
+        })
+
+    except AccountTrades.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Trade not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
         
 
 def book_order(request):
