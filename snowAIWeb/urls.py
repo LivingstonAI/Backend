@@ -1021,7 +1021,7 @@ urlpatterns = [
     # POST  { url }  → { video_id, title, channel_name }
     path(
         'snowai-vtr/youtube-metadata/',
-        vtr_views.snowai_vtr_fetch_youtube_metadata,
+        views.snowai_vtr_fetch_youtube_metadata,
         name='snowai_vtr_fetch_youtube_metadata',
     ),
  
@@ -1029,56 +1029,56 @@ urlpatterns = [
     # GET   list / search / filter
     path(
         'snowai-vtr/transcripts/',
-        vtr_views.snowai_vtr_list_transcripts,
+        views.snowai_vtr_list_transcripts,
         name='snowai_vtr_list_transcripts',
     ),
  
     # POST  create or upsert by transcript_uuid
     path(
         'snowai-vtr/transcripts/save/',
-        vtr_views.snowai_vtr_save_transcript,
+        views.snowai_vtr_save_transcript,
         name='snowai_vtr_save_transcript',
     ),
  
     # GET   single transcript  (accepts numeric DB id or uuid string)
     path(
         'snowai-vtr/transcripts/<str:transcript_id>/',
-        vtr_views.snowai_vtr_get_transcript,
+        views.snowai_vtr_get_transcript,
         name='snowai_vtr_get_transcript',
     ),
  
     # POST  partial update
     path(
         'snowai-vtr/transcripts/<str:transcript_id>/update/',
-        vtr_views.snowai_vtr_update_transcript,
+        views.snowai_vtr_update_transcript,
         name='snowai_vtr_update_transcript',
     ),
  
     # POST  hard delete
     path(
         'snowai-vtr/transcripts/<str:transcript_id>/delete/',
-        vtr_views.snowai_vtr_delete_transcript,
+        views.snowai_vtr_delete_transcript,
         name='snowai_vtr_delete_transcript',
     ),
  
     # POST  soft archive
     path(
         'snowai-vtr/transcripts/<str:transcript_id>/archive/',
-        vtr_views.snowai_vtr_archive_transcript,
+        views.snowai_vtr_archive_transcript,
         name='snowai_vtr_archive_transcript',
     ),
  
     # GET   all transcripts for one YouTube video
     path(
         'snowai-vtr/by-video/<str:youtube_video_id>/',
-        vtr_views.snowai_vtr_list_by_video,
+        views.snowai_vtr_list_by_video,
         name='snowai_vtr_list_by_video',
     ),
  
     # GET   aggregate stats
     path(
         'snowai-vtr/stats/',
-        vtr_views.snowai_vtr_stats,
+        views.snowai_vtr_stats,
         name='snowai_vtr_stats',
     ),
 
