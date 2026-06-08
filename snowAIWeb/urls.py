@@ -1082,6 +1082,66 @@ urlpatterns = [
         name='snowai_vtr_stats',
     ),
 
+    path('snowai-vtr/youtube-metadata/',
+         snowai_vtr_fetch_youtube_metadata,   name='snowai_vtr_fetch_youtube_metadata'),
+    path('snowai-vtr/transcripts/',
+         snowai_vtr_list_transcripts,          name='snowai_vtr_list_transcripts'),
+    path('snowai-vtr/transcripts/save/',
+         snowai_vtr_save_transcript,           name='snowai_vtr_save_transcript'),
+    path('snowai-vtr/transcripts/<str:transcript_id>/',
+         snowai_vtr_get_transcript,            name='snowai_vtr_get_transcript'),
+    path('snowai-vtr/transcripts/<str:transcript_id>/update/',
+         snowai_vtr_update_transcript,         name='snowai_vtr_update_transcript'),
+    path('snowai-vtr/transcripts/<str:transcript_id>/delete/',
+         snowai_vtr_delete_transcript,         name='snowai_vtr_delete_transcript'),
+    path('snowai-vtr/transcripts/<str:transcript_id>/archive/',
+         snowai_vtr_archive_transcript,        name='snowai_vtr_archive_transcript'),
+    path('snowai-vtr/by-video/<str:youtube_video_id>/',
+         snowai_vtr_list_by_video,             name='snowai_vtr_list_by_video'),
+    path('snowai-vtr/stats/',
+         snowai_vtr_stats,                     name='snowai_vtr_stats'),
+ 
+    # Global list across all companies
+    # GET  ?company_id=&status=&source_type=&search=&page=&page_size=
+    path('snowai-ctr/transcripts/',
+         snowai_ctr_list_all,                  name='snowai_ctr_list_all'),
+ 
+    # Per-company list
+    # GET  /snowai-ctr/company/42/transcripts/
+    path('snowai-ctr/company/<int:company_id>/transcripts/',
+         snowai_ctr_list_for_company,          name='snowai_ctr_list_for_company'),
+ 
+    # Create / upsert  (POST body, upserts by transcript_uuid)
+    # POST /snowai-ctr/company/42/transcripts/save/
+    path('snowai-ctr/company/<int:company_id>/transcripts/save/',
+         snowai_ctr_save,                      name='snowai_ctr_save'),
+ 
+    # Single transcript — get / update / delete / archive / set-status
+    # GET  /snowai-ctr/company/42/transcripts/7/
+    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/',
+         snowai_ctr_get,                       name='snowai_ctr_get'),
+ 
+    # POST /snowai-ctr/company/42/transcripts/7/update/
+    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/update/',
+         snowai_ctr_update,                    name='snowai_ctr_update'),
+ 
+    # POST /snowai-ctr/company/42/transcripts/7/delete/
+    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/delete/',
+         snowai_ctr_delete,                    name='snowai_ctr_delete'),
+ 
+    # POST /snowai-ctr/company/42/transcripts/7/archive/
+    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/archive/',
+         snowai_ctr_archive,                   name='snowai_ctr_archive'),
+ 
+    # POST /snowai-ctr/company/42/transcripts/7/status/  { "status": "reviewed" }
+    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/status/',
+         snowai_ctr_set_status,                name='snowai_ctr_set_status'),
+ 
+    # Company-level aggregate stats
+    # GET  /snowai-ctr/company/42/stats/
+    path('snowai-ctr/company/<int:company_id>/stats/',
+         snowai_ctr_company_stats,             name='snowai_ctr_company_stats'),
+
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

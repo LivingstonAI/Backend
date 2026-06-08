@@ -3128,6 +3128,167 @@ class SnowAICompanyLink(models.Model):
 
     def __str__(self):
         return f'{self.title} ({self.link_type}) — {self.company.name}'
+
+
+"""
+SnowAI Company Transcript Model
+--------------------------------
+Paste this class into your existing models.py.
+
+It links each transcript directly to a company (via a plain integer FK
+so you don't need to import your existing Company model here — just set
+`company_id` directly from the integer PK).
+
+Run after adding:
+    python manage.py makemigrations
+    python manage.py migrate
+"""
+
+import uuid as _uuid
+from django.utils import timezone
+
+
+class SnowAICompanyTranscript(models.Model):
+    """
+    A transcript recorded and scoped to a specific company of interest.
+    Designed for live-recording via the browser Speech API and later processing.
+    """
+
+    # ── Identity ──────────────────────────────────────────────────────────────
+    transcript_uuid = models.CharField(
+        max_length=100, unique=True, db_index=True,
+        default=_uuid.uuid4,
+        help_text="Stable client-side UUID used for upsert operations.",
+    )
+
+    # ── Company FK ────────────────────────────────────────────────────────────
+    # Using a plain IntegerField so this file can be pasted into any app
+    # without importing your specific Company model.  The views join via
+    # .filter(company_id=...) which works identically.
+    company_id = models.IntegerField(
+        db_index=True,
+        help_text="FK → your company table PK (snowai_companies_of_interest.id).",
+    )
+    company_name = models.CharField(
+        max_length=300, blank=True, default='',
+        help_text="Denormalised company name — avoids a JOIN in the viewer.",
+    )
+
+    # ── Source video / document ───────────────────────────────────────────────
+    source_title = models.CharField(
+        max_length=500, blank=True, default='',
+        help_text="Title of the video, meeting, or document being transcribed.",
+    )
+    source_url = models.URLField(
+        max_length=1000, blank=True, null=True,
+        help_text="URL of the source (YouTube, meeting link, article, etc.).",
+    )
+    youtube_video_id = models.CharField(
+        max_length=50, blank=True, null=True,
+        help_text="Extracted YouTube video ID — null for non-YT sources.",
+    )
+    source_type = models.CharField(
+        max_length=30, default='youtube',
+        help_text="youtube | meeting | earnings_call | conference | interview | other",
+    )
+
+    # ── Speaker / context ────────────────────────────────────────────────────
+    speaker_name = models.CharField(max_length=300, blank=True, default='')
+    speaker_role = models.CharField(max_length=300, blank=True, default='',
+        help_text="e.g. CEO, CFO, Analyst")
+    event_name = models.CharField(max_length=300, blank=True, default='',
+        help_text="e.g. Q3 2024 Earnings Call, Davos 2024 Panel")
+    event_date = models.DateField(blank=True, null=True)
+
+    # ── Transcript content ───────────────────────────────────────────────────
+    full_transcript_text = models.TextField(
+        help_text="The full captured transcript text.",
+    )
+    transcript_language = models.CharField(
+        max_length=20, default='en-US',
+        help_text="BCP-47 language tag, e.g. en-US, fr-FR, zh-CN.",
+    )
+    recording_duration_seconds = models.IntegerField(
+        blank=True, null=True,
+        help_text="Wall-clock seconds of the live recording session.",
+    )
+    word_count = models.IntegerField(default=0, editable=False)
+
+    # ── Processing / status ──────────────────────────────────────────────────
+    STATUS_CHOICES = [
+        ('raw',        'Raw — not yet reviewed'),
+        ('reviewed',   'Reviewed'),
+        ('processed',  'Processed — analysis done'),
+        ('archived',   'Archived'),
+    ]
+    status = models.CharField(
+        max_length=20, default='raw', choices=STATUS_CHOICES, db_index=True,
+    )
+    transcription_method = models.CharField(
+        max_length=50, default='browser_speech_api',
+        help_text="browser_speech_api | manual | ai_generated | imported",
+    )
+
+    # ── Analysis fields (fill in later) ──────────────────────────────────────
+    summary = models.TextField(
+        blank=True, default='',
+        help_text="Human or AI-generated summary.",
+    )
+    key_points = models.JSONField(
+        default=list, blank=True,
+        help_text='["Point 1", "Point 2", ...]',
+    )
+    topics = models.JSONField(
+        default=list, blank=True,
+        help_text='["monetary_policy", "inflation", ...]',
+    )
+    sentiment_score = models.FloatField(
+        blank=True, null=True,
+        help_text="-1.0 (very negative) → +1.0 (very positive)",
+    )
+    analyst_notes = models.TextField(
+        blank=True, default='',
+        help_text="Free-form notes added after review.",
+    )
+    custom_tags = models.JSONField(default=list, blank=True)
+
+    # ── Timestamps ────────────────────────────────────────────────────────────
+    recorded_at = models.DateTimeField(
+        default=timezone.now,
+        help_text="When the live recording was made.",
+    )
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+    archived_at = models.DateTimeField(blank=True, null=True)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    class Meta:
+        db_table = 'snowai_company_transcripts'
+        ordering = ['-recorded_at']
+        indexes = [
+            models.Index(fields=['company_id', 'status']),
+            models.Index(fields=['company_id', 'recorded_at']),
+            models.Index(fields=['source_type']),
+            models.Index(fields=['transcript_language']),
+            models.Index(fields=['status']),
+            models.Index(fields=['recorded_at']),
+        ]
+
+    def __str__(self):
+        return (
+            f"[{self.company_name or self.company_id}] "
+            f"{self.source_title[:60] or 'Untitled'} "
+            f"({self.recorded_at:%Y-%m-%d})"
+        )
+
+    def save(self, *args, **kwargs):
+        # Auto-count words
+        if self.full_transcript_text:
+            self.word_count = len(self.full_transcript_text.split())
+        # Auto-set archived_at
+        if self.status == 'archived' and not self.archived_at:
+            self.archived_at = timezone.now()
+        super().save(*args, **kwargs)
         
 
 class ContactUs(models.Model):
