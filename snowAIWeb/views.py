@@ -52193,13 +52193,11 @@ Import in your urls file:
   from .snowai_transcripts_views import *   (or import individual functions)
 """
 
-import json
 import uuid
 import re
 import urllib.request
 from django.utils import timezone
 from django.core.paginator import Paginator
-from .models import SnowAIVideoTranscriptRecord, SnowAICompanyTranscript
 
 
 # ══════════════════════════════════════════════════════════════════════════════
