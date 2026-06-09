@@ -1017,72 +1017,9 @@ urlpatterns = [
         name='mac_edit_account_trade_entry',
     ),
 
-     # ── YouTube metadata auto-detect ──────────────────────────────────────────
-    # POST  { url }  → { video_id, title, channel_name }
-    path(
-        'snowai-vtr/youtube-metadata/',
-        views.snowai_vtr_fetch_youtube_metadata,
-        name='snowai_vtr_fetch_youtube_metadata',
-    ),
- 
-    # ── Transcripts CRUD ──────────────────────────────────────────────────────
-    # GET   list / search / filter
-    path(
-        'snowai-vtr/transcripts/',
-        views.snowai_vtr_list_transcripts,
-        name='snowai_vtr_list_transcripts',
-    ),
- 
-    # POST  create or upsert by transcript_uuid
-    path(
-        'snowai-vtr/transcripts/save/',
-        views.snowai_vtr_save_transcript,
-        name='snowai_vtr_save_transcript',
-    ),
- 
-    # GET   single transcript  (accepts numeric DB id or uuid string)
-    path(
-        'snowai-vtr/transcripts/<str:transcript_id>/',
-        views.snowai_vtr_get_transcript,
-        name='snowai_vtr_get_transcript',
-    ),
- 
-    # POST  partial update
-    path(
-        'snowai-vtr/transcripts/<str:transcript_id>/update/',
-        views.snowai_vtr_update_transcript,
-        name='snowai_vtr_update_transcript',
-    ),
- 
-    # POST  hard delete
-    path(
-        'snowai-vtr/transcripts/<str:transcript_id>/delete/',
-        views.snowai_vtr_delete_transcript,
-        name='snowai_vtr_delete_transcript',
-    ),
- 
-    # POST  soft archive
-    path(
-        'snowai-vtr/transcripts/<str:transcript_id>/archive/',
-        views.snowai_vtr_archive_transcript,
-        name='snowai_vtr_archive_transcript',
-    ),
- 
-    # GET   all transcripts for one YouTube video
-    path(
-        'snowai-vtr/by-video/<str:youtube_video_id>/',
-        views.snowai_vtr_list_by_video,
-        name='snowai_vtr_list_by_video',
-    ),
- 
-    # GET   aggregate stats
-    path(
-        'snowai-vtr/stats/',
-        views.snowai_vtr_stats,
-        name='snowai_vtr_stats',
-    ),
+     #  Companies URL
 
-    path('snowai-vtr/youtube-metadata/',
+     path('snowai-vtr/youtube-metadata/',
          snowai_vtr_fetch_youtube_metadata,   name='snowai_vtr_fetch_youtube_metadata'),
     path('snowai-vtr/transcripts/',
          snowai_vtr_list_transcripts,          name='snowai_vtr_list_transcripts'),
@@ -1100,6 +1037,8 @@ urlpatterns = [
          snowai_vtr_list_by_video,             name='snowai_vtr_list_by_video'),
     path('snowai-vtr/stats/',
          snowai_vtr_stats,                     name='snowai_vtr_stats'),
+ 
+# ── New CTR routes (company-scoped) ──────────────────────────────────────────
  
     # Global list across all companies
     # GET  ?company_id=&status=&source_type=&search=&page=&page_size=
@@ -1132,6 +1071,12 @@ urlpatterns = [
     # POST /snowai-ctr/company/42/transcripts/7/archive/
     path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/archive/',
          snowai_ctr_archive,                   name='snowai_ctr_archive'),
+ 
+    # POST /snowai-ctr/company/42/transcripts/7/apply-ai/
+    # Body: { summary, key_points, topics, sentiment_score, analyst_notes }
+    # Saves AI analysis fields + auto-sets status → processed
+    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/apply-ai/',
+         snowai_ctr_apply_ai_analysis,         name='snowai_ctr_apply_ai_analysis'),
  
     # POST /snowai-ctr/company/42/transcripts/7/status/  { "status": "reviewed" }
     path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/status/',
