@@ -52199,6 +52199,8 @@ import re
 import urllib.request
 from django.utils import timezone
 from django.core.paginator import Paginator
+from .models import SnowAIVideoTranscriptRecord, SnowAICompanyTranscript
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  SHARED HELPERS
@@ -52738,6 +52740,7 @@ def snowai_ctr_list_all(request):
     """
     GET /snowai-ctr/transcripts/
     All company transcripts, with optional filters: company_id, status, search, page
+    search checks: source_title, speaker_name, company_name, full_transcript_text, summary, topics
     """
     try:
         qs = SnowAICompanyTranscript.objects.exclude(status='archived').order_by('-recorded_at')
@@ -52747,8 +52750,13 @@ def snowai_ctr_list_all(request):
         if v := request.GET.get('search', '').strip():
             from django.db.models import Q
             qs = qs.filter(
-                Q(source_title__icontains=v) | Q(speaker_name__icontains=v) |
-                Q(company_name__icontains=v) | Q(full_transcript_text__icontains=v)
+                Q(source_title__icontains=v)       |
+                Q(speaker_name__icontains=v)        |
+                Q(company_name__icontains=v)        |
+                Q(full_transcript_text__icontains=v)|
+                Q(summary__icontains=v)             |
+                Q(analyst_notes__icontains=v)       |
+                Q(event_name__icontains=v)
             )
         page_size = min(int(request.GET.get('page_size', 20)), 100)
         paginator = Paginator(qs, page_size)
@@ -52758,6 +52766,70 @@ def snowai_ctr_list_all(request):
             'count': paginator.count, 'total_pages': paginator.num_pages, 'page': page_num,
             'transcripts': [_ctr_to_dict(t) for t in page.object_list],
         })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Apply AI analysis (from pasted LLM response) ─────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_ctr_apply_ai_analysis(request, company_id, transcript_id):
+    """
+    POST /snowai-ctr/company/<company_id>/transcripts/<transcript_id>/apply-ai/
+
+    Body — the parsed JSON from the LLM, passed straight from the frontend:
+    {
+        "summary":         "Executive summary text",
+        "key_points":      ["Point 1", "Point 2", ...],
+        "topics":          ["topic_one", "topic_two"],
+        "sentiment_score": 0.35,
+        "analyst_notes":   "Follow-up notes"
+    }
+
+    Saves all fields and automatically advances status → "processed".
+    Returns the full updated transcript dict.
+    """
+    try:
+        obj = (
+            SnowAICompanyTranscript.objects.get(id=transcript_id, company_id=company_id)
+            if str(transcript_id).isdigit()
+            else SnowAICompanyTranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id)
+        )
+
+        body = json.loads(request.body)
+
+        # Validate sentiment_score if provided
+        sentiment = body.get('sentiment_score')
+        if sentiment is not None:
+            try:
+                sentiment = float(sentiment)
+                if not (-1.0 <= sentiment <= 1.0):
+                    return JsonResponse({'error': 'sentiment_score must be between -1.0 and 1.0'}, status=400)
+            except (TypeError, ValueError):
+                return JsonResponse({'error': 'sentiment_score must be a float'}, status=400)
+
+        # Apply all AI fields
+        if 'summary'        in body: obj.summary        = str(body['summary']).strip()
+        if 'key_points'     in body: obj.key_points     = body['key_points'] if isinstance(body['key_points'], list) else []
+        if 'topics'         in body: obj.topics         = body['topics'] if isinstance(body['topics'], list) else []
+        if 'analyst_notes'  in body: obj.analyst_notes  = str(body['analyst_notes']).strip()
+        if sentiment is not None:    obj.sentiment_score = sentiment
+
+        # Auto-advance status to processed
+        obj.status = 'processed'
+
+        obj.save()
+
+        return JsonResponse({
+            'success':    True,
+            'transcript': _ctr_to_dict(obj),
+        })
+
+    except SnowAICompanyTranscript.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -52786,7 +52858,7 @@ def snowai_ctr_company_stats(request, company_id):
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-        
+
 
 def book_order(request):
     if request.method == "POST":
