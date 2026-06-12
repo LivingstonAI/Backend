@@ -52710,6 +52710,54 @@ def snowctr_company_stats(request, company_id):
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# views.py
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
+@api_view(['GET'])
+def get_positions_for_asset(request):
+    asset = request.GET.get('asset', '').upper().strip()
+    if not asset:
+        return Response({'positions': []})
+    positions = TradePosition.objects.filter(asset__iexact=asset).values(
+        'id', 'asset', 'direction', 'entry_price',
+        'sl_price', 'tp_price', 'sl_dollars', 'tp_dollars',
+        'current_price', 'notes', 'created_at'
+    )
+    return Response({'positions': list(positions)})
+
+@api_view(['PATCH'])
+def update_position_price(request, position_id):
+    try:
+        position = TradePosition.objects.get(id=position_id)
+    except TradePosition.DoesNotExist:
+        return Response({'error': 'Not found'}, status=404)
+    
+    current_price = request.data.get('current_price')
+    if current_price is not None:
+        position.current_price = float(current_price)
+        # Recalculate sl/tp dollars based on direction
+        diff = float(current_price) - position.entry_price
+        if position.direction == 'long':
+            if position.sl_price:
+                position.sl_dollars = (position.entry_price - position.sl_price)
+            if position.tp_price:
+                position.tp_dollars = (position.tp_price - position.entry_price)
+        else:  # short
+            if position.sl_price:
+                position.sl_dollars = (position.sl_price - position.entry_price)
+            if position.tp_price:
+                position.tp_dollars = (position.entry_price - position.tp_price)
+        position.save()
+    
+    return Response({
+        'id': position.id,
+        'current_price': position.current_price,
+        'sl_dollars': position.sl_dollars,
+        'tp_dollars': position.tp_dollars,
+    })
         
 
 def book_order(request):

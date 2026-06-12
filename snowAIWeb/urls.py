@@ -1129,6 +1129,9 @@ urlpatterns = [
     path('snowctr/company/<int:company_id>/transcripts/<str:transcript_id>/apply-ai/',
          snowctr_apply_ai_analysis,      name='snowctr_apply_ai_analysis'),
 
+    path('api/positions/', get_positions_for_asset),
+    path('api/positions/<int:position_id>/price/', update_position_price),
+
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
