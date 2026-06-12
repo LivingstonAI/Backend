@@ -51815,8 +51815,19 @@ import uuid
 import urllib.request
 
 from django.core.paginator import Paginator
+from django.http import JsonResponse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 
+from .models import (
+    SnowCOICompany,
+    SnowCOIKeyPerson,
+    SnowCOICompanyLink,
+    SnowCOITranscript,
+)
+# Use the existing VTR model — do NOT redeclare it in models.py
+from .models import SnowAIVideoTranscriptRecord as SnowVTRRecord
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -52699,7 +52710,7 @@ def snowctr_company_stats(request, company_id):
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
+        
 
 def book_order(request):
     if request.method == "POST":

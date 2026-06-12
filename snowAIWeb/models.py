@@ -3092,12 +3092,15 @@ SnowAI model already in your codebase.
   SnowCOITranscript       — live-recorded transcript scoped to a company
   SnowVTRRecord           — global video transcript record (original VTR)
 
-db_table names are also fully qualified so they never collide:
-  snowcoi_companies
-  snowcoi_key_people
-  snowcoi_company_links
-  snowcoi_transcripts
-  snowvtr_records
+db_table names point to your EXISTING tables — no data migration needed:
+  snowaiweb_snowaicompany           (was SnowAICompany)
+  snowaiweb_snowaicompanykeyperson  (was SnowAICompanyKeyPerson)
+  snowaiweb_snowaicompanylink       (was SnowAICompanyLink)
+  snowai_company_transcripts        (was SnowAICompanyTranscript)
+  snowai_video_transcript_records   (was SnowAIVideoTranscriptRecord)
+
+Running makemigrations/migrate will ONLY add the new ai_* columns to
+snowaiweb_snowaicompanylink — all existing data is untouched.
 
 After adding to your app run:
     python manage.py makemigrations
@@ -3130,7 +3133,7 @@ class SnowCOICompany(models.Model):
     class Meta:
         app_label = 'snowAIWeb'
         ordering  = ['name']
-        db_table  = 'snowcoi_companies'
+        db_table  = 'snowaiweb_snowaicompany'
 
     def __str__(self):
         return self.name
@@ -3151,7 +3154,7 @@ class SnowCOIKeyPerson(models.Model):
     class Meta:
         app_label = 'snowAIWeb'
         ordering  = ['name']
-        db_table  = 'snowcoi_key_people'
+        db_table  = 'snowaiweb_snowaicompanykeyperson'
 
     def __str__(self):
         return f'{self.name} @ {self.company.name}'
@@ -3189,7 +3192,7 @@ class SnowCOICompanyLink(models.Model):
     class Meta:
         app_label = 'snowAIWeb'
         ordering  = ['link_type', 'title']
-        db_table  = 'snowcoi_company_links'
+        db_table  = 'snowaiweb_snowaicompanylink'
 
     def __str__(self):
         return f'{self.title} ({self.link_type}) — {self.company.name}'
@@ -3268,7 +3271,7 @@ class SnowCOITranscript(models.Model):
 
     class Meta:
         app_label = 'snowAIWeb'
-        db_table  = 'snowcoi_transcripts'
+        db_table  = 'snowai_company_transcripts'
         ordering  = ['-recorded_at']
         indexes   = [
             models.Index(fields=['company_id', 'status']),
@@ -3291,62 +3294,6 @@ class SnowCOITranscript(models.Model):
             self.word_count = len(self.full_transcript_text.split())
         if self.status == 'archived' and not self.archived_at:
             self.archived_at = timezone.now()
-        super().save(*args, **kwargs)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  GLOBAL VIDEO TRANSCRIPT RECORD
-# ══════════════════════════════════════════════════════════════════════════════
-
-class SnowVTRRecord(models.Model):
-    """
-    Global video transcript store - not company-scoped.
-    Previously named SnowAIVideoTranscriptRecord.
-    Renamed to SnowVTRRecord to guarantee uniqueness in a large codebase.
-    """
-
-    transcript_uuid             = models.UUIDField(default=_uuid.uuid4, unique=True, db_index=True)
-    youtube_video_id            = models.CharField(max_length=50, blank=True, null=True, db_index=True)
-    youtube_url                 = models.URLField(max_length=1000, blank=True, null=True)
-    video_title                 = models.CharField(max_length=500, blank=True, null=True)
-    primary_speaker_name        = models.CharField(max_length=300, blank=True, null=True)
-    speaker_organization        = models.CharField(max_length=300, blank=True, null=True)
-    speaker_country_code        = models.CharField(max_length=10,  blank=True, null=True)
-    speaker_country_name        = models.CharField(max_length=100, blank=True, null=True)
-    full_transcript_text        = models.TextField()
-    video_duration_seconds      = models.IntegerField(blank=True, null=True)
-    transcript_language         = models.CharField(max_length=20, default='en')
-    video_upload_date           = models.DateTimeField(blank=True, null=True)
-    transcription_method        = models.CharField(max_length=50, default='browser_speech_api')
-    transcript_confidence_score = models.FloatField(blank=True, null=True)
-    processing_status           = models.CharField(max_length=30, default='completed', db_index=True)
-    content_category            = models.CharField(max_length=100, blank=True, null=True)
-    economic_topics             = models.JSONField(default=list, blank=True)
-    custom_tags                 = models.JSONField(default=list, blank=True)
-    word_count                  = models.IntegerField(default=0, editable=False)
-    sentiment_analysis_score    = models.FloatField(blank=True, null=True)
-    key_phrases_extracted       = models.JSONField(default=list, blank=True)
-    created_at                  = models.DateTimeField(auto_now_add=True)
-    updated_at                  = models.DateTimeField(auto_now=True)
-    archived_at                 = models.DateTimeField(blank=True, null=True)
-
-    class Meta:
-        app_label = 'snowAIWeb'
-        db_table  = 'snowvtr_records'
-        ordering  = ['-created_at']
-        indexes   = [
-            models.Index(fields=['youtube_video_id']),
-            models.Index(fields=['processing_status']),
-            models.Index(fields=['transcript_language']),
-            models.Index(fields=['created_at']),
-        ]
-
-    def __str__(self):
-        return f'{self.video_title or self.youtube_video_id or "VTR"} ({self.transcript_language})'
-
-    def save(self, *args, **kwargs):
-        if self.full_transcript_text:
-            self.word_count = len(self.full_transcript_text.split())
         super().save(*args, **kwargs)
         
 
