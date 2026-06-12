@@ -51021,12 +51021,6 @@ scheduler.add_job(
     misfire_grace_time=60,
 )
 
-import json
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-from .models import SnowAICompany, SnowAICompanyKeyPerson, SnowAICompanyLink
-
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -51247,13 +51241,6 @@ def snowai_companies_of_interest_delete_link(request, link_id):
         return JsonResponse({'deleted': True, 'id': link_id})
     except SnowAICompanyLink.DoesNotExist:
         return JsonResponse({'error': 'Link not found'}, status=404)
-
-
-import json
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-from .models import SnowAICompany, SnowAICompanyKeyPerson, SnowAICompanyLink
 
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -51810,394 +51797,26 @@ def mac_edit_account_trade_entry(request, trade_id):
 
 
 """
-SnowAI Video Transcript Views
-Prefix: snowai_vtr_ (to avoid conflicts in large codebase)
+SnowAI Views — Companies of Interest + VTR + CTR
+==================================================
+Model names used (unique, won't clash):
+  SnowCOICompany        SnowCOIKeyPerson      SnowCOICompanyLink
+  SnowCOITranscript     SnowVTRRecord
+
+URL prefixes:
+  /snowcoi/   — Companies of Interest
+  /snowvtr/   — Global Video Transcript Record
+  /snowctr/   — Company-scoped Transcript (CTR)
 """
 
-from django.utils import timezone
-from django.core.paginator import Paginator
-
-# ─── HELPERS ──────────────────────────────────────────────────────────────────
-
-def _extract_youtube_id(url):
-    """Extract YouTube video ID from various URL formats."""
-    patterns = [
-        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})',
-        r'youtube\.com\/shorts\/([A-Za-z0-9_-]{11})',
-        r'youtube\.com\/live\/([A-Za-z0-9_-]{11})',
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    return None
-
-
-def _fetch_youtube_title(video_id):
-    """
-    Fetch YouTube video title via oEmbed (no API key needed).
-    Falls back gracefully if unavailable.
-    """
-    try:
-        oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
-        req = urllib.request.Request(oembed_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            return data.get('title', ''), data.get('author_name', '')
-    except Exception:
-        return '', ''
-
-
-def _transcript_to_dict(t):
-    return {
-        'id':                       t.id,
-        'transcript_uuid':          t.transcript_uuid,
-        'youtube_video_id':         t.youtube_video_id,
-        'youtube_url':              t.youtube_url,
-        'video_title':              t.video_title,
-        'primary_speaker_name':     t.primary_speaker_name,
-        'speaker_organization':     t.speaker_organization,
-        'speaker_country_code':     t.speaker_country_code,
-        'speaker_country_name':     t.speaker_country_name,
-        'full_transcript_text':     t.full_transcript_text,
-        'video_duration_seconds':   t.video_duration_seconds,
-        'transcript_language':      t.transcript_language,
-        'video_upload_date':        t.video_upload_date.isoformat() if t.video_upload_date else None,
-        'transcription_method':     t.transcription_method,
-        'transcript_confidence_score': t.transcript_confidence_score,
-        'processing_status':        t.processing_status,
-        'content_category':         t.content_category,
-        'economic_topics':          t.economic_topics or [],
-        'custom_tags':              t.custom_tags or [],
-        'word_count':               t.word_count,
-        'sentiment_analysis_score': t.sentiment_analysis_score,
-        'key_phrases_extracted':    t.key_phrases_extracted or [],
-        'created_at':               t.created_at.isoformat() if t.created_at else None,
-        'updated_at':               t.updated_at.isoformat() if t.updated_at else None,
-        'archived_at':              t.archived_at.isoformat() if t.archived_at else None,
-    }
-
-
-# ─── YOUTUBE TITLE AUTO-DETECT ─────────────────────────────────────────────────
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def snowai_vtr_fetch_youtube_metadata(request):
-    """
-    POST { "url": "https://youtube.com/watch?v=..." }
-    Returns { "video_id", "title", "channel_name" }
-    Used by the frontend to auto-populate title when a YT link is pasted.
-    """
-    try:
-        body = json.loads(request.body)
-        url = body.get('url', '').strip()
-        if not url:
-            return JsonResponse({'error': 'url is required'}, status=400)
-
-        video_id = _extract_youtube_id(url)
-        if not video_id:
-            return JsonResponse({'error': 'Could not extract YouTube video ID'}, status=400)
-
-        title, channel_name = _fetch_youtube_title(video_id)
-        return JsonResponse({
-            'video_id':     video_id,
-            'title':        title,
-            'channel_name': channel_name,
-        })
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-# ─── TRANSCRIPT CRUD ───────────────────────────────────────────────────────────
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def snowai_vtr_save_transcript(request):
-    """
-    POST full transcript payload.
-    Creates or updates (upsert by transcript_uuid).
-    """
-    try:
-        body = json.loads(request.body)
-
-        # Required
-        full_text = body.get('full_transcript_text', '').strip()
-        if not full_text:
-            return JsonResponse({'error': 'full_transcript_text is required'}, status=400)
-
-        transcript_uuid_val = body.get('transcript_uuid') or str(uuid.uuid4())
-        youtube_url = body.get('youtube_url', '').strip() or None
-        youtube_video_id = body.get('youtube_video_id') or (
-            _extract_youtube_id(youtube_url) if youtube_url else None
-        )
-
-        # Auto-fetch title if not provided but video_id is known
-        video_title = body.get('video_title', '').strip()
-        if not video_title and youtube_video_id:
-            video_title, _ = _fetch_youtube_title(youtube_video_id)
-
-        # Parse video_upload_date safely
-        raw_date = body.get('video_upload_date')
-        video_upload_date = None
-        if raw_date:
-            try:
-                from django.utils.dateparse import parse_datetime
-                video_upload_date = parse_datetime(raw_date)
-            except Exception:
-                pass
-
-        obj, created = SnowAIVideoTranscriptRecord.objects.update_or_create(
-            transcript_uuid=transcript_uuid_val,
-            defaults={
-                'youtube_video_id':         youtube_video_id,
-                'youtube_url':              youtube_url,
-                'video_title':              video_title or None,
-                'primary_speaker_name':     body.get('primary_speaker_name', '').strip() or None,
-                'speaker_organization':     body.get('speaker_organization', '').strip() or None,
-                'speaker_country_code':     body.get('speaker_country_code', '').strip() or None,
-                'speaker_country_name':     body.get('speaker_country_name', '').strip() or None,
-                'full_transcript_text':     full_text,
-                'video_duration_seconds':   body.get('video_duration_seconds') or None,
-                'transcript_language':      body.get('transcript_language', 'en') or 'en',
-                'video_upload_date':        video_upload_date,
-                'transcription_method':     body.get('transcription_method', 'browser_speech_api'),
-                'transcript_confidence_score': body.get('transcript_confidence_score') or None,
-                'processing_status':        body.get('processing_status', 'completed'),
-                'content_category':         body.get('content_category', '').strip() or None,
-                'economic_topics':          body.get('economic_topics', []),
-                'custom_tags':              body.get('custom_tags', []),
-                'sentiment_analysis_score': body.get('sentiment_analysis_score') or None,
-                'key_phrases_extracted':    body.get('key_phrases_extracted', []),
-            }
-        )
-
-        return JsonResponse({
-            'success':    True,
-            'created':    created,
-            'transcript': _transcript_to_dict(obj),
-        }, status=201 if created else 200)
-
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["GET"])
-def snowai_vtr_list_transcripts(request):
-    """
-    GET /snowai-vtr/transcripts/
-    Query params: video_id, language, category, search, page, page_size
-    """
-    try:
-        qs = SnowAIVideoTranscriptRecord.objects.exclude(
-            processing_status='archived'
-        ).order_by('-created_at')
-
-        # Filters
-        video_id = request.GET.get('video_id')
-        if video_id:
-            qs = qs.filter(youtube_video_id=video_id)
-
-        language = request.GET.get('language')
-        if language:
-            qs = qs.filter(transcript_language=language)
-
-        category = request.GET.get('category')
-        if category:
-            qs = qs.filter(content_category=category)
-
-        search = request.GET.get('search', '').strip()
-        if search:
-            from django.db.models import Q
-            qs = qs.filter(
-                Q(video_title__icontains=search) |
-                Q(primary_speaker_name__icontains=search) |
-                Q(speaker_organization__icontains=search) |
-                Q(full_transcript_text__icontains=search)
-            )
-
-        youtube_url = request.GET.get('youtube_url', '').strip()
-        if youtube_url:
-            vid = _extract_youtube_id(youtube_url)
-            if vid:
-                qs = qs.filter(youtube_video_id=vid)
-
-        # Pagination
-        page_size = min(int(request.GET.get('page_size', 20)), 100)
-        paginator = Paginator(qs, page_size)
-        page_num = int(request.GET.get('page', 1))
-        page = paginator.get_page(page_num)
-
-        return JsonResponse({
-            'count':       paginator.count,
-            'total_pages': paginator.num_pages,
-            'page':        page_num,
-            'transcripts': [_transcript_to_dict(t) for t in page.object_list],
-        })
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["GET"])
-def snowai_vtr_get_transcript(request, transcript_id):
-    """GET single transcript by DB id or uuid."""
-    try:
-        if str(transcript_id).isdigit():
-            obj = SnowAIVideoTranscriptRecord.objects.get(id=transcript_id)
-        else:
-            obj = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
-        return JsonResponse(_transcript_to_dict(obj))
-    except SnowAIVideoTranscriptRecord.DoesNotExist:
-        return JsonResponse({'error': 'Transcript not found'}, status=404)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["GET"])
-def snowai_vtr_list_by_video(request, youtube_video_id):
-    """GET all transcripts for a specific YouTube video ID."""
-    try:
-        qs = SnowAIVideoTranscriptRecord.objects.filter(
-            youtube_video_id=youtube_video_id
-        ).order_by('-created_at')
-        return JsonResponse({
-            'youtube_video_id': youtube_video_id,
-            'count':            qs.count(),
-            'transcripts':      [_transcript_to_dict(t) for t in qs],
-        })
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def snowai_vtr_update_transcript(request, transcript_id):
-    """POST (partial update) a transcript."""
-    try:
-        if str(transcript_id).isdigit():
-            obj = SnowAIVideoTranscriptRecord.objects.get(id=transcript_id)
-        else:
-            obj = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
-
-        body = json.loads(request.body)
-        updatable_fields = [
-            'full_transcript_text', 'video_title', 'primary_speaker_name',
-            'speaker_organization', 'speaker_country_code', 'speaker_country_name',
-            'transcript_language', 'processing_status', 'content_category',
-            'economic_topics', 'custom_tags', 'transcript_confidence_score',
-            'sentiment_analysis_score', 'key_phrases_extracted',
-        ]
-        for field in updatable_fields:
-            if field in body:
-                setattr(obj, field, body[field])
-
-        obj.save()
-        return JsonResponse({'success': True, 'transcript': _transcript_to_dict(obj)})
-    except SnowAIVideoTranscriptRecord.DoesNotExist:
-        return JsonResponse({'error': 'Transcript not found'}, status=404)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def snowai_vtr_delete_transcript(request, transcript_id):
-    """POST to hard-delete a transcript."""
-    try:
-        if str(transcript_id).isdigit():
-            obj = SnowAIVideoTranscriptRecord.objects.get(id=transcript_id)
-        else:
-            obj = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
-        obj.delete()
-        return JsonResponse({'success': True, 'deleted_id': transcript_id})
-    except SnowAIVideoTranscriptRecord.DoesNotExist:
-        return JsonResponse({'error': 'Transcript not found'}, status=404)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def snowai_vtr_archive_transcript(request, transcript_id):
-    """POST to soft-archive a transcript."""
-    try:
-        if str(transcript_id).isdigit():
-            obj = SnowAIVideoTranscriptRecord.objects.get(id=transcript_id)
-        else:
-            obj = SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id)
-        obj.processing_status = 'archived'
-        obj.archived_at = timezone.now()
-        obj.save()
-        return JsonResponse({'success': True, 'transcript': _transcript_to_dict(obj)})
-    except SnowAIVideoTranscriptRecord.DoesNotExist:
-        return JsonResponse({'error': 'Transcript not found'}, status=404)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["GET"])
-def snowai_vtr_stats(request):
-    """GET aggregate stats across all transcripts."""
-    try:
-        from django.db.models import Count, Sum, Avg
-        total = SnowAIVideoTranscriptRecord.objects.count()
-        active = SnowAIVideoTranscriptRecord.objects.exclude(processing_status='archived').count()
-        stats = SnowAIVideoTranscriptRecord.objects.exclude(
-            processing_status='archived'
-        ).aggregate(
-            total_words=Sum('word_count'),
-            avg_words=Avg('word_count'),
-        )
-        languages = list(
-            SnowAIVideoTranscriptRecord.objects.exclude(processing_status='archived')
-            .values('transcript_language')
-            .annotate(count=Count('id'))
-            .order_by('-count')
-        )
-        categories = list(
-            SnowAIVideoTranscriptRecord.objects.exclude(processing_status='archived')
-            .exclude(content_category__isnull=True)
-            .values('content_category')
-            .annotate(count=Count('id'))
-            .order_by('-count')
-        )
-        return JsonResponse({
-            'total_transcripts':  total,
-            'active_transcripts': active,
-            'total_words':        stats['total_words'] or 0,
-            'avg_words_per_doc':  round(stats['avg_words'] or 0, 1),
-            'by_language':        languages,
-            'by_category':        categories,
-        })
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-"""
-SnowAI Transcript Views  (combined)
-─────────────────────────────────────────────────────────────────────────────
-Prefix legend:
-  snowai_vtr_   → original global VideoTranscriptRecord views (unchanged)
-  snowai_ctr_   → new company-scoped CompanyTranscript views
-
-Import in your urls file:
-  from .snowai_transcripts_views import *   (or import individual functions)
-"""
-
-import uuid
+import json
 import re
+import uuid
 import urllib.request
-from django.utils import timezone
+
 from django.core.paginator import Paginator
+from django.utils import timezone
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -52205,21 +51824,26 @@ from django.core.paginator import Paginator
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _extract_youtube_id(url):
+    if not url:
+        return None
     patterns = [
-        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})',
-        r'youtube\.com\/shorts\/([A-Za-z0-9_-]{11})',
-        r'youtube\.com\/live\/([A-Za-z0-9_-]{11})',
+        r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{11})',
+        r'youtube\.com/shorts/([A-Za-z0-9_-]{11})',
+        r'youtube\.com/live/([A-Za-z0-9_-]{11})',
     ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
+    for p in patterns:
+        m = re.search(p, url)
+        if m:
+            return m.group(1)
     return None
 
 
 def _fetch_youtube_title(video_id):
     try:
-        url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+        url = (
+            f'https://www.youtube.com/oembed'
+            f'?url=https://www.youtube.com/watch?v={video_id}&format=json'
+        )
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
@@ -52228,14 +51852,55 @@ def _fetch_youtube_title(video_id):
         return '', ''
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  ORIGINAL snowai_vtr_ VIEWS  (unchanged — kept for backwards compat)
-# ══════════════════════════════════════════════════════════════════════════════
+# ── Serialisers ───────────────────────────────────────────────────────────────
+
+def _company_to_dict(c):
+    return {
+        'id':          c.id,
+        'name':        c.name,
+        'description': c.description,
+        'sector':      c.sector,
+        'logo_base64': c.logo_base64,
+        'created_at':  c.created_at.isoformat() if c.created_at else None,
+        'updated_at':  c.updated_at.isoformat() if c.updated_at else None,
+        'key_people':  [_person_to_dict(p) for p in c.key_people.all()],
+        'links':       [_link_to_dict(l) for l in c.links.all()],
+    }
+
+def _person_to_dict(p):
+    return {
+        'id':           p.id,
+        'name':         p.name,
+        'role':         p.role,
+        'bio':          p.bio,
+        'photo_base64': p.photo_base64,
+        'created_at':   p.created_at.isoformat() if p.created_at else None,
+    }
+
+def _link_to_dict(l):
+    ai_analysis = None
+    if l.has_ai_analysis:
+        ai_analysis = {
+            'summary':         l.ai_summary,
+            'key_points':      l.ai_key_points or [],
+            'topics':          l.ai_topics or [],
+            'sentiment_score': l.ai_sentiment_score,
+            'analyst_notes':   l.ai_analyst_notes,
+            'analysed_at':     l.ai_analysed_at.isoformat() if l.ai_analysed_at else None,
+        }
+    return {
+        'id':          l.id,
+        'link_type':   l.link_type,
+        'title':       l.title,
+        'url':         l.url,
+        'created_at':  l.created_at.isoformat() if l.created_at else None,
+        'ai_analysis': ai_analysis,
+    }
 
 def _vtr_to_dict(t):
     return {
         'id':                          t.id,
-        'transcript_uuid':             t.transcript_uuid,
+        'transcript_uuid':             str(t.transcript_uuid),
         'youtube_video_id':            t.youtube_video_id,
         'youtube_url':                 t.youtube_url,
         'video_title':                 t.video_title,
@@ -52261,14 +51926,293 @@ def _vtr_to_dict(t):
         'archived_at':                 t.archived_at.isoformat() if t.archived_at else None,
     }
 
+def _ctr_to_dict(t):
+    return {
+        'id':                          t.id,
+        'transcript_uuid':             str(t.transcript_uuid),
+        'company_id':                  t.company_id,
+        'company_name':                t.company_name,
+        'source_title':                t.source_title,
+        'source_url':                  t.source_url,
+        'youtube_video_id':            t.youtube_video_id,
+        'source_type':                 t.source_type,
+        'speaker_name':                t.speaker_name,
+        'speaker_role':                t.speaker_role,
+        'event_name':                  t.event_name,
+        'event_date':                  t.event_date.isoformat() if t.event_date else None,
+        'full_transcript_text':        t.full_transcript_text,
+        'transcript_language':         t.transcript_language,
+        'recording_duration_seconds':  t.recording_duration_seconds,
+        'word_count':                  t.word_count,
+        'status':                      t.status,
+        'transcription_method':        t.transcription_method,
+        'summary':                     t.summary,
+        'key_points':                  t.key_points or [],
+        'topics':                      t.topics or [],
+        'sentiment_score':             t.sentiment_score,
+        'analyst_notes':               t.analyst_notes,
+        'custom_tags':                 t.custom_tags or [],
+        'recorded_at':                 t.recorded_at.isoformat() if t.recorded_at else None,
+        'created_at':                  t.created_at.isoformat() if t.created_at else None,
+        'updated_at':                  t.updated_at.isoformat() if t.updated_at else None,
+        'archived_at':                 t.archived_at.isoformat() if t.archived_at else None,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  COMPANIES OF INTEREST  — /snowcoi/
+# ══════════════════════════════════════════════════════════════════════════════
 
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_vtr_fetch_youtube_metadata(request):
-    """POST { url } → { video_id, title, channel_name }"""
+@require_http_methods(['GET'])
+def snowcoi_companies_list(request):
+    """GET /snowcoi/companies/"""
+    try:
+        companies = SnowCOICompany.objects.prefetch_related('key_people', 'links').all()
+        return JsonResponse([_company_to_dict(c) for c in companies], safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_companies_add(request):
+    """POST /snowcoi/companies/add/"""
     try:
         body = json.loads(request.body)
-        url = body.get('url', '').strip()
+        name = body.get('name', '').strip()
+        if not name:
+            return JsonResponse({'error': 'name is required'}, status=400)
+        company = SnowCOICompany.objects.create(
+            name        = name,
+            description = body.get('description', '').strip(),
+            sector      = body.get('sector', '').strip(),
+            logo_base64 = body.get('logo_base64', ''),
+        )
+        return JsonResponse(_company_to_dict(company), status=201)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_companies_update(request, company_id):
+    """POST /snowcoi/companies/<company_id>/update/"""
+    try:
+        company = SnowCOICompany.objects.get(id=company_id)
+        body    = json.loads(request.body)
+        for field in ('name', 'description', 'sector', 'logo_base64'):
+            if field in body:
+                setattr(company, field, body[field])
+        company.save()
+        return JsonResponse(_company_to_dict(company))
+    except SnowCOICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_companies_delete(request, company_id):
+    """POST /snowcoi/companies/<company_id>/delete/"""
+    try:
+        SnowCOICompany.objects.get(id=company_id).delete()
+        return JsonResponse({'success': True})
+    except SnowCOICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Key people ────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_add_person(request, company_id):
+    """POST /snowcoi/companies/<company_id>/add-person/"""
+    try:
+        company = SnowCOICompany.objects.get(id=company_id)
+        body    = json.loads(request.body)
+        name    = body.get('name', '').strip()
+        if not name:
+            return JsonResponse({'error': 'name is required'}, status=400)
+        person = SnowCOIKeyPerson.objects.create(
+            company      = company,
+            name         = name,
+            role         = body.get('role', '').strip(),
+            bio          = body.get('bio', '').strip(),
+            photo_base64 = body.get('photo_base64', ''),
+        )
+        return JsonResponse(_person_to_dict(person), status=201)
+    except SnowCOICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_update_person(request, person_id):
+    """POST /snowcoi/people/<person_id>/update/"""
+    try:
+        person = SnowCOIKeyPerson.objects.get(id=person_id)
+        body   = json.loads(request.body)
+        for field in ('name', 'role', 'bio', 'photo_base64'):
+            if field in body:
+                setattr(person, field, body[field])
+        person.save()
+        return JsonResponse(_person_to_dict(person))
+    except SnowCOIKeyPerson.DoesNotExist:
+        return JsonResponse({'error': 'Person not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_delete_person(request, person_id):
+    """POST /snowcoi/people/<person_id>/delete/"""
+    try:
+        SnowCOIKeyPerson.objects.get(id=person_id).delete()
+        return JsonResponse({'success': True})
+    except SnowCOIKeyPerson.DoesNotExist:
+        return JsonResponse({'error': 'Person not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Links ─────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_add_link(request, company_id):
+    """POST /snowcoi/companies/<company_id>/add-link/"""
+    try:
+        company   = SnowCOICompany.objects.get(id=company_id)
+        body      = json.loads(request.body)
+        title     = body.get('title', '').strip()
+        url       = body.get('url', '').strip()
+        if not title or not url:
+            return JsonResponse({'error': 'title and url are required'}, status=400)
+        link = SnowCOICompanyLink.objects.create(
+            company   = company,
+            link_type = body.get('link_type', 'url').strip(),
+            title     = title,
+            url       = url,
+        )
+        return JsonResponse(_link_to_dict(link), status=201)
+    except SnowCOICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_update_link(request, link_id):
+    """POST /snowcoi/links/<link_id>/update/"""
+    try:
+        link = SnowCOICompanyLink.objects.get(id=link_id)
+        body = json.loads(request.body)
+        for field in ('title', 'url', 'link_type'):
+            if field in body:
+                setattr(link, field, body[field])
+        link.save()
+        return JsonResponse(_link_to_dict(link))
+    except SnowCOICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_delete_link(request, link_id):
+    """POST /snowcoi/links/<link_id>/delete/"""
+    try:
+        SnowCOICompanyLink.objects.get(id=link_id).delete()
+        return JsonResponse({'success': True})
+    except SnowCOICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_link_apply_ai(request, company_id, link_id):
+    """
+    POST /snowcoi/companies/<company_id>/links/<link_id>/apply-ai/
+    Saves AI analysis onto a link record (used for PDFs).
+    Body: { summary, key_points, topics, sentiment_score, analyst_notes }
+    Returns: { success, analysis }
+    """
+    try:
+        link = SnowCOICompanyLink.objects.get(id=link_id, company_id=company_id)
+    except SnowCOICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    sentiment = body.get('sentiment_score')
+    if sentiment is not None:
+        try:
+            sentiment = float(sentiment)
+            if not (-1.0 <= sentiment <= 1.0):
+                return JsonResponse({'error': 'sentiment_score must be between -1.0 and 1.0'}, status=400)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'sentiment_score must be a float'}, status=400)
+
+    try:
+        if 'summary'       in body: link.ai_summary       = str(body['summary']).strip()
+        if 'key_points'    in body: link.ai_key_points    = body['key_points'] if isinstance(body['key_points'], list) else []
+        if 'topics'        in body: link.ai_topics        = body['topics'] if isinstance(body['topics'], list) else []
+        if 'analyst_notes' in body: link.ai_analyst_notes = str(body['analyst_notes']).strip()
+        if sentiment is not None:   link.ai_sentiment_score = sentiment
+        link.ai_analysed_at = timezone.now()
+        link.save()
+        return JsonResponse({
+            'success': True,
+            'analysis': {
+                'summary':         link.ai_summary,
+                'key_points':      link.ai_key_points or [],
+                'topics':          link.ai_topics or [],
+                'sentiment_score': link.ai_sentiment_score,
+                'analyst_notes':   link.ai_analyst_notes,
+                'analysed_at':     link.ai_analysed_at.isoformat(),
+            },
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  VTR — GLOBAL VIDEO TRANSCRIPT RECORD  — /snowvtr/
+# ══════════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowvtr_fetch_youtube_metadata(request):
+    """POST /snowvtr/youtube-metadata/"""
+    try:
+        body     = json.loads(request.body)
+        url      = body.get('url', '').strip()
         if not url:
             return JsonResponse({'error': 'url is required'}, status=400)
         video_id = _extract_youtube_id(url)
@@ -52283,52 +52227,58 @@ def snowai_vtr_fetch_youtube_metadata(request):
 
 
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_vtr_save_transcript(request):
+@require_http_methods(['POST'])
+def snowvtr_save_transcript(request):
+    """POST /snowvtr/transcripts/save/  — upsert by transcript_uuid"""
     try:
-        body = json.loads(request.body)
+        body      = json.loads(request.body)
         full_text = body.get('full_transcript_text', '').strip()
         if not full_text:
             return JsonResponse({'error': 'full_transcript_text is required'}, status=400)
-        transcript_uuid_val = body.get('transcript_uuid') or str(uuid.uuid4())
-        youtube_url = body.get('youtube_url', '').strip() or None
-        youtube_video_id = body.get('youtube_video_id') or (_extract_youtube_id(youtube_url) if youtube_url else None)
-        video_title = body.get('video_title', '').strip()
-        if not video_title and youtube_video_id:
-            video_title, _ = _fetch_youtube_title(youtube_video_id)
-        raw_date = body.get('video_upload_date')
-        video_upload_date = None
-        if raw_date:
+
+        t_uuid       = body.get('transcript_uuid') or str(uuid.uuid4())
+        youtube_url  = body.get('youtube_url', '').strip() or None
+        yt_id        = body.get('youtube_video_id') or (_extract_youtube_id(youtube_url) if youtube_url else None)
+        video_title  = body.get('video_title', '').strip()
+        if not video_title and yt_id:
+            video_title, _ = _fetch_youtube_title(yt_id)
+
+        upload_date = None
+        if raw := body.get('video_upload_date'):
             try:
                 from django.utils.dateparse import parse_datetime
-                video_upload_date = parse_datetime(raw_date)
+                upload_date = parse_datetime(str(raw))
             except Exception:
                 pass
-        obj, created = SnowAIVideoTranscriptRecord.objects.update_or_create(
-            transcript_uuid=transcript_uuid_val,
+
+        obj, created = SnowVTRRecord.objects.update_or_create(
+            transcript_uuid=t_uuid,
             defaults={
-                'youtube_video_id': youtube_video_id, 'youtube_url': youtube_url,
-                'video_title': video_title or None,
-                'primary_speaker_name': body.get('primary_speaker_name', '').strip() or None,
-                'speaker_organization': body.get('speaker_organization', '').strip() or None,
-                'speaker_country_code': body.get('speaker_country_code', '').strip() or None,
-                'speaker_country_name': body.get('speaker_country_name', '').strip() or None,
-                'full_transcript_text': full_text,
-                'video_duration_seconds': body.get('video_duration_seconds') or None,
-                'transcript_language': body.get('transcript_language', 'en') or 'en',
-                'video_upload_date': video_upload_date,
-                'transcription_method': body.get('transcription_method', 'browser_speech_api'),
+                'youtube_video_id':            yt_id,
+                'youtube_url':                 youtube_url,
+                'video_title':                 video_title or None,
+                'primary_speaker_name':        body.get('primary_speaker_name', '').strip() or None,
+                'speaker_organization':        body.get('speaker_organization', '').strip() or None,
+                'speaker_country_code':        body.get('speaker_country_code', '').strip() or None,
+                'speaker_country_name':        body.get('speaker_country_name', '').strip() or None,
+                'full_transcript_text':        full_text,
+                'video_duration_seconds':      body.get('video_duration_seconds') or None,
+                'transcript_language':         body.get('transcript_language', 'en') or 'en',
+                'video_upload_date':           upload_date,
+                'transcription_method':        body.get('transcription_method', 'browser_speech_api'),
                 'transcript_confidence_score': body.get('transcript_confidence_score') or None,
-                'processing_status': body.get('processing_status', 'completed'),
-                'content_category': body.get('content_category', '').strip() or None,
-                'economic_topics': body.get('economic_topics', []),
-                'custom_tags': body.get('custom_tags', []),
-                'sentiment_analysis_score': body.get('sentiment_analysis_score') or None,
-                'key_phrases_extracted': body.get('key_phrases_extracted', []),
-            }
+                'processing_status':           body.get('processing_status', 'completed'),
+                'content_category':            body.get('content_category', '').strip() or None,
+                'economic_topics':             body.get('economic_topics', []),
+                'custom_tags':                 body.get('custom_tags', []),
+                'sentiment_analysis_score':    body.get('sentiment_analysis_score') or None,
+                'key_phrases_extracted':       body.get('key_phrases_extracted', []),
+            },
         )
-        return JsonResponse({'success': True, 'created': created, 'transcript': _vtr_to_dict(obj)},
-                            status=201 if created else 200)
+        return JsonResponse(
+            {'success': True, 'created': created, 'transcript': _vtr_to_dict(obj)},
+            status=201 if created else 200,
+        )
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
@@ -52336,46 +52286,53 @@ def snowai_vtr_save_transcript(request):
 
 
 @csrf_exempt
-@require_http_methods(["GET"])
-def snowai_vtr_list_transcripts(request):
+@require_http_methods(['GET'])
+def snowvtr_list_transcripts(request):
+    """GET /snowvtr/transcripts/"""
     try:
-        qs = SnowAIVideoTranscriptRecord.objects.exclude(processing_status='archived').order_by('-created_at')
-        if v := request.GET.get('video_id'):       qs = qs.filter(youtube_video_id=v)
-        if v := request.GET.get('language'):       qs = qs.filter(transcript_language=v)
-        if v := request.GET.get('category'):       qs = qs.filter(content_category=v)
+        qs = SnowVTRRecord.objects.exclude(processing_status='archived').order_by('-created_at')
+        if v := request.GET.get('video_id'):    qs = qs.filter(youtube_video_id=v)
+        if v := request.GET.get('language'):    qs = qs.filter(transcript_language=v)
+        if v := request.GET.get('category'):    qs = qs.filter(content_category=v)
         if v := request.GET.get('search', '').strip():
             from django.db.models import Q
-            qs = qs.filter(Q(video_title__icontains=v) | Q(primary_speaker_name__icontains=v) |
-                           Q(speaker_organization__icontains=v) | Q(full_transcript_text__icontains=v))
+            qs = qs.filter(
+                Q(video_title__icontains=v) | Q(primary_speaker_name__icontains=v) |
+                Q(speaker_organization__icontains=v) | Q(full_transcript_text__icontains=v)
+            )
         page_size = min(int(request.GET.get('page_size', 20)), 100)
-        paginator  = Paginator(qs, page_size)
-        page_num   = int(request.GET.get('page', 1))
-        page       = paginator.get_page(page_num)
-        return JsonResponse({'count': paginator.count, 'total_pages': paginator.num_pages,
-                             'page': page_num, 'transcripts': [_vtr_to_dict(t) for t in page.object_list]})
+        paginator = Paginator(qs, page_size)
+        page_num  = int(request.GET.get('page', 1))
+        page      = paginator.get_page(page_num)
+        return JsonResponse({
+            'count': paginator.count, 'total_pages': paginator.num_pages,
+            'page': page_num, 'transcripts': [_vtr_to_dict(t) for t in page.object_list],
+        })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
-@require_http_methods(["GET"])
-def snowai_vtr_get_transcript(request, transcript_id):
+@require_http_methods(['GET'])
+def snowvtr_get_transcript(request, transcript_id):
+    """GET /snowvtr/transcripts/<transcript_id>/"""
     try:
-        obj = (SnowAIVideoTranscriptRecord.objects.get(id=transcript_id)
+        obj = (SnowVTRRecord.objects.get(id=transcript_id)
                if str(transcript_id).isdigit()
-               else SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id))
+               else SnowVTRRecord.objects.get(transcript_uuid=transcript_id))
         return JsonResponse(_vtr_to_dict(obj))
-    except SnowAIVideoTranscriptRecord.DoesNotExist:
+    except SnowVTRRecord.DoesNotExist:
         return JsonResponse({'error': 'Transcript not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
-@require_http_methods(["GET"])
-def snowai_vtr_list_by_video(request, youtube_video_id):
+@require_http_methods(['GET'])
+def snowvtr_list_by_video(request, youtube_video_id):
+    """GET /snowvtr/by-video/<youtube_video_id>/"""
     try:
-        qs = SnowAIVideoTranscriptRecord.objects.filter(youtube_video_id=youtube_video_id).order_by('-created_at')
+        qs = SnowVTRRecord.objects.filter(youtube_video_id=youtube_video_id).order_by('-created_at')
         return JsonResponse({'youtube_video_id': youtube_video_id, 'count': qs.count(),
                              'transcripts': [_vtr_to_dict(t) for t in qs]})
     except Exception as e:
@@ -52383,176 +52340,121 @@ def snowai_vtr_list_by_video(request, youtube_video_id):
 
 
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_vtr_update_transcript(request, transcript_id):
+@require_http_methods(['POST'])
+def snowvtr_update_transcript(request, transcript_id):
+    """POST /snowvtr/transcripts/<transcript_id>/update/"""
     try:
-        obj = (SnowAIVideoTranscriptRecord.objects.get(id=transcript_id)
+        obj = (SnowVTRRecord.objects.get(id=transcript_id)
                if str(transcript_id).isdigit()
-               else SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id))
+               else SnowVTRRecord.objects.get(transcript_uuid=transcript_id))
         body = json.loads(request.body)
         for f in ['full_transcript_text','video_title','primary_speaker_name','speaker_organization',
                   'speaker_country_code','speaker_country_name','transcript_language','processing_status',
                   'content_category','economic_topics','custom_tags','transcript_confidence_score',
                   'sentiment_analysis_score','key_phrases_extracted']:
-            if f in body: setattr(obj, f, body[f])
+            if f in body:
+                setattr(obj, f, body[f])
         obj.save()
         return JsonResponse({'success': True, 'transcript': _vtr_to_dict(obj)})
-    except SnowAIVideoTranscriptRecord.DoesNotExist:
+    except SnowVTRRecord.DoesNotExist:
         return JsonResponse({'error': 'Transcript not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_vtr_delete_transcript(request, transcript_id):
+@require_http_methods(['POST'])
+def snowvtr_delete_transcript(request, transcript_id):
+    """POST /snowvtr/transcripts/<transcript_id>/delete/"""
     try:
-        obj = (SnowAIVideoTranscriptRecord.objects.get(id=transcript_id)
+        obj = (SnowVTRRecord.objects.get(id=transcript_id)
                if str(transcript_id).isdigit()
-               else SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id))
+               else SnowVTRRecord.objects.get(transcript_uuid=transcript_id))
         obj.delete()
-        return JsonResponse({'success': True, 'deleted_id': transcript_id})
-    except SnowAIVideoTranscriptRecord.DoesNotExist:
+        return JsonResponse({'success': True})
+    except SnowVTRRecord.DoesNotExist:
         return JsonResponse({'error': 'Transcript not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_vtr_archive_transcript(request, transcript_id):
+@require_http_methods(['POST'])
+def snowvtr_archive_transcript(request, transcript_id):
+    """POST /snowvtr/transcripts/<transcript_id>/archive/"""
     try:
-        obj = (SnowAIVideoTranscriptRecord.objects.get(id=transcript_id)
+        obj = (SnowVTRRecord.objects.get(id=transcript_id)
                if str(transcript_id).isdigit()
-               else SnowAIVideoTranscriptRecord.objects.get(transcript_uuid=transcript_id))
+               else SnowVTRRecord.objects.get(transcript_uuid=transcript_id))
         obj.processing_status = 'archived'
-        obj.archived_at = timezone.now()
+        obj.archived_at       = timezone.now()
         obj.save()
         return JsonResponse({'success': True, 'transcript': _vtr_to_dict(obj)})
-    except SnowAIVideoTranscriptRecord.DoesNotExist:
+    except SnowVTRRecord.DoesNotExist:
         return JsonResponse({'error': 'Transcript not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
-@require_http_methods(["GET"])
-def snowai_vtr_stats(request):
+@require_http_methods(['GET'])
+def snowvtr_stats(request):
+    """GET /snowvtr/stats/"""
     try:
-        from django.db.models import Count, Sum, Avg
-        total  = SnowAIVideoTranscriptRecord.objects.count()
-        active = SnowAIVideoTranscriptRecord.objects.exclude(processing_status='archived').count()
-        stats  = SnowAIVideoTranscriptRecord.objects.exclude(processing_status='archived').aggregate(
-            total_words=Sum('word_count'), avg_words=Avg('word_count'))
-        languages  = list(SnowAIVideoTranscriptRecord.objects.exclude(processing_status='archived')
-                          .values('transcript_language').annotate(count=Count('id')).order_by('-count'))
-        categories = list(SnowAIVideoTranscriptRecord.objects.exclude(processing_status='archived')
-                          .exclude(content_category__isnull=True)
-                          .values('content_category').annotate(count=Count('id')).order_by('-count'))
-        return JsonResponse({'total_transcripts': total, 'active_transcripts': active,
-                             'total_words': stats['total_words'] or 0,
-                             'avg_words_per_doc': round(stats['avg_words'] or 0, 1),
-                             'by_language': languages, 'by_category': categories})
+        from django.db.models import Avg, Count, Sum
+        base   = SnowVTRRecord.objects.exclude(processing_status='archived')
+        stats  = base.aggregate(total_words=Sum('word_count'), avg_words=Avg('word_count'))
+        return JsonResponse({
+            'total_transcripts':  SnowVTRRecord.objects.count(),
+            'active_transcripts': base.count(),
+            'total_words':        stats['total_words'] or 0,
+            'avg_words_per_doc':  round(stats['avg_words'] or 0, 1),
+            'by_language':        list(base.values('transcript_language').annotate(count=Count('id')).order_by('-count')),
+            'by_category':        list(base.exclude(content_category__isnull=True).values('content_category').annotate(count=Count('id')).order_by('-count')),
+        })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  NEW  snowai_ctr_  VIEWS  — Company-scoped transcripts
+#  CTR — COMPANY-SCOPED TRANSCRIPTS  — /snowctr/
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _ctr_to_dict(t):
-    """Serialise SnowAICompanyTranscript to a JSON-safe dict."""
-    return {
-        'id':                       t.id,
-        'transcript_uuid':          str(t.transcript_uuid),
-        'company_id':               t.company_id,
-        'company_name':             t.company_name,
-        'source_title':             t.source_title,
-        'source_url':               t.source_url,
-        'youtube_video_id':         t.youtube_video_id,
-        'source_type':              t.source_type,
-        'speaker_name':             t.speaker_name,
-        'speaker_role':             t.speaker_role,
-        'event_name':               t.event_name,
-        'event_date':               t.event_date.isoformat() if t.event_date else None,
-        'full_transcript_text':     t.full_transcript_text,
-        'transcript_language':      t.transcript_language,
-        'recording_duration_seconds': t.recording_duration_seconds,
-        'word_count':               t.word_count,
-        'status':                   t.status,
-        'transcription_method':     t.transcription_method,
-        'summary':                  t.summary,
-        'key_points':               t.key_points or [],
-        'topics':                   t.topics or [],
-        'sentiment_score':          t.sentiment_score,
-        'analyst_notes':            t.analyst_notes,
-        'custom_tags':              t.custom_tags or [],
-        'recorded_at':              t.recorded_at.isoformat() if t.recorded_at else None,
-        'created_at':               t.created_at.isoformat() if t.created_at else None,
-        'updated_at':               t.updated_at.isoformat() if t.updated_at else None,
-        'archived_at':              t.archived_at.isoformat() if t.archived_at else None,
-    }
-
-
-# ── List all transcripts for a company ───────────────────────────────────────
-
 @csrf_exempt
-@require_http_methods(["GET"])
-def snowai_ctr_list_for_company(request, company_id):
-    """
-    GET /snowai-ctr/company/<company_id>/transcripts/
-    Optional query params: status, source_type, language, search, page, page_size
-    """
+@require_http_methods(['GET'])
+def snowctr_list_for_company(request, company_id):
+    """GET /snowctr/company/<company_id>/transcripts/"""
     try:
-        qs = SnowAICompanyTranscript.objects.filter(
+        qs = SnowCOITranscript.objects.filter(
             company_id=company_id
         ).exclude(status='archived').order_by('-recorded_at')
-
-        if v := request.GET.get('status'):           qs = qs.filter(status=v)
-        if v := request.GET.get('source_type'):      qs = qs.filter(source_type=v)
-        if v := request.GET.get('language'):         qs = qs.filter(transcript_language=v)
+        if v := request.GET.get('status'):      qs = qs.filter(status=v)
+        if v := request.GET.get('source_type'): qs = qs.filter(source_type=v)
+        if v := request.GET.get('language'):    qs = qs.filter(transcript_language=v)
         if v := request.GET.get('search', '').strip():
             from django.db.models import Q
             qs = qs.filter(
-                Q(source_title__icontains=v) |
-                Q(speaker_name__icontains=v) |
-                Q(event_name__icontains=v)   |
-                Q(full_transcript_text__icontains=v) |
+                Q(source_title__icontains=v) | Q(speaker_name__icontains=v) |
+                Q(event_name__icontains=v) | Q(full_transcript_text__icontains=v) |
                 Q(summary__icontains=v)
             )
-
         page_size = min(int(request.GET.get('page_size', 50)), 200)
         paginator = Paginator(qs, page_size)
         page_num  = int(request.GET.get('page', 1))
         page      = paginator.get_page(page_num)
-
         return JsonResponse({
-            'company_id':  company_id,
-            'count':       paginator.count,
-            'total_pages': paginator.num_pages,
-            'page':        page_num,
+            'company_id': company_id, 'count': paginator.count,
+            'total_pages': paginator.num_pages, 'page': page_num,
             'transcripts': [_ctr_to_dict(t) for t in page.object_list],
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
-# ── Save (create / upsert) ────────────────────────────────────────────────────
-
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_ctr_save(request, company_id):
-    """
-    POST /snowai-ctr/company/<company_id>/transcripts/save/
-    Body fields (all optional except full_transcript_text):
-        transcript_uuid, source_title, source_url, youtube_video_id, source_type,
-        speaker_name, speaker_role, event_name, event_date,
-        full_transcript_text*, transcript_language, recording_duration_seconds,
-        transcription_method, summary, key_points, topics, sentiment_score,
-        analyst_notes, custom_tags, status, company_name
-    Upserts by transcript_uuid — safe to call multiple times while recording.
-    """
+@require_http_methods(['POST'])
+def snowctr_save(request, company_id):
+    """POST /snowctr/company/<company_id>/transcripts/save/  — upsert by transcript_uuid"""
     try:
         body      = json.loads(request.body)
         full_text = body.get('full_transcript_text', '').strip()
@@ -52562,100 +52464,87 @@ def snowai_ctr_save(request, company_id):
         t_uuid     = body.get('transcript_uuid') or str(uuid.uuid4())
         source_url = body.get('source_url', '').strip() or None
         yt_id      = body.get('youtube_video_id') or (_extract_youtube_id(source_url) if source_url else None)
-
-        # Auto-fetch title from YouTube if not supplied
         source_title = body.get('source_title', '').strip()
         if not source_title and yt_id:
             source_title, _ = _fetch_youtube_title(yt_id)
 
-        # Parse event_date
-        raw_date   = body.get('event_date')
         event_date = None
-        if raw_date:
+        if raw := body.get('event_date'):
             try:
                 from django.utils.dateparse import parse_date
-                event_date = parse_date(str(raw_date))
+                event_date = parse_date(str(raw))
             except Exception:
                 pass
 
-        obj, created = SnowAICompanyTranscript.objects.update_or_create(
+        obj, created = SnowCOITranscript.objects.update_or_create(
             transcript_uuid=t_uuid,
             defaults={
-                'company_id':                company_id,
-                'company_name':              body.get('company_name', '').strip(),
-                'source_title':              source_title,
-                'source_url':                source_url,
-                'youtube_video_id':          yt_id,
-                'source_type':               body.get('source_type', 'youtube'),
-                'speaker_name':              body.get('speaker_name', '').strip(),
-                'speaker_role':              body.get('speaker_role', '').strip(),
-                'event_name':                body.get('event_name', '').strip(),
-                'event_date':                event_date,
-                'full_transcript_text':      full_text,
-                'transcript_language':       body.get('transcript_language', 'en-US'),
-                'recording_duration_seconds': body.get('recording_duration_seconds') or None,
-                'transcription_method':      body.get('transcription_method', 'browser_speech_api'),
-                'status':                    body.get('status', 'raw'),
-                'summary':                   body.get('summary', '').strip(),
-                'key_points':                body.get('key_points', []),
-                'topics':                    body.get('topics', []),
-                'sentiment_score':           body.get('sentiment_score') or None,
-                'analyst_notes':             body.get('analyst_notes', '').strip(),
-                'custom_tags':               body.get('custom_tags', []),
-            }
+                'company_id':                  company_id,
+                'company_name':                body.get('company_name', '').strip(),
+                'source_title':                source_title,
+                'source_url':                  source_url,
+                'youtube_video_id':            yt_id,
+                'source_type':                 body.get('source_type', 'youtube'),
+                'speaker_name':                body.get('speaker_name', '').strip(),
+                'speaker_role':                body.get('speaker_role', '').strip(),
+                'event_name':                  body.get('event_name', '').strip(),
+                'event_date':                  event_date,
+                'full_transcript_text':        full_text,
+                'transcript_language':         body.get('transcript_language', 'en-US'),
+                'recording_duration_seconds':  body.get('recording_duration_seconds') or None,
+                'transcription_method':        body.get('transcription_method', 'browser_speech_api'),
+                'status':                      body.get('status', 'raw'),
+                'summary':                     body.get('summary', '').strip(),
+                'key_points':                  body.get('key_points', []),
+                'topics':                      body.get('topics', []),
+                'sentiment_score':             body.get('sentiment_score') or None,
+                'analyst_notes':               body.get('analyst_notes', '').strip(),
+                'custom_tags':                 body.get('custom_tags', []),
+            },
         )
-        return JsonResponse({
-            'success':    True,
-            'created':    created,
-            'transcript': _ctr_to_dict(obj),
-        }, status=201 if created else 200)
-
+        return JsonResponse(
+            {'success': True, 'created': created, 'transcript': _ctr_to_dict(obj)},
+            status=201 if created else 200,
+        )
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
-# ── Get single ────────────────────────────────────────────────────────────────
-
 @csrf_exempt
-@require_http_methods(["GET"])
-def snowai_ctr_get(request, company_id, transcript_id):
-    """GET /snowai-ctr/company/<company_id>/transcripts/<transcript_id>/"""
+@require_http_methods(['GET'])
+def snowctr_get(request, company_id, transcript_id):
+    """GET /snowctr/company/<company_id>/transcripts/<transcript_id>/"""
     try:
-        obj = (SnowAICompanyTranscript.objects.get(id=transcript_id, company_id=company_id)
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
                if str(transcript_id).isdigit()
-               else SnowAICompanyTranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
         return JsonResponse(_ctr_to_dict(obj))
-    except SnowAICompanyTranscript.DoesNotExist:
+    except SnowCOITranscript.DoesNotExist:
         return JsonResponse({'error': 'Transcript not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
-# ── Partial update ────────────────────────────────────────────────────────────
-
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_ctr_update(request, company_id, transcript_id):
-    """POST /snowai-ctr/company/<company_id>/transcripts/<transcript_id>/update/"""
+@require_http_methods(['POST'])
+def snowctr_update(request, company_id, transcript_id):
+    """POST /snowctr/company/<company_id>/transcripts/<transcript_id>/update/"""
     try:
-        obj = (SnowAICompanyTranscript.objects.get(id=transcript_id, company_id=company_id)
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
                if str(transcript_id).isdigit()
-               else SnowAICompanyTranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
         body = json.loads(request.body)
-        updatable = [
-            'source_title','source_url','source_type','speaker_name','speaker_role',
-            'event_name','event_date','full_transcript_text','transcript_language',
-            'recording_duration_seconds','status','summary','key_points','topics',
-            'sentiment_score','analyst_notes','custom_tags','transcription_method',
-        ]
-        for field in updatable:
-            if field in body:
-                setattr(obj, field, body[field])
+        for f in ['source_title','source_url','source_type','speaker_name','speaker_role',
+                  'event_name','event_date','full_transcript_text','transcript_language',
+                  'recording_duration_seconds','status','summary','key_points','topics',
+                  'sentiment_score','analyst_notes','custom_tags','transcription_method']:
+            if f in body:
+                setattr(obj, f, body[f])
         obj.save()
         return JsonResponse({'success': True, 'transcript': _ctr_to_dict(obj)})
-    except SnowAICompanyTranscript.DoesNotExist:
+    except SnowCOITranscript.DoesNotExist:
         return JsonResponse({'error': 'Transcript not found'}, status=404)
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
@@ -52663,57 +52552,48 @@ def snowai_ctr_update(request, company_id, transcript_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-# ── Delete ────────────────────────────────────────────────────────────────────
-
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_ctr_delete(request, company_id, transcript_id):
-    """POST /snowai-ctr/company/<company_id>/transcripts/<transcript_id>/delete/"""
+@require_http_methods(['POST'])
+def snowctr_delete(request, company_id, transcript_id):
+    """POST /snowctr/company/<company_id>/transcripts/<transcript_id>/delete/"""
     try:
-        obj = (SnowAICompanyTranscript.objects.get(id=transcript_id, company_id=company_id)
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
                if str(transcript_id).isdigit()
-               else SnowAICompanyTranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
         obj.delete()
         return JsonResponse({'success': True})
-    except SnowAICompanyTranscript.DoesNotExist:
+    except SnowCOITranscript.DoesNotExist:
         return JsonResponse({'error': 'Transcript not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
-# ── Archive (soft delete) ─────────────────────────────────────────────────────
-
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_ctr_archive(request, company_id, transcript_id):
-    """POST /snowai-ctr/company/<company_id>/transcripts/<transcript_id>/archive/"""
+@require_http_methods(['POST'])
+def snowctr_archive(request, company_id, transcript_id):
+    """POST /snowctr/company/<company_id>/transcripts/<transcript_id>/archive/"""
     try:
-        obj = (SnowAICompanyTranscript.objects.get(id=transcript_id, company_id=company_id)
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
                if str(transcript_id).isdigit()
-               else SnowAICompanyTranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
         obj.status      = 'archived'
         obj.archived_at = timezone.now()
         obj.save()
         return JsonResponse({'success': True, 'transcript': _ctr_to_dict(obj)})
-    except SnowAICompanyTranscript.DoesNotExist:
+    except SnowCOITranscript.DoesNotExist:
         return JsonResponse({'error': 'Transcript not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
-# ── Update status only ────────────────────────────────────────────────────────
-
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_ctr_set_status(request, company_id, transcript_id):
-    """
-    POST /snowai-ctr/company/<company_id>/transcripts/<transcript_id>/status/
-    Body: { "status": "reviewed" }   (raw | reviewed | processed | archived)
-    """
+@require_http_methods(['POST'])
+def snowctr_set_status(request, company_id, transcript_id):
+    """POST /snowctr/company/<company_id>/transcripts/<transcript_id>/status/"""
     try:
-        obj = (SnowAICompanyTranscript.objects.get(id=transcript_id, company_id=company_id)
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
                if str(transcript_id).isdigit()
-               else SnowAICompanyTranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
         body   = json.loads(request.body)
         status = body.get('status', '').strip()
         valid  = {'raw', 'reviewed', 'processed', 'archived'}
@@ -52724,135 +52604,98 @@ def snowai_ctr_set_status(request, company_id, transcript_id):
             obj.archived_at = timezone.now()
         obj.save(update_fields=['status', 'archived_at', 'updated_at'])
         return JsonResponse({'success': True, 'transcript': _ctr_to_dict(obj)})
-    except SnowAICompanyTranscript.DoesNotExist:
+    except SnowCOITranscript.DoesNotExist:
         return JsonResponse({'error': 'Transcript not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
-# ── Global list across all companies ──────────────────────────────────────────
-
 @csrf_exempt
-@require_http_methods(["GET"])
-def snowai_ctr_list_all(request):
+@require_http_methods(['POST'])
+def snowctr_apply_ai_analysis(request, company_id, transcript_id):
     """
-    GET /snowai-ctr/transcripts/
-    All company transcripts, with optional filters: company_id, status, search, page
-    search checks: source_title, speaker_name, company_name, full_transcript_text, summary, topics
+    POST /snowctr/company/<company_id>/transcripts/<transcript_id>/apply-ai/
+    Saves AI fields and auto-advances status -> processed.
+    Body: { summary, key_points, topics, sentiment_score, analyst_notes }
     """
     try:
-        qs = SnowAICompanyTranscript.objects.exclude(status='archived').order_by('-recorded_at')
-        if v := request.GET.get('company_id'):   qs = qs.filter(company_id=v)
-        if v := request.GET.get('status'):       qs = qs.filter(status=v)
-        if v := request.GET.get('source_type'):  qs = qs.filter(source_type=v)
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
+               if str(transcript_id).isdigit()
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+    except SnowCOITranscript.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    sentiment = body.get('sentiment_score')
+    if sentiment is not None:
+        try:
+            sentiment = float(sentiment)
+            if not (-1.0 <= sentiment <= 1.0):
+                return JsonResponse({'error': 'sentiment_score must be between -1.0 and 1.0'}, status=400)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'sentiment_score must be a float'}, status=400)
+
+    try:
+        if 'summary'       in body: obj.summary       = str(body['summary']).strip()
+        if 'key_points'    in body: obj.key_points    = body['key_points'] if isinstance(body['key_points'], list) else []
+        if 'topics'        in body: obj.topics        = body['topics'] if isinstance(body['topics'], list) else []
+        if 'analyst_notes' in body: obj.analyst_notes = str(body['analyst_notes']).strip()
+        if sentiment is not None:   obj.sentiment_score = sentiment
+        obj.status = 'processed'
+        obj.save()
+        return JsonResponse({'success': True, 'transcript': _ctr_to_dict(obj)})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowctr_list_all(request):
+    """GET /snowctr/transcripts/  — global list across all companies"""
+    try:
+        qs = SnowCOITranscript.objects.exclude(status='archived').order_by('-recorded_at')
+        if v := request.GET.get('company_id'):  qs = qs.filter(company_id=v)
+        if v := request.GET.get('status'):      qs = qs.filter(status=v)
+        if v := request.GET.get('source_type'): qs = qs.filter(source_type=v)
         if v := request.GET.get('search', '').strip():
             from django.db.models import Q
             qs = qs.filter(
-                Q(source_title__icontains=v)       |
-                Q(speaker_name__icontains=v)        |
-                Q(company_name__icontains=v)        |
-                Q(full_transcript_text__icontains=v)|
-                Q(summary__icontains=v)             |
-                Q(analyst_notes__icontains=v)       |
-                Q(event_name__icontains=v)
+                Q(source_title__icontains=v) | Q(speaker_name__icontains=v) |
+                Q(company_name__icontains=v) | Q(full_transcript_text__icontains=v) |
+                Q(summary__icontains=v) | Q(analyst_notes__icontains=v) | Q(event_name__icontains=v)
             )
         page_size = min(int(request.GET.get('page_size', 20)), 100)
         paginator = Paginator(qs, page_size)
         page_num  = int(request.GET.get('page', 1))
         page      = paginator.get_page(page_num)
         return JsonResponse({
-            'count': paginator.count, 'total_pages': paginator.num_pages, 'page': page_num,
-            'transcripts': [_ctr_to_dict(t) for t in page.object_list],
+            'count': paginator.count, 'total_pages': paginator.num_pages,
+            'page': page_num, 'transcripts': [_ctr_to_dict(t) for t in page.object_list],
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
-# ── Apply AI analysis (from pasted LLM response) ─────────────────────────────
-
 @csrf_exempt
-@require_http_methods(["POST"])
-def snowai_ctr_apply_ai_analysis(request, company_id, transcript_id):
-    """
-    POST /snowai-ctr/company/<company_id>/transcripts/<transcript_id>/apply-ai/
-
-    Body — the parsed JSON from the LLM, passed straight from the frontend:
-    {
-        "summary":         "Executive summary text",
-        "key_points":      ["Point 1", "Point 2", ...],
-        "topics":          ["topic_one", "topic_two"],
-        "sentiment_score": 0.35,
-        "analyst_notes":   "Follow-up notes"
-    }
-
-    Saves all fields and automatically advances status → "processed".
-    Returns the full updated transcript dict.
-    """
+@require_http_methods(['GET'])
+def snowctr_company_stats(request, company_id):
+    """GET /snowctr/company/<company_id>/stats/"""
     try:
-        obj = (
-            SnowAICompanyTranscript.objects.get(id=transcript_id, company_id=company_id)
-            if str(transcript_id).isdigit()
-            else SnowAICompanyTranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id)
-        )
-
-        body = json.loads(request.body)
-
-        # Validate sentiment_score if provided
-        sentiment = body.get('sentiment_score')
-        if sentiment is not None:
-            try:
-                sentiment = float(sentiment)
-                if not (-1.0 <= sentiment <= 1.0):
-                    return JsonResponse({'error': 'sentiment_score must be between -1.0 and 1.0'}, status=400)
-            except (TypeError, ValueError):
-                return JsonResponse({'error': 'sentiment_score must be a float'}, status=400)
-
-        # Apply all AI fields
-        if 'summary'        in body: obj.summary        = str(body['summary']).strip()
-        if 'key_points'     in body: obj.key_points     = body['key_points'] if isinstance(body['key_points'], list) else []
-        if 'topics'         in body: obj.topics         = body['topics'] if isinstance(body['topics'], list) else []
-        if 'analyst_notes'  in body: obj.analyst_notes  = str(body['analyst_notes']).strip()
-        if sentiment is not None:    obj.sentiment_score = sentiment
-
-        # Auto-advance status to processed
-        obj.status = 'processed'
-
-        obj.save()
-
+        from django.db.models import Avg, Count, Sum
+        qs  = SnowCOITranscript.objects.filter(company_id=company_id).exclude(status='archived')
+        agg = qs.aggregate(total_words=Sum('word_count'), avg_words=Avg('word_count'))
         return JsonResponse({
-            'success':    True,
-            'transcript': _ctr_to_dict(obj),
-        })
-
-    except SnowAICompanyTranscript.DoesNotExist:
-        return JsonResponse({'error': 'Transcript not found'}, status=404)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-# ── Company-level stats ───────────────────────────────────────────────────────
-
-@csrf_exempt
-@require_http_methods(["GET"])
-def snowai_ctr_company_stats(request, company_id):
-    """GET /snowai-ctr/company/<company_id>/stats/"""
-    try:
-        from django.db.models import Count, Sum, Avg
-        qs    = SnowAICompanyTranscript.objects.filter(company_id=company_id).exclude(status='archived')
-        agg   = qs.aggregate(total_words=Sum('word_count'), avg_words=Avg('word_count'))
-        by_status = list(qs.values('status').annotate(count=Count('id')))
-        by_type   = list(qs.values('source_type').annotate(count=Count('id')))
-        by_lang   = list(qs.values('transcript_language').annotate(count=Count('id')))
-        return JsonResponse({
-            'company_id':       company_id,
+            'company_id':        company_id,
             'total_transcripts': qs.count(),
             'total_words':       agg['total_words'] or 0,
             'avg_words':         round(agg['avg_words'] or 0, 1),
-            'by_status':         by_status,
-            'by_source_type':    by_type,
-            'by_language':       by_lang,
+            'by_status':         list(qs.values('status').annotate(count=Count('id'))),
+            'by_source_type':    list(qs.values('source_type').annotate(count=Count('id'))),
+            'by_language':       list(qs.values('transcript_language').annotate(count=Count('id'))),
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)

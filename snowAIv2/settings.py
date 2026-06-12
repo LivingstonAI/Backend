@@ -154,7 +154,7 @@ DATABASES = {
         'NAME': 'railway',
         'USER': 'postgres', 
         'PASSWORD': os.environ['PASSWORD'],
-        'HOST': os.environ['HOST'],
+        'HOST': os.environ['HOST']z,
         'PORT': os.environ['PORT'],
     }
 }

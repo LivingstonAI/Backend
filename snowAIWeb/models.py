@@ -3078,194 +3078,199 @@ class PushSubscription(models.Model):
         return self.endpoint[:60]
 
 
-from django.db import models
-
-
-class SnowAICompany(models.Model):
-    name         = models.CharField(max_length=255)
-    description  = models.TextField(blank=True, default='')
-    sector       = models.CharField(max_length=100, blank=True, default='')
-    logo_base64  = models.TextField(blank=True, default='', help_text='Base64-encoded logo image')
-    created_at   = models.DateTimeField(auto_now_add=True)
-    updated_at   = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['name']
-
-    def __str__(self):
-        return self.name
-
-
-class SnowAICompanyKeyPerson(models.Model):
-    company      = models.ForeignKey(SnowAICompany, on_delete=models.CASCADE, related_name='key_people')
-    name         = models.CharField(max_length=255)
-    role         = models.CharField(max_length=255, blank=True, default='')
-    bio          = models.TextField(blank=True, default='')
-    photo_base64 = models.TextField(blank=True, default='', help_text='Base64-encoded profile photo')
-    created_at   = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['name']
-
-    def __str__(self):
-        return f'{self.name} @ {self.company.name}'
-
-
-class SnowAICompanyLink(models.Model):
-    LINK_TYPES = [
-        ('url',      'Web Link'),
-        ('pdf',      'PDF Document'),
-        ('youtube',  'YouTube Video'),
-    ]
-    company    = models.ForeignKey(SnowAICompany, on_delete=models.CASCADE, related_name='links')
-    link_type  = models.CharField(max_length=20, choices=LINK_TYPES, default='url')
-    title      = models.CharField(max_length=255)
-    url        = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['link_type', 'title']
-
-    def __str__(self):
-        return f'{self.title} ({self.link_type}) — {self.company.name}'
-
-
 """
-SnowAI Company Transcript Model
---------------------------------
-Paste this class into your existing models.py.
+SnowAI — Companies of Interest + VTR models
+============================================
+All class names use the prefixes SnowCOI_ (Companies Of Interest) and
+SnowVTR_ (Video Transcript Record) so they cannot clash with any other
+SnowAI model already in your codebase.
 
-It links each transcript directly to a company (via a plain integer FK
-so you don't need to import your existing Company model here — just set
-`company_id` directly from the integer PK).
+  SnowCOICompany          — company of interest
+  SnowCOIKeyPerson        — key person attached to a company
+  SnowCOICompanyLink      — web / PDF / YouTube link per company
+                            (includes AI-analysis fields for PDFs)
+  SnowCOITranscript       — live-recorded transcript scoped to a company
+  SnowVTRRecord           — global video transcript record (original VTR)
 
-Run after adding:
+db_table names are also fully qualified so they never collide:
+  snowcoi_companies
+  snowcoi_key_people
+  snowcoi_company_links
+  snowcoi_transcripts
+  snowvtr_records
+
+After adding to your app run:
     python manage.py makemigrations
     python manage.py migrate
 """
 
 import uuid as _uuid
+
+from django.db import models
 from django.utils import timezone
 
 
-class SnowAICompanyTranscript(models.Model):
+# ══════════════════════════════════════════════════════════════════════════════
+#  COMPANIES OF INTEREST
+# ══════════════════════════════════════════════════════════════════════════════
+
+class SnowCOICompany(models.Model):
+    """A company being tracked / researched."""
+
+    name        = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
+    sector      = models.CharField(max_length=100, blank=True, default='')
+    logo_base64 = models.TextField(
+        blank=True, default='',
+        help_text='Base64 data-URI of the company logo.',
+    )
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'snowAIWeb'
+        ordering  = ['name']
+        db_table  = 'snowcoi_companies'
+
+    def __str__(self):
+        return self.name
+
+
+class SnowCOIKeyPerson(models.Model):
+    """A key person attached to a company."""
+
+    company      = models.ForeignKey(
+        SnowCOICompany, on_delete=models.CASCADE, related_name='key_people',
+    )
+    name         = models.CharField(max_length=255)
+    role         = models.CharField(max_length=255, blank=True, default='')
+    bio          = models.TextField(blank=True, default='')
+    photo_base64 = models.TextField(blank=True, default='', help_text='Base64 data-URI.')
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'snowAIWeb'
+        ordering  = ['name']
+        db_table  = 'snowcoi_key_people'
+
+    def __str__(self):
+        return f'{self.name} @ {self.company.name}'
+
+
+class SnowCOICompanyLink(models.Model):
+    """
+    A resource (web URL, PDF, or YouTube) attached to a company.
+    PDF links support stored AI analysis via the apply-ai endpoint.
+    """
+
+    LINK_TYPES = [
+        ('url',     'Web Link'),
+        ('pdf',     'PDF Document'),
+        ('youtube', 'YouTube Video'),
+    ]
+
+    company    = models.ForeignKey(
+        SnowCOICompany, on_delete=models.CASCADE, related_name='links',
+    )
+    link_type  = models.CharField(max_length=20, choices=LINK_TYPES, default='url')
+    title      = models.CharField(max_length=255)
+    url        = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # ── AI analysis fields (PDF) ──────────────────────────────────────────────
+    ai_summary         = models.TextField(blank=True, default='')
+    ai_key_points      = models.JSONField(default=list, blank=True, help_text='["Point 1", ...]')
+    ai_topics          = models.JSONField(default=list, blank=True, help_text='["topic_one", ...]')
+    ai_sentiment_score = models.FloatField(blank=True, null=True, help_text='-1.0 to +1.0')
+    ai_analyst_notes   = models.TextField(blank=True, default='')
+    ai_analysed_at     = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        app_label = 'snowAIWeb'
+        ordering  = ['link_type', 'title']
+        db_table  = 'snowcoi_company_links'
+
+    def __str__(self):
+        return f'{self.title} ({self.link_type}) — {self.company.name}'
+
+    @property
+    def has_ai_analysis(self):
+        return bool(self.ai_summary or self.ai_key_points)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  COMPANY-SCOPED TRANSCRIPTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+class SnowCOITranscript(models.Model):
     """
     A transcript recorded and scoped to a specific company of interest.
-    Designed for live-recording via the browser Speech API and later processing.
+    Captured live via the browser Speech API; analysed later via the
+    copy-prompt -> paste-response AI workflow.
     """
 
-    # ── Identity ──────────────────────────────────────────────────────────────
     transcript_uuid = models.CharField(
-        max_length=100, unique=True, db_index=True,
-        default=_uuid.uuid4,
-        help_text="Stable client-side UUID used for upsert operations.",
+        max_length=100, unique=True, db_index=True, default=_uuid.uuid4,
+        help_text='Stable client-generated UUID used for upsert operations.',
     )
-
-    # ── Company FK ────────────────────────────────────────────────────────────
-    # Using a plain IntegerField so this file can be pasted into any app
-    # without importing your specific Company model.  The views join via
-    # .filter(company_id=...) which works identically.
     company_id = models.IntegerField(
-        db_index=True,
-        help_text="FK → your company table PK (snowai_companies_of_interest.id).",
+        db_index=True, help_text='FK -> SnowCOICompany.id (plain int for portability).',
     )
     company_name = models.CharField(
         max_length=300, blank=True, default='',
-        help_text="Denormalised company name — avoids a JOIN in the viewer.",
+        help_text='Denormalised name to avoid JOINs.',
     )
 
-    # ── Source video / document ───────────────────────────────────────────────
-    source_title = models.CharField(
-        max_length=500, blank=True, default='',
-        help_text="Title of the video, meeting, or document being transcribed.",
-    )
-    source_url = models.URLField(
-        max_length=1000, blank=True, null=True,
-        help_text="URL of the source (YouTube, meeting link, article, etc.).",
-    )
-    youtube_video_id = models.CharField(
-        max_length=50, blank=True, null=True,
-        help_text="Extracted YouTube video ID — null for non-YT sources.",
-    )
-    source_type = models.CharField(
+    source_title     = models.CharField(max_length=500, blank=True, default='')
+    source_url       = models.URLField(max_length=1000, blank=True, null=True)
+    youtube_video_id = models.CharField(max_length=50, blank=True, null=True)
+    source_type      = models.CharField(
         max_length=30, default='youtube',
-        help_text="youtube | meeting | earnings_call | conference | interview | other",
+        help_text='youtube | meeting | earnings_call | conference | interview | other',
     )
 
-    # ── Speaker / context ────────────────────────────────────────────────────
     speaker_name = models.CharField(max_length=300, blank=True, default='')
-    speaker_role = models.CharField(max_length=300, blank=True, default='',
-        help_text="e.g. CEO, CFO, Analyst")
-    event_name = models.CharField(max_length=300, blank=True, default='',
-        help_text="e.g. Q3 2024 Earnings Call, Davos 2024 Panel")
-    event_date = models.DateField(blank=True, null=True)
+    speaker_role = models.CharField(max_length=300, blank=True, default='')
+    event_name   = models.CharField(max_length=300, blank=True, default='')
+    event_date   = models.DateField(blank=True, null=True)
 
-    # ── Transcript content ───────────────────────────────────────────────────
-    full_transcript_text = models.TextField(
-        help_text="The full captured transcript text.",
-    )
-    transcript_language = models.CharField(
-        max_length=20, default='en-US',
-        help_text="BCP-47 language tag, e.g. en-US, fr-FR, zh-CN.",
-    )
-    recording_duration_seconds = models.IntegerField(
-        blank=True, null=True,
-        help_text="Wall-clock seconds of the live recording session.",
-    )
-    word_count = models.IntegerField(default=0, editable=False)
+    full_transcript_text       = models.TextField()
+    transcript_language        = models.CharField(max_length=20, default='en-US')
+    recording_duration_seconds = models.IntegerField(blank=True, null=True)
+    word_count                 = models.IntegerField(default=0, editable=False)
 
-    # ── Processing / status ──────────────────────────────────────────────────
     STATUS_CHOICES = [
-        ('raw',        'Raw — not yet reviewed'),
-        ('reviewed',   'Reviewed'),
-        ('processed',  'Processed — analysis done'),
-        ('archived',   'Archived'),
+        ('raw',       'Raw - not yet reviewed'),
+        ('reviewed',  'Reviewed'),
+        ('processed', 'Processed - AI analysis done'),
+        ('archived',  'Archived'),
     ]
     status = models.CharField(
         max_length=20, default='raw', choices=STATUS_CHOICES, db_index=True,
     )
     transcription_method = models.CharField(
         max_length=50, default='browser_speech_api',
-        help_text="browser_speech_api | manual | ai_generated | imported",
+        help_text='browser_speech_api | manual | ai_generated | imported',
     )
 
-    # ── Analysis fields (fill in later) ──────────────────────────────────────
-    summary = models.TextField(
-        blank=True, default='',
-        help_text="Human or AI-generated summary.",
-    )
-    key_points = models.JSONField(
-        default=list, blank=True,
-        help_text='["Point 1", "Point 2", ...]',
-    )
-    topics = models.JSONField(
-        default=list, blank=True,
-        help_text='["monetary_policy", "inflation", ...]',
-    )
-    sentiment_score = models.FloatField(
-        blank=True, null=True,
-        help_text="-1.0 (very negative) → +1.0 (very positive)",
-    )
-    analyst_notes = models.TextField(
-        blank=True, default='',
-        help_text="Free-form notes added after review.",
-    )
-    custom_tags = models.JSONField(default=list, blank=True)
+    summary         = models.TextField(blank=True, default='')
+    key_points      = models.JSONField(default=list, blank=True)
+    topics          = models.JSONField(default=list, blank=True)
+    sentiment_score = models.FloatField(blank=True, null=True)
+    analyst_notes   = models.TextField(blank=True, default='')
+    custom_tags     = models.JSONField(default=list, blank=True)
 
-    # ── Timestamps ────────────────────────────────────────────────────────────
-    recorded_at = models.DateTimeField(
-        default=timezone.now,
-        help_text="When the live recording was made.",
-    )
+    recorded_at = models.DateTimeField(default=timezone.now)
     created_at  = models.DateTimeField(auto_now_add=True)
     updated_at  = models.DateTimeField(auto_now=True)
     archived_at = models.DateTimeField(blank=True, null=True)
 
-    # ─────────────────────────────────────────────────────────────────────────
     class Meta:
-        db_table = 'snowai_company_transcripts'
-        ordering = ['-recorded_at']
-        indexes = [
+        app_label = 'snowAIWeb'
+        db_table  = 'snowcoi_transcripts'
+        ordering  = ['-recorded_at']
+        indexes   = [
             models.Index(fields=['company_id', 'status']),
             models.Index(fields=['company_id', 'recorded_at']),
             models.Index(fields=['source_type']),
@@ -3276,18 +3281,72 @@ class SnowAICompanyTranscript(models.Model):
 
     def __str__(self):
         return (
-            f"[{self.company_name or self.company_id}] "
-            f"{self.source_title[:60] or 'Untitled'} "
-            f"({self.recorded_at:%Y-%m-%d})"
+            f'[{self.company_name or self.company_id}] '
+            f'{self.source_title[:60] or "Untitled"} '
+            f'({self.recorded_at:%Y-%m-%d})'
         )
 
     def save(self, *args, **kwargs):
-        # Auto-count words
         if self.full_transcript_text:
             self.word_count = len(self.full_transcript_text.split())
-        # Auto-set archived_at
         if self.status == 'archived' and not self.archived_at:
             self.archived_at = timezone.now()
+        super().save(*args, **kwargs)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  GLOBAL VIDEO TRANSCRIPT RECORD
+# ══════════════════════════════════════════════════════════════════════════════
+
+class SnowVTRRecord(models.Model):
+    """
+    Global video transcript store - not company-scoped.
+    Previously named SnowAIVideoTranscriptRecord.
+    Renamed to SnowVTRRecord to guarantee uniqueness in a large codebase.
+    """
+
+    transcript_uuid             = models.UUIDField(default=_uuid.uuid4, unique=True, db_index=True)
+    youtube_video_id            = models.CharField(max_length=50, blank=True, null=True, db_index=True)
+    youtube_url                 = models.URLField(max_length=1000, blank=True, null=True)
+    video_title                 = models.CharField(max_length=500, blank=True, null=True)
+    primary_speaker_name        = models.CharField(max_length=300, blank=True, null=True)
+    speaker_organization        = models.CharField(max_length=300, blank=True, null=True)
+    speaker_country_code        = models.CharField(max_length=10,  blank=True, null=True)
+    speaker_country_name        = models.CharField(max_length=100, blank=True, null=True)
+    full_transcript_text        = models.TextField()
+    video_duration_seconds      = models.IntegerField(blank=True, null=True)
+    transcript_language         = models.CharField(max_length=20, default='en')
+    video_upload_date           = models.DateTimeField(blank=True, null=True)
+    transcription_method        = models.CharField(max_length=50, default='browser_speech_api')
+    transcript_confidence_score = models.FloatField(blank=True, null=True)
+    processing_status           = models.CharField(max_length=30, default='completed', db_index=True)
+    content_category            = models.CharField(max_length=100, blank=True, null=True)
+    economic_topics             = models.JSONField(default=list, blank=True)
+    custom_tags                 = models.JSONField(default=list, blank=True)
+    word_count                  = models.IntegerField(default=0, editable=False)
+    sentiment_analysis_score    = models.FloatField(blank=True, null=True)
+    key_phrases_extracted       = models.JSONField(default=list, blank=True)
+    created_at                  = models.DateTimeField(auto_now_add=True)
+    updated_at                  = models.DateTimeField(auto_now=True)
+    archived_at                 = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        app_label = 'snowAIWeb'
+        db_table  = 'snowvtr_records'
+        ordering  = ['-created_at']
+        indexes   = [
+            models.Index(fields=['youtube_video_id']),
+            models.Index(fields=['processing_status']),
+            models.Index(fields=['transcript_language']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.video_title or self.youtube_video_id or "VTR"} ({self.transcript_language})'
+
+    def save(self, *args, **kwargs):
+        if self.full_transcript_text:
+            self.word_count = len(self.full_transcript_text.split())
         super().save(*args, **kwargs)
         
 

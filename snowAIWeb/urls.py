@@ -1017,75 +1017,118 @@ urlpatterns = [
         name='mac_edit_account_trade_entry',
     ),
 
-     #  Companies URL
 
-     path('snowai-vtr/youtube-metadata/',
-         snowai_vtr_fetch_youtube_metadata,   name='snowai_vtr_fetch_youtube_metadata'),
-    path('snowai-vtr/transcripts/',
-         snowai_vtr_list_transcripts,          name='snowai_vtr_list_transcripts'),
-    path('snowai-vtr/transcripts/save/',
-         snowai_vtr_save_transcript,           name='snowai_vtr_save_transcript'),
-    path('snowai-vtr/transcripts/<str:transcript_id>/',
-         snowai_vtr_get_transcript,            name='snowai_vtr_get_transcript'),
-    path('snowai-vtr/transcripts/<str:transcript_id>/update/',
-         snowai_vtr_update_transcript,         name='snowai_vtr_update_transcript'),
-    path('snowai-vtr/transcripts/<str:transcript_id>/delete/',
-         snowai_vtr_delete_transcript,         name='snowai_vtr_delete_transcript'),
-    path('snowai-vtr/transcripts/<str:transcript_id>/archive/',
-         snowai_vtr_archive_transcript,        name='snowai_vtr_archive_transcript'),
-    path('snowai-vtr/by-video/<str:youtube_video_id>/',
-         snowai_vtr_list_by_video,             name='snowai_vtr_list_by_video'),
-    path('snowai-vtr/stats/',
-         snowai_vtr_stats,                     name='snowai_vtr_stats'),
+    # ══════════════════════════════════════════════════════════════════════
+    #  COMPANIES OF INTEREST  — /snowcoi/
+    # ══════════════════════════════════════════════════════════════════════
  
-# ── New CTR routes (company-scoped) ──────────────────────────────────────────
+    path('snowcoi/companies/',
+         snowcoi_companies_list,    name='snowcoi_companies_list'),
+ 
+    path('snowcoi/companies/add/',
+         snowcoi_companies_add,     name='snowcoi_companies_add'),
+ 
+    path('snowcoi/companies/<int:company_id>/update/',
+         snowcoi_companies_update,  name='snowcoi_companies_update'),
+ 
+    path('snowcoi/companies/<int:company_id>/delete/',
+         snowcoi_companies_delete,  name='snowcoi_companies_delete'),
+ 
+    # People
+    path('snowcoi/companies/<int:company_id>/add-person/',
+         snowcoi_add_person,        name='snowcoi_add_person'),
+ 
+    path('snowcoi/people/<int:person_id>/update/',
+         snowcoi_update_person,     name='snowcoi_update_person'),
+ 
+    path('snowcoi/people/<int:person_id>/delete/',
+         snowcoi_delete_person,     name='snowcoi_delete_person'),
+ 
+    # Links
+    path('snowcoi/companies/<int:company_id>/add-link/',
+         snowcoi_add_link,          name='snowcoi_add_link'),
+ 
+    path('snowcoi/links/<int:link_id>/update/',
+         snowcoi_update_link,       name='snowcoi_update_link'),
+ 
+    path('snowcoi/links/<int:link_id>/delete/',
+         snowcoi_delete_link,       name='snowcoi_delete_link'),
+ 
+    # PDF AI analysis  ← NEW
+    path('snowcoi/companies/<int:company_id>/links/<int:link_id>/apply-ai/',
+         snowcoi_link_apply_ai,     name='snowcoi_link_apply_ai'),
+ 
+ 
+    # ══════════════════════════════════════════════════════════════════════
+    #  GLOBAL VTR  — /snowvtr/
+    # ══════════════════════════════════════════════════════════════════════
+ 
+    path('snowvtr/youtube-metadata/',
+         snowvtr_fetch_youtube_metadata, name='snowvtr_fetch_youtube_metadata'),
+ 
+    path('snowvtr/stats/',
+         snowvtr_stats,                  name='snowvtr_stats'),
+ 
+    # NOTE: 'save/' must be above '<str:transcript_id>/' to avoid shadowing
+    path('snowvtr/transcripts/',
+         snowvtr_list_transcripts,       name='snowvtr_list_transcripts'),
+ 
+    path('snowvtr/transcripts/save/',
+         snowvtr_save_transcript,        name='snowvtr_save_transcript'),
+ 
+    path('snowvtr/by-video/<str:youtube_video_id>/',
+         snowvtr_list_by_video,          name='snowvtr_list_by_video'),
+ 
+    path('snowvtr/transcripts/<str:transcript_id>/',
+         snowvtr_get_transcript,         name='snowvtr_get_transcript'),
+ 
+    path('snowvtr/transcripts/<str:transcript_id>/update/',
+         snowvtr_update_transcript,      name='snowvtr_update_transcript'),
+ 
+    path('snowvtr/transcripts/<str:transcript_id>/delete/',
+         snowvtr_delete_transcript,      name='snowvtr_delete_transcript'),
+ 
+    path('snowvtr/transcripts/<str:transcript_id>/archive/',
+         snowvtr_archive_transcript,     name='snowvtr_archive_transcript'),
+ 
+ 
+    # ══════════════════════════════════════════════════════════════════════
+    #  COMPANY-SCOPED CTR  — /snowctr/
+    # ══════════════════════════════════════════════════════════════════════
  
     # Global list across all companies
-    # GET  ?company_id=&status=&source_type=&search=&page=&page_size=
-    path('snowai-ctr/transcripts/',
-         snowai_ctr_list_all,                  name='snowai_ctr_list_all'),
+    path('snowctr/transcripts/',
+         snowctr_list_all,               name='snowctr_list_all'),
  
     # Per-company list
-    # GET  /snowai-ctr/company/42/transcripts/
-    path('snowai-ctr/company/<int:company_id>/transcripts/',
-         snowai_ctr_list_for_company,          name='snowai_ctr_list_for_company'),
+    path('snowctr/company/<int:company_id>/transcripts/',
+         snowctr_list_for_company,       name='snowctr_list_for_company'),
  
-    # Create / upsert  (POST body, upserts by transcript_uuid)
-    # POST /snowai-ctr/company/42/transcripts/save/
-    path('snowai-ctr/company/<int:company_id>/transcripts/save/',
-         snowai_ctr_save,                      name='snowai_ctr_save'),
+    # Per-company stats
+    path('snowctr/company/<int:company_id>/stats/',
+         snowctr_company_stats,          name='snowctr_company_stats'),
  
-    # Single transcript — get / update / delete / archive / set-status
-    # GET  /snowai-ctr/company/42/transcripts/7/
-    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/',
-         snowai_ctr_get,                       name='snowai_ctr_get'),
+    # NOTE: 'save/' must be above '<str:transcript_id>/' to avoid shadowing
+    path('snowctr/company/<int:company_id>/transcripts/save/',
+         snowctr_save,                   name='snowctr_save'),
  
-    # POST /snowai-ctr/company/42/transcripts/7/update/
-    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/update/',
-         snowai_ctr_update,                    name='snowai_ctr_update'),
+    path('snowctr/company/<int:company_id>/transcripts/<str:transcript_id>/',
+         snowctr_get,                    name='snowctr_get'),
  
-    # POST /snowai-ctr/company/42/transcripts/7/delete/
-    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/delete/',
-         snowai_ctr_delete,                    name='snowai_ctr_delete'),
+    path('snowctr/company/<int:company_id>/transcripts/<str:transcript_id>/update/',
+         snowctr_update,                 name='snowctr_update'),
  
-    # POST /snowai-ctr/company/42/transcripts/7/archive/
-    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/archive/',
-         snowai_ctr_archive,                   name='snowai_ctr_archive'),
+    path('snowctr/company/<int:company_id>/transcripts/<str:transcript_id>/delete/',
+         snowctr_delete,                 name='snowctr_delete'),
  
-    # POST /snowai-ctr/company/42/transcripts/7/apply-ai/
-    # Body: { summary, key_points, topics, sentiment_score, analyst_notes }
-    # Saves AI analysis fields + auto-sets status → processed
-    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/apply-ai/',
-         snowai_ctr_apply_ai_analysis,         name='snowai_ctr_apply_ai_analysis'),
+    path('snowctr/company/<int:company_id>/transcripts/<str:transcript_id>/archive/',
+         snowctr_archive,                name='snowctr_archive'),
  
-    # POST /snowai-ctr/company/42/transcripts/7/status/  { "status": "reviewed" }
-    path('snowai-ctr/company/<int:company_id>/transcripts/<str:transcript_id>/status/',
-         snowai_ctr_set_status,                name='snowai_ctr_set_status'),
+    path('snowctr/company/<int:company_id>/transcripts/<str:transcript_id>/status/',
+         snowctr_set_status,             name='snowctr_set_status'),
  
-    # Company-level aggregate stats
-    # GET  /snowai-ctr/company/42/stats/
-    path('snowai-ctr/company/<int:company_id>/stats/',
-         snowai_ctr_company_stats,             name='snowai_ctr_company_stats'),
+    path('snowctr/company/<int:company_id>/transcripts/<str:transcript_id>/apply-ai/',
+         snowctr_apply_ai_analysis,      name='snowctr_apply_ai_analysis'),
 
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
