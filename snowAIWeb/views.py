@@ -43765,17 +43765,25 @@ def snowai_trend_reversal_scanner_vault(request):
             except Exception:
                 pass
 
-            # ── Fetch OHLCV ───────────────────────────────────────────────────
-            try:
-                hist = yf.Ticker(sym).history(period='6mo', interval='1d', auto_adjust=True)
-            except Exception as e:
-                print(f"[Scanner] {sym} history fetch failed: {e}")
-                return None
+            # ── Fetch OHLCV — with retry on empty ────────────────────────────
+            hist = None
+            for attempt in range(3):
+                try:
+                    hist = yf.Ticker(sym).history(
+                        period='6mo', interval='1d', auto_adjust=True
+                    )
+                    if hist is not None and not hist.empty:
+                        break
+                    # empty = likely rate limited, wait and retry
+                    print(f"[Scanner] {sym} empty history attempt {attempt+1}/3")
+                    time.sleep(2 ** attempt)  # 1s, 2s, 4s backoff
+                except Exception as e:
+                    print(f"[Scanner] {sym} history error attempt {attempt+1}/3: {e}")
+                    time.sleep(2 ** attempt)
 
             if hist is None or hist.empty or len(hist) < 40:
                 return None
 
-            # Strip NaN rows — yfinance sometimes returns them at edges
             hist = hist.dropna(subset=['Close', 'High', 'Low', 'Volume'])
             if len(hist) < 40:
                 return None
@@ -44020,42 +44028,64 @@ def snowai_trend_reversal_scanner_vault(request):
             return None
 
     # ── Parallel scan ─────────────────────────────────────────────────────────
-    results = []
-    BATCH   = 20
-    TIMEOUT = 90
-    WORKERS = 8
+    import time
+    import random
+
+    results  = []
+    BATCH    = 15        # smaller batches = less chance of rate limit
+    WORKERS  = 5         # fewer concurrent = friendlier to yfinance
+    TIMEOUT  = 45        # per batch timeout
+    DELAY    = 1.5       # seconds between batches
+    JITTER   = 0.5       # random jitter added to delay
+
+    total_batches = (len(tickers) + BATCH - 1) // BATCH
 
     for i in range(0, len(tickers), BATCH):
         batch = tickers[i:i+BATCH]
-        print(f"[Scanner] batch {i//BATCH+1}/{(len(tickers)+BATCH-1)//BATCH} ({len(batch)} tickers)")
+        batch_num = i // BATCH + 1
+        print(f"[Scanner] batch {batch_num}/{total_batches} — {batch}")
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as executor:
             future_map = {executor.submit(analyse_one, sym): sym for sym in batch}
             deadline   = time.time() + TIMEOUT
             pending    = set(future_map.keys())
+
             while pending:
                 remaining = deadline - time.time()
                 if remaining <= 0:
-                    print(f"[Scanner] batch timeout — skipping {len(pending)} remaining")
+                    print(f"[Scanner] batch {batch_num} timeout — skipping {len(pending)}: {[future_map[f] for f in pending]}")
                     for f in pending:
                         f.cancel()
                     break
+
                 done, pending = concurrent.futures.wait(
                     pending,
                     timeout=min(remaining, 10),
                     return_when=concurrent.futures.FIRST_COMPLETED,
                 )
+
                 for future in done:
+                    sym = future_map.get(future, '?')
                     try:
                         res = future.result(timeout=5)
                         if res:
                             results.append(res)
+                            print(f"[Scanner] ✓ {sym} added (score:{res['score']})")
                     except concurrent.futures.TimeoutError:
-                        print(f"[Scanner] a future timed out on result()")
+                        print(f"[Scanner] ✗ {sym} result() timed out")
                     except Exception as e:
-                        print(f"[Scanner] future result error: {e}")
+                        print(f"[Scanner] ✗ {sym} result() error: {e}")
+
+        # Polite delay between batches to avoid yfinance rate limiting
+        if i + BATCH < len(tickers):
+            sleep_time = DELAY + random.uniform(0, JITTER)
+            print(f"[Scanner] sleeping {sleep_time:.1f}s before next batch...")
+            time.sleep(sleep_time)
 
     results.sort(key=lambda x: x['score'], reverse=True)
     results = results[:top_n]
+
+    print(f"[Scanner] done — {len(results)} results from {len(tickers)} tickers")
 
     return JsonResponse({
         'results':      results,
@@ -44064,7 +44094,7 @@ def snowai_trend_reversal_scanner_vault(request):
         'minMarketCap': min_market_cap,
         'scannedAt':    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
     })
-
+    
 
 # ── urls.py ───────────────────────────────────────────────────────────────────
 # path('api/snowai_thundervault_ohlcv_chart_stream/',  views.snowai_thundervault_ohlcv_chart_stream),
