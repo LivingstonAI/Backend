@@ -52751,6 +52751,62 @@ def update_position_price(request, position_id):
         'sl_dollars': position.sl_dollars,
         'tp_dollars': position.tp_dollars,
     })
+
+# ── SnowVault Watchlist CRUD ───────────────────────────────────────────────────
+
+@csrf_exempt
+def snowvault_watchlist_list(request):
+    """GET — return all active watchlist assets."""
+    from .models import SnowVaultWatchlistAsset
+    assets = SnowVaultWatchlistAsset.objects.filter(is_active=True).values(
+        'id', 'symbol', 'label', 'category', 'notes', 'added_at'
+    )
+    return JsonResponse({'assets': list(assets)})
+
+
+@csrf_exempt
+def snowvault_watchlist_add(request):
+    """POST { symbol, label?, category?, notes? } — add asset."""
+    from .models import SnowVaultWatchlistAsset
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body)
+        sym  = body.get('symbol', '').strip().upper()
+        if not sym:
+            return JsonResponse({'error': 'symbol required'}, status=400)
+        obj, created = SnowVaultWatchlistAsset.objects.update_or_create(
+            symbol=sym,
+            defaults={
+                'label':     body.get('label', '').strip(),
+                'category':  body.get('category', 'stocks'),
+                'notes':     body.get('notes', '').strip(),
+                'is_active': True,
+            }
+        )
+        return JsonResponse({
+            'ok':      True,
+            'created': created,
+            'id':      obj.id,
+            'symbol':  obj.symbol,
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowvault_watchlist_remove(request):
+    """POST { symbol } — soft-delete (is_active=False)."""
+    from .models import SnowVaultWatchlistAsset
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body)
+        sym  = body.get('symbol', '').strip().upper()
+        updated = SnowVaultWatchlistAsset.objects.filter(symbol=sym).update(is_active=False)
+        return JsonResponse({'ok': True, 'removed': updated > 0})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
         
 
 def book_order(request):

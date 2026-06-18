@@ -3295,6 +3295,37 @@ class SnowCOITranscript(models.Model):
         if self.status == 'archived' and not self.archived_at:
             self.archived_at = timezone.now()
         super().save(*args, **kwargs)
+
+
+class SnowVaultWatchlistAsset(models.Model):
+    """
+    SnowAI Trend Scanner — user-defined watchlist assets.
+    Unique prefix: snowvault_ to avoid collisions in large codebase.
+    """
+    CATEGORY_CHOICES = [
+        ('stocks',      'Stocks'),
+        ('forex',       'Forex'),
+        ('crypto',      'Crypto'),
+        ('indices',     'Indices'),
+        ('commodities', 'Commodities'),
+        ('bonds',       'Bonds'),
+        ('etf',         'ETF'),
+        ('other',       'Other'),
+    ]
+
+    symbol      = models.CharField(max_length=30, unique=True)
+    label       = models.CharField(max_length=100, blank=True)   # friendly name
+    category    = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='stocks')
+    notes       = models.TextField(blank=True)
+    added_at    = models.DateTimeField(auto_now_add=True)
+    is_active   = models.BooleanField(default=True)
+
+    class Meta:
+        db_table  = 'snowvault_watchlist_asset'
+        ordering  = ['category', 'symbol']
+
+    def __str__(self):
+        return f"{self.symbol} ({self.category})"
         
 
 class ContactUs(models.Model):

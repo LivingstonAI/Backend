@@ -958,6 +958,9 @@ urlpatterns = [
     path('api/snowai_earnings_search_vault/', views.snowai_earnings_search_vault),
     path('api/snowai_momentum_velocity_vault/', views.snowai_momentum_velocity_vault),
     path('api/snowai_trend_reversal_scanner_vault/', views.snowai_trend_reversal_scanner_vault),
+    path('api/snowvault_watchlist_list/',   views.snowvault_watchlist_list),
+    path('api/snowvault_watchlist_add/',    views.snowvault_watchlist_add),
+    path('api/snowvault_watchlist_remove/', views.snowvault_watchlist_remove),
 
     # Trade Positions (SnowAI)
      path('snowai-trade-positions/',              views.snowai_trade_positions_list,          name='snowai_trade_positions_list'),
