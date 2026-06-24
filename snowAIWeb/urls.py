@@ -1135,6 +1135,8 @@ urlpatterns = [
     path('api/positions/', get_positions_for_asset),
     path('api/positions/<int:position_id>/price/', update_position_price),
 
+    path('api/global_market_scan_v1/', views.global_market_scan_v1),
+
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

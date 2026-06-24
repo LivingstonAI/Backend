@@ -48461,6 +48461,529 @@ def get_sector_strength(sector: str = 'technology') -> dict:
         'momentum_20d': float(momentum_20d),
     }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# GLOBAL MARKET DEEP SCAN
+# POST /api/global_market_scan_v1/
+#
+# Body:
+#   {
+#     "market": "korea",       # see GLOBAL_MARKETS keys below
+#     "period": "1mo",         # yfinance period string
+#     "top_n": 15              # how many top performers to return
+#   }
+#
+# Response:
+#   {
+#     "success": true,
+#     "market": "korea",
+#     "label": "South Korea",
+#     "flag": "🇰🇷",
+#     "index_symbol": "^KS11",
+#     "period": "1mo",
+#     "results": [
+#       {
+#         "symbol": "005930.KS",
+#         "name": "Samsung Electronics",
+#         "return_pct": 8.43,
+#         "current_price": 71200,
+#         "currency": "KRW",
+#         "sector": "Technology",
+#         "market_cap": 425000000000
+#       }, ...
+#     ],
+#     "scanned": 72,
+#     "failed": 12
+#   }
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Curated ticker universe per market.
+# These are the most liquid / index-constituent stocks on each exchange.
+# yfinance supports all these suffix formats natively.
+GLOBAL_MARKETS = {
+    'korea': {
+        'label': 'South Korea',
+        'flag': '🇰🇷',
+        'index_symbol': '^KS11',
+        'currency': 'KRW',
+        'tickers': [
+            # KOSPI blue chips (.KS)
+            '005930.KS',  # Samsung Electronics
+            '000660.KS',  # SK Hynix
+            '005380.KS',  # Hyundai Motor
+            '035420.KS',  # NAVER
+            '000270.KS',  # Kia
+            '051910.KS',  # LG Chem
+            '006400.KS',  # Samsung SDI
+            '035720.KS',  # Kakao
+            '068270.KS',  # Celltrion
+            '105560.KS',  # KB Financial
+            '055550.KS',  # Shinhan Financial
+            '032830.KS',  # Samsung Life
+            '003550.KS',  # LG Corp
+            '028260.KS',  # Samsung C&T
+            '009150.KS',  # Samsung Electro-Mechanics
+            '207940.KS',  # Samsung Biologics
+            '096770.KS',  # SK Innovation
+            '017670.KS',  # SK Telecom
+            '030200.KS',  # KT Corp
+            '034730.KS',  # SK Holdings
+            '012330.KS',  # Hyundai Mobis
+            '042660.KS',  # Hanwha Ocean
+            '000720.KS',  # Hyundai E&C
+            '010950.KS',  # S-Oil
+            '011200.KS',  # HMM
+            '373220.KS',  # LG Energy Solution
+            '247540.KS',  # Ecopro BM
+            '086790.KS',  # Hana Financial
+            '316140.KS',  # Woori Financial
+            '015760.KS',  # KEPCO
+            # KOSDAQ (.KQ)
+            '263750.KQ',  # Pearl Abyss
+            '041510.KQ',  # SM Entertainment
+            '035900.KQ',  # JYP Entertainment
+            '122870.KQ',  # YG Entertainment
+            '091990.KQ',  # Celltrion Healthcare
+            '112040.KQ',  # Wemade
+            '293490.KQ',  # Kakao Games
+            '357780.KQ',  # Solum
+            '096530.KQ',  # Seegene
+        ],
+    },
+    'japan': {
+        'label': 'Japan',
+        'flag': '🇯🇵',
+        'index_symbol': '^N225',
+        'currency': 'JPY',
+        'tickers': [
+            '7203.T',   # Toyota
+            '6758.T',   # Sony
+            '9984.T',   # SoftBank Group
+            '8306.T',   # Mitsubishi UFJ
+            '6861.T',   # Keyence
+            '9432.T',   # NTT
+            '6098.T',   # Recruit Holdings
+            '8035.T',   # Tokyo Electron
+            '4519.T',   # Chugai Pharma
+            '6367.T',   # Daikin
+            '7974.T',   # Nintendo
+            '9983.T',   # Fast Retailing (Uniqlo)
+            '8058.T',   # Mitsubishi Corp
+            '4063.T',   # Shin-Etsu Chemical
+            '6501.T',   # Hitachi
+            '7267.T',   # Honda
+            '8316.T',   # Sumitomo Mitsui
+            '6752.T',   # Panasonic
+            '4543.T',   # Terumo
+            '3382.T',   # Seven & I
+            '8001.T',   # Itochu
+            '9433.T',   # KDDI
+            '4568.T',   # Daiichi Sankyo
+            '6503.T',   # Mitsubishi Electric
+            '7741.T',   # Hoya
+            '2413.T',   # M3
+            '6594.T',   # Nidec
+            '6902.T',   # Denso
+            '8766.T',   # Tokio Marine
+            '4661.T',   # Oriental Land (Disney)
+        ],
+    },
+    'uk': {
+        'label': 'United Kingdom',
+        'flag': '🇬🇧',
+        'index_symbol': '^FTSE',
+        'currency': 'GBP',
+        'tickers': [
+            'SHEL.L',   # Shell
+            'AZN.L',    # AstraZeneca
+            'HSBA.L',   # HSBC
+            'ULVR.L',   # Unilever
+            'BP.L',     # BP
+            'RIO.L',    # Rio Tinto
+            'GSK.L',    # GSK
+            'REL.L',    # RELX
+            'LSEG.L',   # London Stock Exchange Group
+            'BA.L',     # BAE Systems
+            'DGE.L',    # Diageo
+            'NG.L',     # National Grid
+            'BARC.L',   # Barclays
+            'LLOY.L',   # Lloyds
+            'STAN.L',   # Standard Chartered
+            'VOD.L',    # Vodafone
+            'BT.A.L',   # BT Group
+            'TSCO.L',   # Tesco
+            'BATS.L',   # British American Tobacco
+            'IMB.L',    # Imperial Brands
+            'WPP.L',    # WPP
+            'EXPN.L',   # Experian
+            'RKT.L',    # Reckitt
+            'PSN.L',    # Persimmon
+            'GLEN.L',   # Glencore
+            'AAL.L',    # Anglo American
+            'SKG.L',    # Smurfit Kappa
+            'SGRO.L',   # Segro
+            'LAND.L',   # Land Securities
+            'CNA.L',    # Centrica
+        ],
+    },
+    'germany': {
+        'label': 'Germany',
+        'flag': '🇩🇪',
+        'index_symbol': '^GDAXI',
+        'currency': 'EUR',
+        'tickers': [
+            'SAP.DE',   # SAP
+            'SIE.DE',   # Siemens
+            'ALV.DE',   # Allianz
+            'DTE.DE',   # Deutsche Telekom
+            'MUV2.DE',  # Munich Re
+            'ADS.DE',   # Adidas
+            'BAYN.DE',  # Bayer
+            'BMW.DE',   # BMW
+            'MBG.DE',   # Mercedes-Benz
+            'VOW3.DE',  # Volkswagen
+            'DBK.DE',   # Deutsche Bank
+            'RWE.DE',   # RWE
+            'EON.DE',   # E.ON
+            'BAS.DE',   # BASF
+            'HEN3.DE',  # Henkel
+            'DHER.DE',  # Delivery Hero
+            'ZAL.DE',   # Zalando
+            'DHL.DE',   # DHL Group
+            'CON.DE',   # Continental
+            'FRE.DE',   # Fresenius
+            'IFX.DE',   # Infineon
+            'QIA.DE',   # Qiagen
+            'MTX.DE',   # MTU Aero
+            'KNEBV.DE', # Kone
+            'SHL.DE',   # Siemens Healthineers
+        ],
+    },
+    'france': {
+        'label': 'France',
+        'flag': '🇫🇷',
+        'index_symbol': '^FCHI',
+        'currency': 'EUR',
+        'tickers': [
+            'AI.PA',    # Air Liquide
+            'TTE.PA',   # TotalEnergies
+            'SAN.PA',   # Sanofi
+            'OR.PA',    # L\'Oreal
+            'BNP.PA',   # BNP Paribas
+            'ACA.PA',   # Credit Agricole
+            'SGO.PA',   # Saint-Gobain
+            'DG.PA',    # Vinci
+            'CS.PA',    # AXA
+            'MC.PA',    # LVMH
+            'CDI.PA',   # Christian Dior
+            'HO.PA',    # Thales
+            'CAP.PA',   # Capgemini
+            'STM.PA',   # STMicroelectronics
+            'DSY.PA',   # Dassault Systèmes
+            'RI.PA',    # Pernod Ricard
+            'KER.PA',   # Kering
+            'RMS.PA',   # Hermes
+            'ML.PA',    # Michelin
+            'SW.PA',    # Sodexo
+            'ORA.PA',   # Orange
+            'VIE.PA',   # Veolia
+            'EDF.PA',   # EDF
+            'URW.PA',   # Unibail-Rodamco
+            'PUB.PA',   # Publicis
+        ],
+    },
+    'china': {
+        'label': 'China (HK-listed)',
+        'flag': '🇨🇳',
+        'index_symbol': '^HSI',
+        'currency': 'HKD',
+        'tickers': [
+            '0700.HK',  # Tencent
+            '9988.HK',  # Alibaba
+            '3690.HK',  # Meituan
+            '9999.HK',  # NetEase
+            '1810.HK',  # Xiaomi
+            '0941.HK',  # China Mobile
+            '0939.HK',  # CCB
+            '1398.HK',  # ICBC
+            '3988.HK',  # Bank of China
+            '0005.HK',  # HSBC (HK-listed)
+            '0388.HK',  # HKEX
+            '2318.HK',  # Ping An Insurance
+            '1299.HK',  # AIA Group
+            '0960.HK',  # Longfor
+            '2382.HK',  # Sunny Optical
+            '9618.HK',  # JD.com
+            '6618.HK',  # JD Health
+            '2020.HK',  # ANTA Sports
+            '9961.HK',  # Trip.com
+            '2015.HK',  # Li Auto
+            '9868.HK',  # Xpeng
+            '9866.HK',  # NIO (HK-listed)
+            '1024.HK',  # Kuaishou
+            '3800.HK',  # GCL Technology
+            '0175.HK',  # Geely
+        ],
+    },
+    'australia': {
+        'label': 'Australia',
+        'flag': '🇦🇺',
+        'index_symbol': '^AXJO',
+        'currency': 'AUD',
+        'tickers': [
+            'BHP.AX',   # BHP
+            'CBA.AX',   # Commonwealth Bank
+            'CSL.AX',   # CSL
+            'NAB.AX',   # NAB
+            'WBC.AX',   # Westpac
+            'ANZ.AX',   # ANZ
+            'WES.AX',   # Wesfarmers
+            'MQG.AX',   # Macquarie
+            'WOW.AX',   # Woolworths
+            'RIO.AX',   # Rio Tinto
+            'TLS.AX',   # Telstra
+            'FMG.AX',   # Fortescue
+            'NCM.AX',   # Newcrest Mining
+            'QBE.AX',   # QBE Insurance
+            'SUN.AX',   # Suncorp
+            'IAG.AX',   # IAG
+            'STO.AX',   # Santos
+            'WPL.AX',   # Woodside Energy
+            'GMG.AX',   # Goodman Group
+            'SCG.AX',   # Scentre Group
+            'COL.AX',   # Coles
+            'XRO.AX',   # Xero
+            'APX.AX',   # Appen
+            'REA.AX',   # REA Group
+            'SEK.AX',   # Seek
+        ],
+    },
+    'canada': {
+        'label': 'Canada',
+        'flag': '🇨🇦',
+        'index_symbol': '^GSPTSE',
+        'currency': 'CAD',
+        'tickers': [
+            'SHOP.TO',  # Shopify
+            'RY.TO',    # Royal Bank
+            'TD.TO',    # TD Bank
+            'BNS.TO',   # Scotiabank
+            'BMO.TO',   # BMO
+            'CNR.TO',   # CN Rail
+            'CP.TO',    # CP Rail
+            'ENB.TO',   # Enbridge
+            'TRP.TO',   # TC Energy
+            'SU.TO',    # Suncor
+            'CNQ.TO',   # Canadian Natural Resources
+            'MFC.TO',   # Manulife
+            'SLF.TO',   # Sun Life
+            'BCE.TO',   # BCE
+            'T.TO',     # TELUS
+            'WCN.TO',   # Waste Connections
+            'BAM.TO',   # Brookfield AM
+            'BN.TO',    # Brookfield Corp
+            'ATD.TO',   # Alimentation Couche-Tard
+            'L.TO',     # Loblaw
+            'MRU.TO',   # Metro
+            'NTR.TO',   # Nutrien
+            'ABX.TO',   # Barrick Gold
+            'AEM.TO',   # Agnico Eagle
+            'CCO.TO',   # Cameco
+        ],
+    },
+    'india': {
+        'label': 'India',
+        'flag': '🇮🇳',
+        'index_symbol': '^BSESN',
+        'currency': 'INR',
+        'tickers': [
+            'RELIANCE.NS',   # Reliance Industries
+            'TCS.NS',        # TCS
+            'HDFCBANK.NS',   # HDFC Bank
+            'INFY.NS',       # Infosys
+            'ICICIBANK.NS',  # ICICI Bank
+            'HINDUNILVR.NS', # Hindustan Unilever
+            'SBIN.NS',       # State Bank of India
+            'BHARTIARTL.NS', # Airtel
+            'KOTAKBANK.NS',  # Kotak Mahindra
+            'ITC.NS',        # ITC
+            'LT.NS',         # Larsen & Toubro
+            'WIPRO.NS',      # Wipro
+            'HCLTECH.NS',    # HCL Tech
+            'AXISBANK.NS',   # Axis Bank
+            'ASIANPAINT.NS', # Asian Paints
+            'MARUTI.NS',     # Maruti Suzuki
+            'BAJFINANCE.NS', # Bajaj Finance
+            'ULTRACEMCO.NS', # UltraTech Cement
+            'TITAN.NS',      # Titan
+            'NESTLEIND.NS',  # Nestle India
+            'POWERGRID.NS',  # Power Grid
+            'NTPC.NS',       # NTPC
+            'TECHM.NS',      # Tech Mahindra
+            'SUNPHARMA.NS',  # Sun Pharma
+            'DRREDDY.NS',    # Dr Reddy's
+        ],
+    },
+    'brazil': {
+        'label': 'Brazil',
+        'flag': '🇧🇷',
+        'index_symbol': '^BVSP',
+        'currency': 'BRL',
+        'tickers': [
+            'VALE3.SA',   # Vale
+            'PETR4.SA',   # Petrobras
+            'ITUB4.SA',   # Itaú Unibanco
+            'BBDC4.SA',   # Bradesco
+            'ABEV3.SA',   # Ambev
+            'BBAS3.SA',   # Banco do Brasil
+            'WEGE3.SA',   # WEG
+            'RENT3.SA',   # Localiza
+            'RDOR3.SA',   # Rede D\'Or
+            'HAPV3.SA',   # Hapvida
+            'JBSS3.SA',   # JBS
+            'SBSP3.SA',   # Sabesp
+            'ELET3.SA',   # Eletrobras
+            'SUZB3.SA',   # Suzano
+            'LREN3.SA',   # Lojas Renner
+            'MGLU3.SA',   # Magazine Luiza
+            'VIIA3.SA',   # Via
+            'EMBR3.SA',   # Embraer
+            'B3SA3.SA',   # B3
+            'CSAN3.SA',   # Cosan
+        ],
+    },
+}
+
+
+def _fetch_performance(ticker: str, period: str) -> dict | None:
+    """
+    Fetch return % + current price + basic info for one ticker.
+    Returns None on failure.
+    """
+    try:
+        t    = yf.Ticker(ticker)
+        hist = t.history(period=period, interval='1d')
+        if hist.empty or len(hist) < 2:
+            return None
+        
+        start_price = float(hist['Close'].iloc[0])
+        end_price   = float(hist['Close'].iloc[-1])
+        if start_price <= 0:
+            return None
+        
+        return_pct = ((end_price - start_price) / start_price) * 100
+        
+        # Try to get name + sector + market cap from .info (cached separately)
+        name   = ticker
+        sector = '—'
+        mktcap = None
+        currency = None
+        try:
+            info     = t.fast_info   # faster than .info
+            currency = getattr(info, 'currency', None)
+            mktcap   = getattr(info, 'market_cap', None)
+            name     = getattr(info, 'company_name', ticker) or ticker
+        except Exception:
+            pass
+
+        # If fast_info name missing, fall back to short .info lookup
+        if name == ticker:
+            try:
+                info2  = t.info
+                name   = info2.get('shortName') or info2.get('longName') or ticker
+                sector = info2.get('sector', '—') or '—'
+                if not currency:
+                    currency = info2.get('currency')
+                if not mktcap:
+                    mktcap = info2.get('marketCap')
+            except Exception:
+                pass
+
+        return {
+            'symbol':        ticker,
+            'name':          name[:50],   # truncate for frontend
+            'return_pct':    round(return_pct, 2),
+            'current_price': round(end_price, 4),
+            'currency':      currency or '—',
+            'sector':        sector,
+            'market_cap':    int(mktcap) if mktcap else None,
+        }
+    except Exception as e:
+        print(f'[_fetch_performance] {ticker}: {e}')
+        return None
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def global_market_scan_v1(request):
+    """
+    Deep scan of a specific global market — returns top N performing stocks
+    for the given period, sorted by return %.
+    No auth — single-user deployment.
+    Unique name: global_market_scan_v1
+    """
+    try:
+        body    = json.loads(request.body)
+        market  = body.get('market', '').lower().strip()
+        period  = body.get('period', '1mo')
+        top_n   = min(int(body.get('top_n', 15)), 30)
+
+        if market not in GLOBAL_MARKETS:
+            return JsonResponse({
+                'error':    f'Unknown market "{market}". Available: {list(GLOBAL_MARKETS.keys())}',
+                'success':  False,
+            }, status=400)
+
+        if period not in VALID_PERIODS:
+            period = '1mo'
+
+        cfg     = GLOBAL_MARKETS[market]
+        tickers = cfg['tickers']
+
+        results = []
+        failed  = []
+
+        # Parallel fetch — cap at 20 workers
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            future_map = {
+                pool.submit(_fetch_performance, t, period): t
+                for t in tickers
+            }
+            for future in as_completed(future_map):
+                ticker = future_map[future]
+                try:
+                    data = future.result()
+                    if data:
+                        results.append(data)
+                    else:
+                        failed.append(ticker)
+                except Exception as e:
+                    print(f'[global_market_scan_v1] {ticker}: {e}')
+                    failed.append(ticker)
+
+        # Sort by return descending, take top N
+        results.sort(key=lambda x: x['return_pct'], reverse=True)
+        top_results = results[:top_n]
+
+        return JsonResponse({
+            'success':      True,
+            'market':       market,
+            'label':        cfg['label'],
+            'flag':         cfg['flag'],
+            'index_symbol': cfg['index_symbol'],
+            'currency':     cfg['currency'],
+            'period':       period,
+            'results':      top_results,
+            'scanned':      len(tickers),
+            'found':        len(results),
+            'failed':       len(failed),
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON', 'success': False}, status=400)
+    except Exception as e:
+        print(f'[global_market_scan_v1] Unhandled: {e}\n{traceback.format_exc()}')
+        return JsonResponse({'error': str(e), 'success': False}, status=500)
+
 
 # List of available sectors for reference
 AVAILABLE_SECTORS = list(SECTOR_ETFS.keys())
