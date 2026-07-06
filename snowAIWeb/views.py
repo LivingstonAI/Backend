@@ -43728,37 +43728,68 @@ def snowai_momentum_velocity_vault(request):
 
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Trend Scanner Cache — in-memory store + APScheduler background job
-# ─────────────────────────────────────────────────────────────────────────────
-import threading
+import threading as _threading
+from django.utils import timezone as dj_timezone
+from datetime import timedelta as _timedelta
+from .models import SnowVaultScannerCache, SnowVaultTickerMeta
 
-_SNOWVAULT_SCANNER_CACHE = {
-    'results':      [],
-    'count':        0,
-    'totalScanned': 0,
-    'minMarketCap': 10_000_000_000,
-    'scannedAt':    None,
-    'isRunning':    False,
-    'lastError':    None,
-}
-_SNOWVAULT_SCANNER_LOCK = threading.Lock()
 
-# Ticker metadata cache — market cap / name / sector refreshed once/day instead
-# of on every scan. Keyed by ticker symbol.
-_SNOWVAULT_TICKER_META_CACHE = {}
-_SNOWVAULT_TICKER_META_LOCK  = threading.Lock()
-_SNOWVAULT_TICKER_META_TTL   = 60 * 60 * 24  # 24h
+# ─────────────────────────────────────────────────────────────────────────────
+# Ticker universe for the scanner (keys of the frontend SECTOR_MAP)
+# ─────────────────────────────────────────────────────────────────────────────
+SNOWAI_SECTOR_MAP_TICKERS = [
+    'AAPL','MSFT','GOOGL','GOOG','AMZN','NVDA','TSLA','META','AMD','INTC','ORCL','CSCO',
+    'ADBE','CRM','AVGO','QCOM','TXN','AMAT','LRCX','KLAC','SNPS','CDNS','MRVL','NXPI',
+    'MU','ADI','MPWR','SWKS','QRVO','ON','IBM','ACN','ADSK','AKAM','ANSS','APH','ANET',
+    'ASML','KEYS','MCHP','MSI','MDB','NTAP','NTNX','PAYC','PTC','SAP','STX','TER','TSM',
+    'TYL','VRSN','WDC','ZBRA','ZM','DOCU','TWLO','SQ','UBER','LYFT','DASH','PINS','SNAP',
+    'SPOT','ROKU','AFRM','COIN','HOOD','SOFI','RBLX','ASTS','NOW','INTU','WDAY','PANW',
+    'CRWD','ZS','DDOG','NET','SNOW','PLTR','TEAM','FTNT','OKTA','S','CYBR','JPM','BAC',
+    'WFC','C','GS','MS','BLK','SCHW','AXP','SPGI','CME','ICE','MCO','BK','USB','PNC',
+    'TFC','COF','V','MA','PYPL','ADP','FISV','FIS','BRK-B','PGR','ALL','TRV','AIG','MET',
+    'PRU','AFL','AON','AJG','AMP','CBOE','DFS','FITB','HBAN','HIG','KEY','LNC','MTB',
+    'NTRS','NDAQ','RF','RJF','STT','SYF','TROW','ZION','CFG','ALLY','JNJ','LLY','UNH',
+    'PFE','ABBV','MRK','TMO','ABT','DHR','BMY','AMGN','GILD','CVS','CI','ELV','HUM',
+    'VRTX','REGN','ISRG','BIIB','MRNA','BNTX','ALNY','BGNE','MCK','CAH','COR','IDXX',
+    'BAX','BDX','BSX','DXCM','EW','HOLX','ILMN','INCY','IQV','LH','MDT','MOH','NBIX',
+    'PODD','RMD','STE','SYK','ZBH','ZTS','TDOC','DOCS','VEEV','NVAX','UTHR','HD','MCD',
+    'NKE','SBUX','TJX','LOW','BKNG','MAR','CMG','F','GM','ABNB','SHOP','MELI','EBAY',
+    'ETSY','TGT','ROST','YUM','DPZ','AAL','DAL','UAL','LUV','CCL','RCL','EA','TTWO',
+    'RIVN','LCID','AZO','EXPE','GRMN','HLT','LEN','LVS','MGM','ORLY','PHM','WYNN','DG',
+    'DLTR','NCLH','NIO','XPEV','LI','JD','PDD','WMT','PG','KO','PEP','COST','PM','MO',
+    'MDLZ','CL','KMB','GIS','KHC','STZ','ADM','CAG','CHD','CLX','HSY','KDP','KR','MKC',
+    'MNST','SYY','TAP','TSN','WBA','HRL','XOM','CVX','COP','EOG','SLB','MPC','PSX','VLO',
+    'OXY','HAL','DVN','HES','BKR','APA','CTRA','KMI','LNG','MRO','OKE','TRGP','WMB','EQT',
+    'AR','MTDR','OVV','RIG','SM','BA','HON','UNP','CAT','GE','RTX','LMT','UPS','DE','MMM',
+    'GD','NOC','FDX','CSX','HWM','TDG','LHX','EMR','ETN','FAST','GWW','IR','ITW','JCI',
+    'NSC','ODFL','OTIS','PWR','ROK','RSG','SNA','SWK','URI','WAB','WM','XYL','ALK','JBLU',
+    'T','VZ','CMCSA','NFLX','DIS','TMUS','CHTR','LYV','MTCH','PARA','WBD','IPG','AMT',
+    'PLD','CCI','EQIX','PSA','SPG','O','AVB','BXP','CBRE','DLR','EQR','EXR','IRM','MAA',
+    'SBAC','VTR','WELL','WY','INVH','LIN','APD','SHW','ECL','DD','NEM','FCX','DOW','LYB',
+    'ALB','EMN','SQM','CF','CLF','MLM','NUE','PPG','STLD','VMC','AA','MP','RS','NEE','DUK',
+    'SO','D','AEP','EXC','SRE','AEE','AWK','CMS','CNP','DTE','ED','EIX','ETR','FE','NRG',
+    'PCG','PEG','PPL','VST','WEC','XEL','CEG',
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DB-backed cache helpers
+# ─────────────────────────────────────────────────────────────────────────────
+def _snowvault_get_cache_row():
+    row, _ = SnowVaultScannerCache.objects.get_or_create(id=1)
+    return row
 
 
 def _snowvault_get_ticker_meta(sym):
-    """Returns (market_cap, short_name, sector) from cache, refreshing if stale."""
-    import time as _time
-    now = _time.time()
-    with _SNOWVAULT_TICKER_META_LOCK:
-        cached = _SNOWVAULT_TICKER_META_CACHE.get(sym)
-        if cached and (now - cached['ts']) < _SNOWVAULT_TICKER_META_TTL:
-            return cached['marketCap'], cached['name'], cached['sector']
+    """Returns (market_cap, short_name, sector) from the DB cache, refreshing
+    if the row is missing or older than 24h."""
+    ttl_cutoff = dj_timezone.now() - _timedelta(hours=24)
+    try:
+        meta = SnowVaultTickerMeta.objects.filter(ticker=sym).first()
+        if meta and meta.updated_at >= ttl_cutoff:
+            return meta.market_cap, meta.name, meta.sector
+    except Exception:
+        meta = None
 
     market_cap = None
     short_name = sym
@@ -43784,29 +43815,34 @@ def _snowvault_get_ticker_meta(sym):
     except Exception as e:
         print(f"[ScannerMetaCache] {sym} fetch failed: {e}")
 
-    with _SNOWVAULT_TICKER_META_LOCK:
-        _SNOWVAULT_TICKER_META_CACHE[sym] = {
-            'ts': now, 'marketCap': market_cap, 'name': short_name,
-            'sector': sector, 'currPrice': curr_price,
-        }
+    try:
+        SnowVaultTickerMeta.objects.update_or_create(
+            ticker=sym,
+            defaults={'market_cap': market_cap, 'name': short_name,
+                      'sector': sector, 'curr_price': curr_price},
+        )
+    except Exception as e:
+        print(f"[ScannerMetaCache] {sym} save failed: {e}")
+
     return market_cap, short_name, sector
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Background scan job
+# ─────────────────────────────────────────────────────────────────────────────
 def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_n=30):
-    """Background job body — same analysis logic as before, but writes to
-    the module-level cache instead of returning a JsonResponse."""
     import concurrent.futures
     import time
     import random
-    import datetime as dt
     from datetime import datetime, timezone, timedelta
 
-    with _SNOWVAULT_SCANNER_LOCK:
-        if _SNOWVAULT_SCANNER_CACHE['isRunning']:
-            print("[ScannerJob] already running, skipping this trigger")
-            return
-        _SNOWVAULT_SCANNER_CACHE['isRunning'] = True
-        _SNOWVAULT_SCANNER_CACHE['lastError'] = None
+    cache_row = _snowvault_get_cache_row()
+    if cache_row.is_running:
+        print("[ScannerJob] already running, skipping this trigger")
+        return
+    cache_row.is_running = True
+    cache_row.last_error = None
+    cache_row.save(update_fields=['is_running', 'last_error'])
 
     try:
         if tickers is None:
@@ -43814,9 +43850,9 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
         tickers = [t.strip().upper() for t in tickers if t.strip()][:200]
 
         if not tickers:
-            with _SNOWVAULT_SCANNER_LOCK:
-                _SNOWVAULT_SCANNER_CACHE['lastError'] = 'No tickers configured'
-                _SNOWVAULT_SCANNER_CACHE['isRunning'] = False
+            cache_row.last_error = 'No tickers configured'
+            cache_row.is_running = False
+            cache_row.save(update_fields=['last_error', 'is_running'])
             return
 
         def sf(v):
@@ -43845,7 +43881,6 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
 
         def analyse_one(sym):
             try:
-                # Use cached meta instead of hitting Yahoo for info/fast_info every scan
                 market_cap, short_name, sector = _snowvault_get_ticker_meta(sym)
 
                 if market_cap is not None and market_cap < min_market_cap:
@@ -43986,28 +44021,23 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
                 bullish = plus_di > minus_di and (roc20 or 0) > 0
                 bearish = minus_di > plus_di and (roc20 or 0) < 0
 
-                earnings_nearby = False
-                last_earnings_date = None
-                days_since_earnings = None
-                earnings_beat = None
+                earnings_nearby      = False
+                last_earnings_date   = None
+                days_since_earnings  = None
+                earnings_beat        = None
                 try:
                     now_dt    = datetime.now(timezone.utc)
                     today_str = now_dt.strftime('%Y-%m-%d')
                     cutoff    = (now_dt - timedelta(days=90)).strftime('%Y-%m-%d')
+                    tk2 = yf.Ticker(sym)
                     ed_df = None
                     try:
-                        ed_df = tk.get_earnings_dates(limit=8) if hasattr(tk, 'get_earnings_dates') else None
+                        ed_df = tk2.get_earnings_dates(limit=8)
                     except Exception:
-                        pass
-                    tk2 = yf.Ticker(sym)
-                    if ed_df is None:
                         try:
-                            ed_df = tk2.get_earnings_dates(limit=8)
+                            ed_df = tk2.earnings_dates
                         except Exception:
-                            try:
-                                ed_df = tk2.earnings_dates
-                            except Exception:
-                                pass
+                            pass
                     if ed_df is not None and not ed_df.empty:
                         for idx_row, row in ed_df.iterrows():
                             row_date = str(idx_row)[:10]
@@ -44102,12 +44132,8 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
                 print(f"[ScannerJob] {sym} FAILED (top-level): {e}")
                 return None
 
-        results  = []
-        BATCH     = 15
-        WORKERS   = 5
-        TIMEOUT   = 45
-        DELAY     = 1.5
-        JITTER    = 0.5
+        results = []
+        BATCH, WORKERS, TIMEOUT, DELAY, JITTER = 15, 5, 45, 1.5, 0.5
         consecutive_empties = 0
         total_batches = (len(tickers) + BATCH - 1) // BATCH
 
@@ -44147,8 +44173,6 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
                         except Exception as e:
                             print(f"[ScannerJob] ✗ {sym} result() error: {e}")
 
-            # Circuit breaker: if a whole batch came back empty, Yahoo is
-            # probably throttling us right now — cool off longer before continuing
             if batch_results_count == 0:
                 consecutive_empties += 1
                 if consecutive_empties >= 2:
@@ -44160,31 +44184,35 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
 
             if i + BATCH < len(tickers):
                 sleep_time = DELAY + random.uniform(0, JITTER)
+                print(f"[ScannerJob] sleeping {sleep_time:.1f}s before next batch...")
                 time.sleep(sleep_time)
 
         results.sort(key=lambda x: x['score'], reverse=True)
         results = results[:top_n]
 
-        with _SNOWVAULT_SCANNER_LOCK:
-            _SNOWVAULT_SCANNER_CACHE['results']      = results
-            _SNOWVAULT_SCANNER_CACHE['count']        = len(results)
-            _SNOWVAULT_SCANNER_CACHE['totalScanned'] = len(tickers)
-            _SNOWVAULT_SCANNER_CACHE['minMarketCap'] = min_market_cap
-            _SNOWVAULT_SCANNER_CACHE['scannedAt']    = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            _SNOWVAULT_SCANNER_CACHE['isRunning']    = False
+        cache_row.results_json   = json.dumps(results)
+        cache_row.count          = len(results)
+        cache_row.total_scanned  = len(tickers)
+        cache_row.min_market_cap = min_market_cap
+        cache_row.scanned_at     = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cache_row.is_running     = False
+        cache_row.save(update_fields=[
+            'results_json', 'count', 'total_scanned',
+            'min_market_cap', 'scanned_at', 'is_running',
+        ])
 
         print(f"[ScannerJob] done — {len(results)} results from {len(tickers)} tickers")
 
     except Exception as e:
         print(f"[ScannerJob] FATAL: {e}")
-        with _SNOWVAULT_SCANNER_LOCK:
-            _SNOWVAULT_SCANNER_CACHE['lastError'] = str(e)
-            _SNOWVAULT_SCANNER_CACHE['isRunning'] = False
+        cache_row.last_error = str(e)
+        cache_row.is_running = False
+        cache_row.save(update_fields=['last_error', 'is_running'])
 
 
-# ── Register the periodic job on your existing APScheduler instance ──────────
-# If you already have a global scheduler started elsewhere in views.py
-# (e.g. for Web Push), just add this job to it instead of creating a new one.
+# ─────────────────────────────────────────────────────────────────────────────
+# APScheduler registration — runs the scan every 20 minutes
+# ─────────────────────────────────────────────────────────────────────────────
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
     if 'SNOWVAULT_SCANNER_SCHEDULER' not in globals():
@@ -44202,18 +44230,11 @@ except Exception as e:
     print(f"[ScannerJob] scheduler init failed: {e}")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Endpoint
+# ─────────────────────────────────────────────────────────────────────────────
 @csrf_exempt
 def snowai_trend_reversal_scanner_vault(request):
-    """
-    Now serves cached results instantly instead of scanning live on every call.
-    POST body:
-      { "tickers": [...], "minMarketCap": ..., "topN": ..., "forceRefresh": true/false }
-    - Default: returns whatever's cached (near-instant).
-    - forceRefresh=true: kicks off a fresh scan in a background thread and
-      returns immediately with isRunning=true; poll again to get results.
-    """
-    import threading as _threading
-
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
     try:
@@ -44225,10 +44246,9 @@ def snowai_trend_reversal_scanner_vault(request):
     except Exception:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-    with _SNOWVAULT_SCANNER_LOCK:
-        already_running = _SNOWVAULT_SCANNER_CACHE['isRunning']
+    cache_row = _snowvault_get_cache_row()
 
-    if force_refresh and not already_running:
+    if force_refresh and not cache_row.is_running:
         t = _threading.Thread(
             target=_snowvault_run_scanner_job,
             kwargs={'tickers': tickers, 'min_market_cap': min_market_cap, 'top_n': top_n},
@@ -44241,12 +44261,17 @@ def snowai_trend_reversal_scanner_vault(request):
             'isRunning': True, 'lastError': None,
         })
 
-    with _SNOWVAULT_SCANNER_LOCK:
-        cache_copy = dict(_SNOWVAULT_SCANNER_CACHE)
-
-    return JsonResponse(cache_copy)
-
-
+    cache_row.refresh_from_db()
+    return JsonResponse({
+        'results':      json.loads(cache_row.results_json or '[]'),
+        'count':        cache_row.count,
+        'totalScanned': cache_row.total_scanned,
+        'minMarketCap': cache_row.min_market_cap,
+        'scannedAt':    cache_row.scanned_at,
+        'isRunning':    cache_row.is_running,
+        'lastError':    cache_row.last_error,
+    })
+    
 
 # @csrf_exempt
 # def snowai_trend_reversal_scanner_vault(request):

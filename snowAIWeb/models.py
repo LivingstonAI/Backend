@@ -3326,6 +3326,36 @@ class SnowVaultWatchlistAsset(models.Model):
 
     def __str__(self):
         return f"{self.symbol} ({self.category})"
+
+class SnowVaultScannerCache(models.Model):
+    """Singleton-style cache row for the trend reversal scanner.
+    Only one row should ever exist (id=1); all workers read/write it."""
+    id              = models.AutoField(primary_key=True)
+    results_json    = models.TextField(default='[]')
+    count           = models.IntegerField(default=0)
+    total_scanned   = models.IntegerField(default=0)
+    min_market_cap  = models.BigIntegerField(default=10_000_000_000)
+    scanned_at      = models.CharField(max_length=32, null=True, blank=True)
+    is_running      = models.BooleanField(default=False)
+    last_error      = models.TextField(null=True, blank=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'snowvault_scanner_cache'
+
+
+class SnowVaultTickerMeta(models.Model):
+    """Per-ticker metadata cache (market cap, name, sector) — refreshed
+    roughly once a day instead of on every scan."""
+    ticker      = models.CharField(max_length=16, primary_key=True)
+    market_cap  = models.BigIntegerField(null=True, blank=True)
+    name        = models.CharField(max_length=255, blank=True, default='')
+    sector      = models.CharField(max_length=128, blank=True, default='')
+    curr_price  = models.FloatField(null=True, blank=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'snowvault_ticker_meta'
         
 
 class ContactUs(models.Model):
