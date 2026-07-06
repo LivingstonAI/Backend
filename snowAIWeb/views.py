@@ -110,6 +110,40 @@ from dataclasses import dataclass
 scheduler = BackgroundScheduler()
 scheduler.start()
 
+SNOWAI_SECTOR_MAP_TICKERS = [
+    'AAPL','MSFT','GOOGL','GOOG','AMZN','NVDA','TSLA','META','AMD','INTC','ORCL','CSCO',
+    'ADBE','CRM','AVGO','QCOM','TXN','AMAT','LRCX','KLAC','SNPS','CDNS','MRVL','NXPI',
+    'MU','ADI','MPWR','SWKS','QRVO','ON','IBM','ACN','ADSK','AKAM','ANSS','APH','ANET',
+    'ASML','KEYS','MCHP','MSI','MDB','NTAP','NTNX','PAYC','PTC','SAP','STX','TER','TSM',
+    'TYL','VRSN','WDC','ZBRA','ZM','DOCU','TWLO','SQ','UBER','LYFT','DASH','PINS','SNAP',
+    'SPOT','ROKU','AFRM','COIN','HOOD','SOFI','RBLX','ASTS','NOW','INTU','WDAY','PANW',
+    'CRWD','ZS','DDOG','NET','SNOW','PLTR','TEAM','FTNT','OKTA','S','CYBR','JPM','BAC',
+    'WFC','C','GS','MS','BLK','SCHW','AXP','SPGI','CME','ICE','MCO','BK','USB','PNC',
+    'TFC','COF','V','MA','PYPL','ADP','FISV','FIS','BRK-B','PGR','ALL','TRV','AIG','MET',
+    'PRU','AFL','AON','AJG','AMP','CBOE','DFS','FITB','HBAN','HIG','KEY','LNC','MTB',
+    'NTRS','NDAQ','RF','RJF','STT','SYF','TROW','ZION','CFG','ALLY','JNJ','LLY','UNH',
+    'PFE','ABBV','MRK','TMO','ABT','DHR','BMY','AMGN','GILD','CVS','CI','ELV','HUM',
+    'VRTX','REGN','ISRG','BIIB','MRNA','BNTX','ALNY','BGNE','MCK','CAH','COR','IDXX',
+    'BAX','BDX','BSX','DXCM','EW','HOLX','ILMN','INCY','IQV','LH','MDT','MOH','NBIX',
+    'PODD','RMD','STE','SYK','ZBH','ZTS','TDOC','DOCS','VEEV','NVAX','UTHR','HD','MCD',
+    'NKE','SBUX','TJX','LOW','BKNG','MAR','CMG','F','GM','ABNB','SHOP','MELI','EBAY',
+    'ETSY','TGT','ROST','YUM','DPZ','AAL','DAL','UAL','LUV','CCL','RCL','EA','TTWO',
+    'RIVN','LCID','AZO','EXPE','GRMN','HLT','LEN','LVS','MGM','ORLY','PHM','WYNN','DG',
+    'DLTR','NCLH','NIO','XPEV','LI','JD','PDD','WMT','PG','KO','PEP','COST','PM','MO',
+    'MDLZ','CL','KMB','GIS','KHC','STZ','ADM','CAG','CHD','CLX','HSY','KDP','KR','MKC',
+    'MNST','SYY','TAP','TSN','WBA','HRL','XOM','CVX','COP','EOG','SLB','MPC','PSX','VLO',
+    'OXY','HAL','DVN','HES','BKR','APA','CTRA','KMI','LNG','MRO','OKE','TRGP','WMB','EQT',
+    'AR','MTDR','OVV','RIG','SM','BA','HON','UNP','CAT','GE','RTX','LMT','UPS','DE','MMM',
+    'GD','NOC','FDX','CSX','HWM','TDG','LHX','EMR','ETN','FAST','GWW','IR','ITW','JCI',
+    'NSC','ODFL','OTIS','PWR','ROK','RSG','SNA','SWK','URI','WAB','WM','XYL','ALK','JBLU',
+    'T','VZ','CMCSA','NFLX','DIS','TMUS','CHTR','LYV','MTCH','PARA','WBD','IPG','AMT',
+    'PLD','CCI','EQIX','PSA','SPG','O','AVB','BXP','CBRE','DLR','EQR','EXR','IRM','MAA',
+    'SBAC','VTR','WELL','WY','INVH','LIN','APD','SHW','ECL','DD','NEM','FCX','DOW','LYB',
+    'ALB','EMN','SQM','CF','CLF','MLM','NUE','PPG','STLD','VMC','AA','MP','RS','NEE','DUK',
+    'SO','D','AEP','EXC','SRE','AEE','AWK','CMS','CNP','DTE','ED','EIX','ETR','FE','NRG',
+    'PCG','PEG','PPL','VST','WEC','XEL','CEG',
+]
+
 
 def new_york_session():
     now = datetime.now(pytz.timezone('America/New_York')).time()
@@ -43776,7 +43810,7 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
 
     try:
         if tickers is None:
-            tickers = list(SNOWAI_SECTOR_MAP_TICKERS) if 'SNOWAI_SECTOR_MAP_TICKERS' in globals() else []
+            tickers = list(SNOWAI_SECTOR_MAP_TICKERS)
         tickers = [t.strip().upper() for t in tickers if t.strip()][:200]
 
         if not tickers:
@@ -44157,7 +44191,7 @@ try:
         SNOWVAULT_SCANNER_SCHEDULER = BackgroundScheduler()
         SNOWVAULT_SCANNER_SCHEDULER.add_job(
             lambda: _snowvault_run_scanner_job(
-                tickers=list(SNOWAI_SECTOR_MAP_TICKERS) if 'SNOWAI_SECTOR_MAP_TICKERS' in globals() else [],
+                tickers=list(SNOWAI_SECTOR_MAP_TICKERS),
                 min_market_cap=10_000_000_000,
                 top_n=30,
             ),
