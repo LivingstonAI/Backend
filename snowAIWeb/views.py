@@ -43691,14 +43691,494 @@ def snowai_momentum_velocity_vault(request):
     except Exception as e:
         print(f"[MomentumVelocity] {ticker} FAILED: {e}")
         return JsonResponse({'error': str(e)}, status=500)
-        
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trend Scanner Cache — in-memory store + APScheduler background job
+# ─────────────────────────────────────────────────────────────────────────────
+import threading
+
+_SNOWVAULT_SCANNER_CACHE = {
+    'results':      [],
+    'count':        0,
+    'totalScanned': 0,
+    'minMarketCap': 10_000_000_000,
+    'scannedAt':    None,
+    'isRunning':    False,
+    'lastError':    None,
+}
+_SNOWVAULT_SCANNER_LOCK = threading.Lock()
+
+# Ticker metadata cache — market cap / name / sector refreshed once/day instead
+# of on every scan. Keyed by ticker symbol.
+_SNOWVAULT_TICKER_META_CACHE = {}
+_SNOWVAULT_TICKER_META_LOCK  = threading.Lock()
+_SNOWVAULT_TICKER_META_TTL   = 60 * 60 * 24  # 24h
+
+
+def _snowvault_get_ticker_meta(sym):
+    """Returns (market_cap, short_name, sector) from cache, refreshing if stale."""
+    import time as _time
+    now = _time.time()
+    with _SNOWVAULT_TICKER_META_LOCK:
+        cached = _SNOWVAULT_TICKER_META_CACHE.get(sym)
+        if cached and (now - cached['ts']) < _SNOWVAULT_TICKER_META_TTL:
+            return cached['marketCap'], cached['name'], cached['sector']
+
+    market_cap = None
+    short_name = sym
+    sector     = ''
+    curr_price = None
+    try:
+        tk = yf.Ticker(sym)
+        try:
+            fi         = tk.fast_info
+            market_cap = int(fi.market_cap) if fi.market_cap else None
+            curr_price = float(getattr(fi, 'last_price', None) or 0) or None
+        except Exception:
+            pass
+        try:
+            info       = tk.info or {}
+            short_name = info.get('shortName') or info.get('longName') or sym
+            sector     = info.get('sector', '')
+            if curr_price is None:
+                cp = info.get('currentPrice') or info.get('regularMarketPrice')
+                curr_price = float(cp) if cp else None
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"[ScannerMetaCache] {sym} fetch failed: {e}")
+
+    with _SNOWVAULT_TICKER_META_LOCK:
+        _SNOWVAULT_TICKER_META_CACHE[sym] = {
+            'ts': now, 'marketCap': market_cap, 'name': short_name,
+            'sector': sector, 'currPrice': curr_price,
+        }
+    return market_cap, short_name, sector
+
+
+def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_n=30):
+    """Background job body — same analysis logic as before, but writes to
+    the module-level cache instead of returning a JsonResponse."""
+    import concurrent.futures
+    import time
+    import random
+    import datetime as dt
+    from datetime import datetime, timezone, timedelta
+
+    with _SNOWVAULT_SCANNER_LOCK:
+        if _SNOWVAULT_SCANNER_CACHE['isRunning']:
+            print("[ScannerJob] already running, skipping this trigger")
+            return
+        _SNOWVAULT_SCANNER_CACHE['isRunning'] = True
+        _SNOWVAULT_SCANNER_CACHE['lastError'] = None
+
+    try:
+        if tickers is None:
+            tickers = list(SNOWAI_SECTOR_MAP_TICKERS) if 'SNOWAI_SECTOR_MAP_TICKERS' in globals() else []
+        tickers = [t.strip().upper() for t in tickers if t.strip()][:200]
+
+        if not tickers:
+            with _SNOWVAULT_SCANNER_LOCK:
+                _SNOWVAULT_SCANNER_CACHE['lastError'] = 'No tickers configured'
+                _SNOWVAULT_SCANNER_CACHE['isRunning'] = False
+            return
+
+        def sf(v):
+            try:
+                f = float(v)
+                return None if (f != f or f == float('inf') or f == float('-inf')) else f
+            except Exception:
+                return None
+
+        def clean(v):
+            if v is None:
+                return None
+            try:
+                if isinstance(v, (np.bool_,)):
+                    return bool(v)
+                if isinstance(v, (np.integer,)):
+                    return int(v)
+                if isinstance(v, (np.floating,)):
+                    f = float(v)
+                    return None if (f != f or f == float('inf') or f == float('-inf')) else f
+                if isinstance(v, float):
+                    return None if (v != v or v == float('inf') or v == float('-inf')) else v
+            except Exception:
+                return None
+            return v
+
+        def analyse_one(sym):
+            try:
+                # Use cached meta instead of hitting Yahoo for info/fast_info every scan
+                market_cap, short_name, sector = _snowvault_get_ticker_meta(sym)
+
+                if market_cap is not None and market_cap < min_market_cap:
+                    return None
+
+                hist = None
+                for attempt in range(3):
+                    try:
+                        hist = yf.Ticker(sym).history(period='6mo', interval='1d', auto_adjust=True)
+                        if hist is not None and not hist.empty:
+                            break
+                        print(f"[ScannerJob] {sym} empty history attempt {attempt+1}/3")
+                        time.sleep(2 ** attempt)
+                    except Exception as e:
+                        print(f"[ScannerJob] {sym} history error attempt {attempt+1}/3: {e}")
+                        time.sleep(2 ** attempt)
+
+                if hist is None or hist.empty or len(hist) < 40:
+                    return None
+
+                hist = hist.dropna(subset=['Close', 'High', 'Low', 'Volume'])
+                if len(hist) < 40:
+                    return None
+
+                closes  = hist['Close'].values.astype(float)
+                volumes = hist['Volume'].values.astype(float)
+                highs   = hist['High'].values.astype(float)
+                lows    = hist['Low'].values.astype(float)
+                n       = len(closes)
+
+                if not np.all(np.isfinite(closes)) or np.any(closes <= 0):
+                    print(f"[ScannerJob] {sym} bad close data, skipping")
+                    return None
+
+                curr_price = round(float(closes[-1]), 2)
+
+                def calc_adx(period=14):
+                    try:
+                        if n < period * 2:
+                            return None, None, None, None, None
+                        tr_l, pdm_l, ndm_l = [], [], []
+                        for i in range(1, n):
+                            tr  = max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1]))
+                            pdm = max(highs[i]-highs[i-1], 0) if (highs[i]-highs[i-1]) > (lows[i-1]-lows[i]) else 0
+                            ndm = max(lows[i-1]-lows[i],  0) if (lows[i-1]-lows[i])  > (highs[i]-highs[i-1]) else 0
+                            tr_l.append(tr); pdm_l.append(pdm); ndm_l.append(ndm)
+
+                        def ws(data, p):
+                            r = [sum(data[:p])]
+                            for i in range(p, len(data)):
+                                r.append(r[-1] - r[-1]/p + data[i])
+                            return r
+
+                        atr_s = ws(tr_l, period)
+                        pdm_s = ws(pdm_l, period)
+                        ndm_s = ws(ndm_l, period)
+
+                        pdi_l, ndi_l, dx_l = [], [], []
+                        for i in range(len(atr_s)):
+                            pdi = (pdm_s[i]/atr_s[i]*100) if atr_s[i] else 0
+                            ndi = (ndm_s[i]/atr_s[i]*100) if atr_s[i] else 0
+                            dx  = (abs(pdi-ndi)/(pdi+ndi)*100) if (pdi+ndi) else 0
+                            pdi_l.append(pdi); ndi_l.append(ndi); dx_l.append(dx)
+
+                        if len(dx_l) < period:
+                            return None, None, None, None, None
+
+                        adx_s = ws(dx_l, period)
+                        return (
+                            round(adx_s[-1],  2),
+                            round(adx_s[-6],  2) if len(adx_s) >= 6  else None,
+                            round(adx_s[-11], 2) if len(adx_s) >= 11 else None,
+                            round(pdi_l[-1],  2),
+                            round(ndi_l[-1],  2),
+                        )
+                    except Exception as e:
+                        print(f"[ScannerJob] {sym} ADX calc failed: {e}")
+                        return None, None, None, None, None
+
+                adx_now, adx_5ago, adx_20ago, plus_di, minus_di = calc_adx()
+                if adx_now is None:
+                    return None
+
+                def roc(period):
+                    try:
+                        if n <= period or closes[-period-1] == 0:
+                            return None
+                        return round((closes[-1] - closes[-period-1]) / closes[-period-1] * 100, 2)
+                    except Exception:
+                        return None
+
+                roc5, roc10, roc20 = roc(5), roc(10), roc(20)
+
+                acceleration = None
+                try:
+                    roc_vals = []
+                    for i in range(10, n):
+                        if closes[i-10] != 0:
+                            roc_vals.append((closes[i] - closes[i-10]) / closes[i-10] * 100)
+                    if len(roc_vals) >= 10:
+                        prev5 = sum(roc_vals[-10:-5]) / 5
+                        last5 = sum(roc_vals[-5:])    / 5
+                        acceleration = round(last5 - prev5, 3)
+                except Exception:
+                    pass
+
+                vol_ratio = None
+                try:
+                    if n >= 20 and np.all(np.isfinite(volumes[-20:])):
+                        vol_sma20 = float(np.mean(volumes[-20:]))
+                        vol_sma5  = float(np.mean(volumes[-5:]))
+                        if vol_sma20 > 0:
+                            vol_ratio = round(vol_sma5 / vol_sma20, 2)
+                except Exception:
+                    pass
+
+                high_52w = low_52w = pct_from_high = pct_from_low = None
+                breaking_out = False
+                try:
+                    high_52w      = round(float(np.max(closes)), 2)
+                    low_52w       = round(float(np.min(closes)), 2)
+                    pct_from_high = round((closes[-1] - high_52w) / high_52w * 100, 2) if high_52w else None
+                    pct_from_low  = round((closes[-1] - low_52w)  / low_52w  * 100, 2) if low_52w  else None
+                    if n >= 20:
+                        prior_high   = float(np.max(closes[-20:-5]))
+                        recent_avg   = float(np.mean(closes[-5:]))
+                        breaking_out = recent_avg > prior_high * 0.99
+                except Exception:
+                    pass
+
+                was_ranging      = adx_20ago is not None and adx_20ago < 22
+                now_trending     = adx_now > 22
+                range_to_trend   = was_ranging and now_trending
+                adx_rising       = adx_5ago is not None and (adx_now - adx_5ago) > 3
+                roc_accelerating = acceleration is not None and acceleration > 1.0
+                vol_confirming   = vol_ratio is not None and vol_ratio >= 1.2
+
+                bullish = plus_di > minus_di and (roc20 or 0) > 0
+                bearish = minus_di > plus_di and (roc20 or 0) < 0
+
+                earnings_nearby = False
+                last_earnings_date = None
+                days_since_earnings = None
+                earnings_beat = None
+                try:
+                    now_dt    = datetime.now(timezone.utc)
+                    today_str = now_dt.strftime('%Y-%m-%d')
+                    cutoff    = (now_dt - timedelta(days=90)).strftime('%Y-%m-%d')
+                    ed_df = None
+                    try:
+                        ed_df = tk.get_earnings_dates(limit=8) if hasattr(tk, 'get_earnings_dates') else None
+                    except Exception:
+                        pass
+                    tk2 = yf.Ticker(sym)
+                    if ed_df is None:
+                        try:
+                            ed_df = tk2.get_earnings_dates(limit=8)
+                        except Exception:
+                            try:
+                                ed_df = tk2.earnings_dates
+                            except Exception:
+                                pass
+                    if ed_df is not None and not ed_df.empty:
+                        for idx_row, row in ed_df.iterrows():
+                            row_date = str(idx_row)[:10]
+                            if row_date >= today_str:
+                                continue
+                            if row_date < cutoff:
+                                break
+                            act = sf(row.get('Reported EPS'))
+                            est = sf(row.get('EPS Estimate'))
+                            if act is None:
+                                continue
+                            last_earnings_date  = row_date
+                            ed_dt               = datetime.strptime(row_date, '%Y-%m-%d')
+                            days_since_earnings = (datetime.now() - ed_dt).days
+                            earnings_beat       = (act >= est) if est is not None else None
+                            earnings_nearby     = days_since_earnings <= 30
+                            break
+                except Exception as e:
+                    print(f"[ScannerJob] {sym} earnings lookup error (non-fatal): {e}")
+
+                score = 0
+                if range_to_trend:
+                    score += 35
+                elif adx_rising and adx_now > 18:
+                    score += 20
+                score += min(20, max(0, (adx_now - 15) * 1.0))
+                if roc_accelerating:
+                    score += min(15, acceleration * 3)
+                if vol_ratio is not None:
+                    score += min(15, (vol_ratio - 1.0) * 15)
+                if breaking_out:
+                    score += 10
+                if earnings_nearby and earnings_beat:
+                    score += 5
+                score = round(min(100, max(0, score)), 1)
+
+                if score < 20:
+                    return None
+
+                if range_to_trend and bullish:
+                    signal = 'RANGE_BREAKOUT_BULL'
+                elif range_to_trend and bearish:
+                    signal = 'RANGE_BREAKOUT_BEAR'
+                elif adx_rising and roc_accelerating and bullish:
+                    signal = 'ACCELERATING_BULL'
+                elif adx_rising and roc_accelerating and bearish:
+                    signal = 'ACCELERATING_BEAR'
+                elif breaking_out and bullish:
+                    signal = 'BREAKOUT'
+                elif adx_rising:
+                    signal = 'TREND_BUILDING'
+                else:
+                    signal = 'WATCH'
+
+                print(f"[ScannerJob] ✓ {sym} score:{score} signal:{signal} adx:{adx_now} roc20:{roc20}%")
+
+                return {
+                    'ticker':            sym,
+                    'name':              short_name,
+                    'sector':            sector,
+                    'marketCap':         clean(market_cap),
+                    'currentPrice':      clean(curr_price),
+                    'score':             clean(score),
+                    'signal':            signal,
+                    'direction':         'BULLISH' if bullish else 'BEARISH' if bearish else 'NEUTRAL',
+                    'adxNow':            clean(adx_now),
+                    'adx5Ago':           clean(adx_5ago),
+                    'adx20Ago':          clean(adx_20ago),
+                    'plusDI':            clean(plus_di),
+                    'minusDI':           clean(minus_di),
+                    'rangeToTrend':      clean(range_to_trend),
+                    'adxRising':         clean(adx_rising),
+                    'roc5':              clean(roc5),
+                    'roc10':             clean(roc10),
+                    'roc20':             clean(roc20),
+                    'acceleration':      clean(acceleration),
+                    'rocAccelerating':   clean(roc_accelerating),
+                    'volRatio':          clean(vol_ratio),
+                    'volConfirming':     clean(vol_confirming),
+                    'high52w':           clean(high_52w),
+                    'low52w':            clean(low_52w),
+                    'pctFromHigh':       clean(pct_from_high),
+                    'pctFromLow':        clean(pct_from_low),
+                    'breakingOut':       clean(breaking_out),
+                    'lastEarningsDate':  last_earnings_date,
+                    'daysSinceEarnings': clean(days_since_earnings),
+                    'earningsNearby':    clean(earnings_nearby),
+                    'earningsBeat':      clean(earnings_beat),
+                }
+
+            except Exception as e:
+                print(f"[ScannerJob] {sym} FAILED (top-level): {e}")
+                return None
+
+        results  = []
+        BATCH     = 15
+        WORKERS   = 5
+        TIMEOUT   = 45
+        DELAY     = 1.5
+        JITTER    = 0.5
+        consecutive_empties = 0
+        total_batches = (len(tickers) + BATCH - 1) // BATCH
+
+        for i in range(0, len(tickers), BATCH):
+            batch = tickers[i:i+BATCH]
+            batch_num = i // BATCH + 1
+            print(f"[ScannerJob] batch {batch_num}/{total_batches} — {batch}")
+
+            batch_results_count = 0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as executor:
+                future_map = {executor.submit(analyse_one, sym): sym for sym in batch}
+                deadline   = time.time() + TIMEOUT
+                pending    = set(future_map.keys())
+
+                while pending:
+                    remaining = deadline - time.time()
+                    if remaining <= 0:
+                        print(f"[ScannerJob] batch {batch_num} timeout — skipping {len(pending)}")
+                        for f in pending:
+                            f.cancel()
+                        break
+
+                    done, pending = concurrent.futures.wait(
+                        pending, timeout=min(remaining, 10),
+                        return_when=concurrent.futures.FIRST_COMPLETED,
+                    )
+
+                    for future in done:
+                        sym = future_map.get(future, '?')
+                        try:
+                            res = future.result(timeout=5)
+                            if res:
+                                results.append(res)
+                                batch_results_count += 1
+                        except concurrent.futures.TimeoutError:
+                            print(f"[ScannerJob] ✗ {sym} result() timed out")
+                        except Exception as e:
+                            print(f"[ScannerJob] ✗ {sym} result() error: {e}")
+
+            # Circuit breaker: if a whole batch came back empty, Yahoo is
+            # probably throttling us right now — cool off longer before continuing
+            if batch_results_count == 0:
+                consecutive_empties += 1
+                if consecutive_empties >= 2:
+                    cooldown = 15 + random.uniform(0, 5)
+                    print(f"[ScannerJob] {consecutive_empties} empty batches in a row — cooling down {cooldown:.1f}s")
+                    time.sleep(cooldown)
+            else:
+                consecutive_empties = 0
+
+            if i + BATCH < len(tickers):
+                sleep_time = DELAY + random.uniform(0, JITTER)
+                time.sleep(sleep_time)
+
+        results.sort(key=lambda x: x['score'], reverse=True)
+        results = results[:top_n]
+
+        with _SNOWVAULT_SCANNER_LOCK:
+            _SNOWVAULT_SCANNER_CACHE['results']      = results
+            _SNOWVAULT_SCANNER_CACHE['count']        = len(results)
+            _SNOWVAULT_SCANNER_CACHE['totalScanned'] = len(tickers)
+            _SNOWVAULT_SCANNER_CACHE['minMarketCap'] = min_market_cap
+            _SNOWVAULT_SCANNER_CACHE['scannedAt']    = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            _SNOWVAULT_SCANNER_CACHE['isRunning']    = False
+
+        print(f"[ScannerJob] done — {len(results)} results from {len(tickers)} tickers")
+
+    except Exception as e:
+        print(f"[ScannerJob] FATAL: {e}")
+        with _SNOWVAULT_SCANNER_LOCK:
+            _SNOWVAULT_SCANNER_CACHE['lastError'] = str(e)
+            _SNOWVAULT_SCANNER_CACHE['isRunning'] = False
+
+
+# ── Register the periodic job on your existing APScheduler instance ──────────
+# If you already have a global scheduler started elsewhere in views.py
+# (e.g. for Web Push), just add this job to it instead of creating a new one.
+try:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    if 'SNOWVAULT_SCANNER_SCHEDULER' not in globals():
+        SNOWVAULT_SCANNER_SCHEDULER = BackgroundScheduler()
+        SNOWVAULT_SCANNER_SCHEDULER.add_job(
+            lambda: _snowvault_run_scanner_job(
+                tickers=list(SNOWAI_SECTOR_MAP_TICKERS) if 'SNOWAI_SECTOR_MAP_TICKERS' in globals() else [],
+                min_market_cap=10_000_000_000,
+                top_n=30,
+            ),
+            'interval', minutes=20, id='snowvault_scanner_job', replace_existing=True,
+        )
+        SNOWVAULT_SCANNER_SCHEDULER.start()
+except Exception as e:
+    print(f"[ScannerJob] scheduler init failed: {e}")
+
 
 @csrf_exempt
 def snowai_trend_reversal_scanner_vault(request):
-    import concurrent.futures
-    import time
-    import datetime as dt
-    from datetime import datetime, timezone, timedelta
+    """
+    Now serves cached results instantly instead of scanning live on every call.
+    POST body:
+      { "tickers": [...], "minMarketCap": ..., "topN": ..., "forceRefresh": true/false }
+    - Default: returns whatever's cached (near-instant).
+    - forceRefresh=true: kicks off a fresh scan in a background thread and
+      returns immediately with isRunning=true; poll again to get results.
+    """
+    import threading as _threading
 
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
@@ -43707,325 +44187,366 @@ def snowai_trend_reversal_scanner_vault(request):
         tickers        = [t.strip().upper() for t in body.get('tickers', []) if t.strip()][:200]
         min_market_cap = body.get('minMarketCap', 10_000_000_000)
         top_n          = body.get('topN', 20)
+        force_refresh  = bool(body.get('forceRefresh', False))
     except Exception:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-    if not tickers:
-        return JsonResponse({'error': 'No tickers provided'}, status=400)
+    with _SNOWVAULT_SCANNER_LOCK:
+        already_running = _SNOWVAULT_SCANNER_CACHE['isRunning']
 
-    def sf(v):
-        try:
-            f = float(v)
-            return None if (f != f or f == float('inf') or f == float('-inf')) else f
-        except Exception:
-            return None
+    if force_refresh and not already_running:
+        t = _threading.Thread(
+            target=_snowvault_run_scanner_job,
+            kwargs={'tickers': tickers, 'min_market_cap': min_market_cap, 'top_n': top_n},
+            daemon=True,
+        )
+        t.start()
+        return JsonResponse({
+            'results': [], 'count': 0, 'totalScanned': len(tickers),
+            'minMarketCap': min_market_cap, 'scannedAt': None,
+            'isRunning': True, 'lastError': None,
+        })
 
-    def clean(v):
-        if v is None:
-            return None
-        try:
-            if isinstance(v, (np.bool_,)):
-                return bool(v)
-            if isinstance(v, (np.integer,)):
-                return int(v)
-            if isinstance(v, (np.floating,)):
-                f = float(v)
-                return None if (f != f or f == float('inf') or f == float('-inf')) else f
-            if isinstance(v, float):
-                return None if (v != v or v == float('inf') or v == float('-inf')) else v
-        except Exception:
-            return None
-        return v
+    with _SNOWVAULT_SCANNER_LOCK:
+        cache_copy = dict(_SNOWVAULT_SCANNER_CACHE)
 
-    def analyse_one(sym):
-        try:
-            tk = yf.Ticker(sym)
+    return JsonResponse(cache_copy)
 
-            # ── Market cap filter ─────────────────────────────────────────────
-            market_cap = None
-            short_name = sym
-            sector     = ''
-            curr_price = None
-            try:
-                fi         = tk.fast_info
-                market_cap = int(fi.market_cap) if fi.market_cap else None
-                curr_price = sf(getattr(fi, 'last_price', None))
-            except Exception:
-                pass
 
-            if market_cap is not None and market_cap < min_market_cap:
-                return None
 
-            try:
-                info       = tk.info or {}
-                short_name = info.get('shortName') or info.get('longName') or sym
-                sector     = info.get('sector', '')
-                if curr_price is None:
-                    curr_price = sf(info.get('currentPrice') or info.get('regularMarketPrice'))
-            except Exception:
-                pass
+# @csrf_exempt
+# def snowai_trend_reversal_scanner_vault(request):
+#     import concurrent.futures
+#     import time
+#     import datetime as dt
+#     from datetime import datetime, timezone, timedelta
 
-            # ── Fetch OHLCV — with retry on empty ────────────────────────────
-            hist = None
-            for attempt in range(3):
-                try:
-                    hist = yf.Ticker(sym).history(
-                        period='6mo', interval='1d', auto_adjust=True
-                    )
-                    if hist is not None and not hist.empty:
-                        break
-                    # empty = likely rate limited, wait and retry
-                    print(f"[Scanner] {sym} empty history attempt {attempt+1}/3")
-                    time.sleep(2 ** attempt)  # 1s, 2s, 4s backoff
-                except Exception as e:
-                    print(f"[Scanner] {sym} history error attempt {attempt+1}/3: {e}")
-                    time.sleep(2 ** attempt)
+#     if request.method != 'POST':
+#         return JsonResponse({'error': 'POST only'}, status=405)
+#     try:
+#         body           = json.loads(request.body)
+#         tickers        = [t.strip().upper() for t in body.get('tickers', []) if t.strip()][:200]
+#         min_market_cap = body.get('minMarketCap', 10_000_000_000)
+#         top_n          = body.get('topN', 20)
+#     except Exception:
+#         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-            if hist is None or hist.empty or len(hist) < 40:
-                return None
+#     if not tickers:
+#         return JsonResponse({'error': 'No tickers provided'}, status=400)
 
-            hist = hist.dropna(subset=['Close', 'High', 'Low', 'Volume'])
-            if len(hist) < 40:
-                return None
+#     def sf(v):
+#         try:
+#             f = float(v)
+#             return None if (f != f or f == float('inf') or f == float('-inf')) else f
+#         except Exception:
+#             return None
 
-            closes  = hist['Close'].values.astype(float)
-            volumes = hist['Volume'].values.astype(float)
-            highs   = hist['High'].values.astype(float)
-            lows    = hist['Low'].values.astype(float)
-            n       = len(closes)
+#     def clean(v):
+#         if v is None:
+#             return None
+#         try:
+#             if isinstance(v, (np.bool_,)):
+#                 return bool(v)
+#             if isinstance(v, (np.integer,)):
+#                 return int(v)
+#             if isinstance(v, (np.floating,)):
+#                 f = float(v)
+#                 return None if (f != f or f == float('inf') or f == float('-inf')) else f
+#             if isinstance(v, float):
+#                 return None if (v != v or v == float('inf') or v == float('-inf')) else v
+#         except Exception:
+#             return None
+#         return v
 
-            # Guard: reject if any closes are 0 or inf (bad data)
-            if not np.all(np.isfinite(closes)) or np.any(closes <= 0):
-                print(f"[Scanner] {sym} bad close data, skipping")
-                return None
+#     def analyse_one(sym):
+#         try:
+#             tk = yf.Ticker(sym)
 
-            # ── ADX ───────────────────────────────────────────────────────────
-            def calc_adx(period=14):
-                try:
-                    if n < period * 2:
-                        return None, None, None, None, None
-                    tr_l, pdm_l, ndm_l = [], [], []
-                    for i in range(1, n):
-                        tr  = max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1]))
-                        pdm = max(highs[i]-highs[i-1], 0) if (highs[i]-highs[i-1]) > (lows[i-1]-lows[i]) else 0
-                        ndm = max(lows[i-1]-lows[i],  0) if (lows[i-1]-lows[i])  > (highs[i]-highs[i-1]) else 0
-                        tr_l.append(tr); pdm_l.append(pdm); ndm_l.append(ndm)
+#             # ── Market cap filter ─────────────────────────────────────────────
+#             market_cap = None
+#             short_name = sym
+#             sector     = ''
+#             curr_price = None
+#             try:
+#                 fi         = tk.fast_info
+#                 market_cap = int(fi.market_cap) if fi.market_cap else None
+#                 curr_price = sf(getattr(fi, 'last_price', None))
+#             except Exception:
+#                 pass
 
-                    def ws(data, p):
-                        r = [sum(data[:p])]
-                        for i in range(p, len(data)):
-                            r.append(r[-1] - r[-1]/p + data[i])
-                        return r
+#             if market_cap is not None and market_cap < min_market_cap:
+#                 return None
 
-                    atr_s = ws(tr_l, period)
-                    pdm_s = ws(pdm_l, period)
-                    ndm_s = ws(ndm_l, period)
+#             try:
+#                 info       = tk.info or {}
+#                 short_name = info.get('shortName') or info.get('longName') or sym
+#                 sector     = info.get('sector', '')
+#                 if curr_price is None:
+#                     curr_price = sf(info.get('currentPrice') or info.get('regularMarketPrice'))
+#             except Exception:
+#                 pass
 
-                    pdi_l, ndi_l, dx_l = [], [], []
-                    for i in range(len(atr_s)):
-                        pdi = (pdm_s[i]/atr_s[i]*100) if atr_s[i] else 0
-                        ndi = (ndm_s[i]/atr_s[i]*100) if atr_s[i] else 0
-                        dx  = (abs(pdi-ndi)/(pdi+ndi)*100) if (pdi+ndi) else 0
-                        pdi_l.append(pdi); ndi_l.append(ndi); dx_l.append(dx)
+#             # ── Fetch OHLCV — with retry on empty ────────────────────────────
+#             hist = None
+#             for attempt in range(3):
+#                 try:
+#                     hist = yf.Ticker(sym).history(
+#                         period='6mo', interval='1d', auto_adjust=True
+#                     )
+#                     if hist is not None and not hist.empty:
+#                         break
+#                     # empty = likely rate limited, wait and retry
+#                     print(f"[Scanner] {sym} empty history attempt {attempt+1}/3")
+#                     time.sleep(2 ** attempt)  # 1s, 2s, 4s backoff
+#                 except Exception as e:
+#                     print(f"[Scanner] {sym} history error attempt {attempt+1}/3: {e}")
+#                     time.sleep(2 ** attempt)
 
-                    if len(dx_l) < period:
-                        return None, None, None, None, None
+#             if hist is None or hist.empty or len(hist) < 40:
+#                 return None
 
-                    adx_s = ws(dx_l, period)
-                    return (
-                        round(adx_s[-1],  2),
-                        round(adx_s[-6],  2) if len(adx_s) >= 6  else None,
-                        round(adx_s[-11], 2) if len(adx_s) >= 11 else None,
-                        round(pdi_l[-1],  2),
-                        round(ndi_l[-1],  2),
-                    )
-                except Exception as e:
-                    print(f"[Scanner] {sym} ADX calc failed: {e}")
-                    return None, None, None, None, None
+#             hist = hist.dropna(subset=['Close', 'High', 'Low', 'Volume'])
+#             if len(hist) < 40:
+#                 return None
 
-            adx_now, adx_5ago, adx_20ago, plus_di, minus_di = calc_adx()
-            if adx_now is None:
-                return None
+#             closes  = hist['Close'].values.astype(float)
+#             volumes = hist['Volume'].values.astype(float)
+#             highs   = hist['High'].values.astype(float)
+#             lows    = hist['Low'].values.astype(float)
+#             n       = len(closes)
 
-            # ── ROC + acceleration ────────────────────────────────────────────
-            def roc(period):
-                try:
-                    if n <= period or closes[-period-1] == 0:
-                        return None
-                    return round((closes[-1] - closes[-period-1]) / closes[-period-1] * 100, 2)
-                except Exception:
-                    return None
+#             # Guard: reject if any closes are 0 or inf (bad data)
+#             if not np.all(np.isfinite(closes)) or np.any(closes <= 0):
+#                 print(f"[Scanner] {sym} bad close data, skipping")
+#                 return None
 
-            roc5  = roc(5)
-            roc10 = roc(10)
-            roc20 = roc(20)
+#             # ── ADX ───────────────────────────────────────────────────────────
+#             def calc_adx(period=14):
+#                 try:
+#                     if n < period * 2:
+#                         return None, None, None, None, None
+#                     tr_l, pdm_l, ndm_l = [], [], []
+#                     for i in range(1, n):
+#                         tr  = max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1]))
+#                         pdm = max(highs[i]-highs[i-1], 0) if (highs[i]-highs[i-1]) > (lows[i-1]-lows[i]) else 0
+#                         ndm = max(lows[i-1]-lows[i],  0) if (lows[i-1]-lows[i])  > (highs[i]-highs[i-1]) else 0
+#                         tr_l.append(tr); pdm_l.append(pdm); ndm_l.append(ndm)
 
-            acceleration = None
-            try:
-                roc_vals = []
-                for i in range(10, n):
-                    if closes[i-10] != 0:
-                        roc_vals.append((closes[i] - closes[i-10]) / closes[i-10] * 100)
-                if len(roc_vals) >= 10:
-                    prev5 = sum(roc_vals[-10:-5]) / 5
-                    last5 = sum(roc_vals[-5:])    / 5
-                    acceleration = round(last5 - prev5, 3)
-            except Exception:
-                pass
+#                     def ws(data, p):
+#                         r = [sum(data[:p])]
+#                         for i in range(p, len(data)):
+#                             r.append(r[-1] - r[-1]/p + data[i])
+#                         return r
 
-            # ── Volume velocity ───────────────────────────────────────────────
-            vol_ratio = None
-            try:
-                if n >= 20 and np.all(np.isfinite(volumes[-20:])):
-                    vol_sma20 = float(np.mean(volumes[-20:]))
-                    vol_sma5  = float(np.mean(volumes[-5:]))
-                    if vol_sma20 > 0:
-                        vol_ratio = round(vol_sma5 / vol_sma20, 2)
-            except Exception:
-                pass
+#                     atr_s = ws(tr_l, period)
+#                     pdm_s = ws(pdm_l, period)
+#                     ndm_s = ws(ndm_l, period)
 
-            # ── 52-week context ───────────────────────────────────────────────
-            high_52w      = None
-            low_52w       = None
-            pct_from_high = None
-            pct_from_low  = None
-            breaking_out  = False
-            try:
-                high_52w      = round(float(np.max(closes)), 2)
-                low_52w       = round(float(np.min(closes)), 2)
-                pct_from_high = round((closes[-1] - high_52w) / high_52w * 100, 2) if high_52w else None
-                pct_from_low  = round((closes[-1] - low_52w)  / low_52w  * 100, 2) if low_52w  else None
-                if n >= 20:
-                    prior_high   = float(np.max(closes[-20:-5]))
-                    recent_avg   = float(np.mean(closes[-5:]))
-                    breaking_out = recent_avg > prior_high * 0.99
-            except Exception:
-                pass
+#                     pdi_l, ndi_l, dx_l = [], [], []
+#                     for i in range(len(atr_s)):
+#                         pdi = (pdm_s[i]/atr_s[i]*100) if atr_s[i] else 0
+#                         ndi = (ndm_s[i]/atr_s[i]*100) if atr_s[i] else 0
+#                         dx  = (abs(pdi-ndi)/(pdi+ndi)*100) if (pdi+ndi) else 0
+#                         pdi_l.append(pdi); ndi_l.append(ndi); dx_l.append(dx)
 
-            # ── Signal detection ──────────────────────────────────────────────
-            was_ranging      = adx_20ago is not None and adx_20ago < 22
-            now_trending     = adx_now > 22
-            range_to_trend   = was_ranging and now_trending
-            adx_rising       = adx_5ago is not None and (adx_now - adx_5ago) > 3
-            roc_accelerating = acceleration is not None and acceleration > 1.0
-            vol_confirming   = vol_ratio is not None and vol_ratio >= 1.2
+#                     if len(dx_l) < period:
+#                         return None, None, None, None, None
 
-            bullish = plus_di > minus_di and (roc20 or 0) > 0
-            bearish = minus_di > plus_di and (roc20 or 0) < 0
+#                     adx_s = ws(dx_l, period)
+#                     return (
+#                         round(adx_s[-1],  2),
+#                         round(adx_s[-6],  2) if len(adx_s) >= 6  else None,
+#                         round(adx_s[-11], 2) if len(adx_s) >= 11 else None,
+#                         round(pdi_l[-1],  2),
+#                         round(ndi_l[-1],  2),
+#                     )
+#                 except Exception as e:
+#                     print(f"[Scanner] {sym} ADX calc failed: {e}")
+#                     return None, None, None, None, None
 
-            # ── Earnings (best effort, fully isolated) ────────────────────────
-            earnings_nearby     = False
-            last_earnings_date  = None
-            days_since_earnings = None
-            earnings_beat       = None
-            try:
-                now_dt    = datetime.now(timezone.utc)
-                today_str = now_dt.strftime('%Y-%m-%d')
-                cutoff    = (now_dt - timedelta(days=90)).strftime('%Y-%m-%d')
-                ed_df     = None
-                try:
-                    ed_df = tk.get_earnings_dates(limit=8)
-                except Exception:
-                    try:
-                        ed_df = tk.earnings_dates
-                    except Exception:
-                        pass
-                if ed_df is not None and not ed_df.empty:
-                    for idx_row, row in ed_df.iterrows():
-                        row_date = str(idx_row)[:10]
-                        if row_date >= today_str:
-                            continue
-                        if row_date < cutoff:
-                            break
-                        act = sf(row.get('Reported EPS'))
-                        est = sf(row.get('EPS Estimate'))
-                        if act is None:
-                            continue
-                        last_earnings_date  = row_date
-                        ed_dt               = datetime.strptime(row_date, '%Y-%m-%d')
-                        days_since_earnings = (datetime.now() - ed_dt).days
-                        earnings_beat       = (act >= est) if est is not None else None
-                        earnings_nearby     = days_since_earnings <= 30
-                        break
-            except Exception as e:
-                print(f"[Scanner] {sym} earnings lookup error (non-fatal): {e}")
+#             adx_now, adx_5ago, adx_20ago, plus_di, minus_di = calc_adx()
+#             if adx_now is None:
+#                 return None
 
-            # ── Score ─────────────────────────────────────────────────────────
-            score = 0
-            if range_to_trend:
-                score += 35
-            elif adx_rising and adx_now > 18:
-                score += 20
-            score += min(20, max(0, (adx_now - 15) * 1.0))
-            if roc_accelerating:
-                score += min(15, acceleration * 3)
-            if vol_ratio is not None:
-                score += min(15, (vol_ratio - 1.0) * 15)
-            if breaking_out:
-                score += 10
-            if earnings_nearby and earnings_beat:
-                score += 5
-            score = round(min(100, max(0, score)), 1)
+#             # ── ROC + acceleration ────────────────────────────────────────────
+#             def roc(period):
+#                 try:
+#                     if n <= period or closes[-period-1] == 0:
+#                         return None
+#                     return round((closes[-1] - closes[-period-1]) / closes[-period-1] * 100, 2)
+#                 except Exception:
+#                     return None
 
-            if score < 20:
-                return None
+#             roc5  = roc(5)
+#             roc10 = roc(10)
+#             roc20 = roc(20)
 
-            # ── Signal label ──────────────────────────────────────────────────
-            if range_to_trend and bullish:
-                signal = 'RANGE_BREAKOUT_BULL'
-            elif range_to_trend and bearish:
-                signal = 'RANGE_BREAKOUT_BEAR'
-            elif adx_rising and roc_accelerating and bullish:
-                signal = 'ACCELERATING_BULL'
-            elif adx_rising and roc_accelerating and bearish:
-                signal = 'ACCELERATING_BEAR'
-            elif breaking_out and bullish:
-                signal = 'BREAKOUT'
-            elif adx_rising:
-                signal = 'TREND_BUILDING'
-            else:
-                signal = 'WATCH'
+#             acceleration = None
+#             try:
+#                 roc_vals = []
+#                 for i in range(10, n):
+#                     if closes[i-10] != 0:
+#                         roc_vals.append((closes[i] - closes[i-10]) / closes[i-10] * 100)
+#                 if len(roc_vals) >= 10:
+#                     prev5 = sum(roc_vals[-10:-5]) / 5
+#                     last5 = sum(roc_vals[-5:])    / 5
+#                     acceleration = round(last5 - prev5, 3)
+#             except Exception:
+#                 pass
 
-            print(f"[Scanner] ✓ {sym} score:{score} signal:{signal} adx:{adx_now} roc20:{roc20}%")
+#             # ── Volume velocity ───────────────────────────────────────────────
+#             vol_ratio = None
+#             try:
+#                 if n >= 20 and np.all(np.isfinite(volumes[-20:])):
+#                     vol_sma20 = float(np.mean(volumes[-20:]))
+#                     vol_sma5  = float(np.mean(volumes[-5:]))
+#                     if vol_sma20 > 0:
+#                         vol_ratio = round(vol_sma5 / vol_sma20, 2)
+#             except Exception:
+#                 pass
 
-            return {
-                'ticker':            sym,
-                'name':              short_name,
-                'sector':            sector,
-                'marketCap':         clean(market_cap),
-                'currentPrice':      clean(round(float(curr_price), 2)) if curr_price else None,
-                'score':             clean(score),
-                'signal':            signal,
-                'direction':         'BULLISH' if bullish else 'BEARISH' if bearish else 'NEUTRAL',
-                'adxNow':            clean(adx_now),
-                'adx5Ago':           clean(adx_5ago),
-                'adx20Ago':          clean(adx_20ago),
-                'plusDI':            clean(plus_di),
-                'minusDI':           clean(minus_di),
-                'rangeToTrend':      clean(range_to_trend),
-                'adxRising':         clean(adx_rising),
-                'roc5':              clean(roc5),
-                'roc10':             clean(roc10),
-                'roc20':             clean(roc20),
-                'acceleration':      clean(acceleration),
-                'rocAccelerating':   clean(roc_accelerating),
-                'volRatio':          clean(vol_ratio),
-                'volConfirming':     clean(vol_confirming),
-                'high52w':           clean(high_52w),
-                'low52w':            clean(low_52w),
-                'pctFromHigh':       clean(pct_from_high),
-                'pctFromLow':        clean(pct_from_low),
-                'breakingOut':       clean(breaking_out),
-                'lastEarningsDate':  last_earnings_date,
-                'daysSinceEarnings': clean(days_since_earnings),
-                'earningsNearby':    clean(earnings_nearby),
-                'earningsBeat':      clean(earnings_beat),
-            }
+#             # ── 52-week context ───────────────────────────────────────────────
+#             high_52w      = None
+#             low_52w       = None
+#             pct_from_high = None
+#             pct_from_low  = None
+#             breaking_out  = False
+#             try:
+#                 high_52w      = round(float(np.max(closes)), 2)
+#                 low_52w       = round(float(np.min(closes)), 2)
+#                 pct_from_high = round((closes[-1] - high_52w) / high_52w * 100, 2) if high_52w else None
+#                 pct_from_low  = round((closes[-1] - low_52w)  / low_52w  * 100, 2) if low_52w  else None
+#                 if n >= 20:
+#                     prior_high   = float(np.max(closes[-20:-5]))
+#                     recent_avg   = float(np.mean(closes[-5:]))
+#                     breaking_out = recent_avg > prior_high * 0.99
+#             except Exception:
+#                 pass
 
-        except Exception as e:
-            # Top-level catch — this ticker is dead, log and move on
-            print(f"[Scanner] {sym} FAILED (top-level): {e}")
-            return None
+#             # ── Signal detection ──────────────────────────────────────────────
+#             was_ranging      = adx_20ago is not None and adx_20ago < 22
+#             now_trending     = adx_now > 22
+#             range_to_trend   = was_ranging and now_trending
+#             adx_rising       = adx_5ago is not None and (adx_now - adx_5ago) > 3
+#             roc_accelerating = acceleration is not None and acceleration > 1.0
+#             vol_confirming   = vol_ratio is not None and vol_ratio >= 1.2
+
+#             bullish = plus_di > minus_di and (roc20 or 0) > 0
+#             bearish = minus_di > plus_di and (roc20 or 0) < 0
+
+#             # ── Earnings (best effort, fully isolated) ────────────────────────
+#             earnings_nearby     = False
+#             last_earnings_date  = None
+#             days_since_earnings = None
+#             earnings_beat       = None
+#             try:
+#                 now_dt    = datetime.now(timezone.utc)
+#                 today_str = now_dt.strftime('%Y-%m-%d')
+#                 cutoff    = (now_dt - timedelta(days=90)).strftime('%Y-%m-%d')
+#                 ed_df     = None
+#                 try:
+#                     ed_df = tk.get_earnings_dates(limit=8)
+#                 except Exception:
+#                     try:
+#                         ed_df = tk.earnings_dates
+#                     except Exception:
+#                         pass
+#                 if ed_df is not None and not ed_df.empty:
+#                     for idx_row, row in ed_df.iterrows():
+#                         row_date = str(idx_row)[:10]
+#                         if row_date >= today_str:
+#                             continue
+#                         if row_date < cutoff:
+#                             break
+#                         act = sf(row.get('Reported EPS'))
+#                         est = sf(row.get('EPS Estimate'))
+#                         if act is None:
+#                             continue
+#                         last_earnings_date  = row_date
+#                         ed_dt               = datetime.strptime(row_date, '%Y-%m-%d')
+#                         days_since_earnings = (datetime.now() - ed_dt).days
+#                         earnings_beat       = (act >= est) if est is not None else None
+#                         earnings_nearby     = days_since_earnings <= 30
+#                         break
+#             except Exception as e:
+#                 print(f"[Scanner] {sym} earnings lookup error (non-fatal): {e}")
+
+#             # ── Score ─────────────────────────────────────────────────────────
+#             score = 0
+#             if range_to_trend:
+#                 score += 35
+#             elif adx_rising and adx_now > 18:
+#                 score += 20
+#             score += min(20, max(0, (adx_now - 15) * 1.0))
+#             if roc_accelerating:
+#                 score += min(15, acceleration * 3)
+#             if vol_ratio is not None:
+#                 score += min(15, (vol_ratio - 1.0) * 15)
+#             if breaking_out:
+#                 score += 10
+#             if earnings_nearby and earnings_beat:
+#                 score += 5
+#             score = round(min(100, max(0, score)), 1)
+
+#             if score < 20:
+#                 return None
+
+#             # ── Signal label ──────────────────────────────────────────────────
+#             if range_to_trend and bullish:
+#                 signal = 'RANGE_BREAKOUT_BULL'
+#             elif range_to_trend and bearish:
+#                 signal = 'RANGE_BREAKOUT_BEAR'
+#             elif adx_rising and roc_accelerating and bullish:
+#                 signal = 'ACCELERATING_BULL'
+#             elif adx_rising and roc_accelerating and bearish:
+#                 signal = 'ACCELERATING_BEAR'
+#             elif breaking_out and bullish:
+#                 signal = 'BREAKOUT'
+#             elif adx_rising:
+#                 signal = 'TREND_BUILDING'
+#             else:
+#                 signal = 'WATCH'
+
+#             print(f"[Scanner] ✓ {sym} score:{score} signal:{signal} adx:{adx_now} roc20:{roc20}%")
+
+#             return {
+#                 'ticker':            sym,
+#                 'name':              short_name,
+#                 'sector':            sector,
+#                 'marketCap':         clean(market_cap),
+#                 'currentPrice':      clean(round(float(curr_price), 2)) if curr_price else None,
+#                 'score':             clean(score),
+#                 'signal':            signal,
+#                 'direction':         'BULLISH' if bullish else 'BEARISH' if bearish else 'NEUTRAL',
+#                 'adxNow':            clean(adx_now),
+#                 'adx5Ago':           clean(adx_5ago),
+#                 'adx20Ago':          clean(adx_20ago),
+#                 'plusDI':            clean(plus_di),
+#                 'minusDI':           clean(minus_di),
+#                 'rangeToTrend':      clean(range_to_trend),
+#                 'adxRising':         clean(adx_rising),
+#                 'roc5':              clean(roc5),
+#                 'roc10':             clean(roc10),
+#                 'roc20':             clean(roc20),
+#                 'acceleration':      clean(acceleration),
+#                 'rocAccelerating':   clean(roc_accelerating),
+#                 'volRatio':          clean(vol_ratio),
+#                 'volConfirming':     clean(vol_confirming),
+#                 'high52w':           clean(high_52w),
+#                 'low52w':            clean(low_52w),
+#                 'pctFromHigh':       clean(pct_from_high),
+#                 'pctFromLow':        clean(pct_from_low),
+#                 'breakingOut':       clean(breaking_out),
+#                 'lastEarningsDate':  last_earnings_date,
+#                 'daysSinceEarnings': clean(days_since_earnings),
+#                 'earningsNearby':    clean(earnings_nearby),
+#                 'earningsBeat':      clean(earnings_beat),
+#             }
+
+#         except Exception as e:
+#             # Top-level catch — this ticker is dead, log and move on
+#             print(f"[Scanner] {sym} FAILED (top-level): {e}")
+#             return None
 
     # ── Parallel scan ─────────────────────────────────────────────────────────
     import time
