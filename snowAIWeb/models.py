@@ -3338,6 +3338,7 @@ class SnowVaultScannerCache(models.Model):
     scanned_at      = models.CharField(max_length=32, null=True, blank=True)
     is_running      = models.BooleanField(default=False)
     last_error      = models.TextField(null=True, blank=True)
+    last_triggered_at = models.DateTimeField(null=True, blank=True)
     updated_at      = models.DateTimeField(auto_now=True)
 
     class Meta:
