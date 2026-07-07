@@ -50597,4 +50597,3648 @@ ASSET_LISTS = {
         'REG', 'SBAC', 'SLG', 'UDR', 'VTR', 'WELL', 'WY', 'INVH', 'PEAK', 'VNO',
         
         # Materials & Chemicals
-        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'NEM', 'FCX', 'DOW', 'LYB', 'CE',
+        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'NEM', 'FCX', 'DOW', 'LYB', 'CE', 
+        'ALB', 'EMN', 'SQM', 'AMCR', 'BALL', 'CF', 'CLF', 'CTVA', 'FMC', 'IP', 
+        'MLM', 'MOS', 'NUE', 'PKG', 'PPG', 'SEE', 'STLD', 'SW', 'VMC', 'AVY', 
+        'AA', 'MP', 'RS',
+        
+        # Utilities
+        'NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE', 'AEE', 'AES', 'AWK', 
+        'CMS', 'CNP', 'DTE', 'ED', 'EIX', 'ES', 'ETR', 'EVRG', 'FE', 'LNT', 
+        'NI', 'NRG', 'PCG', 'PEG', 'PNW', 'PPL', 'VST', 'WEC', 'XEL', 'CEG',
+        
+        # Chinese ADRs
+        'BABA', 'JD', 'PDD', 'BIDU', 'NIO', 'XPEV', 'LI',
+    ],
+    'indices': [
+        # US Indices
+        '^GSPC', '^DJI', '^IXIC', '^RUT', '^VIX',
+        # European Indices
+        '^FTSE', '^GDAXI', '^FCHI', '^IBEX', '^AEX',
+        '^SSMI', '^OMXS30', '^BFX',
+        # Asian Indices
+        '^N225', '^HSI', '000001.SS', '^STI', '^BSESN',
+        '^NSEI', '^KS11', '^TWII', '^JKSE',
+        # Other Global Indices
+        '^AXJO', '^GSPTSE', '^MXX', '^BVSP', '^MERV',
+    ],
+    'commodities': [
+        # Precious Metals
+        'GC=F', 'SI=F', 'PL=F', 'PA=F',
+        # Energy
+        'CL=F', 'BZ=F', 'NG=F', 'RB=F', 'HO=F',
+        # Base Metals
+        'HG=F', 'ALI=F',
+        # Agricultural
+        'ZC=F', 'ZW=F', 'ZS=F', 'KC=F', 'SB=F',
+        'CT=F', 'CC=F', 'LBS=F',
+    ],
+    'bonds': [
+        # US Treasury Yields
+        '^TNX', '^TYX', '^FVX', '^IRX',
+        # Treasury Futures
+        'ZN=F', 'ZB=F', 'ZT=F', 'ZF=F',
+    ],
+}
+
+PERIODS = [10, 15, 20, 30, 45, 60, 90, 180]
+
+# Track progress for each period
+period_progress = {p: {'status': 'pending', 'last_run': None, 'records': 0, 'current_asset': ''} for p in PERIODS}
+
+# ============================================================
+# COMPLETE SECTOR MAPPINGS
+# ============================================================
+
+SECTOR_MAP = {
+    # Tech Giants & Semiconductors
+    'AAPL': 'Technology', 'MSFT': 'Technology', 'GOOGL': 'Technology', 'GOOG': 'Technology',
+    'AMZN': 'Consumer Cyclical', 'NVDA': 'Technology', 'TSLA': 'Consumer Cyclical',
+    'META': 'Technology', 'AMD': 'Technology', 'INTC': 'Technology', 'ORCL': 'Technology',
+    'CSCO': 'Technology', 'ADBE': 'Technology', 'CRM': 'Technology', 'AVGO': 'Technology',
+    'QCOM': 'Technology', 'TXN': 'Technology', 'AMAT': 'Technology', 'LRCX': 'Technology',
+    'KLAC': 'Technology', 'SNPS': 'Technology', 'CDNS': 'Technology', 'MRVL': 'Technology',
+    'NXPI': 'Technology', 'MU': 'Technology', 'ADI': 'Technology', 'MPWR': 'Technology',
+    'SWKS': 'Technology', 'QRVO': 'Technology', 'ON': 'Technology', 'IBM': 'Technology',
+    'AAOI': 'Technology', 'ACLS': 'Technology', 'ACN': 'Technology', 'ADSK': 'Technology',
+    'AKAM': 'Technology', 'ANSS': 'Technology', 'APH': 'Technology', 'ANET': 'Technology',
+    'ASML': 'Technology', 'AVAV': 'Technology', 'KEYS': 'Technology', 'MCHP': 'Technology',
+    'MTSI': 'Technology', 'MSI': 'Technology', 'MDB': 'Technology', 'NTAP': 'Technology',
+    'NTNX': 'Technology', 'PAYC': 'Technology', 'PTC': 'Technology', 'ROP': 'Technology',
+    'SAP': 'Technology', 'SLAB': 'Technology', 'STX': 'Technology', 'TER': 'Technology',
+    'TSM': 'Technology', 'TYL': 'Technology', 'UMC': 'Technology', 'VRSN': 'Technology',
+    'WDC': 'Technology', 'XLNX': 'Technology', 'ZBRA': 'Technology', 'NOW': 'Technology',
+    'INTU': 'Technology', 'WDAY': 'Technology', 'PANW': 'Technology', 'CRWD': 'Technology',
+    'ZS': 'Technology', 'DDOG': 'Technology', 'NET': 'Technology', 'SNOW': 'Technology',
+    'PLTR': 'Technology', 'TEAM': 'Technology', 'FTNT': 'Technology', 'OKTA': 'Technology',
+    'S': 'Technology', 'CYBR': 'Technology', 'ZM': 'Technology', 'DOCU': 'Technology',
+    'TWLO': 'Technology', 'SQ': 'Technology', 'UBER': 'Technology', 'LYFT': 'Technology',
+    'DASH': 'Technology', 'PINS': 'Technology', 'SNAP': 'Technology', 'SPOT': 'Technology',
+    'ROKU': 'Technology', 'Z': 'Technology', 'ZG': 'Technology', 'AFRM': 'Technology',
+    'COIN': 'Technology', 'HOOD': 'Technology', 'SOFI': 'Technology', 'RBLX': 'Technology',
+    'ASTS': 'Technology',
+    
+    # Financial Services & Banks
+    'JPM': 'Financial', 'BAC': 'Financial', 'WFC': 'Financial', 'C': 'Financial',
+    'GS': 'Financial', 'MS': 'Financial', 'BLK': 'Financial', 'SCHW': 'Financial',
+    'AXP': 'Financial', 'SPGI': 'Financial', 'CME': 'Financial', 'ICE': 'Financial',
+    'MCO': 'Financial', 'BK': 'Financial', 'USB': 'Financial', 'PNC': 'Financial',
+    'TFC': 'Financial', 'COF': 'Financial', 'V': 'Financial', 'MA': 'Financial',
+    'PYPL': 'Financial', 'ADP': 'Financial', 'FISV': 'Financial', 'FIS': 'Financial',
+    'AFL': 'Financial', 'AMG': 'Financial', 'AON': 'Financial', 'AJG': 'Financial',
+    'AMP': 'Financial', 'BEN': 'Financial', 'CBOE': 'Financial', 'CINF': 'Financial',
+    'DFS': 'Financial', 'ERIE': 'Financial', 'FITB': 'Financial', 'FRC': 'Financial',
+    'GL': 'Financial', 'HBAN': 'Financial', 'HIG': 'Financial', 'IVZ': 'Financial',
+    'JKHY': 'Financial', 'KEY': 'Financial', 'L': 'Financial', 'LNC': 'Financial',
+    'MTB': 'Financial', 'NTRS': 'Financial', 'NDAQ': 'Financial', 'PFG': 'Financial',
+    'RF': 'Financial', 'RJF': 'Financial', 'SIVB': 'Financial', 'STT': 'Financial',
+    'SYF': 'Financial', 'TROW': 'Financial', 'WRB': 'Financial', 'ZION': 'Financial',
+    'CFG': 'Financial', 'CMA': 'Financial', 'FHN': 'Financial', 'EWBC': 'Financial',
+    'WAL': 'Financial', 'WBS': 'Financial', 'ALLY': 'Financial',
+    
+    # Insurance
+    'BRK-B': 'Financial', 'PGR': 'Financial', 'ALL': 'Financial', 'TRV': 'Financial',
+    'AIG': 'Financial', 'MET': 'Financial', 'PRU': 'Financial',
+    
+    # Healthcare & Pharma
+    'JNJ': 'Healthcare', 'LLY': 'Healthcare', 'UNH': 'Healthcare', 'PFE': 'Healthcare',
+    'ABBV': 'Healthcare', 'MRK': 'Healthcare', 'TMO': 'Healthcare', 'ABT': 'Healthcare',
+    'DHR': 'Healthcare', 'BMY': 'Healthcare', 'AMGN': 'Healthcare', 'GILD': 'Healthcare',
+    'CVS': 'Healthcare', 'CI': 'Healthcare', 'ELV': 'Healthcare', 'HUM': 'Healthcare',
+    'VRTX': 'Healthcare', 'REGN': 'Healthcare', 'ISRG': 'Healthcare', 'BIIB': 'Healthcare',
+    'MRNA': 'Healthcare', 'BNTX': 'Healthcare', 'SGEN': 'Healthcare', 'ALNY': 'Healthcare',
+    'BGNE': 'Healthcare', 'MCK': 'Healthcare', 'CAH': 'Healthcare', 'COR': 'Healthcare',
+    'IDXX': 'Healthcare', 'A': 'Healthcare', 'WAT': 'Healthcare', 'ALGN': 'Healthcare',
+    'ATRC': 'Healthcare', 'BAX': 'Healthcare', 'BDX': 'Healthcare', 'BIO': 'Healthcare',
+    'BSX': 'Healthcare', 'CERN': 'Healthcare', 'DXCM': 'Healthcare', 'EW': 'Healthcare',
+    'EXAS': 'Healthcare', 'HOLX': 'Healthcare', 'HSIC': 'Healthcare', 'ILMN': 'Healthcare',
+    'INCY': 'Healthcare', 'IQV': 'Healthcare', 'LH': 'Healthcare', 'MDT': 'Healthcare',
+    'MOH': 'Healthcare', 'NBIX': 'Healthcare', 'PKI': 'Healthcare', 'PODD': 'Healthcare',
+    'RMD': 'Healthcare', 'STE': 'Healthcare', 'SYK': 'Healthcare', 'TFX': 'Healthcare',
+    'UHS': 'Healthcare', 'WST': 'Healthcare', 'XRAY': 'Healthcare', 'ZBH': 'Healthcare',
+    'ZTS': 'Healthcare', 'TDOC': 'Healthcare', 'DOCS': 'Healthcare', 'VEEV': 'Healthcare',
+    'HALO': 'Healthcare', 'NVAX': 'Healthcare', 'IONS': 'Healthcare', 'UTHR': 'Healthcare',
+    
+    # Consumer Discretionary & Retail
+    'HD': 'Consumer Cyclical', 'MCD': 'Consumer Cyclical', 'NKE': 'Consumer Cyclical',
+    'SBUX': 'Consumer Cyclical', 'TJX': 'Consumer Cyclical', 'LOW': 'Consumer Cyclical',
+    'BKNG': 'Consumer Cyclical', 'MAR': 'Consumer Cyclical', 'CMG': 'Consumer Cyclical',
+    'F': 'Consumer Cyclical', 'GM': 'Consumer Cyclical', 'ABNB': 'Consumer Cyclical',
+    'SHOP': 'Consumer Cyclical', 'MELI': 'Consumer Cyclical', 'EBAY': 'Consumer Cyclical',
+    'ETSY': 'Consumer Cyclical', 'TGT': 'Consumer Cyclical', 'ROST': 'Consumer Cyclical',
+    'YUM': 'Consumer Cyclical', 'DPZ': 'Consumer Cyclical', 'QSR': 'Consumer Cyclical',
+    'AAL': 'Consumer Cyclical', 'DAL': 'Consumer Cyclical', 'UAL': 'Consumer Cyclical',
+    'LUV': 'Consumer Cyclical', 'CCL': 'Consumer Cyclical', 'RCL': 'Consumer Cyclical',
+    'EA': 'Consumer Cyclical', 'TTWO': 'Consumer Cyclical', 'U': 'Consumer Cyclical',
+    'RIVN': 'Consumer Cyclical', 'LCID': 'Consumer Cyclical', 'AZO': 'Consumer Cyclical',
+    'BBY': 'Consumer Cyclical', 'BURL': 'Consumer Cyclical', 'CPRT': 'Consumer Cyclical',
+    'DHI': 'Consumer Cyclical', 'DRI': 'Consumer Cyclical', 'EXPE': 'Consumer Cyclical',
+    'GPC': 'Consumer Cyclical', 'GRMN': 'Consumer Cyclical', 'HAS': 'Consumer Cyclical',
+    'HLT': 'Consumer Cyclical', 'KMX': 'Consumer Cyclical', 'LEN': 'Consumer Cyclical',
+    'LVS': 'Consumer Cyclical', 'MGM': 'Consumer Cyclical', 'MHK': 'Consumer Cyclical',
+    'NVR': 'Consumer Cyclical', 'ORLY': 'Consumer Cyclical', 'PHM': 'Consumer Cyclical',
+    'POOL': 'Consumer Cyclical', 'RL': 'Consumer Cyclical', 'TSCO': 'Consumer Cyclical',
+    'TPR': 'Consumer Cyclical', 'ULTA': 'Consumer Cyclical', 'VFC': 'Consumer Cyclical',
+    'WHR': 'Consumer Cyclical', 'WYNN': 'Consumer Cyclical', 'APTV': 'Consumer Cyclical',
+    'BWA': 'Consumer Cyclical', 'DG': 'Consumer Cyclical', 'DLTR': 'Consumer Cyclical',
+    'DDS': 'Consumer Cyclical', 'FIVE': 'Consumer Cyclical', 'FL': 'Consumer Cyclical',
+    'FOXA': 'Consumer Cyclical', 'FOX': 'Consumer Cyclical', 'GPS': 'Consumer Cyclical',
+    'GT': 'Consumer Cyclical', 'HBI': 'Consumer Cyclical', 'LAD': 'Consumer Cyclical',
+    'LKQ': 'Consumer Cyclical', 'M': 'Consumer Cyclical', 'NCLH': 'Consumer Cyclical',
+    'NWL': 'Consumer Cyclical', 'PVH': 'Consumer Cyclical',
+    
+    # Consumer Staples
+    'WMT': 'Consumer Defensive', 'PG': 'Consumer Defensive', 'KO': 'Consumer Defensive',
+    'PEP': 'Consumer Defensive', 'COST': 'Consumer Defensive', 'PM': 'Consumer Defensive',
+    'MO': 'Consumer Defensive', 'MDLZ': 'Consumer Defensive', 'CL': 'Consumer Defensive',
+    'KMB': 'Consumer Defensive', 'GIS': 'Consumer Defensive', 'KHC': 'Consumer Defensive',
+    'STZ': 'Consumer Defensive', 'ADM': 'Consumer Defensive', 'BF-B': 'Consumer Defensive',
+    'CAG': 'Consumer Defensive', 'CHD': 'Consumer Defensive', 'CLX': 'Consumer Defensive',
+    'CPB': 'Consumer Defensive', 'EL': 'Consumer Defensive', 'HSY': 'Consumer Defensive',
+    'K': 'Consumer Defensive', 'KDP': 'Consumer Defensive', 'KR': 'Consumer Defensive',
+    'KVUE': 'Consumer Defensive', 'MKC': 'Consumer Defensive', 'MNST': 'Consumer Defensive',
+    'SJM': 'Consumer Defensive', 'SYY': 'Consumer Defensive', 'TAP': 'Consumer Defensive',
+    'TSN': 'Consumer Defensive', 'WBA': 'Consumer Defensive', 'BGS': 'Consumer Defensive',
+    'BG': 'Consumer Defensive', 'COKE': 'Consumer Defensive', 'FLO': 'Consumer Defensive',
+    'HRL': 'Consumer Defensive', 'LANC': 'Consumer Defensive', 'POST': 'Consumer Defensive',
+    
+    # Energy
+    'XOM': 'Energy', 'CVX': 'Energy', 'COP': 'Energy', 'EOG': 'Energy', 'SLB': 'Energy',
+    'MPC': 'Energy', 'PSX': 'Energy', 'VLO': 'Energy', 'OXY': 'Energy', 'HAL': 'Energy',
+    'DVN': 'Energy', 'HES': 'Energy', 'BKR': 'Energy', 'APA': 'Energy', 'CTRA': 'Energy',
+    'FANG': 'Energy', 'KMI': 'Energy', 'LNG': 'Energy', 'MRO': 'Energy', 'NOV': 'Energy',
+    'OKE': 'Energy', 'TRGP': 'Energy', 'WMB': 'Energy', 'EQT': 'Energy', 'AR': 'Energy',
+    'CLR': 'Energy', 'CNX': 'Energy', 'CQP': 'Energy', 'EXE': 'Energy', 'FTI': 'Energy',
+    'HP': 'Energy', 'MTDR': 'Energy', 'NBL': 'Energy', 'OVV': 'Energy', 'PBF': 'Energy',
+    'PR': 'Energy', 'RIG': 'Energy', 'SM': 'Energy', 'VAL': 'Energy', 'XEC': 'Energy',
+    
+    # Industrials
+    'BA': 'Industrials', 'HON': 'Industrials', 'UNP': 'Industrials', 'CAT': 'Industrials',
+    'GE': 'Industrials', 'RTX': 'Industrials', 'LMT': 'Industrials', 'UPS': 'Industrials',
+    'DE': 'Industrials', 'MMM': 'Industrials', 'GD': 'Industrials', 'NOC': 'Industrials',
+    'FDX': 'Industrials', 'CSX': 'Industrials', 'HWM': 'Industrials', 'TDG': 'Industrials',
+    'HEI': 'Industrials', 'LHX': 'Industrials', 'TXT': 'Industrials', 'AOS': 'Industrials',
+    'CARR': 'Industrials', 'CHRW': 'Industrials', 'CMI': 'Industrials', 'DOV': 'Industrials',
+    'EMR': 'Industrials', 'ETN': 'Industrials', 'EXPD': 'Industrials', 'FAST': 'Industrials',
+    'FTV': 'Industrials', 'GNRC': 'Industrials', 'GWW': 'Industrials', 'IEX': 'Industrials',
+    'IR': 'Industrials', 'ITW': 'Industrials', 'J': 'Industrials', 'JBHT': 'Industrials',
+    'JCI': 'Industrials', 'LDOS': 'Industrials', 'MAS': 'Industrials', 'NSC': 'Industrials',
+    'ODFL': 'Industrials', 'OTIS': 'Industrials', 'PCAR': 'Industrials', 'PH': 'Industrials',
+    'PWR': 'Industrials', 'ROK': 'Industrials', 'ROL': 'Industrials', 'RSG': 'Industrials',
+    'SNA': 'Industrials', 'SWK': 'Industrials', 'TT': 'Industrials', 'URI': 'Industrials',
+    'VRSK': 'Industrials', 'WAB': 'Industrials', 'WM': 'Industrials', 'XYL': 'Industrials',
+    'ALK': 'Industrials', 'JBLU': 'Industrials', 'SAVE': 'Industrials',
+    
+    # Communication Services & Media
+    'T': 'Communication', 'VZ': 'Communication', 'CMCSA': 'Communication',
+    'NFLX': 'Communication', 'DIS': 'Communication', 'TMUS': 'Communication',
+    'CHTR': 'Communication', 'LYV': 'Communication', 'MTCH': 'Communication',
+    'NWSA': 'Communication', 'NWS': 'Communication', 'OMC': 'Communication',
+    'PARA': 'Communication', 'WBD': 'Communication', 'IPG': 'Communication',
+    'DISH': 'Communication',
+    
+    # Real Estate & REITs
+    'AMT': 'Real Estate', 'PLD': 'Real Estate', 'CCI': 'Real Estate', 'EQIX': 'Real Estate',
+    'PSA': 'Real Estate', 'SPG': 'Real Estate', 'O': 'Real Estate', 'AVB': 'Real Estate',
+    'ARE': 'Real Estate', 'BXP': 'Real Estate', 'CBRE': 'Real Estate', 'DLR': 'Real Estate',
+    'EQR': 'Real Estate', 'ESS': 'Real Estate', 'EXR': 'Real Estate', 'FRT': 'Real Estate',
+    'HST': 'Real Estate', 'IRM': 'Real Estate', 'KIM': 'Real Estate', 'MAA': 'Real Estate',
+    'REG': 'Real Estate', 'SBAC': 'Real Estate', 'SLG': 'Real Estate', 'UDR': 'Real Estate',
+    'VTR': 'Real Estate', 'WELL': 'Real Estate', 'WY': 'Real Estate', 'INVH': 'Real Estate',
+    'PEAK': 'Real Estate', 'VNO': 'Real Estate',
+    
+    # Materials & Chemicals
+    'LIN': 'Materials', 'APD': 'Materials', 'SHW': 'Materials', 'ECL': 'Materials',
+    'DD': 'Materials', 'NEM': 'Materials', 'FCX': 'Materials', 'DOW': 'Materials',
+    'LYB': 'Materials', 'CE': 'Materials', 'ALB': 'Materials', 'EMN': 'Materials',
+    'SQM': 'Materials', 'AMCR': 'Materials', 'BALL': 'Materials', 'CF': 'Materials',
+    'CLF': 'Materials', 'CTVA': 'Materials', 'FMC': 'Materials', 'IP': 'Materials',
+    'MLM': 'Materials', 'MOS': 'Materials', 'NUE': 'Materials', 'PKG': 'Materials',
+    'PPG': 'Materials', 'SEE': 'Materials', 'STLD': 'Materials', 'SW': 'Materials',
+    'VMC': 'Materials', 'AVY': 'Materials', 'AA': 'Materials', 'MP': 'Materials',
+    'RS': 'Materials',
+    
+    # Utilities
+    'NEE': 'Utilities', 'DUK': 'Utilities', 'SO': 'Utilities', 'D': 'Utilities',
+    'AEP': 'Utilities', 'EXC': 'Utilities', 'SRE': 'Utilities', 'AEE': 'Utilities',
+    'AES': 'Utilities', 'AWK': 'Utilities', 'CMS': 'Utilities', 'CNP': 'Utilities',
+    'DTE': 'Utilities', 'ED': 'Utilities', 'EIX': 'Utilities', 'ES': 'Utilities',
+    'ETR': 'Utilities', 'EVRG': 'Utilities', 'FE': 'Utilities', 'LNT': 'Utilities',
+    'NI': 'Utilities', 'NRG': 'Utilities', 'PCG': 'Utilities', 'PEG': 'Utilities',
+    'PNW': 'Utilities', 'PPL': 'Utilities', 'VST': 'Utilities', 'WEC': 'Utilities',
+    'XEL': 'Utilities', 'CEG': 'Utilities',
+    
+    # Chinese ADRs
+    'BABA': 'Technology', 'JD': 'Consumer Cyclical', 'PDD': 'Consumer Cyclical',
+    'BIDU': 'Technology', 'NIO': 'Consumer Cyclical', 'XPEV': 'Consumer Cyclical',
+    'LI': 'Consumer Cyclical',
+}
+
+# ============================================================
+# MSS HELPER FUNCTIONS
+# ============================================================
+
+def _get_analyst_data(symbol):
+    """Fetch real analyst ratings from yfinance."""
+    try:
+        ticker = yf.Ticker(symbol)
+        recommendations = ticker.recommendations
+        
+        if recommendations is not None and not recommendations.empty:
+            latest = recommendations.iloc[-1]
+            grade = str(latest.get('To Grade', latest.get('Firm', ''))).lower()
+            
+            if 'buy' in grade or 'outperform' in grade or 'overweight' in grade:
+                return 85.0, 'bullish'
+            elif 'hold' in grade or 'neutral' in grade or 'market perform' in grade:
+                return 50.0, 'neutral'
+            elif 'sell' in grade or 'underperform' in grade or 'underweight' in grade:
+                return 15.0, 'bearish'
+        
+        info = ticker.info
+        if info:
+            rec = info.get('recommendationKey', '').lower()
+            if rec in ['buy', 'strong_buy']:
+                return 85.0, 'bullish'
+            elif rec == 'hold':
+                return 50.0, 'neutral'
+            elif rec in ['sell', 'strong_sell']:
+                return 15.0, 'bearish'
+        
+        return None, None
+    except Exception as e:
+        logger.debug(f"Analyst data error for {symbol}: {e}")
+        return None, None
+
+def _get_options_data(symbol):
+    """Fetch real put/call ratio from yfinance options data."""
+    try:
+        ticker = yf.Ticker(symbol)
+        expirations = ticker.options
+        if not expirations:
+            return None, None
+            
+        for expiry in expirations[:3]:
+            try:
+                opt_chain = ticker.option_chain(expiry)
+                
+                if opt_chain.calls is not None and opt_chain.puts is not None:
+                    total_call_vol = opt_chain.calls['volume'].sum() if 'volume' in opt_chain.calls.columns else 0
+                    total_put_vol = opt_chain.puts['volume'].sum() if 'volume' in opt_chain.puts.columns else 0
+                    
+                    if total_call_vol == 0:
+                        total_call_vol = opt_chain.calls['openInterest'].sum() if 'openInterest' in opt_chain.calls.columns else 0
+                        total_put_vol = opt_chain.puts['openInterest'].sum() if 'openInterest' in opt_chain.puts.columns else 0
+                    
+                    if total_call_vol > 0:
+                        put_call_ratio = total_put_vol / total_call_vol
+                        
+                        if put_call_ratio > 1.2:
+                            return round(put_call_ratio, 3), 'bearish'
+                        elif put_call_ratio < 0.8:
+                            return round(put_call_ratio, 3), 'bullish'
+                        else:
+                            return round(put_call_ratio, 3), 'neutral'
+            except Exception:
+                continue
+                
+        return None, None
+    except Exception as e:
+        logger.debug(f"Options data error for {symbol}: {e}")
+        return None, None
+
+def _compute_mss_for_symbol(symbol: str, period_days: int, all_volatilities: list):
+    """Returns a dict of raw metrics with real analyst and options data."""
+    min_required_bars = max(min(period_days, 15), 5)
+    fetch_period = f"{period_days + 10}d" if period_days > 30 else f"{period_days}d"
+
+    try:
+        ticker = yf.Ticker(symbol)
+        
+        max_retries = 2
+        hist = None
+        for attempt in range(max_retries):
+            try:
+                hist = ticker.history(period=fetch_period)
+                if not hist.empty:
+                    break
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                else:
+                    raise e
+        
+        if hist.empty or len(hist) < min_required_bars:
+            return None
+        
+        if len(hist) > period_days:
+            hist = hist.tail(period_days)
+        
+        hist['returns'] = hist['Close'].pct_change()
+        returns = hist['returns'].dropna()
+        if len(returns) < 2:
+            return None
+        
+        try:
+            volatility = float(returns.std())
+            if volatility == 0:
+                volatility = 0.0001
+        except:
+            volatility = 0.01
+        
+        prices = hist['Close'].values
+        if len(prices) < 2:
+            return None
+            
+        X = np.arange(len(prices)).reshape(-1, 1)
+        y = prices.reshape(-1, 1)
+        model = LinearRegression()
+        model.fit(X, y)
+        r_squared = float(max(0, min(model.score(X, y), 1.0)))
+        
+        positive_days = (returns > 0).sum()
+        trend_consistency = float(abs(positive_days / len(returns) - 0.5) * 2)
+        
+        slope_per_day = model.coef_[0][0]
+        avg_price = float(np.mean(prices))
+        if len(prices) > 1 and avg_price > 0:
+            trend_strength = float(min(abs(slope_per_day * len(prices)) / avg_price, 1.0))
+        else:
+            trend_strength = 0.0
+        
+        avg_volume = float(hist['Volume'].mean())
+        if avg_volume > 10_000_000:
+            liquidity_factor = 1.2
+        elif avg_volume > 5_000_000:
+            liquidity_factor = 1.1
+        elif avg_volume > 1_000_000:
+            liquidity_factor = 1.0
+        elif avg_volume > 500_000:
+            liquidity_factor = 0.95
+        elif avg_volume > 100_000:
+            liquidity_factor = 0.9
+        else:
+            liquidity_factor = 0.8
+        
+        current_price = float(hist['Close'].iloc[-1])
+        start_price = float(hist['Close'].iloc[0])
+        price_change = ((current_price - start_price) / start_price * 100) if start_price and start_price > 0 else 0.0
+        
+        analyst_rating_pct, analyst_bias = _get_analyst_data(symbol)
+        put_call_ratio, put_call_bias = _get_options_data(symbol)
+        
+        all_volatilities.append(volatility)
+        
+        return {
+            'symbol': symbol,
+            'volatility': volatility,
+            'r_squared': r_squared,
+            'trend_consistency': trend_consistency,
+            'trend_strength': trend_strength,
+            'liquidity_factor': liquidity_factor,
+            'current_price': current_price,
+            'price_change': price_change,
+            'data_points': len(hist),
+            'avg_volume': int(avg_volume),
+            'analyst_rating_pct': analyst_rating_pct,
+            'analyst_bias': analyst_bias,
+            'put_call_ratio': put_call_ratio,
+            'put_call_bias': put_call_bias,
+        }
+    except Exception as e:
+        logger.error(f"Error processing {symbol} for period {period_days}: {e}")
+        return None
+
+def _finalise_and_save(temp_results: list, period_days: int, today: date, asset_class: str):
+    """Normalise volatility, compute MSS, persist to DB."""
+    if not temp_results:
+        return 0
+
+    all_vols = [r['volatility'] for r in temp_results]
+    max_volatility = max(all_vols) or 1.0
+
+    saved = 0
+    for t in temp_results:
+        try:
+            norm_vol = t['volatility'] / max_volatility
+            trend_score = (
+                t['r_squared'] * 0.5 +
+                t['trend_consistency'] * 0.3 +
+                t['trend_strength'] * 0.2
+            ) * 100
+            stability_factor = (1 - norm_vol) ** 0.6
+            mss = min(max(trend_score * stability_factor * t['liquidity_factor'], 0), 100)
+
+            if mss >= 47:
+                category = 'stable'
+            elif mss >= 30:
+                category = 'choppy'
+            else:
+                category = 'volatile'
+
+            symbol = t['symbol']
+            MSSHistoricalRecord.objects.update_or_create(
+                symbol=symbol,
+                date_taken=today,
+                period_days=period_days,
+                defaults=dict(
+                    asset_class=asset_class,
+                    sector=SECTOR_MAP.get(symbol),
+                    mss=round(mss, 4),
+                    r_squared=round(t['r_squared'], 6),
+                    volatility=round(t['volatility'], 6),
+                    normalized_volatility=round(norm_vol, 6),
+                    trend_consistency=round(t['trend_consistency'], 6),
+                    trend_strength=round(t['trend_strength'], 6),
+                    liquidity_factor=round(t['liquidity_factor'], 4),
+                    category=category,
+                    current_price=round(t['current_price'], 4),
+                    price_change=round(t['price_change'], 4),
+                    avg_volume=t['avg_volume'],
+                    data_points=t['data_points'],
+                    analyst_rating_pct=round(t['analyst_rating_pct'], 2) if t['analyst_rating_pct'] is not None else None,
+                    analyst_bias=t['analyst_bias'],
+                    put_call_ratio=round(t['put_call_ratio'], 4) if t['put_call_ratio'] is not None else None,
+                    put_call_bias=t['put_call_bias'],
+                )
+            )
+            saved += 1
+        except Exception as e:
+            logger.error(f"DB save error for {t['symbol']}: {e}")
+
+    return saved
+
+def run_period_snapshot(period_days: int):
+    """Run MSS snapshot for a specific period only."""
+    today = date.today()
+    logger.info(f"[MSS Scheduler] Starting snapshot for {period_days}d period")
+    period_progress[period_days]['status'] = 'running'
+    period_progress[period_days]['current_asset'] = 'Starting...'
+    
+    total_saved = 0
+    total_processed = 0
+    
+    try:
+        for asset_class, symbols in ASSET_LISTS.items():
+            logger.info(f"  → {asset_class.upper()} | {period_days}d period ({len(symbols)} symbols)")
+            temp_results = []
+            all_volatilities = []
+
+            for i, symbol in enumerate(symbols):
+                period_progress[period_days]['current_asset'] = f"{asset_class}: {symbol} ({i+1}/{len(symbols)})"
+                
+                result = _compute_mss_for_symbol(symbol, period_days, all_volatilities)
+                total_processed += 1
+                if result:
+                    temp_results.append(result)
+                
+                if i % 10 == 0:
+                    time.sleep(0.5)
+
+            saved = _finalise_and_save(temp_results, period_days, today, asset_class)
+            total_saved += saved
+            logger.info(f"     ✓ Saved {saved}/{len(temp_results)} records for {asset_class}")
+        
+        period_progress[period_days]['status'] = 'completed'
+        period_progress[period_days]['last_run'] = datetime.now().isoformat()
+        period_progress[period_days]['records'] = total_saved
+        period_progress[period_days]['current_asset'] = 'Done'
+        
+        logger.info(f"[MSS Scheduler] {period_days}d period complete. Saved: {total_saved} records")
+        
+    except Exception as e:
+        period_progress[period_days]['status'] = 'failed'
+        period_progress[period_days]['current_asset'] = str(e)
+        logger.error(f"[MSS Scheduler] {period_days}d period failed: {e}")
+    
+    return total_saved
+
+# ============================================================
+# STAGGERED SCHEDULER - 20 MINUTE INTERVALS
+# ============================================================
+
+NY_TIMEZONE = pytz.timezone('America/New_York')
+
+# scheduler.add_job(
+#     lambda: run_period_snapshot(10),
+#     trigger=CronTrigger(hour=12, minute=0, timezone=NY_TIMEZONE),
+#     id='mss_period_10d',
+#     name='MSS Snapshot - 10 Day Period',
+#     replace_existing=True
+# )
+
+# scheduler.add_job(
+#     lambda: run_period_snapshot(15),
+#     trigger=CronTrigger(hour=12, minute=20, timezone=NY_TIMEZONE),
+#     id='mss_period_15d',
+#     name='MSS Snapshot - 15 Day Period',
+#     replace_existing=True
+# )
+
+# scheduler.add_job(
+#     lambda: run_period_snapshot(20),
+#     trigger=CronTrigger(hour=12, minute=40, timezone=NY_TIMEZONE),
+#     id='mss_period_20d',
+#     name='MSS Snapshot - 20 Day Period',
+#     replace_existing=True
+# )
+
+# scheduler.add_job(
+#     lambda: run_period_snapshot(30),
+#     trigger=CronTrigger(hour=13, minute=0, timezone=NY_TIMEZONE),
+#     id='mss_period_30d',
+#     name='MSS Snapshot - 30 Day Period',
+#     replace_existing=True
+# )
+
+# scheduler.add_job(
+#     lambda: run_period_snapshot(45),
+#     trigger=CronTrigger(hour=13, minute=20, timezone=NY_TIMEZONE),
+#     id='mss_period_45d',
+#     name='MSS Snapshot - 45 Day Period',
+#     replace_existing=True
+# )
+
+# scheduler.add_job(
+#     lambda: run_period_snapshot(60),
+#     trigger=CronTrigger(hour=13, minute=40, timezone=NY_TIMEZONE),
+#     id='mss_period_60d',
+#     name='MSS Snapshot - 60 Day Period',
+#     replace_existing=True
+# )
+
+# scheduler.add_job(
+#     lambda: run_period_snapshot(90),
+#     trigger=CronTrigger(hour=14, minute=0, timezone=NY_TIMEZONE),
+#     id='mss_period_90d',
+#     name='MSS Snapshot - 90 Day Period',
+#     replace_existing=True
+# )
+
+# scheduler.add_job(
+#     lambda: run_period_snapshot(180),
+#     trigger=CronTrigger(hour=14, minute=20, timezone=NY_TIMEZONE),
+#     id='mss_period_180d',
+#     name='MSS Snapshot - 180 Day Period',
+#     replace_existing=True
+# )
+
+# logger.info("[MSS Scheduler] All staggered jobs registered with 20-minute intervals")
+# logger.info("Schedule: 10d@12:00, 15d@12:20, 20d@12:40, 30d@13:00, 45d@13:20, 60d@13:40, 90d@14:00, 180d@14:20 NYC time")
+
+# ============================================================
+# API VIEWS - ALL THE ENDPOINTS
+# ============================================================
+
+@csrf_exempt
+@require_GET
+def mss_history(request):
+    """GET /api/mss/history/?symbol=AAPL&period=60&days=90&page=1&limit=100"""
+    symbol = request.GET.get('symbol', '').upper().strip()
+    period = request.GET.get('period')
+    days_back = int(request.GET.get('days', 365))
+    page = max(int(request.GET.get('page', 1)), 1)
+    limit = min(int(request.GET.get('limit', 100)), 500)
+
+    qs = MSSHistoricalRecord.objects.all()
+    if symbol:
+        qs = qs.filter(symbol=symbol)
+    if period:
+        qs = qs.filter(period_days=int(period))
+
+    since = date.today() - timedelta(days=days_back)
+    qs = qs.filter(date_taken__gte=since).order_by('-date_taken')
+
+    total = qs.count()
+    offset = (page - 1) * limit
+    records = list(qs[offset:offset + limit])
+
+    def record_to_dict(r):
+        return {
+            'id': r.id, 'symbol': r.symbol, 'asset_class': r.asset_class,
+            'sector': r.sector, 'date_taken': str(r.date_taken), 'period_days': r.period_days,
+            'mss': r.mss, 'r_squared': r.r_squared, 'volatility': r.volatility,
+            'normalized_volatility': r.normalized_volatility, 'trend_consistency': r.trend_consistency,
+            'trend_strength': r.trend_strength, 'liquidity_factor': r.liquidity_factor,
+            'category': r.category, 'current_price': r.current_price, 'price_change': r.price_change,
+            'avg_volume': r.avg_volume, 'data_points': r.data_points,
+            'analyst_rating_pct': r.analyst_rating_pct, 'analyst_bias': r.analyst_bias,
+            'put_call_ratio': r.put_call_ratio, 'put_call_bias': r.put_call_bias,
+        }
+
+    return JsonResponse({'success': True, 'total': total, 'page': page, 'limit': limit, 'data': [record_to_dict(r) for r in records]})
+
+@csrf_exempt
+@require_GET
+def mss_symbol_list(request):
+    """GET /api/mss/symbols/"""
+    symbols = MSSHistoricalRecord.objects.values('symbol', 'asset_class', 'sector').distinct().order_by('symbol')
+    return JsonResponse({'success': True, 'data': list(symbols)})
+
+@csrf_exempt
+@require_GET
+def mss_summary(request):
+    """GET /api/mss/summary/?period=60&date=2024-01-15"""
+    period = int(request.GET.get('period', 60))
+    date_str = request.GET.get('date', str(date.today()))
+
+    try:
+        snap_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        snap_date = date.today()
+
+    records = MSSHistoricalRecord.objects.filter(period_days=period, date_taken=snap_date).order_by('-mss')
+    
+    def record_to_dict(r):
+        return {
+            'symbol': r.symbol, 'asset_class': r.asset_class, 'sector': r.sector,
+            'mss': r.mss, 'category': r.category, 'r_squared': r.r_squared,
+            'volatility': r.volatility, 'current_price': r.current_price,
+            'price_change': r.price_change, 'analyst_rating_pct': r.analyst_rating_pct,
+            'analyst_bias': r.analyst_bias, 'put_call_ratio': r.put_call_ratio,
+            'put_call_bias': r.put_call_bias,
+        }
+
+    return JsonResponse({'success': True, 'date': str(snap_date), 'period': period, 'count': records.count(), 'data': [record_to_dict(r) for r in records]})
+
+@csrf_exempt
+@require_GET
+def mss_download(request, symbol):
+    """GET /api/mss/download/<SYMBOL>/?format=csv&period=60&days=365"""
+    fmt = request.GET.get('format', 'csv').lower()
+    period = request.GET.get('period')
+    days_back = int(request.GET.get('days', 365))
+
+    since = date.today() - timedelta(days=days_back)
+    qs = MSSHistoricalRecord.objects.filter(symbol=symbol.upper(), date_taken__gte=since)
+    if period:
+        qs = qs.filter(period_days=int(period))
+
+    qs = qs.order_by('-date_taken', 'period_days')
+    
+    export_columns = [
+        'symbol', 'asset_class', 'sector', 'date_taken', 'period_days',
+        'mss', 'r_squared', 'volatility', 'normalized_volatility',
+        'trend_consistency', 'trend_strength', 'liquidity_factor', 'category',
+        'current_price', 'price_change', 'avg_volume', 'data_points',
+        'analyst_rating_pct', 'analyst_bias', 'put_call_ratio', 'put_call_bias',
+    ]
+    
+    rows = []
+    for r in qs:
+        row = {}
+        for col in export_columns:
+            val = getattr(r, col)
+            if isinstance(val, date):
+                val = str(val)
+            row[col] = val
+        rows.append(row)
+
+    if fmt == 'csv':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{symbol}_mss_history.csv"'
+        writer = csv.DictWriter(response, fieldnames=export_columns)
+        writer.writeheader()
+        writer.writerows(rows)
+        return response
+    else:
+        return JsonResponse({'success': False, 'error': f'Format {fmt} not supported. Use csv.'}, status=400)
+
+@csrf_exempt
+@require_POST
+def mss_trigger_update(request):
+    """Manual trigger for MSS update - runs all periods"""
+    try:
+        total_saved = 0
+        for period in PERIODS:
+            total_saved += run_period_snapshot(period)
+        return JsonResponse({'success': True, 'message': 'MSS update completed', 'records_saved': total_saved})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_GET
+def mss_period_status(request):
+    """Get status of all periods"""
+    return JsonResponse({'success': True, 'periods': period_progress})
+
+@csrf_exempt
+@require_POST
+def mss_run_period(request, period):
+    """Manually run a specific period"""
+    period = int(period)
+    if period not in PERIODS:
+        return JsonResponse({'success': False, 'error': 'Invalid period'}, status=400)
+    
+    try:
+        total_saved = run_period_snapshot(period)
+        return JsonResponse({'success': True, 'period': period, 'records_saved': total_saved})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_GET
+def mss_filtered_data(request):
+    """
+    GET /api/mss/filtered-data/ - Server-side filtering with multi-value support.
+
+    Supports multi-select for:
+      - category  (comma-separated: stable,choppy)
+      - asset_class (comma-separated: stocks,forex)
+      - analyst_bias, put_call_bias
+
+    All other filters unchanged.
+    """
+    try:
+        period = int(request.GET.get('period', 60))
+        days_back = int(request.GET.get('days', 365))
+        symbol_filter = request.GET.get('symbol', '').upper().strip()
+        asset_class_filter = request.GET.get('asset_class', '')  # kept for backwards compat
+        
+        filters_json = request.GET.get('filters', '{}')
+        try:
+            advanced_filters = json.loads(filters_json)
+        except Exception:
+            advanced_filters = {}
+        
+        since = date.today() - timedelta(days=days_back)
+        qs = MSSHistoricalRecord.objects.filter(date_taken__gte=since, period_days=period)
+        
+        if symbol_filter:
+            qs = qs.filter(symbol=symbol_filter)
+        
+        # ── asset_class: support both old single-value param and new multi-value in filters ──
+        asset_classes_raw = advanced_filters.get('text', {}).get('asset_class', asset_class_filter)
+        if asset_classes_raw and asset_classes_raw not in ('', 'all'):
+            ac_list = [v.strip() for v in asset_classes_raw.split(',') if v.strip() and v.strip() != 'all']
+            if ac_list:
+                qs = qs.filter(asset_class__in=ac_list)
+        
+        # ── Numeric range filters ──
+        numeric_filters = advanced_filters.get('numeric', {})
+        for key, range_vals in numeric_filters.items():
+            if range_vals.get('min') not in (None, ''):
+                qs = qs.filter(**{f"{key}__gte": float(range_vals['min'])})
+            if range_vals.get('max') not in (None, ''):
+                qs = qs.filter(**{f"{key}__lte": float(range_vals['max'])})
+        
+        # ── Text / multi-value filters ──
+        # Fields that support multi-select (comma-separated list of values)
+        MULTI_SELECT_FIELDS = {'category', 'analyst_bias', 'put_call_bias', 'asset_class', 'sector'}
+        
+        text_filters = advanced_filters.get('text', {})
+        for key, value in text_filters.items():
+            if key == 'asset_class':
+                continue  # already handled above
+            if not value or value == 'all':
+                continue
+            if key in MULTI_SELECT_FIELDS:
+                values = [v.strip() for v in value.split(',') if v.strip() and v.strip() != 'all']
+                if values:
+                    qs = qs.filter(**{f"{key}__in": values})
+            else:
+                # Plain text match (symbol already handled, sector exact match)
+                qs = qs.filter(**{key: value})
+        
+        qs = qs.order_by('-date_taken', 'symbol')
+        
+        records = []
+        for r in qs:
+            records.append({
+                'id': r.id, 'symbol': r.symbol, 'asset_class': r.asset_class,
+                'sector': r.sector, 'date_taken': str(r.date_taken), 'period_days': r.period_days,
+                'mss': r.mss, 'r_squared': r.r_squared, 'volatility': r.volatility,
+                'normalized_volatility': r.normalized_volatility, 'trend_consistency': r.trend_consistency,
+                'trend_strength': r.trend_strength, 'liquidity_factor': r.liquidity_factor,
+                'category': r.category, 'current_price': r.current_price, 'price_change': r.price_change,
+                'avg_volume': r.avg_volume, 'data_points': r.data_points,
+                'analyst_rating_pct': r.analyst_rating_pct, 'analyst_bias': r.analyst_bias,
+                'put_call_ratio': r.put_call_ratio, 'put_call_bias': r.put_call_bias,
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'total': len(records),
+            'data': records,
+            'filters_applied': advanced_filters,
+        })
+        
+    except Exception as e:
+        logger.error(f"Filtered data error: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_GET
+def mss_scheduler_status(request):
+    """Check scheduler status"""
+    jobs = []
+    for job in scheduler.get_jobs():
+        jobs.append({
+            'id': job.id,
+            'name': job.name,
+            'next_run_time': str(job.next_run_time) if job.next_run_time else None
+        })
+    return JsonResponse({'success': True, 'scheduler_running': scheduler.running, 'jobs': jobs})
+
+
+# ============================================================
+# CHART DATA ENDPOINTS
+# ============================================================
+
+# ---------------------------------------------------------------------------
+# yfinance intraday interval constraints
+#   interval  max_period (yf param)   notes
+#   1m        7d                      only last 7 calendar days
+#   2m        60d
+#   5m        60d
+#   15m       60d
+#   30m       60d
+#   60m / 1h  730d
+#   90m       60d
+#   1d        unlimited
+#   1wk       unlimited
+#   1mo       unlimited
+#
+# The frontend sends (period, interval) pairs.  We normalise them here
+# so that we never ask yf for something it can't deliver.
+# ---------------------------------------------------------------------------
+
+def _resolve_yf_params(period: str, interval: str):
+    """
+    Convert (period, interval) from the frontend into valid yfinance params.
+    Returns (yf_period, yf_interval, use_start_end, start, end).
+
+    For the tricky 1H view we fetch last 5d with interval='1m' — yfinance
+    supports up to 7 calendar days of 1m data, so 5d is always safe.
+    """
+    now = datetime.utcnow()
+
+    # Normalise interval aliases
+    interval_norm = {
+        '1m': '1m',
+        '5m': '5m',
+        '15m': '15m',
+        '30m': '30m',
+        '1h': '1h',
+        '60m': '1h',
+        '4h': '1h',  # yf has no 4h; use 1h
+        '1d': '1d',
+        '1wk': '1wk',
+        '1mo': '1mo',
+    }.get(interval, '1d')
+
+    period_norm = period  # pass through — validated below
+
+    # ── Special case: "last 1 hour" view ──
+    # Frontend passes period='1h_view' or we detect it from the GRID_TF label '1H'
+    # The frontend now sends period='1d' & interval='1m' for the 1H chart tile.
+    # yf supports 1m data only for the last 7 calendar days.
+    if interval_norm == '1m':
+        # fetch last 5 calendar days of 1-minute data — yf can always serve this
+        start = now - timedelta(days=5)
+        return None, '1m', True, start, now
+
+    # ── 5m / 15m / 30m — yf allows up to 60 days ──
+    if interval_norm in ('5m', '15m', '30m'):
+        # Map period to something within 60d
+        period_days_map = {
+            '1d': 1, '5d': 5, '1mo': 30, '3mo': 60,
+        }
+        pd_days = period_days_map.get(period_norm, 5)
+        pd_days = min(pd_days, 59)
+        start = now - timedelta(days=pd_days)
+        return None, interval_norm, True, start, now
+
+    # ── 1h — yf allows up to 730 days ──
+    if interval_norm == '1h':
+        period_days_map = {
+            '1d': 1, '5d': 5, '1mo': 30, '3mo': 90,
+            '6mo': 180, '1y': 365, '2y': 730,
+        }
+        pd_days = period_days_map.get(period_norm, 30)
+        pd_days = min(pd_days, 729)
+        start = now - timedelta(days=pd_days)
+        return None, '1h', True, start, now
+
+    # ── Daily / weekly / monthly — just pass period through ──
+    valid_periods = {'1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'}
+    if period_norm not in valid_periods:
+        period_norm = '1mo'
+
+    return period_norm, interval_norm, False, None, None
+
+
+@csrf_exempt
+@require_GET
+def mss_chart_asset_data_v1(request, symbol):
+    """
+    GET /api/mss-chart/v1/data/<symbol>/?period=1mo&interval=1d
+
+    Returns OHLCV data for TradingView Lightweight Chart.
+    Handles the full matrix of (period, interval) combinations including
+    the previously-broken 1H and short intraday views.
+    """
+    try:
+        period = request.GET.get('period', '1mo')
+        interval = request.GET.get('interval', '1d')
+
+        yf_period, yf_interval, use_start_end, start, end = _resolve_yf_params(period, interval)
+
+        ticker = yf.Ticker(symbol)
+
+        if use_start_end:
+            hist = ticker.history(start=start, end=end, interval=yf_interval)
+        else:
+            hist = ticker.history(period=yf_period, interval=yf_interval)
+
+        # Fallback: if the resolved params returned nothing, retry with 1d / daily
+        if hist is None or hist.empty:
+            logger.warning(f"[chart] No data for {symbol} ({period}/{interval}) → retrying with 1d/1d")
+            hist = ticker.history(period='1d', interval='5m')
+
+        if hist is None or hist.empty:
+            return JsonResponse({'success': False, 'error': 'No data available for this symbol/timeframe.'}, status=404)
+
+        # Remove timezone info from index so timestamps are always UTC-naive ints
+        if hist.index.tzinfo is not None:
+            hist.index = hist.index.tz_convert('UTC').tz_localize(None)
+
+        chart_data = []
+        for idx, row in hist.iterrows():
+            ts = int(idx.timestamp())
+            o = float(row['Open'])
+            h = float(row['High'])
+            l = float(row['Low'])
+            c = float(row['Close'])
+            v = float(row.get('Volume', 0) or 0)
+
+            # Skip bad bars (yf sometimes emits rows where OHLC are all 0)
+            if h == 0 and l == 0:
+                continue
+
+            chart_data.append({
+                'time': ts,
+                'open': round(o, 6),
+                'high': round(h, 6),
+                'low': round(l, 6),
+                'close': round(c, 6),
+                'volume': round(v, 0),
+            })
+
+        if not chart_data:
+            return JsonResponse({'success': False, 'error': 'All bars were empty for this timeframe.'}, status=404)
+
+        # Metadata (best-effort — info can be slow/unavailable for some symbols)
+        try:
+            info = ticker.fast_info
+            metadata = {
+                'symbol': symbol,
+                'name': getattr(info, 'name', symbol) or symbol,
+                'sector': SECTOR_MAP.get(symbol, 'N/A'),
+                'currency': getattr(info, 'currency', 'USD') or 'USD',
+            }
+        except Exception:
+            metadata = {'symbol': symbol, 'name': symbol, 'sector': SECTOR_MAP.get(symbol, 'N/A'), 'currency': 'USD'}
+
+        return JsonResponse({
+            'success': True,
+            'data': chart_data,
+            'metadata': metadata,
+            'interval': yf_interval,
+            'period': yf_period or period,
+            'count': len(chart_data),
+        })
+
+    except Exception as e:
+        logger.error(f"Chart data error for {symbol}: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_GET
+def mss_chart_mss_overlay_v1(request, symbol):
+    """
+    GET /api/mss-chart/v1/mss-overlay/<symbol>/?period=90
+    Returns MSS values over time to overlay on chart.
+    """
+    try:
+        period_days = int(request.GET.get('period', 60))
+        days_back = int(request.GET.get('days', 365))
+        
+        since = date.today() - timedelta(days=days_back)
+        records = MSSHistoricalRecord.objects.filter(
+            symbol=symbol.upper(),
+            period_days=period_days,
+            date_taken__gte=since
+        ).order_by('date_taken')
+        
+        mss_data = []
+        for r in records:
+            mss_data.append({
+                'time': int(datetime.combine(r.date_taken, datetime.min.time()).timestamp()),
+                'value': r.mss,
+                'category': r.category,
+                'r_squared': r.r_squared,
+                'volatility': r.volatility
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'data': mss_data,
+            'period_days': period_days,
+            'count': len(mss_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"MSS overlay error for {symbol}: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_GET
+def mss_chart_indicators_v1(request, symbol):
+    """
+    GET /api/mss-chart/v1/indicators/<symbol>/?period=1mo&indicators=sma,ema,rsi
+    Returns technical indicators.
+    """
+    try:
+        period = request.GET.get('period', '1mo')
+        indicators_param = request.GET.get('indicators', 'sma,ema,rsi')
+        indicators_list = [i.strip() for i in indicators_param.split(',')]
+        
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=period)
+        
+        if hist.empty:
+            return JsonResponse({'success': False, 'error': 'No data available'}, status=404)
+        
+        closes = hist['Close'].values
+        result = {'timestamps': [int(idx.timestamp()) for idx in hist.index]}
+        
+        if 'sma' in indicators_list:
+            sma_20 = pd.Series(closes).rolling(window=20).mean().fillna(0).tolist()
+            sma_50 = pd.Series(closes).rolling(window=50).mean().fillna(0).tolist()
+            result['sma_20'] = sma_20
+            result['sma_50'] = sma_50
+        
+        if 'ema' in indicators_list:
+            ema_12 = pd.Series(closes).ewm(span=12, adjust=False).mean().fillna(0).tolist()
+            ema_26 = pd.Series(closes).ewm(span=26, adjust=False).mean().fillna(0).tolist()
+            result['ema_12'] = ema_12
+            result['ema_26'] = ema_26
+        
+        if 'rsi' in indicators_list:
+            delta = pd.Series(closes).diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = (100 - (100 / (1 + rs))).fillna(50).tolist()
+            result['rsi'] = rsi
+        
+        if 'bb' in indicators_list:
+            sma_20 = pd.Series(closes).rolling(window=20).mean()
+            std_20 = pd.Series(closes).rolling(window=20).std()
+            result['bb_upper'] = (sma_20 + 2 * std_20).fillna(0).tolist()
+            result['bb_lower'] = (sma_20 - 2 * std_20).fillna(0).tolist()
+            result['bb_middle'] = sma_20.fillna(0).tolist()
+        
+        return JsonResponse({'success': True, 'data': result})
+        
+    except Exception as e:
+        logger.error(f"Indicators error for {symbol}: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_GET
+def mss_chart_search_v1(request):
+    """
+    GET /api/mss-chart/v1/search/?q=AAPL
+    Search for symbols.
+    """
+    try:
+        query = request.GET.get('q', '').upper().strip()
+        if len(query) < 2:
+            return JsonResponse({'success': True, 'data': []})
+        
+        symbols = MSSHistoricalRecord.objects.filter(
+            symbol__icontains=query
+        ).values('symbol', 'asset_class').distinct()[:20]
+        
+        results = list(symbols)
+        
+        common_stocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'AMD', 'INTC']
+        for stock in common_stocks:
+            if query in stock and stock not in [r['symbol'] for r in results]:
+                results.append({'symbol': stock, 'asset_class': 'stocks'})
+                if len(results) >= 20:
+                    break
+        
+        return JsonResponse({'success': True, 'data': results})
+        
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        return JsonResponse({'success': True, 'data': []})
+
+
+from datetime import datetime, timezone, timedelta
+
+
+def snowai_fetch_live_price(asset):
+    try:
+        symbol = asset.upper()
+
+        # ── Forex pairs → append =X ──────────────────────────────────────────
+        FOREX_PAIRS = {
+            'EURUSD','GBPUSD','USDJPY','USDCHF','AUDUSD','USDCAD',
+            'NZDUSD','EURGBP','EURJPY','AUDJPY','EURCHF','GBPJPY',
+            'GBPCHF','CADJPY','NZDJPY','EURAUD','EURCAD','CHFJPY',
+            'USDSGD','USDHKD','USDMXN','USDZAR','USDTRY','USDSEK',
+            'USDDKK','USDNOK','USDPLN','USDHUF','USDCZK',
+        }
+
+        # ── Explicit ticker overrides ─────────────────────────────────────────
+        TICKER_MAP = {
+            # Metals & commodities
+            'XAUUSD':  'GC=F',
+            'XAGUSD':  'SI=F',
+            'XPTUSD':  'PL=F',
+            'XPDUSD':  'PA=F',
+            'USOIL':   'CL=F',
+            'UKOIL':   'BZ=F',
+            'NATGAS':  'NG=F',
+            'WHEAT':   'ZW=F',
+            'CORN':    'ZC=F',
+            'SOYBN':   'ZS=F',
+
+            # Crypto
+            'BTCUSD':  'BTC-USD',
+            'ETHUSD':  'ETH-USD',
+            'LTCUSD':  'LTC-USD',
+            'XRPUSD':  'XRP-USD',
+            'ADAUSD':  'ADA-USD',
+            'DOTUSD':  'DOT-USD',
+            'DOGEUSD': 'DOGE-USD',
+            'SOLUSD':  'SOL-USD',
+            'MATICUSD':'MATIC-USD',
+            'AVAXUSD': 'AVAX-USD',
+            'LINKUSD': 'LINK-USD',
+
+            # Indices
+            'US30':    'YM=F',
+            'NAS100':  'NQ=F',
+            'SPX500':  'ES=F',
+            'USTEC':   'NQ=F',
+            'US2000':  'RTY=F',
+            'VIX':     '^VIX',
+            'UK100':   '^FTSE',
+            'GER40':   '^GDAXI',
+            'FRA40':   '^FCHI',
+            'SPA35':   '^IBEX',
+            'NETH25':  '^AEX',
+            'JPN225':  '^N225',
+            'HK50':    '^HSI',
+            'CHINA50': '000016.SS',
+            'SING30':  '^STI',
+            'AUS200':  '^AXJO',
+            'CAN60':   '^GSPTSE',
+            'MEX35':   '^MXX',
+            'BRA60':   '^BVSP',
+            'ARG35':   '^MERV',
+
+            # Bonds (ETF proxies — no direct futures ticker on free yfinance)
+            'US10Y':   '^TNX',
+            'US30Y':   '^TYX',
+            'US2Y':    '^IRX',
+            'US5Y':    '^FVX',
+
+            # Special tickers that need renaming
+            'BRK-B':   'BRK-B',
+        }
+
+        if symbol in TICKER_MAP:
+            ticker_sym = TICKER_MAP[symbol]
+        elif symbol in FOREX_PAIRS:
+            ticker_sym = symbol + '=X'
+        else:
+            # US stocks, Chinese ADRs, ETFs — use symbol as-is
+            ticker_sym = symbol
+
+        ticker = yf.Ticker(ticker_sym)
+
+        data = ticker.history(period='1d', interval='1m', prepost=True)
+
+        if data.empty:
+            data = ticker.history(period='2d', interval='5m', prepost=True)
+
+        if not data.empty:
+            return float(data['Close'].iloc[-1])
+
+        return None
+
+    except Exception as e:
+        print(f"snowai_fetch_live_price error for {asset}: {e}")
+        return None
+
+
+# ─── MARKET SESSION HELPER ────────────────────────────────────────────────────
+
+def snowai_get_market_sessions():
+    """
+    Returns current status of all 4 major sessions based on UTC time.
+    NYC pre-market: 08:00–09:30 ET  = 13:00–14:30 UTC  (EST) / 12:00–13:30 UTC (EDT)
+    NYC market:     09:30–16:00 ET  = 14:30–21:00 UTC  (EST) / 13:30–20:00 UTC (EDT)
+    NYC post-market:16:00–20:00 ET  = 21:00–01:00 UTC  (EST) / 20:00–00:00 UTC (EDT)
+    London:         08:00–16:30 BST = 07:00–15:30 UTC  (summer) / 08:00–16:30 UTC (winter)
+    Tokyo:          09:00–15:30 JST = 00:00–06:30 UTC
+    Sydney:         10:00–16:00 AEDT= 23:00–05:00 UTC (summer)
+    """
+    now_utc = datetime.now(timezone.utc)
+    hour = now_utc.hour
+    minute = now_utc.minute
+    total_minutes = hour * 60 + minute
+
+    # Simple EDT approximation (UTC-4, Mar–Nov)
+    month = now_utc.month
+    is_edt = 3 <= month <= 11
+    et_offset = -4 if is_edt else -5
+    et_total = (total_minutes + et_offset * 60) % (24 * 60)
+
+    def in_range(start_h, start_m, end_h, end_m, t):
+        s = start_h * 60 + start_m
+        e = end_h * 60 + end_m
+        if s <= e:
+            return s <= t < e
+        else:  # overnight
+            return t >= s or t < e
+
+    sessions = {
+        'sydney': {
+            'label': 'Sydney',
+            'status': 'open' if in_range(23, 0, 5, 0, total_minutes) else 'closed',
+            'hours': '10:00–16:00 AEDT',
+        },
+        'tokyo': {
+            'label': 'Tokyo',
+            'status': 'open' if in_range(0, 0, 6, 30, total_minutes) else 'closed',
+            'hours': '09:00–15:30 JST',
+        },
+        'london': {
+            'label': 'London',
+            'status': 'open' if in_range(7, 0, 15, 30, total_minutes) else 'closed',
+            'hours': '08:00–16:30 BST/GMT',
+        },
+        'nyc': {
+            'label': 'New York',
+            'status': (
+                'pre_market'  if in_range(8 * 60, 0, 9 * 60 + 30, 0, et_total) else
+                'open'        if in_range(9 * 60 + 30, 0, 16 * 60, 0, et_total) else
+                'post_market' if in_range(16 * 60, 0, 20 * 60, 0, et_total) else
+                'closed'
+            ),
+            'hours': '09:30–16:00 ET',
+            'pre_hours': '08:00–09:30 ET',
+            'post_hours': '16:00–20:00 ET',
+        },
+    }
+    return sessions
+
+
+# ─── POSITION MATH ────────────────────────────────────────────────────────────
+def snowai_calculate_position(pos):
+    entry  = pos.entry_price
+    sl_p   = pos.sl_price
+    tp_p   = pos.tp_price
+    sl_usd = pos.sl_dollars
+    tp_usd = pos.tp_dollars
+    direction = pos.direction
+    current = pos.current_price
+
+    # Guard: if any price field is None (old rows), return safe minimal payload
+    if entry is None or sl_p is None or tp_p is None:
+        return {
+            'id':             pos.id,
+            'asset':          pos.asset,
+            'direction':      pos.direction,
+            'entry_price':    pos.entry_price,
+            'sl_price':       pos.sl_price,
+            'tp_price':       pos.tp_price,
+            'sl_dollars':     pos.sl_dollars,
+            'tp_dollars':     pos.tp_dollars,
+            'current_price':  pos.current_price,
+            'notes':          pos.notes,
+            'rr_ratio':       None,
+            'pip_value':      None,
+            'unrealised_dollars': None,
+            'price_pnl':      None,
+            'bar_position':   None,
+            'pct_to_tp':      None,
+            'pct_to_sl':      None,
+            'status':         'open',
+            'created_at':     pos.created_at.isoformat(),
+            'sessions':       snowai_get_market_sessions(),
+            'live_price_used': False,
+        }
+
+    sl_distance = abs(entry - sl_p)
+    tp_distance = abs(tp_p - entry)
+
+    pip_value = sl_usd / sl_distance if sl_distance > 0 else 0
+    rr_ratio  = round(tp_usd / sl_usd, 2) if sl_usd and sl_usd > 0 else None
+
+    result = {
+        'id':           pos.id,
+        'asset':        pos.asset,
+        'direction':    pos.direction,
+        'entry_price':  pos.entry_price,
+        'sl_price':     pos.sl_price,
+        'tp_price':     pos.tp_price,
+        'sl_dollars':   pos.sl_dollars,
+        'tp_dollars':   pos.tp_dollars,
+        'current_price': pos.current_price,
+        'notes':        pos.notes,
+        'rr_ratio':     rr_ratio,
+        'pip_value':    round(pip_value, 4),
+        'unrealised_dollars': None,
+        'price_pnl':    None,
+        'bar_position': None,
+        'pct_to_tp':    None,
+        'pct_to_sl':    None,
+        'status':       'open',
+        'created_at':   pos.created_at.isoformat(),
+        'sessions':     snowai_get_market_sessions(),
+        'live_price_used': False,
+    }
+
+    if current is not None and pip_value > 0:
+        raw_move    = current - entry
+        signed_move = raw_move if direction == 'long' else -raw_move
+        dollar_pnl  = round(signed_move * pip_value, 2)
+        price_pnl   = round(raw_move if direction == 'long' else -raw_move, 6)
+
+        pct_to_tp = round(min(max((signed_move / tp_distance) * 100, 0), 100), 1) if tp_distance > 0 else 0
+        pct_to_sl = round(min(max((-signed_move / sl_distance) * 100, 0), 100), 1) if sl_distance > 0 else 0
+
+        if signed_move >= 0:
+            bar_position = round(min(signed_move / tp_distance, 1.0), 3) if tp_distance > 0 else 0
+        else:
+            bar_position = round(max(signed_move / sl_distance, -1.0), 3) if sl_distance > 0 else 0
+
+        status = 'open'
+        if direction == 'long':
+            if current <= sl_p:  status = 'sl_hit'
+            elif current >= tp_p: status = 'tp_hit'
+        else:
+            if current >= sl_p:  status = 'sl_hit'
+            elif current <= tp_p: status = 'tp_hit'
+
+        result.update({
+            'unrealised_dollars': dollar_pnl,
+            'price_pnl':          price_pnl,
+            'bar_position':       bar_position,
+            'pct_to_tp':          pct_to_tp,
+            'pct_to_sl':          pct_to_sl,
+            'status':             status,
+        })
+
+    return result
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_trade_positions_list(request):
+    positions = TradePosition.objects.all()
+    return JsonResponse([snowai_calculate_position(p) for p in positions], safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trade_positions_refresh_prices(request):
+    """
+    Fetches live prices for all positions via yfinance,
+    saves them to the DB, and returns the recalculated payloads.
+    """
+    positions = TradePosition.objects.all()
+    results = []
+    updated_count = 0
+
+    for pos in positions:
+        live_price = snowai_fetch_live_price(pos.asset)
+        if live_price is not None:
+            pos.current_price = live_price
+            pos.save(update_fields=['current_price'])
+            updated_count += 1
+        payload = snowai_calculate_position(pos)
+        payload['live_price_used'] = live_price is not None
+        results.append(payload)
+
+    return JsonResponse({
+        'positions': results,
+        'updated_count': updated_count,
+        'total': len(results),
+    })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trade_position_add(request):
+    try:
+        body = json.loads(request.body)
+
+        asset       = body.get('asset', '').strip().upper()
+        direction   = body.get('direction', 'long').lower()
+        entry_price = float(body.get('entry_price', 0))
+        sl_price    = float(body.get('sl_price', 0))
+        tp_price    = float(body.get('tp_price', 0))
+        sl_dollars  = float(body.get('sl_dollars', 0))
+        tp_dollars  = float(body.get('tp_dollars', 0))
+        current_price = body.get('current_price')
+        notes       = body.get('notes', '')
+
+        if not asset or entry_price <= 0 or sl_price <= 0 or tp_price <= 0 or sl_dollars <= 0 or tp_dollars <= 0:
+            return JsonResponse({'error': 'All price and dollar fields are required.'}, status=400)
+
+        pos = TradePosition.objects.create(
+            asset=asset,
+            direction=direction,
+            entry_price=entry_price,
+            sl_price=sl_price,
+            tp_price=tp_price,
+            sl_dollars=sl_dollars,
+            tp_dollars=tp_dollars,
+            current_price=float(current_price) if current_price else None,
+            notes=notes,
+        )
+        return JsonResponse(snowai_calculate_position(pos), status=201)
+
+    except (ValueError, KeyError) as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trade_position_update_price(request):
+    try:
+        body = json.loads(request.body)
+        pos = TradePosition.objects.get(id=body.get('id'))
+        pos.current_price = float(body.get('current_price', 0))
+        pos.save()
+        return JsonResponse(snowai_calculate_position(pos))
+    except TradePosition.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    except (ValueError, KeyError) as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trade_position_delete(request):
+    try:
+        body = json.loads(request.body)
+        pos = TradePosition.objects.get(id=body.get('id'))
+        pos.delete()
+        return JsonResponse({'deleted': True})
+    except TradePosition.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_market_sessions(request):
+    """Standalone endpoint to check current session status."""
+    return JsonResponse(snowai_get_market_sessions())
+
+
+
+# import base64
+# from py_vapid import Vapid
+# from cryptography.hazmat.primitives import serialization
+
+# # 1. Initialize and generate keys
+# v = Vapid()
+# v.generate_keys()
+
+# # 2. Extract the raw Private Key bytes and encode to URL-safe Base64
+# private_num = v.private_key.private_numbers().private_value
+# # convert the big integer to exactly 32 bytes
+# private_bytes = private_num.to_bytes(32, byteorder='big') 
+# priv = base64.urlsafe_b64encode(private_bytes).decode('utf-8').rstrip('=')
+
+# # 3. Extract the raw Public Key bytes (Uncompressed X9.62 format) and encode
+# public_bytes = v.public_key.public_bytes(
+#     encoding=serialization.Encoding.X962,
+#     format=serialization.PublicFormat.UncompressedPoint
+# )
+# pub = base64.urlsafe_b64encode(public_bytes).decode('utf-8').rstrip('=')
+
+# print('PRIVATE:', priv)
+# print('PUBLIC:', pub)
+
+from pywebpush import webpush, WebPushException
+import json
+
+# ── Paste your generated keys here ──────────────────────────────────────────
+SNOWAI_VAPID_PRIVATE_KEY = os.environ['SNOWAI_VAPID_PRIVATE_KEY']
+SNOWAI_VAPID_PUBLIC_KEY  = os.environ['SNOWAI_VAPID_PUBLIC_KEY']
+SNOWAI_VAPID_CLAIMS      = {'sub': 'mailto:motingwetlotlo@yahoo.com'}
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_vapid_public_key(request):
+    """Frontend fetches this to register the push subscription."""
+    return JsonResponse({'public_key': SNOWAI_VAPID_PUBLIC_KEY})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_push_subscribe(request):
+    """Save a browser push subscription."""
+    try:
+        body = json.loads(request.body)
+        endpoint = body.get('endpoint')
+        p256dh   = body.get('keys', {}).get('p256dh')
+        auth     = body.get('keys', {}).get('auth')
+
+        if not endpoint or not p256dh or not auth:
+            return JsonResponse({'error': 'Missing fields'}, status=400)
+
+        sub, created = PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={'p256dh': p256dh, 'auth': auth}
+        )
+        return JsonResponse({'status': 'subscribed', 'created': created})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_push_unsubscribe(request):
+    """Remove a push subscription."""
+    try:
+        body = json.loads(request.body)
+        PushSubscription.objects.filter(endpoint=body.get('endpoint')).delete()
+        return JsonResponse({'status': 'unsubscribed'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+def snowai_send_push_notification(title, body, icon='/logo192.png', url='/'):
+    """
+    Sends a push notification to ALL saved subscriptions.
+    Call this from anywhere in your views.
+    """
+    subscriptions = PushSubscription.objects.all()
+    dead = []
+
+    payload = json.dumps({
+        'title': title,
+        'body':  body,
+        'icon':  icon,
+        'url':   url,
+    })
+
+    for sub in subscriptions:
+        try:
+            webpush(
+                subscription_info={
+                    'endpoint': sub.endpoint,
+                    'keys': {
+                        'p256dh': sub.p256dh,
+                        'auth':   sub.auth,
+                    }
+                },
+                data=payload,
+                vapid_private_key=SNOWAI_VAPID_PRIVATE_KEY,
+                vapid_claims=SNOWAI_VAPID_CLAIMS,
+            )
+        except WebPushException as e:
+            # 410 Gone = subscription expired/revoked, clean it up
+            if '410' in str(e) or '404' in str(e):
+                dead.append(sub.id)
+            else:
+                print(f'Push error for {sub.endpoint[:40]}: {e}')
+
+    if dead:
+        PushSubscription.objects.filter(id__in=dead).delete()
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_trade_positions_refresh_prices(request):
+    """
+    Fetches live prices, saves them, sends push notifications
+    for significant P&L moves, TP hits, and SL hits.
+    """
+    positions = TradePosition.objects.all()
+    results = []
+    updated_count = 0
+    alerts = []
+
+    for pos in positions:
+        live_price = snowai_fetch_live_price(pos.asset)
+        if live_price is not None:
+            pos.current_price = live_price
+            pos.save(update_fields=['current_price'])
+            updated_count += 1
+
+        payload = snowai_calculate_position(pos)
+        payload['live_price_used'] = live_price is not None
+        results.append(payload)
+
+        # ── Fire notifications for notable events ────────────────────────────
+        if live_price is not None and payload.get('status') and pos.sl_price and pos.tp_price:
+            status = payload['status']
+            pnl    = payload.get('unrealised_dollars')
+            pct_tp = payload.get('pct_to_tp')
+            pct_sl = payload.get('pct_to_sl')
+            direction_label = '▲ LONG' if pos.direction == 'long' else '▼ SHORT'
+
+            if status == 'tp_hit':
+                alerts.append((
+                    f'🎯 TP Hit — {pos.asset}',
+                    f'{direction_label} @ {pos.entry_price} → TP {pos.tp_price} hit! +${pos.tp_dollars}',
+                ))
+            elif status == 'sl_hit':
+                alerts.append((
+                    f'⚡ SL Hit — {pos.asset}',
+                    f'{direction_label} @ {pos.entry_price} → SL {pos.sl_price} hit. –${pos.sl_dollars}',
+                ))
+            elif pct_tp is not None and pct_tp >= 1:
+                alerts.append((
+                    f'📈 {pos.asset} near TP ({pct_tp:.0f}%)',
+                    f'{direction_label} — P&L: +${pnl:.2f} | Price: {live_price}',
+                ))
+            elif pct_sl is not None and pct_sl >= 1:
+                alerts.append((
+                    f'⚠️ {pos.asset} near SL ({pct_sl:.0f}%)',
+                    f'{direction_label} — P&L: ${pnl:.2f} | Price: {live_price}',
+                ))
+            elif pnl is not None and abs(pnl) >= 1:
+                sign = '+' if pnl > 0 else ''
+                alerts.append((
+                    f'💰 {pos.asset} P&L update',
+                    f'{direction_label} — {sign}${pnl:.2f} | {live_price}',
+                ))
+
+    # Send all alerts
+    for title, body in alerts:
+        snowai_send_push_notification(title, body, url='/snowai-central-hub')
+
+    return JsonResponse({
+        'positions':     results,
+        'updated_count': updated_count,
+        'total':         len(results),
+        'alerts_sent':   len(alerts),
+    })
+
+
+# ── SnowAI trade position alerts (runs every 5 minutes on the server) ────────
+def run_trade_position_alerts():
+    try:
+        if not PushSubscription.objects.exists():
+            return
+
+        positions = TradePosition.objects.all()
+        if not positions.exists():
+            return
+
+        alerts = []
+        summaries = []
+
+        for pos in positions:
+            live_price = snowai_fetch_live_price(pos.asset)
+            if live_price is None:
+                continue
+
+            pos.current_price = live_price
+            pos.save(update_fields=['current_price'])
+
+            payload = snowai_calculate_position(pos)
+            status  = payload.get('status', 'open')
+            pnl     = payload.get('unrealised_dollars')
+            pct_tp  = payload.get('pct_to_tp')
+            pct_sl  = payload.get('pct_to_sl')
+            dir_lbl = '▲' if pos.direction == 'long' else '▼'
+            pnl_str = f'{("+" if pnl >= 0 else "")}${pnl:.2f}' if pnl is not None else 'N/A'
+
+            summaries.append(f'{dir_lbl} {pos.asset}  {pnl_str}  @ {live_price}')
+
+            if status == 'tp_hit':
+                alerts.append((
+                    f'🎯 TP Hit — {pos.asset}',
+                    f'{dir_lbl} entry {pos.entry_price} → TP {pos.tp_price}  +${pos.tp_dollars}',
+                    'snowai-alert-tp',
+                ))
+            elif status == 'sl_hit':
+                alerts.append((
+                    f'⚡ SL Hit — {pos.asset}',
+                    f'{dir_lbl} entry {pos.entry_price} → SL {pos.sl_price}  –${pos.sl_dollars}',
+                    'snowai-alert-sl',
+                ))
+            elif pct_tp is not None and pct_tp >= 75:
+                alerts.append((
+                    f'📈 {pos.asset} near TP ({pct_tp:.0f}%)',
+                    f'{dir_lbl} P&L {pnl_str}  |  price {live_price}',
+                    f'snowai-alert-neartp-{pos.id}',
+                ))
+            elif pct_sl is not None and pct_sl >= 75:
+                alerts.append((
+                    f'⚠️ {pos.asset} near SL ({pct_sl:.0f}%)',
+                    f'{dir_lbl} P&L {pnl_str}  |  price {live_price}',
+                    f'snowai-alert-nearsl-{pos.id}',
+                ))
+            elif pnl is not None and abs(pnl) >= 50:
+                sign = '+' if pnl > 0 else ''
+                alerts.append((
+                    f'💰 {pos.asset} — {sign}${pnl:.2f}',
+                    f'{dir_lbl} entry {pos.entry_price}  |  now {live_price}',
+                    f'snowai-alert-pnl-{pos.id}',
+                ))
+
+        if summaries:
+            snowai_send_push_notification(
+                title=f'📊 SnowAI — {len(summaries)} open position{"s" if len(summaries) != 1 else ""}',
+                body='\n'.join(summaries),
+                url='/snowai_central_hub',
+                tag='snowai-summary',
+            )
+
+        for title, body, tag in alerts:
+            snowai_send_push_notification(title, body, url='/snowai_central_hub', tag=tag)
+
+    except Exception as e:
+        print(f'[SnowAI Scheduler] Error: {e}')
+
+
+scheduler.add_job(
+    run_trade_position_alerts,
+    trigger=IntervalTrigger(minutes=5),
+    id='snowai_trade_alerts_job',
+    name='SnowAI trade position alerts every 5 minutes',
+    replace_existing=True,
+    max_instances=1,
+    misfire_grace_time=60,
+)
+
+
+# ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+def snowai_company_serialize(company):
+    return {
+        'id':          company.id,
+        'name':        company.name,
+        'description': company.description,
+        'sector':      company.sector,
+        'logo_base64': company.logo_base64,
+        'created_at':  company.created_at.isoformat(),
+        'key_people': [
+            {
+                'id':           p.id,
+                'name':         p.name,
+                'role':         p.role,
+                'bio':          p.bio,
+                'photo_base64': p.photo_base64,
+            }
+            for p in company.key_people.all()
+        ],
+        'links': [
+            {
+                'id':        l.id,
+                'link_type': l.link_type,
+                'title':     l.title,
+                'url':       l.url,
+            }
+            for l in company.links.all()
+        ],
+    }
+
+
+def snowai_extract_youtube_id(url):
+    """Extract YouTube video ID from various URL formats."""
+    import re
+    patterns = [
+        r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{11})',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+
+# ─── COMPANY CRUD ──────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_companies_of_interest_list(request):
+    companies = SnowAICompany.objects.prefetch_related('key_people', 'links').all()
+    return JsonResponse([snowai_company_serialize(c) for c in companies], safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_companies_of_interest_detail(request, company_id):
+    try:
+        company = SnowAICompany.objects.prefetch_related('key_people', 'links').get(id=company_id)
+        return JsonResponse(snowai_company_serialize(company))
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_add(request):
+    try:
+        body        = json.loads(request.body)
+        name        = body.get('name', '').strip()
+        description = body.get('description', '').strip()
+        sector      = body.get('sector', '').strip()
+        logo_base64 = body.get('logo_base64', '')
+
+        if not name:
+            return JsonResponse({'error': 'Company name is required'}, status=400)
+
+        company = SnowAICompany.objects.create(
+            name=name,
+            description=description,
+            sector=sector,
+            logo_base64=logo_base64,
+        )
+        return JsonResponse(snowai_company_serialize(company), status=201)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_update(request, company_id):
+    try:
+        company     = SnowAICompany.objects.get(id=company_id)
+        body        = json.loads(request.body)
+
+        company.name        = body.get('name', company.name).strip()
+        company.description = body.get('description', company.description)
+        company.sector      = body.get('sector', company.sector)
+        if 'logo_base64' in body:
+            company.logo_base64 = body['logo_base64']
+        company.save()
+
+        company.refresh_from_db()
+        return JsonResponse(snowai_company_serialize(
+            SnowAICompany.objects.prefetch_related('key_people', 'links').get(id=company_id)
+        ))
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_delete(request, company_id):
+    try:
+        company = SnowAICompany.objects.get(id=company_id)
+        company.delete()
+        return JsonResponse({'deleted': True, 'id': company_id})
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+
+
+# ─── KEY PEOPLE CRUD ───────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_add_person(request, company_id):
+    try:
+        company      = SnowAICompany.objects.get(id=company_id)
+        body         = json.loads(request.body)
+        name         = body.get('name', '').strip()
+        role         = body.get('role', '').strip()
+        bio          = body.get('bio', '').strip()
+        photo_base64 = body.get('photo_base64', '')
+
+        if not name:
+            return JsonResponse({'error': 'Person name is required'}, status=400)
+
+        person = SnowAICompanyKeyPerson.objects.create(
+            company=company,
+            name=name,
+            role=role,
+            bio=bio,
+            photo_base64=photo_base64,
+        )
+        return JsonResponse({
+            'id':           person.id,
+            'name':         person.name,
+            'role':         person.role,
+            'bio':          person.bio,
+            'photo_base64': person.photo_base64,
+        }, status=201)
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_delete_person(request, person_id):
+    try:
+        person = SnowAICompanyKeyPerson.objects.get(id=person_id)
+        person.delete()
+        return JsonResponse({'deleted': True, 'id': person_id})
+    except SnowAICompanyKeyPerson.DoesNotExist:
+        return JsonResponse({'error': 'Person not found'}, status=404)
+
+
+# ─── LINKS CRUD ────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_add_link(request, company_id):
+    try:
+        company   = SnowAICompany.objects.get(id=company_id)
+        body      = json.loads(request.body)
+        link_type = body.get('link_type', 'url')
+        title     = body.get('title', '').strip()
+        url       = body.get('url', '').strip()
+
+        if not title or not url:
+            return JsonResponse({'error': 'Title and URL are required'}, status=400)
+
+        if link_type not in ['url', 'pdf', 'youtube']:
+            return JsonResponse({'error': 'Invalid link type'}, status=400)
+
+        # Auto-detect YouTube
+        if link_type == 'youtube' and not snowai_extract_youtube_id(url):
+            return JsonResponse({'error': 'Invalid YouTube URL'}, status=400)
+
+        link = SnowAICompanyLink.objects.create(
+            company=company,
+            link_type=link_type,
+            title=title,
+            url=url,
+        )
+        return JsonResponse({
+            'id':        link.id,
+            'link_type': link.link_type,
+            'title':     link.title,
+            'url':       link.url,
+        }, status=201)
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_delete_link(request, link_id):
+    try:
+        link = SnowAICompanyLink.objects.get(id=link_id)
+        link.delete()
+        return JsonResponse({'deleted': True, 'id': link_id})
+    except SnowAICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+
+
+# ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+def snowai_company_serialize(company):
+    return {
+        'id':          company.id,
+        'name':        company.name,
+        'description': company.description,
+        'sector':      company.sector,
+        'logo_base64': company.logo_base64,
+        'created_at':  company.created_at.isoformat(),
+        'key_people': [
+            {
+                'id':           p.id,
+                'name':         p.name,
+                'role':         p.role,
+                'bio':          p.bio,
+                'photo_base64': p.photo_base64,
+            }
+            for p in company.key_people.all()
+        ],
+        'links': [
+            {
+                'id':        l.id,
+                'link_type': l.link_type,
+                'title':     l.title,
+                'url':       l.url,
+            }
+            for l in company.links.all()
+        ],
+    }
+
+
+def snowai_extract_youtube_id(url):
+    """Extract YouTube video ID from various URL formats."""
+    import re
+    patterns = [
+        r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{11})',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+
+# ─── COMPANY CRUD ──────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_companies_of_interest_list(request):
+    companies = SnowAICompany.objects.prefetch_related('key_people', 'links').all()
+    return JsonResponse([snowai_company_serialize(c) for c in companies], safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def snowai_companies_of_interest_detail(request, company_id):
+    try:
+        company = SnowAICompany.objects.prefetch_related('key_people', 'links').get(id=company_id)
+        return JsonResponse(snowai_company_serialize(company))
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_add(request):
+    try:
+        body        = json.loads(request.body)
+        name        = body.get('name', '').strip()
+        description = body.get('description', '').strip()
+        sector      = body.get('sector', '').strip()
+        logo_base64 = body.get('logo_base64', '')
+
+        if not name:
+            return JsonResponse({'error': 'Company name is required'}, status=400)
+
+        company = SnowAICompany.objects.create(
+            name=name,
+            description=description,
+            sector=sector,
+            logo_base64=logo_base64,
+        )
+        return JsonResponse(snowai_company_serialize(company), status=201)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_update(request, company_id):
+    try:
+        company     = SnowAICompany.objects.get(id=company_id)
+        body        = json.loads(request.body)
+
+        company.name        = body.get('name', company.name).strip()
+        company.description = body.get('description', company.description)
+        company.sector      = body.get('sector', company.sector)
+        if 'logo_base64' in body:
+            company.logo_base64 = body['logo_base64']
+        company.save()
+
+        company.refresh_from_db()
+        return JsonResponse(snowai_company_serialize(
+            SnowAICompany.objects.prefetch_related('key_people', 'links').get(id=company_id)
+        ))
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_delete(request, company_id):
+    try:
+        company = SnowAICompany.objects.get(id=company_id)
+        company.delete()
+        return JsonResponse({'deleted': True, 'id': company_id})
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+
+
+# ─── KEY PEOPLE CRUD ───────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_add_person(request, company_id):
+    try:
+        company      = SnowAICompany.objects.get(id=company_id)
+        body         = json.loads(request.body)
+        name         = body.get('name', '').strip()
+        role         = body.get('role', '').strip()
+        bio          = body.get('bio', '').strip()
+        photo_base64 = body.get('photo_base64', '')
+
+        if not name:
+            return JsonResponse({'error': 'Person name is required'}, status=400)
+
+        person = SnowAICompanyKeyPerson.objects.create(
+            company=company,
+            name=name,
+            role=role,
+            bio=bio,
+            photo_base64=photo_base64,
+        )
+        return JsonResponse({
+            'id':           person.id,
+            'name':         person.name,
+            'role':         person.role,
+            'bio':          person.bio,
+            'photo_base64': person.photo_base64,
+        }, status=201)
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_delete_person(request, person_id):
+    try:
+        person = SnowAICompanyKeyPerson.objects.get(id=person_id)
+        person.delete()
+        return JsonResponse({'deleted': True, 'id': person_id})
+    except SnowAICompanyKeyPerson.DoesNotExist:
+        return JsonResponse({'error': 'Person not found'}, status=404)
+
+
+# ─── LINKS CRUD ────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_add_link(request, company_id):
+    try:
+        company   = SnowAICompany.objects.get(id=company_id)
+        body      = json.loads(request.body)
+        link_type = body.get('link_type', 'url')
+        title     = body.get('title', '').strip()
+        url       = body.get('url', '').strip()
+
+        if not title or not url:
+            return JsonResponse({'error': 'Title and URL are required'}, status=400)
+
+        if link_type not in ['url', 'pdf', 'youtube']:
+            return JsonResponse({'error': 'Invalid link type'}, status=400)
+
+        # Auto-detect YouTube
+        if link_type == 'youtube' and not snowai_extract_youtube_id(url):
+            return JsonResponse({'error': 'Invalid YouTube URL'}, status=400)
+
+        link = SnowAICompanyLink.objects.create(
+            company=company,
+            link_type=link_type,
+            title=title,
+            url=url,
+        )
+        return JsonResponse({
+            'id':        link.id,
+            'link_type': link.link_type,
+            'title':     link.title,
+            'url':       link.url,
+        }, status=201)
+    except SnowAICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_delete_link(request, link_id):
+    try:
+        link = SnowAICompanyLink.objects.get(id=link_id)
+        link.delete()
+        return JsonResponse({'deleted': True, 'id': link_id})
+    except SnowAICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_update_person(request, person_id):
+    try:
+        person       = SnowAICompanyKeyPerson.objects.get(id=person_id)
+        body         = json.loads(request.body)
+        person.name  = body.get('name', person.name).strip()
+        person.role  = body.get('role', person.role)
+        person.bio   = body.get('bio', person.bio)
+        if 'photo_base64' in body:
+            person.photo_base64 = body['photo_base64']
+        person.save()
+        return JsonResponse({
+            'id':           person.id,
+            'name':         person.name,
+            'role':         person.role,
+            'bio':          person.bio,
+            'photo_base64': person.photo_base64,
+        })
+    except SnowAICompanyKeyPerson.DoesNotExist:
+        return JsonResponse({'error': 'Person not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def snowai_companies_of_interest_update_link(request, link_id):
+    try:
+        link       = SnowAICompanyLink.objects.get(id=link_id)
+        body       = json.loads(request.body)
+        link.title = body.get('title', link.title).strip()
+        link.url   = body.get('url', link.url).strip()
+        link.save()
+        return JsonResponse({
+            'id':        link.id,
+            'link_type': link.link_type,
+            'title':     link.title,
+            'url':       link.url,
+        })
+    except SnowAICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.db.models import Sum, Avg, Count, Q
+from .models import Account, AccountTrades
+import json
+from datetime import datetime
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SECTOR PERFORMANCE BREAKDOWN
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def mac_fetch_sector_performance_breakdown(request):
+    """
+    Aggregates trade performance grouped by sector across ALL accounts.
+    Returns avg ROI (relative to account initial_capital), win rate,
+    total trades, winning trades, losing trades, and net P&L per sector.
+    """
+    try:
+        # Pull every trade together with its account's initial_capital
+        trades = AccountTrades.objects.select_related('account').all()
+
+        sector_map = {}  # sector_name -> { trades, wins, losses, pnl, capitals }
+
+        for trade in trades:
+            sector = (trade.sector or 'Unknown').strip() or 'Unknown'
+            if sector not in sector_map:
+                sector_map[sector] = {
+                    'total_trades': 0,
+                    'winning_trades': 0,
+                    'losing_trades': 0,
+                    'net_pnl': 0.0,
+                    # We accumulate per-trade ROI contributions so we can avg them
+                    'roi_sum': 0.0,
+                }
+
+            initial = trade.account.initial_capital or 1  # avoid div/0
+
+            if trade.outcome == 'Win':
+                pnl = abs(trade.amount)
+                sector_map[sector]['winning_trades'] += 1
+            else:
+                pnl = -abs(trade.amount)
+                sector_map[sector]['losing_trades'] += 1
+
+            sector_map[sector]['total_trades'] += 1
+            sector_map[sector]['net_pnl'] += pnl
+            sector_map[sector]['roi_sum'] += (pnl / initial) * 100
+
+        result = []
+        for sector, data in sector_map.items():
+            t = data['total_trades']
+            win_rate = round((data['winning_trades'] / t * 100), 2) if t > 0 else 0
+            avg_roi  = round(data['roi_sum'] / t, 2) if t > 0 else 0
+
+            result.append({
+                'sector':         sector,
+                'total_trades':   t,
+                'winning_trades': data['winning_trades'],
+                'losing_trades':  data['losing_trades'],
+                'win_rate':       win_rate,
+                'avg_roi':        avg_roi,
+                'net_pnl':        round(data['net_pnl'], 2),
+            })
+
+        # Sort best → worst
+        result.sort(key=lambda x: x['avg_roi'], reverse=True)
+
+        return JsonResponse({'success': True, 'sectors': result})
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SYNTHESISE (COMBINE) ACCOUNTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def mac_synthesize_accounts_combined(request):
+    """
+    Combines 2+ accounts into a single synthetic performance view.
+    Body: { "account_ids": [1,2,3], "save": true/false }
+    If save=true a new Account + all its trades are written to the DB.
+    The synthesised account_name is "Acc1, Acc2 & Acc3" style.
+    """
+    try:
+        body        = json.loads(request.body)
+        account_ids = body.get('account_ids', [])
+        want_save   = body.get('save', False)
+
+        if len(account_ids) < 2:
+            return JsonResponse({'success': False, 'error': 'Select at least 2 accounts'}, status=400)
+
+        accounts = Account.objects.filter(id__in=account_ids)
+        if accounts.count() != len(account_ids):
+            return JsonResponse({'success': False, 'error': 'One or more accounts not found'}, status=404)
+
+        # Build composite name:  "Acc1, Acc2 & Acc3"
+        names = list(accounts.values_list('account_name', flat=True))
+        if len(names) == 2:
+            combined_name = f"{names[0]} & {names[1]}"
+        else:
+            combined_name = ', '.join(names[:-1]) + f' & {names[-1]}'
+
+        combined_assets = ', '.join(
+            set(a for acc in accounts for a in acc.main_assets.split(','))
+        )
+
+        # Aggregate metrics
+        total_initial = sum(acc.initial_capital for acc in accounts)
+        all_trades    = AccountTrades.objects.filter(account__in=accounts)
+        total_trades  = all_trades.count()
+        wins          = all_trades.filter(outcome='Win').count()
+        losses        = all_trades.filter(outcome='Loss').count()
+
+        total_wins_amt   = all_trades.filter(outcome='Win').aggregate(Sum('amount'))['amount__sum'] or 0
+        total_losses_amt = all_trades.filter(outcome='Loss').aggregate(Sum('amount'))['amount__sum'] or 0
+        net_pnl          = total_wins_amt - total_losses_amt
+
+        win_rate = round((wins / total_trades * 100), 2) if total_trades > 0 else 0
+        roi      = round((net_pnl / total_initial * 100), 2) if total_initial > 0 else 0
+
+        synthesized = {
+            'account_name':    combined_name,
+            'main_assets':     combined_assets,
+            'initial_capital': round(total_initial, 2),
+            'total_trades':    total_trades,
+            'winning_trades':  wins,
+            'losing_trades':   losses,
+            'net_pnl':         round(net_pnl, 2),
+            'win_rate':        win_rate,
+            'roi':             roi,
+            'current_balance': round(total_initial + net_pnl, 2),
+        }
+
+        saved = False
+        if want_save:
+            # Avoid duplicate name collision
+            base_name = combined_name
+            counter   = 1
+            while Account.objects.filter(account_name=combined_name).exists():
+                combined_name = f"{base_name} ({counter})"
+                counter += 1
+
+            new_account = Account.objects.create(
+                account_name    = combined_name,
+                main_assets     = combined_assets,
+                initial_capital = total_initial,
+            )
+
+            # Clone all trades into the new account
+            trade_objs = []
+            for trade in all_trades:
+                trade_objs.append(AccountTrades(
+                    account                  = new_account,
+                    asset                    = trade.asset,
+                    order_type               = trade.order_type,
+                    strategy                 = trade.strategy,
+                    sector                   = trade.sector,
+                    day_of_week_entered      = trade.day_of_week_entered,
+                    day_of_week_closed       = trade.day_of_week_closed,
+                    trading_session_entered  = trade.trading_session_entered,
+                    trading_session_closed   = trade.trading_session_closed,
+                    outcome                  = trade.outcome,
+                    amount                   = trade.amount,
+                    emotional_bias           = trade.emotional_bias,
+                    reflection               = trade.reflection,
+                    date_entered             = trade.date_entered,
+                ))
+            AccountTrades.objects.bulk_create(trade_objs)
+            synthesized['account_name'] = combined_name
+            saved = True
+
+        return JsonResponse({
+            'success':     True,
+            'synthesized': synthesized,
+            'saved':       saved,
+        })
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  FETCH TRADES LIST FOR AN ACCOUNT  (for the Trade Entries tab)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def mac_fetch_account_trades_list(request, account_id):
+    """
+    Returns every trade for a given account as a flat list, ordered by
+    date_entered (newest first).  Used by the Trade Entries tab.
+    """
+    try:
+        account = Account.objects.get(id=account_id)
+        trades  = AccountTrades.objects.filter(account=account).order_by('-date_entered')
+
+        trade_list = []
+        for t in trades:
+            trade_list.append({
+                'id':                       t.id,
+                'asset':                    t.asset,
+                'order_type':               t.order_type,
+                'strategy':                 t.strategy,
+                'sector':                   t.sector or 'Unknown',
+                'day_of_week_entered':      t.day_of_week_entered,
+                'day_of_week_closed':       t.day_of_week_closed or '',
+                'trading_session_entered':  t.trading_session_entered,
+                'trading_session_closed':   t.trading_session_closed or '',
+                'outcome':                  t.outcome,
+                'amount':                   t.amount,
+                'emotional_bias':           t.emotional_bias or '',
+                'reflection':               t.reflection or '',
+                'date_entered':             t.date_entered.isoformat() if t.date_entered else None,
+            })
+
+        return JsonResponse({
+            'success':      True,
+            'account_name': account.account_name,
+            'trades':       trade_list,
+            'total':        len(trade_list),
+        })
+
+    except Account.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Account not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  EDIT A SINGLE TRADE ENTRY
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["PATCH"])
+def mac_edit_account_trade_entry(request, trade_id):
+    """
+    Partially updates a single AccountTrades row.
+    Body can contain any subset of the editable fields.
+    Uses PATCH so only supplied fields are updated.
+    """
+    try:
+        trade = AccountTrades.objects.get(id=trade_id)
+        body  = json.loads(request.body)
+
+        EDITABLE_FIELDS = [
+            'asset', 'order_type', 'strategy', 'sector',
+            'day_of_week_entered', 'day_of_week_closed',
+            'trading_session_entered', 'trading_session_closed',
+            'outcome', 'amount', 'emotional_bias', 'reflection',
+        ]
+
+        for field in EDITABLE_FIELDS:
+            if field in body:
+                setattr(trade, field, body[field])
+
+        # Handle date separately (parse ISO string)
+        if 'date_entered' in body and body['date_entered']:
+            try:
+                # Accept both "2024-01-15T10:30" and "2024-01-15T10:30:00"
+                raw = body['date_entered']
+                if len(raw) == 16:          # "YYYY-MM-DDTHH:MM"
+                    raw += ':00'
+                trade.date_entered = datetime.fromisoformat(raw)
+            except ValueError:
+                return JsonResponse({'success': False, 'error': 'Invalid date_entered format'}, status=400)
+
+        trade.save()
+
+        return JsonResponse({
+            'success':  True,
+            'trade_id': trade.id,
+            'message':  'Trade updated successfully',
+        })
+
+    except AccountTrades.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Trade not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+"""
+SnowAI Views — Companies of Interest + VTR + CTR
+==================================================
+Model names used (unique, won't clash):
+  SnowCOICompany        SnowCOIKeyPerson      SnowCOICompanyLink
+  SnowCOITranscript     SnowVTRRecord
+
+URL prefixes:
+  /snowcoi/   — Companies of Interest
+  /snowvtr/   — Global Video Transcript Record
+  /snowctr/   — Company-scoped Transcript (CTR)
+"""
+
+import json
+import re
+import uuid
+import urllib.request
+
+from django.core.paginator import Paginator
+from django.http import JsonResponse
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+from .models import (
+    SnowCOICompany,
+    SnowCOIKeyPerson,
+    SnowCOICompanyLink,
+    SnowCOITranscript,
+)
+# Use the existing VTR model — do NOT redeclare it in models.py
+from .models import SnowAIVideoTranscriptRecord as SnowVTRRecord
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SHARED HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_youtube_id(url):
+    if not url:
+        return None
+    patterns = [
+        r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{11})',
+        r'youtube\.com/shorts/([A-Za-z0-9_-]{11})',
+        r'youtube\.com/live/([A-Za-z0-9_-]{11})',
+    ]
+    for p in patterns:
+        m = re.search(p, url)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _fetch_youtube_title(video_id):
+    try:
+        url = (
+            f'https://www.youtube.com/oembed'
+            f'?url=https://www.youtube.com/watch?v={video_id}&format=json'
+        )
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            return data.get('title', ''), data.get('author_name', '')
+    except Exception:
+        return '', ''
+
+
+# ── Serialisers ───────────────────────────────────────────────────────────────
+
+def _company_to_dict(c):
+    return {
+        'id':          c.id,
+        'name':        c.name,
+        'description': c.description,
+        'sector':      c.sector,
+        'logo_base64': c.logo_base64,
+        'created_at':  c.created_at.isoformat() if c.created_at else None,
+        'updated_at':  c.updated_at.isoformat() if c.updated_at else None,
+        'key_people':  [_person_to_dict(p) for p in c.key_people.all()],
+        'links':       [_link_to_dict(l) for l in c.links.all()],
+    }
+
+def _person_to_dict(p):
+    return {
+        'id':           p.id,
+        'name':         p.name,
+        'role':         p.role,
+        'bio':          p.bio,
+        'photo_base64': p.photo_base64,
+        'created_at':   p.created_at.isoformat() if p.created_at else None,
+    }
+
+def _link_to_dict(l):
+    ai_analysis = None
+    if l.has_ai_analysis:
+        ai_analysis = {
+            'summary':         l.ai_summary,
+            'key_points':      l.ai_key_points or [],
+            'topics':          l.ai_topics or [],
+            'sentiment_score': l.ai_sentiment_score,
+            'analyst_notes':   l.ai_analyst_notes,
+            'analysed_at':     l.ai_analysed_at.isoformat() if l.ai_analysed_at else None,
+        }
+    return {
+        'id':          l.id,
+        'link_type':   l.link_type,
+        'title':       l.title,
+        'url':         l.url,
+        'created_at':  l.created_at.isoformat() if l.created_at else None,
+        'ai_analysis': ai_analysis,
+    }
+
+def _vtr_to_dict(t):
+    return {
+        'id':                          t.id,
+        'transcript_uuid':             str(t.transcript_uuid),
+        'youtube_video_id':            t.youtube_video_id,
+        'youtube_url':                 t.youtube_url,
+        'video_title':                 t.video_title,
+        'primary_speaker_name':        t.primary_speaker_name,
+        'speaker_organization':        t.speaker_organization,
+        'speaker_country_code':        t.speaker_country_code,
+        'speaker_country_name':        t.speaker_country_name,
+        'full_transcript_text':        t.full_transcript_text,
+        'video_duration_seconds':      t.video_duration_seconds,
+        'transcript_language':         t.transcript_language,
+        'video_upload_date':           t.video_upload_date.isoformat() if t.video_upload_date else None,
+        'transcription_method':        t.transcription_method,
+        'transcript_confidence_score': t.transcript_confidence_score,
+        'processing_status':           t.processing_status,
+        'content_category':            t.content_category,
+        'economic_topics':             t.economic_topics or [],
+        'custom_tags':                 t.custom_tags or [],
+        'word_count':                  t.word_count,
+        'sentiment_analysis_score':    t.sentiment_analysis_score,
+        'key_phrases_extracted':       t.key_phrases_extracted or [],
+        'created_at':                  t.created_at.isoformat() if t.created_at else None,
+        'updated_at':                  t.updated_at.isoformat() if t.updated_at else None,
+        'archived_at':                 t.archived_at.isoformat() if t.archived_at else None,
+    }
+
+def _ctr_to_dict(t):
+    return {
+        'id':                          t.id,
+        'transcript_uuid':             str(t.transcript_uuid),
+        'company_id':                  t.company_id,
+        'company_name':                t.company_name,
+        'source_title':                t.source_title,
+        'source_url':                  t.source_url,
+        'youtube_video_id':            t.youtube_video_id,
+        'source_type':                 t.source_type,
+        'speaker_name':                t.speaker_name,
+        'speaker_role':                t.speaker_role,
+        'event_name':                  t.event_name,
+        'event_date':                  t.event_date.isoformat() if t.event_date else None,
+        'full_transcript_text':        t.full_transcript_text,
+        'transcript_language':         t.transcript_language,
+        'recording_duration_seconds':  t.recording_duration_seconds,
+        'word_count':                  t.word_count,
+        'status':                      t.status,
+        'transcription_method':        t.transcription_method,
+        'summary':                     t.summary,
+        'key_points':                  t.key_points or [],
+        'topics':                      t.topics or [],
+        'sentiment_score':             t.sentiment_score,
+        'analyst_notes':               t.analyst_notes,
+        'custom_tags':                 t.custom_tags or [],
+        'recorded_at':                 t.recorded_at.isoformat() if t.recorded_at else None,
+        'created_at':                  t.created_at.isoformat() if t.created_at else None,
+        'updated_at':                  t.updated_at.isoformat() if t.updated_at else None,
+        'archived_at':                 t.archived_at.isoformat() if t.archived_at else None,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  COMPANIES OF INTEREST  — /snowcoi/
+# ══════════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowcoi_companies_list(request):
+    """GET /snowcoi/companies/"""
+    try:
+        companies = SnowCOICompany.objects.prefetch_related('key_people', 'links').all()
+        return JsonResponse([_company_to_dict(c) for c in companies], safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_companies_add(request):
+    """POST /snowcoi/companies/add/"""
+    try:
+        body = json.loads(request.body)
+        name = body.get('name', '').strip()
+        if not name:
+            return JsonResponse({'error': 'name is required'}, status=400)
+        company = SnowCOICompany.objects.create(
+            name        = name,
+            description = body.get('description', '').strip(),
+            sector      = body.get('sector', '').strip(),
+            logo_base64 = body.get('logo_base64', ''),
+        )
+        return JsonResponse(_company_to_dict(company), status=201)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_companies_update(request, company_id):
+    """POST /snowcoi/companies/<company_id>/update/"""
+    try:
+        company = SnowCOICompany.objects.get(id=company_id)
+        body    = json.loads(request.body)
+        for field in ('name', 'description', 'sector', 'logo_base64'):
+            if field in body:
+                setattr(company, field, body[field])
+        company.save()
+        return JsonResponse(_company_to_dict(company))
+    except SnowCOICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_companies_delete(request, company_id):
+    """POST /snowcoi/companies/<company_id>/delete/"""
+    try:
+        SnowCOICompany.objects.get(id=company_id).delete()
+        return JsonResponse({'success': True})
+    except SnowCOICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Key people ────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_add_person(request, company_id):
+    """POST /snowcoi/companies/<company_id>/add-person/"""
+    try:
+        company = SnowCOICompany.objects.get(id=company_id)
+        body    = json.loads(request.body)
+        name    = body.get('name', '').strip()
+        if not name:
+            return JsonResponse({'error': 'name is required'}, status=400)
+        person = SnowCOIKeyPerson.objects.create(
+            company      = company,
+            name         = name,
+            role         = body.get('role', '').strip(),
+            bio          = body.get('bio', '').strip(),
+            photo_base64 = body.get('photo_base64', ''),
+        )
+        return JsonResponse(_person_to_dict(person), status=201)
+    except SnowCOICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_update_person(request, person_id):
+    """POST /snowcoi/people/<person_id>/update/"""
+    try:
+        person = SnowCOIKeyPerson.objects.get(id=person_id)
+        body   = json.loads(request.body)
+        for field in ('name', 'role', 'bio', 'photo_base64'):
+            if field in body:
+                setattr(person, field, body[field])
+        person.save()
+        return JsonResponse(_person_to_dict(person))
+    except SnowCOIKeyPerson.DoesNotExist:
+        return JsonResponse({'error': 'Person not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_delete_person(request, person_id):
+    """POST /snowcoi/people/<person_id>/delete/"""
+    try:
+        SnowCOIKeyPerson.objects.get(id=person_id).delete()
+        return JsonResponse({'success': True})
+    except SnowCOIKeyPerson.DoesNotExist:
+        return JsonResponse({'error': 'Person not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Links ─────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_add_link(request, company_id):
+    """POST /snowcoi/companies/<company_id>/add-link/"""
+    try:
+        company   = SnowCOICompany.objects.get(id=company_id)
+        body      = json.loads(request.body)
+        title     = body.get('title', '').strip()
+        url       = body.get('url', '').strip()
+        if not title or not url:
+            return JsonResponse({'error': 'title and url are required'}, status=400)
+        link = SnowCOICompanyLink.objects.create(
+            company   = company,
+            link_type = body.get('link_type', 'url').strip(),
+            title     = title,
+            url       = url,
+        )
+        return JsonResponse(_link_to_dict(link), status=201)
+    except SnowCOICompany.DoesNotExist:
+        return JsonResponse({'error': 'Company not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_update_link(request, link_id):
+    """POST /snowcoi/links/<link_id>/update/"""
+    try:
+        link = SnowCOICompanyLink.objects.get(id=link_id)
+        body = json.loads(request.body)
+        for field in ('title', 'url', 'link_type'):
+            if field in body:
+                setattr(link, field, body[field])
+        link.save()
+        return JsonResponse(_link_to_dict(link))
+    except SnowCOICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_delete_link(request, link_id):
+    """POST /snowcoi/links/<link_id>/delete/"""
+    try:
+        SnowCOICompanyLink.objects.get(id=link_id).delete()
+        return JsonResponse({'success': True})
+    except SnowCOICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowcoi_link_apply_ai(request, company_id, link_id):
+    """
+    POST /snowcoi/companies/<company_id>/links/<link_id>/apply-ai/
+    Saves AI analysis onto a link record (used for PDFs).
+    Body: { summary, key_points, topics, sentiment_score, analyst_notes }
+    Returns: { success, analysis }
+    """
+    try:
+        link = SnowCOICompanyLink.objects.get(id=link_id, company_id=company_id)
+    except SnowCOICompanyLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    sentiment = body.get('sentiment_score')
+    if sentiment is not None:
+        try:
+            sentiment = float(sentiment)
+            if not (-1.0 <= sentiment <= 1.0):
+                return JsonResponse({'error': 'sentiment_score must be between -1.0 and 1.0'}, status=400)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'sentiment_score must be a float'}, status=400)
+
+    try:
+        if 'summary'       in body: link.ai_summary       = str(body['summary']).strip()
+        if 'key_points'    in body: link.ai_key_points    = body['key_points'] if isinstance(body['key_points'], list) else []
+        if 'topics'        in body: link.ai_topics        = body['topics'] if isinstance(body['topics'], list) else []
+        if 'analyst_notes' in body: link.ai_analyst_notes = str(body['analyst_notes']).strip()
+        if sentiment is not None:   link.ai_sentiment_score = sentiment
+        link.ai_analysed_at = timezone.now()
+        link.save()
+        return JsonResponse({
+            'success': True,
+            'analysis': {
+                'summary':         link.ai_summary,
+                'key_points':      link.ai_key_points or [],
+                'topics':          link.ai_topics or [],
+                'sentiment_score': link.ai_sentiment_score,
+                'analyst_notes':   link.ai_analyst_notes,
+                'analysed_at':     link.ai_analysed_at.isoformat(),
+            },
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  VTR — GLOBAL VIDEO TRANSCRIPT RECORD  — /snowvtr/
+# ══════════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowvtr_fetch_youtube_metadata(request):
+    """POST /snowvtr/youtube-metadata/"""
+    try:
+        body     = json.loads(request.body)
+        url      = body.get('url', '').strip()
+        if not url:
+            return JsonResponse({'error': 'url is required'}, status=400)
+        video_id = _extract_youtube_id(url)
+        if not video_id:
+            return JsonResponse({'error': 'Could not extract YouTube video ID'}, status=400)
+        title, channel_name = _fetch_youtube_title(video_id)
+        return JsonResponse({'video_id': video_id, 'title': title, 'channel_name': channel_name})
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowvtr_save_transcript(request):
+    """POST /snowvtr/transcripts/save/  — upsert by transcript_uuid"""
+    try:
+        body      = json.loads(request.body)
+        full_text = body.get('full_transcript_text', '').strip()
+        if not full_text:
+            return JsonResponse({'error': 'full_transcript_text is required'}, status=400)
+
+        t_uuid       = body.get('transcript_uuid') or str(uuid.uuid4())
+        youtube_url  = body.get('youtube_url', '').strip() or None
+        yt_id        = body.get('youtube_video_id') or (_extract_youtube_id(youtube_url) if youtube_url else None)
+        video_title  = body.get('video_title', '').strip()
+        if not video_title and yt_id:
+            video_title, _ = _fetch_youtube_title(yt_id)
+
+        upload_date = None
+        if raw := body.get('video_upload_date'):
+            try:
+                from django.utils.dateparse import parse_datetime
+                upload_date = parse_datetime(str(raw))
+            except Exception:
+                pass
+
+        obj, created = SnowVTRRecord.objects.update_or_create(
+            transcript_uuid=t_uuid,
+            defaults={
+                'youtube_video_id':            yt_id,
+                'youtube_url':                 youtube_url,
+                'video_title':                 video_title or None,
+                'primary_speaker_name':        body.get('primary_speaker_name', '').strip() or None,
+                'speaker_organization':        body.get('speaker_organization', '').strip() or None,
+                'speaker_country_code':        body.get('speaker_country_code', '').strip() or None,
+                'speaker_country_name':        body.get('speaker_country_name', '').strip() or None,
+                'full_transcript_text':        full_text,
+                'video_duration_seconds':      body.get('video_duration_seconds') or None,
+                'transcript_language':         body.get('transcript_language', 'en') or 'en',
+                'video_upload_date':           upload_date,
+                'transcription_method':        body.get('transcription_method', 'browser_speech_api'),
+                'transcript_confidence_score': body.get('transcript_confidence_score') or None,
+                'processing_status':           body.get('processing_status', 'completed'),
+                'content_category':            body.get('content_category', '').strip() or None,
+                'economic_topics':             body.get('economic_topics', []),
+                'custom_tags':                 body.get('custom_tags', []),
+                'sentiment_analysis_score':    body.get('sentiment_analysis_score') or None,
+                'key_phrases_extracted':       body.get('key_phrases_extracted', []),
+            },
+        )
+        return JsonResponse(
+            {'success': True, 'created': created, 'transcript': _vtr_to_dict(obj)},
+            status=201 if created else 200,
+        )
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowvtr_list_transcripts(request):
+    """GET /snowvtr/transcripts/"""
+    try:
+        qs = SnowVTRRecord.objects.exclude(processing_status='archived').order_by('-created_at')
+        if v := request.GET.get('video_id'):    qs = qs.filter(youtube_video_id=v)
+        if v := request.GET.get('language'):    qs = qs.filter(transcript_language=v)
+        if v := request.GET.get('category'):    qs = qs.filter(content_category=v)
+        if v := request.GET.get('search', '').strip():
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(video_title__icontains=v) | Q(primary_speaker_name__icontains=v) |
+                Q(speaker_organization__icontains=v) | Q(full_transcript_text__icontains=v)
+            )
+        page_size = min(int(request.GET.get('page_size', 20)), 100)
+        paginator = Paginator(qs, page_size)
+        page_num  = int(request.GET.get('page', 1))
+        page      = paginator.get_page(page_num)
+        return JsonResponse({
+            'count': paginator.count, 'total_pages': paginator.num_pages,
+            'page': page_num, 'transcripts': [_vtr_to_dict(t) for t in page.object_list],
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowvtr_get_transcript(request, transcript_id):
+    """GET /snowvtr/transcripts/<transcript_id>/"""
+    try:
+        obj = (SnowVTRRecord.objects.get(id=transcript_id)
+               if str(transcript_id).isdigit()
+               else SnowVTRRecord.objects.get(transcript_uuid=transcript_id))
+        return JsonResponse(_vtr_to_dict(obj))
+    except SnowVTRRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowvtr_list_by_video(request, youtube_video_id):
+    """GET /snowvtr/by-video/<youtube_video_id>/"""
+    try:
+        qs = SnowVTRRecord.objects.filter(youtube_video_id=youtube_video_id).order_by('-created_at')
+        return JsonResponse({'youtube_video_id': youtube_video_id, 'count': qs.count(),
+                             'transcripts': [_vtr_to_dict(t) for t in qs]})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowvtr_update_transcript(request, transcript_id):
+    """POST /snowvtr/transcripts/<transcript_id>/update/"""
+    try:
+        obj = (SnowVTRRecord.objects.get(id=transcript_id)
+               if str(transcript_id).isdigit()
+               else SnowVTRRecord.objects.get(transcript_uuid=transcript_id))
+        body = json.loads(request.body)
+        for f in ['full_transcript_text','video_title','primary_speaker_name','speaker_organization',
+                  'speaker_country_code','speaker_country_name','transcript_language','processing_status',
+                  'content_category','economic_topics','custom_tags','transcript_confidence_score',
+                  'sentiment_analysis_score','key_phrases_extracted']:
+            if f in body:
+                setattr(obj, f, body[f])
+        obj.save()
+        return JsonResponse({'success': True, 'transcript': _vtr_to_dict(obj)})
+    except SnowVTRRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowvtr_delete_transcript(request, transcript_id):
+    """POST /snowvtr/transcripts/<transcript_id>/delete/"""
+    try:
+        obj = (SnowVTRRecord.objects.get(id=transcript_id)
+               if str(transcript_id).isdigit()
+               else SnowVTRRecord.objects.get(transcript_uuid=transcript_id))
+        obj.delete()
+        return JsonResponse({'success': True})
+    except SnowVTRRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowvtr_archive_transcript(request, transcript_id):
+    """POST /snowvtr/transcripts/<transcript_id>/archive/"""
+    try:
+        obj = (SnowVTRRecord.objects.get(id=transcript_id)
+               if str(transcript_id).isdigit()
+               else SnowVTRRecord.objects.get(transcript_uuid=transcript_id))
+        obj.processing_status = 'archived'
+        obj.archived_at       = timezone.now()
+        obj.save()
+        return JsonResponse({'success': True, 'transcript': _vtr_to_dict(obj)})
+    except SnowVTRRecord.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowvtr_stats(request):
+    """GET /snowvtr/stats/"""
+    try:
+        from django.db.models import Avg, Count, Sum
+        base   = SnowVTRRecord.objects.exclude(processing_status='archived')
+        stats  = base.aggregate(total_words=Sum('word_count'), avg_words=Avg('word_count'))
+        return JsonResponse({
+            'total_transcripts':  SnowVTRRecord.objects.count(),
+            'active_transcripts': base.count(),
+            'total_words':        stats['total_words'] or 0,
+            'avg_words_per_doc':  round(stats['avg_words'] or 0, 1),
+            'by_language':        list(base.values('transcript_language').annotate(count=Count('id')).order_by('-count')),
+            'by_category':        list(base.exclude(content_category__isnull=True).values('content_category').annotate(count=Count('id')).order_by('-count')),
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  CTR — COMPANY-SCOPED TRANSCRIPTS  — /snowctr/
+# ══════════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowctr_list_for_company(request, company_id):
+    """GET /snowctr/company/<company_id>/transcripts/"""
+    try:
+        qs = SnowCOITranscript.objects.filter(
+            company_id=company_id
+        ).exclude(status='archived').order_by('-recorded_at')
+        if v := request.GET.get('status'):      qs = qs.filter(status=v)
+        if v := request.GET.get('source_type'): qs = qs.filter(source_type=v)
+        if v := request.GET.get('language'):    qs = qs.filter(transcript_language=v)
+        if v := request.GET.get('search', '').strip():
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(source_title__icontains=v) | Q(speaker_name__icontains=v) |
+                Q(event_name__icontains=v) | Q(full_transcript_text__icontains=v) |
+                Q(summary__icontains=v)
+            )
+        page_size = min(int(request.GET.get('page_size', 50)), 200)
+        paginator = Paginator(qs, page_size)
+        page_num  = int(request.GET.get('page', 1))
+        page      = paginator.get_page(page_num)
+        return JsonResponse({
+            'company_id': company_id, 'count': paginator.count,
+            'total_pages': paginator.num_pages, 'page': page_num,
+            'transcripts': [_ctr_to_dict(t) for t in page.object_list],
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowctr_save(request, company_id):
+    """POST /snowctr/company/<company_id>/transcripts/save/  — upsert by transcript_uuid"""
+    try:
+        body      = json.loads(request.body)
+        full_text = body.get('full_transcript_text', '').strip()
+        if not full_text:
+            return JsonResponse({'error': 'full_transcript_text is required'}, status=400)
+
+        t_uuid     = body.get('transcript_uuid') or str(uuid.uuid4())
+        source_url = body.get('source_url', '').strip() or None
+        yt_id      = body.get('youtube_video_id') or (_extract_youtube_id(source_url) if source_url else None)
+        source_title = body.get('source_title', '').strip()
+        if not source_title and yt_id:
+            source_title, _ = _fetch_youtube_title(yt_id)
+
+        event_date = None
+        if raw := body.get('event_date'):
+            try:
+                from django.utils.dateparse import parse_date
+                event_date = parse_date(str(raw))
+            except Exception:
+                pass
+
+        obj, created = SnowCOITranscript.objects.update_or_create(
+            transcript_uuid=t_uuid,
+            defaults={
+                'company_id':                  company_id,
+                'company_name':                body.get('company_name', '').strip(),
+                'source_title':                source_title,
+                'source_url':                  source_url,
+                'youtube_video_id':            yt_id,
+                'source_type':                 body.get('source_type', 'youtube'),
+                'speaker_name':                body.get('speaker_name', '').strip(),
+                'speaker_role':                body.get('speaker_role', '').strip(),
+                'event_name':                  body.get('event_name', '').strip(),
+                'event_date':                  event_date,
+                'full_transcript_text':        full_text,
+                'transcript_language':         body.get('transcript_language', 'en-US'),
+                'recording_duration_seconds':  body.get('recording_duration_seconds') or None,
+                'transcription_method':        body.get('transcription_method', 'browser_speech_api'),
+                'status':                      body.get('status', 'raw'),
+                'summary':                     body.get('summary', '').strip(),
+                'key_points':                  body.get('key_points', []),
+                'topics':                      body.get('topics', []),
+                'sentiment_score':             body.get('sentiment_score') or None,
+                'analyst_notes':               body.get('analyst_notes', '').strip(),
+                'custom_tags':                 body.get('custom_tags', []),
+            },
+        )
+        return JsonResponse(
+            {'success': True, 'created': created, 'transcript': _ctr_to_dict(obj)},
+            status=201 if created else 200,
+        )
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowctr_get(request, company_id, transcript_id):
+    """GET /snowctr/company/<company_id>/transcripts/<transcript_id>/"""
+    try:
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
+               if str(transcript_id).isdigit()
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+        return JsonResponse(_ctr_to_dict(obj))
+    except SnowCOITranscript.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowctr_update(request, company_id, transcript_id):
+    """POST /snowctr/company/<company_id>/transcripts/<transcript_id>/update/"""
+    try:
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
+               if str(transcript_id).isdigit()
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+        body = json.loads(request.body)
+        for f in ['source_title','source_url','source_type','speaker_name','speaker_role',
+                  'event_name','event_date','full_transcript_text','transcript_language',
+                  'recording_duration_seconds','status','summary','key_points','topics',
+                  'sentiment_score','analyst_notes','custom_tags','transcription_method']:
+            if f in body:
+                setattr(obj, f, body[f])
+        obj.save()
+        return JsonResponse({'success': True, 'transcript': _ctr_to_dict(obj)})
+    except SnowCOITranscript.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowctr_delete(request, company_id, transcript_id):
+    """POST /snowctr/company/<company_id>/transcripts/<transcript_id>/delete/"""
+    try:
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
+               if str(transcript_id).isdigit()
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+        obj.delete()
+        return JsonResponse({'success': True})
+    except SnowCOITranscript.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowctr_archive(request, company_id, transcript_id):
+    """POST /snowctr/company/<company_id>/transcripts/<transcript_id>/archive/"""
+    try:
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
+               if str(transcript_id).isdigit()
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+        obj.status      = 'archived'
+        obj.archived_at = timezone.now()
+        obj.save()
+        return JsonResponse({'success': True, 'transcript': _ctr_to_dict(obj)})
+    except SnowCOITranscript.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowctr_set_status(request, company_id, transcript_id):
+    """POST /snowctr/company/<company_id>/transcripts/<transcript_id>/status/"""
+    try:
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
+               if str(transcript_id).isdigit()
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+        body   = json.loads(request.body)
+        status = body.get('status', '').strip()
+        valid  = {'raw', 'reviewed', 'processed', 'archived'}
+        if status not in valid:
+            return JsonResponse({'error': f'status must be one of {sorted(valid)}'}, status=400)
+        obj.status = status
+        if status == 'archived':
+            obj.archived_at = timezone.now()
+        obj.save(update_fields=['status', 'archived_at', 'updated_at'])
+        return JsonResponse({'success': True, 'transcript': _ctr_to_dict(obj)})
+    except SnowCOITranscript.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowctr_apply_ai_analysis(request, company_id, transcript_id):
+    """
+    POST /snowctr/company/<company_id>/transcripts/<transcript_id>/apply-ai/
+    Saves AI fields and auto-advances status -> processed.
+    Body: { summary, key_points, topics, sentiment_score, analyst_notes }
+    """
+    try:
+        obj = (SnowCOITranscript.objects.get(id=transcript_id, company_id=company_id)
+               if str(transcript_id).isdigit()
+               else SnowCOITranscript.objects.get(transcript_uuid=transcript_id, company_id=company_id))
+    except SnowCOITranscript.DoesNotExist:
+        return JsonResponse({'error': 'Transcript not found'}, status=404)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    sentiment = body.get('sentiment_score')
+    if sentiment is not None:
+        try:
+            sentiment = float(sentiment)
+            if not (-1.0 <= sentiment <= 1.0):
+                return JsonResponse({'error': 'sentiment_score must be between -1.0 and 1.0'}, status=400)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'sentiment_score must be a float'}, status=400)
+
+    try:
+        if 'summary'       in body: obj.summary       = str(body['summary']).strip()
+        if 'key_points'    in body: obj.key_points    = body['key_points'] if isinstance(body['key_points'], list) else []
+        if 'topics'        in body: obj.topics        = body['topics'] if isinstance(body['topics'], list) else []
+        if 'analyst_notes' in body: obj.analyst_notes = str(body['analyst_notes']).strip()
+        if sentiment is not None:   obj.sentiment_score = sentiment
+        obj.status = 'processed'
+        obj.save()
+        return JsonResponse({'success': True, 'transcript': _ctr_to_dict(obj)})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowctr_list_all(request):
+    """GET /snowctr/transcripts/  — global list across all companies"""
+    try:
+        qs = SnowCOITranscript.objects.exclude(status='archived').order_by('-recorded_at')
+        if v := request.GET.get('company_id'):  qs = qs.filter(company_id=v)
+        if v := request.GET.get('status'):      qs = qs.filter(status=v)
+        if v := request.GET.get('source_type'): qs = qs.filter(source_type=v)
+        if v := request.GET.get('search', '').strip():
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(source_title__icontains=v) | Q(speaker_name__icontains=v) |
+                Q(company_name__icontains=v) | Q(full_transcript_text__icontains=v) |
+                Q(summary__icontains=v) | Q(analyst_notes__icontains=v) | Q(event_name__icontains=v)
+            )
+        page_size = min(int(request.GET.get('page_size', 20)), 100)
+        paginator = Paginator(qs, page_size)
+        page_num  = int(request.GET.get('page', 1))
+        page      = paginator.get_page(page_num)
+        return JsonResponse({
+            'count': paginator.count, 'total_pages': paginator.num_pages,
+            'page': page_num, 'transcripts': [_ctr_to_dict(t) for t in page.object_list],
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowctr_company_stats(request, company_id):
+    """GET /snowctr/company/<company_id>/stats/"""
+    try:
+        from django.db.models import Avg, Count, Sum
+        qs  = SnowCOITranscript.objects.filter(company_id=company_id).exclude(status='archived')
+        agg = qs.aggregate(total_words=Sum('word_count'), avg_words=Avg('word_count'))
+        return JsonResponse({
+            'company_id':        company_id,
+            'total_transcripts': qs.count(),
+            'total_words':       agg['total_words'] or 0,
+            'avg_words':         round(agg['avg_words'] or 0, 1),
+            'by_status':         list(qs.values('status').annotate(count=Count('id'))),
+            'by_source_type':    list(qs.values('source_type').annotate(count=Count('id'))),
+            'by_language':       list(qs.values('transcript_language').annotate(count=Count('id'))),
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# views.py
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
+@api_view(['GET'])
+def get_positions_for_asset(request):
+    asset = request.GET.get('asset', '').upper().strip()
+    if not asset:
+        return Response({'positions': []})
+    positions = TradePosition.objects.filter(asset__iexact=asset).values(
+        'id', 'asset', 'direction', 'entry_price',
+        'sl_price', 'tp_price', 'sl_dollars', 'tp_dollars',
+        'current_price', 'notes', 'created_at'
+    )
+    return Response({'positions': list(positions)})
+
+@api_view(['PATCH'])
+def update_position_price(request, position_id):
+    try:
+        position = TradePosition.objects.get(id=position_id)
+    except TradePosition.DoesNotExist:
+        return Response({'error': 'Not found'}, status=404)
+    
+    current_price = request.data.get('current_price')
+    if current_price is not None:
+        position.current_price = float(current_price)
+        # Recalculate sl/tp dollars based on direction
+        diff = float(current_price) - position.entry_price
+        if position.direction == 'long':
+            if position.sl_price:
+                position.sl_dollars = (position.entry_price - position.sl_price)
+            if position.tp_price:
+                position.tp_dollars = (position.tp_price - position.entry_price)
+        else:  # short
+            if position.sl_price:
+                position.sl_dollars = (position.sl_price - position.entry_price)
+            if position.tp_price:
+                position.tp_dollars = (position.entry_price - position.tp_price)
+        position.save()
+    
+    return Response({
+        'id': position.id,
+        'current_price': position.current_price,
+        'sl_dollars': position.sl_dollars,
+        'tp_dollars': position.tp_dollars,
+    })
+
+# ── SnowVault Watchlist CRUD ───────────────────────────────────────────────────
+
+@csrf_exempt
+def snowvault_watchlist_list(request):
+    """GET — return all active watchlist assets."""
+    from .models import SnowVaultWatchlistAsset
+    assets = SnowVaultWatchlistAsset.objects.filter(is_active=True).values(
+        'id', 'symbol', 'label', 'category', 'notes', 'added_at'
+    )
+    return JsonResponse({'assets': list(assets)})
+
+
+@csrf_exempt
+def snowvault_watchlist_add(request):
+    """POST { symbol, label?, category?, notes? } — add asset."""
+    from .models import SnowVaultWatchlistAsset
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body)
+        sym  = body.get('symbol', '').strip().upper()
+        if not sym:
+            return JsonResponse({'error': 'symbol required'}, status=400)
+        obj, created = SnowVaultWatchlistAsset.objects.update_or_create(
+            symbol=sym,
+            defaults={
+                'label':     body.get('label', '').strip(),
+                'category':  body.get('category', 'stocks'),
+                'notes':     body.get('notes', '').strip(),
+                'is_active': True,
+            }
+        )
+        return JsonResponse({
+            'ok':      True,
+            'created': created,
+            'id':      obj.id,
+            'symbol':  obj.symbol,
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def snowvault_watchlist_remove(request):
+    """POST { symbol } — soft-delete (is_active=False)."""
+    from .models import SnowVaultWatchlistAsset
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body = json.loads(request.body)
+        sym  = body.get('symbol', '').strip().upper()
+        updated = SnowVaultWatchlistAsset.objects.filter(symbol=sym).update(is_active=False)
+        return JsonResponse({'ok': True, 'removed': updated > 0})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+        
+
+def book_order(request):
+    if request.method == "POST":
+        # Get form data from request body
+        try:
+            data = json.loads(request.body)
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            email = data.get("email")
+            interested_product = data.get("interested_product")
+            number_of_units = int(data.get("number_of_units"))
+            phone_number = data.get("phone_number")
+
+            # Save form data to the BookOrder model
+            book_order_entry = BookOrder.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                interested_product=interested_product,
+                phone_number=phone_number,
+                number_of_units=number_of_units
+            )
+            return JsonResponse({"message": "Order booked successfully!"})
+        except Exception as e:
+            print(f'Exception occured: {e}')
+            return JsonResponse({'error': str(e)})
+    else:
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+# Legodi Tech Registration and Login
+from rest_framework import generics
+
+class UserRegistrationView(generics.CreateAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = CustomUserSerializer
+
+
+def user_login(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+
+        user = authenticate(request, username=email, password=password)
+        if user:
+            # User is authenticated
+            login(request, user)
+            # Generate and return an authentication token (e.g., JWT)
+            return JsonResponse({'message': 'Login successful', 'token': 'your_token_here'})
+        else:
+            return JsonResponse({'message': 'Invalid credentials'}, status=400)
+    else:
+        return JsonResponse({'message': 'Invalid request method'}, status=405)
+
+
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
+
+def get_csrf_token(request):
+    try:
+        csrf_token = get_token(request)
+        return JsonResponse({'csrfToken': csrf_token})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
