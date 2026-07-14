@@ -3357,6 +3357,35 @@ class SnowVaultTickerMeta(models.Model):
 
     class Meta:
         db_table = 'snowvault_ticker_meta'
+
+class SnowVaultScannerHistory(models.Model):
+    """Daily snapshot of trend scanner results + AI opportunity analysis,
+    for future backtesting. One row per (ticker, day) — later saves the
+    same day update the existing row rather than duplicating it."""
+    ticker                = models.CharField(max_length=16, db_index=True)
+    snapshot_date         = models.DateField(db_index=True)
+    name                  = models.CharField(max_length=255, blank=True, default='')
+    sector                = models.CharField(max_length=128, blank=True, default='')
+    score                 = models.FloatField(null=True, blank=True)
+    signal                = models.CharField(max_length=64, blank=True, default='')
+    direction             = models.CharField(max_length=16, blank=True, default='')
+    market_cap            = models.BigIntegerField(null=True, blank=True)
+    current_price         = models.FloatField(null=True, blank=True)
+    ai_verdict            = models.CharField(max_length=32, blank=True, default='')
+    ai_opportunity_score  = models.IntegerField(null=True, blank=True)
+    raw_scanner_json      = models.TextField(default='{}')   # full scanner row, for backtesting flexibility
+    ai_analysis_json      = models.TextField(null=True, blank=True)  # full AI object, if present that day
+    saved_count           = models.IntegerField(default=1)   # how many times this row was refreshed today
+    created_at            = models.DateTimeField(auto_now_add=True)
+    updated_at            = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'snowvault_scanner_history'
+        unique_together = ('ticker', 'snapshot_date')
+        indexes = [
+            models.Index(fields=['snapshot_date']),
+            models.Index(fields=['ticker']),
+        ]
         
 
 class ContactUs(models.Model):

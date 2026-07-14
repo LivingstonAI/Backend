@@ -44271,6 +44271,131 @@ try:
 except Exception as e:
     print(f"[ScannerJob] scheduler init failed: {e}")
 
+
+@csrf_exempt
+def snowvault_scanner_snapshot_save(request):
+    """
+    POST { "stocks": [...scanner result rows...], "aiAnalysis": { TICKER: {...} } }
+    Upserts one row per ticker for today's date. Safe to call multiple times
+    a day — later calls refresh the same day's row instead of duplicating.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body            = json.loads(request.body)
+        stocks          = body.get('stocks', [])
+        ai_analysis_map = body.get('aiAnalysis', {}) or {}
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not stocks:
+        return JsonResponse({'error': 'No stocks provided'}, status=400)
+
+    from datetime import date as _date
+    today = _date.today()
+
+    saved_new, updated_existing, errors = [], [], []
+
+    for s in stocks:
+        ticker = str(s.get('ticker', '')).upper().strip()
+        if not ticker:
+            continue
+        try:
+            ai = ai_analysis_map.get(ticker)
+
+            defaults = {
+                'name':                  s.get('name', ''),
+                'sector':                s.get('sector', ''),
+                'score':                 s.get('score'),
+                'signal':                s.get('signal', ''),
+                'direction':             s.get('direction', ''),
+                'market_cap':            s.get('marketCap'),
+                'current_price':         s.get('currentPrice'),
+                'ai_verdict':            (ai or {}).get('verdict', ''),
+                'ai_opportunity_score':  (ai or {}).get('opportunityScore'),
+                'raw_scanner_json':      json.dumps(s),
+                'ai_analysis_json':      json.dumps(ai) if ai else None,
+            }
+
+            obj, created = SnowVaultScannerHistory.objects.update_or_create(
+                ticker=ticker, snapshot_date=today, defaults=defaults,
+            )
+            if created:
+                saved_new.append(ticker)
+            else:
+                obj.saved_count = (obj.saved_count or 1) + 1
+                obj.save(update_fields=['saved_count'])
+                updated_existing.append(ticker)
+        except Exception as e:
+            print(f"[ScannerSnapshot] {ticker} save failed: {e}")
+            errors.append(ticker)
+
+    return JsonResponse({
+        'date':            today.isoformat(),
+        'savedNew':        saved_new,
+        'updatedExisting': updated_existing,
+        'errors':          errors,
+        'totalProcessed':  len(saved_new) + len(updated_existing),
+    })
+
+
+@csrf_exempt
+def snowvault_scanner_snapshot_list(request):
+    """
+    POST { "ticker": "AAPL" (optional), "startDate": "YYYY-MM-DD" (optional),
+           "endDate": "YYYY-MM-DD" (optional), "limit": 500 (optional) }
+    Retrieval endpoint for backtesting — filter by ticker and/or date range.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body       = json.loads(request.body)
+        ticker     = (body.get('ticker') or '').strip().upper()
+        start_date = body.get('startDate')
+        end_date   = body.get('endDate')
+        limit      = min(int(body.get('limit', 500)), 2000)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    qs = SnowVaultScannerHistory.objects.all()
+    if ticker:
+        qs = qs.filter(ticker=ticker)
+    if start_date:
+        qs = qs.filter(snapshot_date__gte=start_date)
+    if end_date:
+        qs = qs.filter(snapshot_date__lte=end_date)
+    qs = qs.order_by('-snapshot_date', 'ticker')[:limit]
+
+    results = []
+    for row in qs:
+        try:
+            raw = json.loads(row.raw_scanner_json or '{}')
+        except Exception:
+            raw = {}
+        try:
+            ai = json.loads(row.ai_analysis_json) if row.ai_analysis_json else None
+        except Exception:
+            ai = None
+        results.append({
+            'ticker':             row.ticker,
+            'date':               row.snapshot_date.isoformat(),
+            'name':               row.name,
+            'sector':             row.sector,
+            'score':              row.score,
+            'signal':             row.signal,
+            'direction':          row.direction,
+            'marketCap':          row.market_cap,
+            'currentPrice':       row.current_price,
+            'aiVerdict':          row.ai_verdict,
+            'aiOpportunityScore': row.ai_opportunity_score,
+            'rawScanner':         raw,
+            'aiAnalysis':         ai,
+            'savedCount':         row.saved_count,
+            'updatedAt':          row.updated_at.isoformat(),
+        })
+
+    return JsonResponse({'results': results, 'count': len(results)})
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Endpoint
 # ─────────────────────────────────────────────────────────────────────────────
