@@ -44275,16 +44275,19 @@ except Exception as e:
 @csrf_exempt
 def snowvault_scanner_snapshot_save(request):
     """
-    POST { "stocks": [...scanner result rows...], "aiAnalysis": { TICKER: {...} } }
-    Upserts one row per ticker for today's date. Safe to call multiple times
-    a day — later calls refresh the same day's row instead of duplicating.
+    POST { "stocks": [...], "aiRuns": { TICKER: [ {...run}, ... ] },
+           "aiSynthesis": { TICKER: {...synthesis} } }
+    Upserts one row per ticker for today's date. ai_verdict / ai_opportunity_score
+    on the row are set from synthesis if present, else the consensus mean/mode
+    of the runs, else left blank.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
     try:
-        body            = json.loads(request.body)
-        stocks          = body.get('stocks', [])
-        ai_analysis_map = body.get('aiAnalysis', {}) or {}
+        body         = json.loads(request.body)
+        stocks       = body.get('stocks', [])
+        ai_runs_map  = body.get('aiRuns', {}) or {}
+        ai_synth_map = body.get('aiSynthesis', {}) or {}
     except Exception:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
@@ -44301,7 +44304,23 @@ def snowvault_scanner_snapshot_save(request):
         if not ticker:
             continue
         try:
-            ai = ai_analysis_map.get(ticker)
+            runs      = ai_runs_map.get(ticker) or []
+            synthesis = ai_synth_map.get(ticker)
+
+            effective_verdict = None
+            effective_score   = None
+            if synthesis:
+                effective_verdict = synthesis.get('finalVerdict')
+                effective_score   = synthesis.get('finalOpportunityScore')
+            elif runs:
+                scores = [r.get('opportunityScore') for r in runs if isinstance(r.get('opportunityScore'), (int, float))]
+                effective_score = round(sum(scores) / len(scores)) if scores else None
+                counts = {}
+                for r in runs:
+                    v = r.get('verdict')
+                    if v:
+                        counts[v] = counts.get(v, 0) + 1
+                effective_verdict = max(counts, key=counts.get) if counts else None
 
             defaults = {
                 'name':                  s.get('name', ''),
@@ -44311,10 +44330,11 @@ def snowvault_scanner_snapshot_save(request):
                 'direction':             s.get('direction', ''),
                 'market_cap':            s.get('marketCap'),
                 'current_price':         s.get('currentPrice'),
-                'ai_verdict':            (ai or {}).get('verdict', ''),
-                'ai_opportunity_score':  (ai or {}).get('opportunityScore'),
+                'ai_verdict':            effective_verdict or '',
+                'ai_opportunity_score':  effective_score,
                 'raw_scanner_json':      json.dumps(s),
-                'ai_analysis_json':      json.dumps(ai) if ai else None,
+                'ai_runs_json':          json.dumps(runs) if runs else None,
+                'ai_synthesis_json':     json.dumps(synthesis) if synthesis else None,
             }
 
             obj, created = SnowVaultScannerHistory.objects.update_or_create(
@@ -44337,7 +44357,6 @@ def snowvault_scanner_snapshot_save(request):
         'errors':          errors,
         'totalProcessed':  len(saved_new) + len(updated_existing),
     })
-
 
 @csrf_exempt
 def snowvault_scanner_snapshot_list(request):
@@ -44376,6 +44395,14 @@ def snowvault_scanner_snapshot_list(request):
             ai = json.loads(row.ai_analysis_json) if row.ai_analysis_json else None
         except Exception:
             ai = None
+        try:
+            ai_runs = json.loads(row.ai_runs_json) if row.ai_runs_json else None
+        except Exception:
+            ai_runs = None
+        try:
+            ai_synthesis = json.loads(row.ai_synthesis_json) if row.ai_synthesis_json else None
+        except Exception:
+            ai_synthesis = None
         results.append({
             'ticker':             row.ticker,
             'date':               row.snapshot_date.isoformat(),
@@ -44390,6 +44417,8 @@ def snowvault_scanner_snapshot_list(request):
             'aiOpportunityScore': row.ai_opportunity_score,
             'rawScanner':         raw,
             'aiAnalysis':         ai,
+            'aiRuns':             ai_runs,
+            'aiSynthesis':        ai_synthesis,
             'savedCount':         row.saved_count,
             'updatedAt':          row.updated_at.isoformat(),
         })
@@ -54302,6 +54331,8 @@ def snowvault_watchlist_remove(request):
         return JsonResponse({'ok': True, 'removed': updated > 0})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
         
 
 def book_order(request):

@@ -3375,6 +3375,8 @@ class SnowVaultScannerHistory(models.Model):
     ai_opportunity_score  = models.IntegerField(null=True, blank=True)
     raw_scanner_json      = models.TextField(default='{}')   # full scanner row, for backtesting flexibility
     ai_analysis_json      = models.TextField(null=True, blank=True)  # full AI object, if present that day
+    ai_runs_json          = models.TextField(null=True, blank=True)  # NEW — array of individual AI runs
+    ai_synthesis_json     = models.TextField(null=True, blank=True)  # NEW — the synthesized verdict
     saved_count           = models.IntegerField(default=1)   # how many times this row was refreshed today
     created_at            = models.DateTimeField(auto_now_add=True)
     updated_at            = models.DateTimeField(auto_now=True)
