@@ -54332,7 +54332,204 @@ def snowvault_watchlist_remove(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+@csrf_exempt
+def snowvault_scanner_backtest_vault(request):
+    """
+    POST { "ticker": optional, "startDate": optional (YYYY-MM-DD),
+           "endDate": optional (YYYY-MM-DD), "signal": optional,
+           "direction": optional, "aiVerdict": optional,
+           "horizons": [1,3,5,10,20] optional, "limit": 500 optional }
 
+    Computes forward, direction-adjusted price returns for saved scanner
+    snapshots against real price history. Horizons are TRADING days. A
+    horizon only resolves once enough trading days have actually elapsed
+    since the snapshot — until then it's null (pending), never guessed at.
+    """
+    import concurrent.futures
+    from datetime import timedelta
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body       = json.loads(request.body)
+        ticker     = (body.get('ticker') or '').strip().upper()
+        start_date = body.get('startDate')
+        end_date   = body.get('endDate')
+        signal     = (body.get('signal') or '').strip()
+        direction  = (body.get('direction') or '').strip().upper()
+        ai_verdict = (body.get('aiVerdict') or '').strip()
+        horizons   = body.get('horizons') or [1, 3, 5, 10, 20]
+        limit      = min(int(body.get('limit', 500)), 1500)
+        horizons   = sorted({int(h) for h in horizons if isinstance(h, (int, float)) and 0 < h <= 60})
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not horizons:
+        return JsonResponse({'error': 'No valid horizons provided'}, status=400)
+
+    qs = SnowVaultScannerHistory.objects.all()
+    if ticker:
+        qs = qs.filter(ticker=ticker)
+    if start_date:
+        qs = qs.filter(snapshot_date__gte=start_date)
+    if end_date:
+        qs = qs.filter(snapshot_date__lte=end_date)
+    if signal:
+        qs = qs.filter(signal=signal)
+    if direction:
+        qs = qs.filter(direction=direction)
+    if ai_verdict:
+        qs = qs.filter(ai_verdict=ai_verdict)
+    qs = qs.order_by('snapshot_date')[:limit]
+
+    snapshot_rows = list(qs)
+    if not snapshot_rows:
+        return JsonResponse({
+            'rows': [], 'aggregate': {}, 'bySignal': {}, 'byDirection': {},
+            'byAiVerdict': {}, 'byScoreBucket': {}, 'horizons': horizons, 'totalSnapshots': 0,
+        })
+
+    # Group by ticker so we make ONE yfinance call per ticker covering the
+    # full date range needed, instead of one call per snapshot.
+    by_ticker = {}
+    for row in snapshot_rows:
+        by_ticker.setdefault(row.ticker, []).append(row)
+
+    max_horizon = max(horizons)
+
+    def fetch_ticker_backtest(sym, rows_for_ticker):
+        try:
+            min_date = min(r.snapshot_date for r in rows_for_ticker)
+            max_date = max(r.snapshot_date for r in rows_for_ticker)
+            fetch_start = (min_date - timedelta(days=3)).strftime('%Y-%m-%d')
+            fetch_end   = (max_date + timedelta(days=int(max_horizon * 1.6) + 10)).strftime('%Y-%m-%d')
+
+            hist = yf.download(sym, start=fetch_start, end=fetch_end, auto_adjust=True, progress=False)
+            if hist is None or hist.empty:
+                return [{'row': r, 'error': 'No price data available'} for r in rows_for_ticker]
+
+            if hist.index.tz is not None:
+                hist.index = hist.index.tz_localize(None)
+            dates  = [d.strftime('%Y-%m-%d') for d in hist.index]
+            closes = hist['Close'].values.astype(float)
+
+            out = []
+            for r in rows_for_ticker:
+                snap_str  = r.snapshot_date.strftime('%Y-%m-%d')
+                entry_idx = next((i for i, d in enumerate(dates) if d >= snap_str), None)
+                if entry_idx is None:
+                    out.append({'row': r, 'error': 'No trading day on/after snapshot date'})
+                    continue
+                entry_price = float(closes[entry_idx])
+                raw_returns, dir_adj = {}, {}
+                for h in horizons:
+                    fidx = entry_idx + h
+                    if fidx < len(closes) and entry_price:
+                        fwd_price = float(closes[fidx])
+                        pct = round((fwd_price - entry_price) / entry_price * 100, 2)
+                        raw_returns[str(h)] = pct
+                        dir_adj[str(h)] = round(-pct, 2) if r.direction == 'BEARISH' else pct
+                    else:
+                        raw_returns[str(h)] = None
+                        dir_adj[str(h)]     = None
+                out.append({
+                    'row': r, 'entryPrice': round(entry_price, 4),
+                    'rawReturns': raw_returns, 'directionAdjustedReturns': dir_adj,
+                })
+            return out
+        except Exception as e:
+            print(f"[Backtest] {sym} failed: {e}")
+            return [{'row': r, 'error': str(e)} for r in rows_for_ticker]
+
+    per_row_results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(fetch_ticker_backtest, sym, rlist): sym for sym, rlist in by_ticker.items()}
+        for fut in concurrent.futures.as_completed(futures, timeout=90):
+            sym = futures[fut]
+            try:
+                per_row_results.extend(fut.result())
+            except Exception as e:
+                print(f"[Backtest] {sym} future error: {e}")
+
+    def sf(v):
+        try:
+            f = float(v)
+            return None if (f != f or f in (float('inf'), float('-inf'))) else f
+        except Exception:
+            return None
+
+    def bucket_score(score):
+        if score is None: return 'Unknown'
+        if score >= 80: return '80-100'
+        if score >= 60: return '60-79'
+        if score >= 40: return '40-59'
+        return '0-39'
+
+    rows_out = []
+    buckets  = {'aggregate': {}, 'bySignal': {}, 'byDirection': {}, 'byAiVerdict': {}, 'byScoreBucket': {}}
+
+    def push(bucket_dict, key, h, raw_val, dir_val):
+        if key not in bucket_dict:
+            bucket_dict[key] = {str(hz): {'count': 0, 'rawSum': 0.0, 'dirSum': 0.0, 'wins': 0} for hz in horizons}
+        cell = bucket_dict[key][str(h)]
+        cell['count'] += 1
+        cell['rawSum'] += raw_val
+        cell['dirSum'] += dir_val
+        if dir_val > 0:
+            cell['wins'] += 1
+
+    for item in per_row_results:
+        r = item['row']
+        entry = {
+            'ticker': r.ticker, 'date': r.snapshot_date.isoformat(),
+            'signal': r.signal, 'direction': r.direction, 'score': sf(r.score),
+            'aiVerdict': r.ai_verdict or None, 'aiOpportunityScore': r.ai_opportunity_score,
+            'error': item.get('error'), 'entryPrice': item.get('entryPrice'),
+            'rawReturns': item.get('rawReturns'), 'directionAdjustedReturns': item.get('directionAdjustedReturns'),
+        }
+        rows_out.append(entry)
+        if item.get('error'):
+            continue
+
+        score_bucket = bucket_score(sf(r.score))
+        for h in horizons:
+            raw_val = entry['rawReturns'].get(str(h))
+            dir_val = entry['directionAdjustedReturns'].get(str(h))
+            if dir_val is None:
+                continue
+            push(buckets['aggregate'],     'ALL',                    h, raw_val, dir_val)
+            push(buckets['bySignal'],      r.signal or 'UNKNOWN',    h, raw_val, dir_val)
+            push(buckets['byDirection'],   r.direction or 'UNKNOWN', h, raw_val, dir_val)
+            push(buckets['byScoreBucket'], score_bucket,             h, raw_val, dir_val)
+            if r.ai_verdict:
+                push(buckets['byAiVerdict'], r.ai_verdict, h, raw_val, dir_val)
+
+    def finalize(bucket_dict):
+        result = {}
+        for key, hmap in bucket_dict.items():
+            result[key] = {}
+            for h_str, cell in hmap.items():
+                if cell['count'] == 0:
+                    result[key][h_str] = {'count': 0, 'avgReturn': None, 'avgDirectionAdjustedReturn': None, 'winRate': None}
+                else:
+                    result[key][h_str] = {
+                        'count':                     cell['count'],
+                        'avgReturn':                 round(cell['rawSum'] / cell['count'], 2),
+                        'avgDirectionAdjustedReturn': round(cell['dirSum'] / cell['count'], 2),
+                        'winRate':                    round(cell['wins'] / cell['count'] * 100, 1),
+                    }
+        return result
+
+    return JsonResponse({
+        'rows':           rows_out,
+        'aggregate':      finalize(buckets['aggregate']),
+        'bySignal':       finalize(buckets['bySignal']),
+        'byDirection':    finalize(buckets['byDirection']),
+        'byAiVerdict':    finalize(buckets['byAiVerdict']),
+        'byScoreBucket':  finalize(buckets['byScoreBucket']),
+        'horizons':       horizons,
+        'totalSnapshots': len(snapshot_rows),
+    })
         
 
 def book_order(request):
