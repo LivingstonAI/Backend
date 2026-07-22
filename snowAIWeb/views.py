@@ -54532,6 +54532,151 @@ def snowvault_scanner_backtest_vault(request):
     })
         
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SNOW GLOBAL STOCK PICKS — Save + Fetch
+# ─────────────────────────────────────────────────────────────────────────────
+
+from .models import SnowGlobalStockPick
+from django.db import IntegrityError
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snow_save_stock_picks_v1(request):
+    """
+    Save AI-recommended stock picks from Country-Sector Drill.
+    Accepts a list of picks — skips duplicates (same symbol+country+sector+date).
+    Unique name: snow_save_stock_picks_v1
+    """
+    try:
+        body    = json.loads(request.body)
+        picks   = body.get('picks', [])
+        tf      = body.get('tf_context', '')
+
+        if not picks:
+            return JsonResponse({'error': 'No picks provided', 'success': False}, status=400)
+
+        saved   = []
+        skipped = []
+        errors  = []
+
+        for pick in picks:
+            try:
+                obj, created = SnowGlobalStockPick.objects.get_or_create(
+                    symbol      = str(pick.get('symbol', '')).strip().upper(),
+                    country     = str(pick.get('country', '')).strip(),
+                    sector      = str(pick.get('sector', '')).strip(),
+                    date_saved  = __import__('datetime').date.today(),
+                    defaults={
+                        'name':           str(pick.get('name', ''))[:200],
+                        'flag':           str(pick.get('flag', '🌍'))[:10],
+                        'rec':            str(pick.get('rec', 'WATCH'))[:30],
+                        'conviction':     int(pick.get('conviction') or 5),
+                        'thesis':         str(pick.get('thesis', '')),
+                        'risk':           str(pick.get('risk', '')),
+                        'catalysts':      pick.get('catalysts', []) if isinstance(pick.get('catalysts'), list) else [],
+                        'analyst_target': str(pick.get('analystTarget', ''))[:100],
+                        'sub_sector':     str(pick.get('sector_detail') or pick.get('sub_sector', ''))[:100],
+                        'price_at_save':  str(pick.get('price', ''))[:50],
+                        'market_cap':     str(pick.get('marketCap', ''))[:50],
+                        'market_outlook': str(pick.get('market_outlook', '')),
+                        'top_pick':       bool(pick.get('top_pick', False)),
+                        'top_pick_reason':str(pick.get('top_pick_reason', '')),
+                        'source_list':    pick.get('source_list', []) if isinstance(pick.get('source_list'), list) else [],
+                        'article_count':  int(pick.get('article_count') or 0) or None,
+                        'tf_context':     str(tf)[:20],
+                    }
+                )
+                if created:
+                    saved.append(pick.get('symbol'))
+                else:
+                    skipped.append(pick.get('symbol'))
+            except Exception as e:
+                errors.append({ 'symbol': pick.get('symbol'), 'error': str(e) })
+
+        return JsonResponse({
+            'success':  True,
+            'saved':    len(saved),
+            'skipped':  len(skipped),
+            'errors':   len(errors),
+            'saved_symbols':   saved,
+            'skipped_symbols': skipped,
+            'error_detail':    errors,
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON', 'success': False}, status=400)
+    except Exception as e:
+        print(f'[snow_save_stock_picks_v1] {e}\n{traceback.format_exc()}')
+        return JsonResponse({'error': str(e), 'success': False}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+def snow_fetch_stock_picks_v1(request):
+    """
+    Fetch saved stock picks with optional filters.
+    GET  → returns all picks (latest first, max 500)
+    POST → filter by country, sector, date_from, date_to, rec
+
+    Unique name: snow_fetch_stock_picks_v1
+    """
+    try:
+        qs = SnowGlobalStockPick.objects.all()
+
+        if request.method == 'POST':
+            body    = json.loads(request.body)
+            country = body.get('country')
+            sector  = body.get('sector')
+            rec     = body.get('rec')
+            date_from = body.get('date_from')
+            date_to   = body.get('date_to')
+            symbol    = body.get('symbol')
+
+            if country:   qs = qs.filter(country__iexact=country)
+            if sector:    qs = qs.filter(sector__iexact=sector)
+            if rec:       qs = qs.filter(rec__iexact=rec)
+            if symbol:    qs = qs.filter(symbol__iexact=symbol)
+            if date_from: qs = qs.filter(date_saved__gte=date_from)
+            if date_to:   qs = qs.filter(date_saved__lte=date_to)
+
+        picks = list(qs.values(
+            'id', 'symbol', 'name', 'country', 'flag', 'sector',
+            'rec', 'conviction', 'thesis', 'risk', 'catalysts',
+            'analyst_target', 'sub_sector', 'price_at_save',
+            'market_cap', 'market_outlook', 'top_pick',
+            'top_pick_reason', 'source_list', 'article_count',
+            'tf_context', 'date_saved', 'created_at',
+        )[:500])
+
+        # Group by country+sector+date for convenient frontend use
+        grouped = {}
+        for p in picks:
+            p['date_saved']  = str(p['date_saved'])
+            p['created_at']  = str(p['created_at'])
+            key = f"{p['country']}|{p['sector']}|{p['date_saved']}"
+            if key not in grouped:
+                grouped[key] = {
+                    'country':  p['country'],
+                    'flag':     p['flag'],
+                    'sector':   p['sector'],
+                    'date':     p['date_saved'],
+                    'picks':    [],
+                }
+            grouped[key]['picks'].append(p)
+
+        return JsonResponse({
+            'success': True,
+            'total':   len(picks),
+            'grouped': list(grouped.values()),
+            'picks':   picks,
+        })
+
+    except Exception as e:
+        print(f'[snow_fetch_stock_picks_v1] {e}\n{traceback.format_exc()}')
+        return JsonResponse({'error': str(e), 'success': False}, status=500)
+        
+
 def book_order(request):
     if request.method == "POST":
         # Get form data from request body

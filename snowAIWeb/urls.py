@@ -1141,6 +1141,9 @@ urlpatterns = [
     path('api/snowvault_scanner_snapshot_list/', views.snowvault_scanner_snapshot_list, name='snowvault_scanner_snapshot_list'),
     path('api/snowvault_scanner_backtest_vault/', views.snowvault_scanner_backtest_vault, name='snowvault_scanner_backtest_vault'),
 
+    path('api/snow_save_stock_picks_v1/',  views.snow_save_stock_picks_v1),
+    path('api/snow_fetch_stock_picks_v1/', views.snow_fetch_stock_picks_v1),
+
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     

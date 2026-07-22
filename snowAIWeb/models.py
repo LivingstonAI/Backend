@@ -3390,6 +3390,56 @@ class SnowVaultScannerHistory(models.Model):
         ]
         
 
+from django.db import models
+
+class SnowGlobalStockPick(models.Model):
+    """
+    Stores AI-recommended stock picks from the Country-Sector Drill feature.
+    Used for backtesting and tracking AI predictive power over time.
+    """
+    # Identity
+    symbol          = models.CharField(max_length=30)
+    name            = models.CharField(max_length=200)
+    country         = models.CharField(max_length=100)
+    flag            = models.CharField(max_length=20, default='🌍')
+    sector          = models.CharField(max_length=100)
+
+    # AI recommendation
+    rec             = models.CharField(max_length=30)   # STRONG BUY / BUY / WATCH / HOLD
+    conviction      = models.IntegerField(null=True, blank=True)   # 1-10
+    thesis          = models.TextField(blank=True, default='')
+    risk            = models.TextField(blank=True, default='')
+    catalysts       = models.JSONField(default=list, blank=True)
+    analyst_target  = models.CharField(max_length=100, blank=True, default='')
+    sub_sector      = models.CharField(max_length=100, blank=True, default='')
+
+    # Price at time of save
+    price_at_save   = models.CharField(max_length=50, blank=True, default='')
+    market_cap      = models.CharField(max_length=50, blank=True, default='')
+
+    # Context
+    market_outlook  = models.TextField(blank=True, default='')
+    top_pick        = models.BooleanField(default=False)
+    top_pick_reason = models.TextField(blank=True, default='')
+    source_list     = models.JSONField(default=list, blank=True)
+    article_count   = models.IntegerField(null=True, blank=True)
+
+    # Timeframe context the scan was run on
+    tf_context      = models.CharField(max_length=20, blank=True, default='')
+
+    # Timestamps
+    date_saved      = models.DateField(auto_now_add=True)
+    created_at      = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table    = 'snow_global_stock_picks'
+        ordering    = ['-created_at']
+        unique_together = [['symbol', 'country', 'sector', 'date_saved']]
+
+    def __str__(self):
+        return f'{self.flag} {self.country} | {self.sector} | {self.symbol} | {self.rec} | {self.date_saved}'
+
+
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
