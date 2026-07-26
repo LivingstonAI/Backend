@@ -54675,6 +54675,223 @@ def snow_fetch_stock_picks_v1(request):
     except Exception as e:
         print(f'[snow_fetch_stock_picks_v1] {e}\n{traceback.format_exc()}')
         return JsonResponse({'error': str(e), 'success': False}, status=500)
+
+
+# ============================================================================
+# ADD THESE TO YOUR EXISTING views.py
+# ----------------------------------------------------------------------------
+# 1. Add the imports below to the top of views.py (skip any you already have)
+# 2. Paste the two view functions anywhere in the file
+# 3. Adjust the `from .models import SnowGlobalStockPick` line if your models
+#    live somewhere else (e.g. `from myapp.models import SnowGlobalStockPick`)
+# 4. Wire them up in urls.py -- see stock_picks_urls.py
+#
+# Both views are intentionally CSRF-exempt and have no auth/permission
+# checks, matching the rest of SnowAI's endpoints (single-user tool).
+# ============================================================================
+
+import difflib
+from django.db.models import Count, Max
+
+
+
+def _get_request_param(request, key, default=None):
+    """
+    Pulls a value from either a JSON body (POST) or query string (GET),
+    so the same view works with fetch(..., {method: 'POST', body: JSON...})
+    or a plain GET ?country=Japan request.
+    """
+    if request.method == 'POST':
+        try:
+            body = json.loads(request.body or '{}')
+        except (json.JSONDecodeError, TypeError):
+            body = {}
+        if key in body:
+            return body[key]
+    return request.GET.get(key, default)
+
+
+def _resolve_country_name(requested_name):
+    """
+    The country names typed on the map (from the globe markers or the
+    GeoJSON polygons) won't always exactly match the country string that
+    was saved with a stock pick (e.g. "United States" vs "USA" vs
+    "United States of America"). This tries, in order:
+      1. exact case-insensitive match
+      2. substring match in either direction
+      3. fuzzy match
+    Returns the *actual* country string stored in the DB, or the original
+    requested name if nothing close is found (so a fresh/empty country
+    still returns a clean "no picks yet" result instead of erroring).
+    """
+    requested_name = (requested_name or '').strip()
+    if not requested_name:
+        return requested_name
+
+    exact = (
+        SnowGlobalStockPick.objects
+        .filter(country__iexact=requested_name)
+        .values_list('country', flat=True)
+        .first()
+    )
+    if exact:
+        return exact
+
+    all_countries = list(
+        SnowGlobalStockPick.objects.values_list('country', flat=True).distinct()
+    )
+    requested_lower = requested_name.lower()
+    for candidate in all_countries:
+        candidate_lower = candidate.lower()
+        if requested_lower in candidate_lower or candidate_lower in requested_lower:
+            return candidate
+
+    close = difflib.get_close_matches(requested_name, all_countries, n=1, cutoff=0.6)
+    return close[0] if close else requested_name
+
+
+def _serialize_pick(pick):
+    return {
+        'id': pick.id,
+        'symbol': pick.symbol,
+        'name': pick.name,
+        'country': pick.country,
+        'flag': pick.flag,
+        'sector': pick.sector,
+        'sub_sector': pick.sub_sector,
+        'rec': pick.rec,
+        'conviction': pick.conviction,
+        'thesis': pick.thesis,
+        'risk': pick.risk,
+        'catalysts': pick.catalysts or [],
+        'analyst_target': pick.analyst_target,
+        'price_at_save': pick.price_at_save,
+        'market_cap': pick.market_cap,
+        'market_outlook': pick.market_outlook,
+        'top_pick': pick.top_pick,
+        'top_pick_reason': pick.top_pick_reason,
+        'source_list': pick.source_list or [],
+        'article_count': pick.article_count,
+        'tf_context': pick.tf_context,
+        'date_saved': pick.date_saved.isoformat() if pick.date_saved else None,
+        'created_at': pick.created_at.isoformat() if pick.created_at else None,
+    }
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+def get_stock_picks_by_country(request):
+    """
+    Returns stored SnowGlobalStockPick rows for a single country.
+
+    Request:
+        POST { "country": "Japan", "history": false }
+        or GET  ?country=Japan&history=false
+
+    By default (history=false) only the most recent saved pick per
+    (symbol, sector) is returned, so re-scans on later dates don't show
+    the same stock twice. Pass history=true to get every saved snapshot
+    (useful for backtesting).
+    """
+    requested_country = _get_request_param(request, 'country', '')
+    show_history = str(_get_request_param(request, 'history', 'false')).lower() in ('1', 'true', 'yes')
+
+    if not requested_country:
+        return JsonResponse({'success': False, 'error': 'A "country" value is required.'}, status=400)
+
+    resolved_country = _resolve_country_name(requested_country)
+
+    queryset = (
+        SnowGlobalStockPick.objects
+        .filter(country__iexact=resolved_country)
+        .order_by('-created_at')
+    )
+
+    if show_history:
+        picks = list(queryset)
+    else:
+        seen = set()
+        picks = []
+        for pick in queryset:
+            key = (pick.symbol.upper(), pick.sector)
+            if key in seen:
+                continue
+            seen.add(key)
+            picks.append(pick)
+
+    # Sort: top picks first, then by sector, then by conviction (desc)
+    picks.sort(key=lambda p: (
+        0 if p.top_pick else 1,
+        p.sector or '',
+        -(p.conviction or 0),
+    ))
+
+    serialized = [_serialize_pick(p) for p in picks]
+    sectors = sorted({p['sector'] for p in serialized if p['sector']})
+    market_outlook = next((p['market_outlook'] for p in serialized if p['market_outlook']), '')
+    last_updated = picks[0].created_at.isoformat() if picks else None
+    flag = picks[0].flag if picks else '🌍'
+
+    return JsonResponse({
+        'success': True,
+        'country': resolved_country if picks else requested_country,
+        'flag': flag,
+        'total_stocks': len(serialized),
+        'sectors': sectors,
+        'market_outlook': market_outlook,
+        'last_updated': last_updated,
+        'stocks': serialized,
+    })
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def get_all_countries_stock_summary(request):
+    """
+    Returns one row per country that has at least one stored stock pick,
+    for a "browse everything I've saved" list/table view.
+
+    GET /api/snow-global-stock-picks/countries-summary/
+    """
+    rows = (
+        SnowGlobalStockPick.objects
+        .values('country')
+        .annotate(
+            total_picks=Count('id'),
+            total_symbols=Count('symbol', distinct=True),
+            total_sectors=Count('sector', distinct=True),
+            last_updated=Max('created_at'),
+        )
+        .order_by('country')
+    )
+
+    countries = []
+    for row in rows:
+        latest = (
+            SnowGlobalStockPick.objects
+            .filter(country=row['country'])
+            .order_by('-created_at')
+            .values('flag', 'top_pick', 'top_pick_reason', 'symbol')
+            .first()
+        )
+        top_pick = (
+            SnowGlobalStockPick.objects
+            .filter(country=row['country'], top_pick=True)
+            .order_by('-created_at')
+            .values('symbol', 'name', 'top_pick_reason')
+            .first()
+        )
+        countries.append({
+            'country': row['country'],
+            'flag': latest['flag'] if latest else '🌍',
+            'total_picks': row['total_picks'],
+            'total_symbols': row['total_symbols'],
+            'total_sectors': row['total_sectors'],
+            'last_updated': row['last_updated'].isoformat() if row['last_updated'] else None,
+            'top_pick': top_pick,
+        })
+
+    return JsonResponse({'success': True, 'countries': countries})
         
 
 def book_order(request):

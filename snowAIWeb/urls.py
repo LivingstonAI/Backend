@@ -1144,6 +1144,17 @@ urlpatterns = [
     path('api/snow_save_stock_picks_v1/',  views.snow_save_stock_picks_v1),
     path('api/snow_fetch_stock_picks_v1/', views.snow_fetch_stock_picks_v1),
 
+    path(
+        'api/snow-global-stock-picks/by-country/',
+        views.get_stock_picks_by_country,
+        name='snow_stock_picks_by_country',
+    ),
+    path(
+        'api/snow-global-stock-picks/countries-summary/',
+        views.get_all_countries_stock_summary,
+        name='snow_stock_picks_countries_summary',
+    ),
+
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
     
