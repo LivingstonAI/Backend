@@ -54892,7 +54892,114 @@ def get_all_countries_stock_summary(request):
         })
 
     return JsonResponse({'success': True, 'countries': countries})
-        
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SNOW GLOBAL STOCK PICKS — Chart data for the LightweightCharts panel
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Powers the "Chart" button on each stock card in the country stock-picks
+# modal. Given a symbol (exactly as saved on SnowGlobalStockPick.symbol),
+# returns daily OHLC candles shaped for lightweight-charts' candlestick
+# series: [{ time: 'YYYY-MM-DD', open, high, low, close }, ...]
+#
+# ASSUMPTION FLAGGED: this uses yfinance as the data source since it handles
+# most international exchange suffixes (.T, .L, .DE, .HK, .AX, .SW, etc.)
+# for free with no API key. If you already have a price-data source wired
+# up elsewhere (Trend Reversal Scanner / Global Market Scan / PositionChart
+# all pull OHLC from *something*), swap the body of `_fetch_ohlc_candles`
+# below for that instead and delete the yfinance dependency -- the response
+# shape is the only contract the frontend cares about.
+#
+# Install: pip install yfinance
+# ─────────────────────────────────────────────────────────────────────────────
+
+import traceback
+from datetime import datetime, timedelta
+
+def _fetch_ohlc_candles_earth(symbol, lookback_days=180):
+    """
+    Pulls daily OHLC candles for `symbol` over the last `lookback_days`.
+    Returns a list of dicts shaped for lightweight-charts, oldest first.
+    Raises on any failure -- caller is responsible for catching.
+    """
+    import yfinance as yf
+
+    end = datetime.utcnow().date()
+    start = end - timedelta(days=lookback_days)
+
+    ticker = yf.Ticker(symbol)
+    hist = ticker.history(start=start.isoformat(), end=end.isoformat(), interval='1d')
+
+    if hist is None or hist.empty:
+        return []
+
+    candles = []
+    for index, row in hist.iterrows():
+        # yfinance sometimes returns rows with NaN OHLC on non-trading days
+        if row[['Open', 'High', 'Low', 'Close']].isnull().any():
+            continue
+        candles.append({
+            'time': index.strftime('%Y-%m-%d'),
+            'open': round(float(row['Open']), 4),
+            'high': round(float(row['High']), 4),
+            'low': round(float(row['Low']), 4),
+            'close': round(float(row['Close']), 4),
+        })
+
+    return candles
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snow_global_pick_chart_data_v1(request):
+    """
+    Daily OHLC candles for a single saved stock pick's symbol.
+
+    Request:  POST { "symbol": "AAPL", "country": "United States of America" }
+    Response: { success, symbol, candles: [{time, open, high, low, close}, ...] }
+
+    `country` isn't required to fetch the candles (yfinance just needs the
+    symbol/suffix), but it's accepted so you can later branch on it if you
+    move to a data source that needs a market/exchange hint.
+
+    Unique name: snow_global_pick_chart_data_v1
+    """
+    try:
+        body = json.loads(request.body or '{}')
+        symbol = str(body.get('symbol', '')).strip().upper()
+
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'A "symbol" value is required.'}, status=400)
+
+        try:
+            candles = _fetch_ohlc_candles_earth(symbol)
+        except ImportError:
+            return JsonResponse({
+                'success': False,
+                'error': 'yfinance is not installed on the server (pip install yfinance), or swap in your existing price-data source.',
+            }, status=500)
+        except Exception as fetch_error:
+            print(f'[snow_global_pick_chart_data_v1] fetch failed for {symbol}: {fetch_error}')
+            return JsonResponse({
+                'success': False,
+                'error': f"Couldn't fetch chart data for {symbol}. The symbol may need an exchange suffix (e.g. 7203.T, VOD.L).",
+            }, status=502)
+
+        if not candles:
+            return JsonResponse({
+                'success': False,
+                'error': f'No chart data returned for {symbol}.',
+            }, status=404)
+
+        return JsonResponse({'success': True, 'symbol': symbol, 'candles': candles})
+
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        print(f'[snow_global_pick_chart_data_v1] {e}\n{traceback.format_exc()}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+     
 
 def book_order(request):
     if request.method == "POST":
