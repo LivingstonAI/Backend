@@ -1156,6 +1156,9 @@ urlpatterns = [
     ),
 
     path('api/snow-global-stock-picks/chart-data/', snow_global_pick_chart_data_v1),
+    path('api/snowvault/assets/search/', snowvault_asset_search_v1),
+    path('api/snowvault/assets/sectors/', snowvault_asset_sectors_v1),
+    path('api/snowvault/assets/chart-data/', snowvault_asset_chart_data_v1),
 
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

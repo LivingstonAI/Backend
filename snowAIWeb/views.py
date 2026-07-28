@@ -54533,413 +54533,94 @@ def snowvault_scanner_backtest_vault(request):
         
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SNOW GLOBAL STOCK PICKS — Save + Fetch
-# ─────────────────────────────────────────────────────────────────────────────
-
-from .models import SnowGlobalStockPick
-from django.db import IntegrityError
-
-
-@csrf_exempt
-@require_http_methods(['POST'])
-def snow_save_stock_picks_v1(request):
-    """
-    Save AI-recommended stock picks from Country-Sector Drill.
-    Accepts a list of picks — skips duplicates (same symbol+country+sector+date).
-    Unique name: snow_save_stock_picks_v1
-    """
-    try:
-        body    = json.loads(request.body)
-        picks   = body.get('picks', [])
-        tf      = body.get('tf_context', '')
-
-        if not picks:
-            return JsonResponse({'error': 'No picks provided', 'success': False}, status=400)
-
-        saved   = []
-        skipped = []
-        errors  = []
-
-        for pick in picks:
-            try:
-                obj, created = SnowGlobalStockPick.objects.get_or_create(
-                    symbol      = str(pick.get('symbol', '')).strip().upper(),
-                    country     = str(pick.get('country', '')).strip(),
-                    sector      = str(pick.get('sector', '')).strip(),
-                    date_saved  = __import__('datetime').date.today(),
-                    defaults={
-                        'name':           str(pick.get('name', ''))[:200],
-                        'flag':           str(pick.get('flag', '🌍'))[:10],
-                        'rec':            str(pick.get('rec', 'WATCH'))[:30],
-                        'conviction':     int(pick.get('conviction') or 5),
-                        'thesis':         str(pick.get('thesis', '')),
-                        'risk':           str(pick.get('risk', '')),
-                        'catalysts':      pick.get('catalysts', []) if isinstance(pick.get('catalysts'), list) else [],
-                        'analyst_target': str(pick.get('analystTarget', ''))[:100],
-                        'sub_sector':     str(pick.get('sector_detail') or pick.get('sub_sector', ''))[:100],
-                        'price_at_save':  str(pick.get('price', ''))[:50],
-                        'market_cap':     str(pick.get('marketCap', ''))[:50],
-                        'market_outlook': str(pick.get('market_outlook', '')),
-                        'top_pick':       bool(pick.get('top_pick', False)),
-                        'top_pick_reason':str(pick.get('top_pick_reason', '')),
-                        'source_list':    pick.get('source_list', []) if isinstance(pick.get('source_list'), list) else [],
-                        'article_count':  int(pick.get('article_count') or 0) or None,
-                        'tf_context':     str(tf)[:20],
-                    }
-                )
-                if created:
-                    saved.append(pick.get('symbol'))
-                else:
-                    skipped.append(pick.get('symbol'))
-            except Exception as e:
-                errors.append({ 'symbol': pick.get('symbol'), 'error': str(e) })
-
-        return JsonResponse({
-            'success':  True,
-            'saved':    len(saved),
-            'skipped':  len(skipped),
-            'errors':   len(errors),
-            'saved_symbols':   saved,
-            'skipped_symbols': skipped,
-            'error_detail':    errors,
-        })
-
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON', 'success': False}, status=400)
-    except Exception as e:
-        print(f'[snow_save_stock_picks_v1] {e}\n{traceback.format_exc()}')
-        return JsonResponse({'error': str(e), 'success': False}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(['GET', 'POST'])
-def snow_fetch_stock_picks_v1(request):
-    """
-    Fetch saved stock picks with optional filters.
-    GET  → returns all picks (latest first, max 500)
-    POST → filter by country, sector, date_from, date_to, rec
-
-    Unique name: snow_fetch_stock_picks_v1
-    """
-    try:
-        qs = SnowGlobalStockPick.objects.all()
-
-        if request.method == 'POST':
-            body    = json.loads(request.body)
-            country = body.get('country')
-            sector  = body.get('sector')
-            rec     = body.get('rec')
-            date_from = body.get('date_from')
-            date_to   = body.get('date_to')
-            symbol    = body.get('symbol')
-
-            if country:   qs = qs.filter(country__iexact=country)
-            if sector:    qs = qs.filter(sector__iexact=sector)
-            if rec:       qs = qs.filter(rec__iexact=rec)
-            if symbol:    qs = qs.filter(symbol__iexact=symbol)
-            if date_from: qs = qs.filter(date_saved__gte=date_from)
-            if date_to:   qs = qs.filter(date_saved__lte=date_to)
-
-        picks = list(qs.values(
-            'id', 'symbol', 'name', 'country', 'flag', 'sector',
-            'rec', 'conviction', 'thesis', 'risk', 'catalysts',
-            'analyst_target', 'sub_sector', 'price_at_save',
-            'market_cap', 'market_outlook', 'top_pick',
-            'top_pick_reason', 'source_list', 'article_count',
-            'tf_context', 'date_saved', 'created_at',
-        )[:500])
-
-        # Group by country+sector+date for convenient frontend use
-        grouped = {}
-        for p in picks:
-            p['date_saved']  = str(p['date_saved'])
-            p['created_at']  = str(p['created_at'])
-            key = f"{p['country']}|{p['sector']}|{p['date_saved']}"
-            if key not in grouped:
-                grouped[key] = {
-                    'country':  p['country'],
-                    'flag':     p['flag'],
-                    'sector':   p['sector'],
-                    'date':     p['date_saved'],
-                    'picks':    [],
-                }
-            grouped[key]['picks'].append(p)
-
-        return JsonResponse({
-            'success': True,
-            'total':   len(picks),
-            'grouped': list(grouped.values()),
-            'picks':   picks,
-        })
-
-    except Exception as e:
-        print(f'[snow_fetch_stock_picks_v1] {e}\n{traceback.format_exc()}')
-        return JsonResponse({'error': str(e), 'success': False}, status=500)
-
-
-# ============================================================================
-# ADD THESE TO YOUR EXISTING views.py
-# ----------------------------------------------------------------------------
-# 1. Add the imports below to the top of views.py (skip any you already have)
-# 2. Paste the two view functions anywhere in the file
-# 3. Adjust the `from .models import SnowGlobalStockPick` line if your models
-#    live somewhere else (e.g. `from myapp.models import SnowGlobalStockPick`)
-# 4. Wire them up in urls.py -- see stock_picks_urls.py
-#
-# Both views are intentionally CSRF-exempt and have no auth/permission
-# checks, matching the rest of SnowAI's endpoints (single-user tool).
-# ============================================================================
-
-import difflib
-from django.db.models import Count, Max
-
-
-
-def _get_request_param(request, key, default=None):
-    """
-    Pulls a value from either a JSON body (POST) or query string (GET),
-    so the same view works with fetch(..., {method: 'POST', body: JSON...})
-    or a plain GET ?country=Japan request.
-    """
-    if request.method == 'POST':
-        try:
-            body = json.loads(request.body or '{}')
-        except (json.JSONDecodeError, TypeError):
-            body = {}
-        if key in body:
-            return body[key]
-    return request.GET.get(key, default)
-
-
-def _resolve_country_name(requested_name):
-    """
-    The country names typed on the map (from the globe markers or the
-    GeoJSON polygons) won't always exactly match the country string that
-    was saved with a stock pick (e.g. "United States" vs "USA" vs
-    "United States of America"). This tries, in order:
-      1. exact case-insensitive match
-      2. substring match in either direction
-      3. fuzzy match
-    Returns the *actual* country string stored in the DB, or the original
-    requested name if nothing close is found (so a fresh/empty country
-    still returns a clean "no picks yet" result instead of erroring).
-    """
-    requested_name = (requested_name or '').strip()
-    if not requested_name:
-        return requested_name
-
-    exact = (
-        SnowGlobalStockPick.objects
-        .filter(country__iexact=requested_name)
-        .values_list('country', flat=True)
-        .first()
-    )
-    if exact:
-        return exact
-
-    all_countries = list(
-        SnowGlobalStockPick.objects.values_list('country', flat=True).distinct()
-    )
-    requested_lower = requested_name.lower()
-    for candidate in all_countries:
-        candidate_lower = candidate.lower()
-        if requested_lower in candidate_lower or candidate_lower in requested_lower:
-            return candidate
-
-    close = difflib.get_close_matches(requested_name, all_countries, n=1, cutoff=0.6)
-    return close[0] if close else requested_name
-
-
-def _serialize_pick(pick):
-    return {
-        'id': pick.id,
-        'symbol': pick.symbol,
-        'name': pick.name,
-        'country': pick.country,
-        'flag': pick.flag,
-        'sector': pick.sector,
-        'sub_sector': pick.sub_sector,
-        'rec': pick.rec,
-        'conviction': pick.conviction,
-        'thesis': pick.thesis,
-        'risk': pick.risk,
-        'catalysts': pick.catalysts or [],
-        'analyst_target': pick.analyst_target,
-        'price_at_save': pick.price_at_save,
-        'market_cap': pick.market_cap,
-        'market_outlook': pick.market_outlook,
-        'top_pick': pick.top_pick,
-        'top_pick_reason': pick.top_pick_reason,
-        'source_list': pick.source_list or [],
-        'article_count': pick.article_count,
-        'tf_context': pick.tf_context,
-        'date_saved': pick.date_saved.isoformat() if pick.date_saved else None,
-        'created_at': pick.created_at.isoformat() if pick.created_at else None,
-    }
-
-
-@csrf_exempt
-@require_http_methods(['GET', 'POST'])
-def get_stock_picks_by_country(request):
-    """
-    Returns stored SnowGlobalStockPick rows for a single country.
-
-    Request:
-        POST { "country": "Japan", "history": false }
-        or GET  ?country=Japan&history=false
-
-    By default (history=false) only the most recent saved pick per
-    (symbol, sector) is returned, so re-scans on later dates don't show
-    the same stock twice. Pass history=true to get every saved snapshot
-    (useful for backtesting).
-    """
-    requested_country = _get_request_param(request, 'country', '')
-    show_history = str(_get_request_param(request, 'history', 'false')).lower() in ('1', 'true', 'yes')
-
-    if not requested_country:
-        return JsonResponse({'success': False, 'error': 'A "country" value is required.'}, status=400)
-
-    resolved_country = _resolve_country_name(requested_country)
-
-    queryset = (
-        SnowGlobalStockPick.objects
-        .filter(country__iexact=resolved_country)
-        .order_by('-created_at')
-    )
-
-    if show_history:
-        picks = list(queryset)
-    else:
-        seen = set()
-        picks = []
-        for pick in queryset:
-            key = (pick.symbol.upper(), pick.sector)
-            if key in seen:
-                continue
-            seen.add(key)
-            picks.append(pick)
-
-    # Sort: top picks first, then by sector, then by conviction (desc)
-    picks.sort(key=lambda p: (
-        0 if p.top_pick else 1,
-        p.sector or '',
-        -(p.conviction or 0),
-    ))
-
-    serialized = [_serialize_pick(p) for p in picks]
-    sectors = sorted({p['sector'] for p in serialized if p['sector']})
-    market_outlook = next((p['market_outlook'] for p in serialized if p['market_outlook']), '')
-    last_updated = picks[0].created_at.isoformat() if picks else None
-    flag = picks[0].flag if picks else '🌍'
-
-    return JsonResponse({
-        'success': True,
-        'country': resolved_country if picks else requested_country,
-        'flag': flag,
-        'total_stocks': len(serialized),
-        'sectors': sectors,
-        'market_outlook': market_outlook,
-        'last_updated': last_updated,
-        'stocks': serialized,
-    })
-
-
-@csrf_exempt
-@require_http_methods(['GET'])
-def get_all_countries_stock_summary(request):
-    """
-    Returns one row per country that has at least one stored stock pick,
-    for a "browse everything I've saved" list/table view.
-
-    GET /api/snow-global-stock-picks/countries-summary/
-    """
-    rows = (
-        SnowGlobalStockPick.objects
-        .values('country')
-        .annotate(
-            total_picks=Count('id'),
-            total_symbols=Count('symbol', distinct=True),
-            total_sectors=Count('sector', distinct=True),
-            last_updated=Max('created_at'),
-        )
-        .order_by('country')
-    )
-
-    countries = []
-    for row in rows:
-        latest = (
-            SnowGlobalStockPick.objects
-            .filter(country=row['country'])
-            .order_by('-created_at')
-            .values('flag', 'top_pick', 'top_pick_reason', 'symbol')
-            .first()
-        )
-        top_pick = (
-            SnowGlobalStockPick.objects
-            .filter(country=row['country'], top_pick=True)
-            .order_by('-created_at')
-            .values('symbol', 'name', 'top_pick_reason')
-            .first()
-        )
-        countries.append({
-            'country': row['country'],
-            'flag': latest['flag'] if latest else '🌍',
-            'total_picks': row['total_picks'],
-            'total_symbols': row['total_symbols'],
-            'total_sectors': row['total_sectors'],
-            'last_updated': row['last_updated'].isoformat() if row['last_updated'] else None,
-            'top_pick': top_pick,
-        })
-
-    return JsonResponse({'success': True, 'countries': countries})
-
-# ─────────────────────────────────────────────────────────────────────────────
 # SNOW GLOBAL STOCK PICKS — Chart data for the LightweightCharts panel
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Powers the "Chart" button on each stock card in the country stock-picks
-# modal. Given a symbol (exactly as saved on SnowGlobalStockPick.symbol),
-# returns daily OHLC candles shaped for lightweight-charts' candlestick
-# series: [{ time: 'YYYY-MM-DD', open, high, low, close }, ...]
+# Powers the "Chart" button + timeframe pills on each stock card in the
+# country stock-picks modal. Given a symbol (exactly as saved on
+# SnowGlobalStockPick.symbol) and a timeframe, returns candles shaped for
+# lightweight-charts' candlestick series:
+#   - daily/weekly timeframes -> { time: 'YYYY-MM-DD', open, high, low, close }
+#   - intraday timeframes (1D/5D) -> { time: <unix seconds>, open, high, low, close }
 #
 # ASSUMPTION FLAGGED: this uses yfinance as the data source since it handles
 # most international exchange suffixes (.T, .L, .DE, .HK, .AX, .SW, etc.)
 # for free with no API key. If you already have a price-data source wired
 # up elsewhere (Trend Reversal Scanner / Global Market Scan / PositionChart
-# all pull OHLC from *something*), swap the body of `_fetch_ohlc_candles`
+# all pull OHLC from *something*), swap the body of `_fetch_ohlc_candles_earth`
 # below for that instead and delete the yfinance dependency -- the response
 # shape is the only contract the frontend cares about.
 #
 # Install: pip install yfinance
+#
+# FIX: the first version of this built a manual start/end date range and
+# passed both to yfinance's .history(). yfinance treats `end` as EXCLUSIVE,
+# so `end=today` silently dropped today's (i.e. the most recent) candle --
+# that was the "chart doesn't show the most recent candle/close" bug.
+# Using `period=` instead asks yfinance for "the last N calendar days up to
+# now" and always includes the latest available bar, so it's used here
+# instead of hand-rolled start/end dates.
 # ─────────────────────────────────────────────────────────────────────────────
 
+import json
 import traceback
-from datetime import datetime, timedelta
 
-def _fetch_ohlc_candles_earth(symbol, lookback_days=180):
+from django.db.models import Q
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+from .models import (
+    SnowGlobalStockPick,
+    SnowVaultTickerMeta,
+    SnowVaultWatchlistAsset,
+    SnowVaultScannerHistory,
+)
+
+
+# timeframe key -> (yfinance period, yfinance interval)
+# Keep the keys here in sync with CHART_TIMEFRAMES on the frontend.
+TIMEFRAME_MAP = {
+    '1D': {'period': '1d',  'interval': '5m'},
+    '5D': {'period': '5d',  'interval': '15m'},
+    '1M': {'period': '1mo', 'interval': '1d'},
+    '3M': {'period': '3mo', 'interval': '1d'},
+    '6M': {'period': '6mo', 'interval': '1d'},
+    '1Y': {'period': '1y',  'interval': '1d'},
+    '5Y': {'period': '5y',  'interval': '1wk'},
+}
+DEFAULT_TIMEFRAME = '6M'
+
+# Anything at this interval or finer needs a unix-timestamp `time` value on
+# the frontend (lightweight-charts only accepts the 'YYYY-MM-DD' string form
+# for daily-or-coarser bars).
+INTRADAY_INTERVALS = {'1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h'}
+
+
+def _fetch_ohlc_candles_earth(symbol, timeframe=DEFAULT_TIMEFRAME):
     """
-    Pulls daily OHLC candles for `symbol` over the last `lookback_days`.
+    Pulls OHLC candles for `symbol` at the given timeframe.
     Returns a list of dicts shaped for lightweight-charts, oldest first.
     Raises on any failure -- caller is responsible for catching.
     """
     import yfinance as yf
 
-    end = datetime.utcnow().date()
-    start = end - timedelta(days=lookback_days)
+    config = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP[DEFAULT_TIMEFRAME])
+    intraday = config['interval'] in INTRADAY_INTERVALS
 
     ticker = yf.Ticker(symbol)
-    hist = ticker.history(start=start.isoformat(), end=end.isoformat(), interval='1d')
+    hist = ticker.history(period=config['period'], interval=config['interval'])
 
     if hist is None or hist.empty:
         return []
 
     candles = []
     for index, row in hist.iterrows():
-        # yfinance sometimes returns rows with NaN OHLC on non-trading days
+        # yfinance sometimes returns rows with NaN OHLC (halts, holidays, etc.)
         if row[['Open', 'High', 'Low', 'Close']].isnull().any():
             continue
         candles.append({
-            'time': index.strftime('%Y-%m-%d'),
+            'time': int(index.timestamp()) if intraday else index.strftime('%Y-%m-%d'),
             'open': round(float(row['Open']), 4),
             'high': round(float(row['High']), 4),
             'low': round(float(row['Low']), 4),
@@ -54953,10 +54634,14 @@ def _fetch_ohlc_candles_earth(symbol, lookback_days=180):
 @require_http_methods(['POST'])
 def snow_global_pick_chart_data_v1(request):
     """
-    Daily OHLC candles for a single saved stock pick's symbol.
+    OHLC candles for a single saved stock pick's symbol, at a given timeframe.
 
-    Request:  POST { "symbol": "AAPL", "country": "United States of America" }
-    Response: { success, symbol, candles: [{time, open, high, low, close}, ...] }
+    Request:  POST {
+        "symbol": "AAPL",
+        "country": "United States of America",
+        "timeframe": "6M"   # one of TIMEFRAME_MAP keys, defaults to "6M"
+    }
+    Response: { success, symbol, timeframe, candles: [{time, open, high, low, close}, ...] }
 
     `country` isn't required to fetch the candles (yfinance just needs the
     symbol/suffix), but it's accepted so you can later branch on it if you
@@ -54967,19 +54652,23 @@ def snow_global_pick_chart_data_v1(request):
     try:
         body = json.loads(request.body or '{}')
         symbol = str(body.get('symbol', '')).strip().upper()
+        timeframe = str(body.get('timeframe') or DEFAULT_TIMEFRAME).strip().upper()
 
         if not symbol:
             return JsonResponse({'success': False, 'error': 'A "symbol" value is required.'}, status=400)
 
+        if timeframe not in TIMEFRAME_MAP:
+            timeframe = DEFAULT_TIMEFRAME
+
         try:
-            candles = _fetch_ohlc_candles_earth(symbol)
+            candles = _fetch_ohlc_candles_earth(symbol, timeframe)
         except ImportError:
             return JsonResponse({
                 'success': False,
                 'error': 'yfinance is not installed on the server (pip install yfinance), or swap in your existing price-data source.',
             }, status=500)
         except Exception as fetch_error:
-            print(f'[snow_global_pick_chart_data_v1] fetch failed for {symbol}: {fetch_error}')
+            print(f'[snow_global_pick_chart_data_v1] fetch failed for {symbol} @ {timeframe}: {fetch_error}')
             return JsonResponse({
                 'success': False,
                 'error': f"Couldn't fetch chart data for {symbol}. The symbol may need an exchange suffix (e.g. 7203.T, VOD.L).",
@@ -54988,10 +54677,10 @@ def snow_global_pick_chart_data_v1(request):
         if not candles:
             return JsonResponse({
                 'success': False,
-                'error': f'No chart data returned for {symbol}.',
+                'error': f'No chart data returned for {symbol} on {timeframe}.',
             }, status=404)
 
-        return JsonResponse({'success': True, 'symbol': symbol, 'candles': candles})
+        return JsonResponse({'success': True, 'symbol': symbol, 'timeframe': timeframe, 'candles': candles})
 
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
@@ -54999,7 +54688,302 @@ def snow_global_pick_chart_data_v1(request):
         print(f'[snow_global_pick_chart_data_v1] {e}\n{traceback.format_exc()}')
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
-     
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SNOWVAULT ASSET EXPLORER — cross-reference search + multi-timeframe chart
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Backs the search box + chart panel in the Trend Scanner's "Asset Explorer"
+# modal (AssetExplorerModal, defined inside snow_ai_earth.jsx). Three endpoints:
+#
+#   snowvault_asset_search_v1    -- cross-references SnowVaultTickerMeta +
+#                                    SnowVaultWatchlistAsset + the latest
+#                                    SnowVaultScannerHistory row by ticker,
+#                                    name, sector, and/or watchlist category
+#   snowvault_asset_sectors_v1   -- distinct sectors + category choices, for
+#                                    the filter dropdowns
+#   snowvault_asset_chart_data_v1 -- OHLC candles at a chosen interval,
+#                                    including intraday timeframes down to 1m
+#
+# ASSUMPTION FLAGGED (same as the chart-data view built for the global stock
+# map): candle data comes from yfinance, since there's no existing OHLC
+# source in what's been shared here. For non-stock categories, the saved
+# `symbol` needs to already be in yfinance's format -- forex like
+# "EURUSD=X", crypto like "BTC-USD", indices like "^GSPC", commodities
+# futures like "CL=F". If SnowVaultWatchlistAsset.symbol isn't stored that
+# way today, either normalize on save or add a translation step here.
+#
+# Install: pip install yfinance pandas   (pandas already ships with yfinance)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _get_request_param(request, key, default=None):
+    """Read a value from a JSON POST body first, falling back to query params."""
+    if request.method == 'POST':
+        try:
+            body = json.loads(request.body or '{}')
+        except (json.JSONDecodeError, TypeError):
+            body = {}
+        if key in body:
+            return body[key]
+    return request.GET.get(key, default)
+
+
+def _latest_history_for(ticker):
+    """Most recent SnowVaultScannerHistory row for a ticker, or None."""
+    row = (
+        SnowVaultScannerHistory.objects
+        .filter(ticker__iexact=ticker)
+        .order_by('-snapshot_date')
+        .values('score', 'signal', 'direction', 'ai_verdict', 'ai_opportunity_score',
+                 'current_price', 'snapshot_date')
+        .first()
+    )
+    if not row:
+        return None
+    row['snapshot_date'] = row['snapshot_date'].isoformat() if row['snapshot_date'] else None
+    return row
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+def snowvault_asset_search_v1(request):
+    """
+    Cross-references ticker metadata, watchlist entries, and each ticker's
+    latest scanner snapshot by ticker/name/sector/category, for the Asset
+    Explorer's search box. Blank `q` returns a browsable list instead of
+    an empty result.
+
+    Request:  POST/GET { q, sector, category }  (all optional)
+    Response: { success, total, assets: [{
+        ticker, name, sector, category, market_cap, curr_price,
+        in_watchlist, watchlist_label,
+        latest: { score, signal, direction, ai_verdict, ai_opportunity_score,
+                   current_price, snapshot_date } | null
+    }] }
+
+    Unique name: snowvault_asset_search_v1
+    """
+    try:
+        q = str(_get_request_param(request, 'q', '') or '').strip()
+        sector_filter = str(_get_request_param(request, 'sector', '') or '').strip()
+        category_filter = str(_get_request_param(request, 'category', '') or '').strip()
+
+        meta_qs = SnowVaultTickerMeta.objects.all()
+        watch_qs = SnowVaultWatchlistAsset.objects.filter(is_active=True)
+
+        if q:
+            meta_qs = meta_qs.filter(Q(ticker__icontains=q) | Q(name__icontains=q) | Q(sector__icontains=q))
+            watch_qs = watch_qs.filter(Q(symbol__icontains=q) | Q(label__icontains=q))
+        if sector_filter:
+            meta_qs = meta_qs.filter(sector__iexact=sector_filter)
+        if category_filter:
+            watch_qs = watch_qs.filter(category__iexact=category_filter)
+
+        meta_by_ticker = {m.ticker.upper(): m for m in meta_qs[:200]}
+        watch_by_ticker = {w.symbol.upper(): w for w in watch_qs[:200]}
+
+        if category_filter and not q:
+            # Category only lives on the watchlist model -- lean on it alone
+            # so a category filter with no search text still means something.
+            tickers = set(watch_by_ticker.keys())
+        else:
+            tickers = set(meta_by_ticker.keys()) | set(watch_by_ticker.keys())
+            if category_filter:
+                tickers &= set(watch_by_ticker.keys())
+            if sector_filter:
+                tickers &= set(meta_by_ticker.keys())
+
+        assets = []
+        for ticker in tickers:
+            meta = meta_by_ticker.get(ticker)
+            watch = watch_by_ticker.get(ticker)
+            assets.append({
+                'ticker': ticker,
+                'name': (meta.name if meta and meta.name else (watch.label if watch else '')) or ticker,
+                'sector': meta.sector if meta else '',
+                'category': watch.category if watch else '',
+                'market_cap': meta.market_cap if meta else None,
+                'curr_price': meta.curr_price if meta else None,
+                'in_watchlist': watch is not None,
+                'watchlist_label': watch.label if watch else '',
+                'latest': _latest_history_for(ticker),
+            })
+
+        def sort_key(a):
+            if not q:
+                return (0, a['ticker'])
+            uq = q.upper()
+            if a['ticker'] == uq:
+                return (0, a['ticker'])
+            if a['ticker'].startswith(uq):
+                return (1, a['ticker'])
+            return (2, a['ticker'])
+
+        assets.sort(key=sort_key)
+        assets = assets[:50]
+
+        return JsonResponse({'success': True, 'total': len(assets), 'assets': assets})
+
+    except Exception as e:
+        print(f'[snowvault_asset_search_v1] {e}\n{traceback.format_exc()}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snowvault_asset_sectors_v1(request):
+    """
+    Distinct sectors from SnowVaultTickerMeta + the watchlist's fixed
+    category choices, for the Asset Explorer's filter dropdowns.
+
+    Unique name: snowvault_asset_sectors_v1
+    """
+    try:
+        sectors = (
+            SnowVaultTickerMeta.objects
+            .exclude(sector='')
+            .values_list('sector', flat=True)
+            .distinct()
+            .order_by('sector')
+        )
+        categories = [choice[0] for choice in SnowVaultWatchlistAsset.CATEGORY_CHOICES]
+        return JsonResponse({'success': True, 'sectors': list(sectors), 'categories': categories})
+    except Exception as e:
+        print(f'[snowvault_asset_sectors_v1] {e}\n{traceback.format_exc()}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ----------------------------------------------------------------------------
+# Chart data, including lower (intraday) timeframes
+# ----------------------------------------------------------------------------
+
+# interval key -> (yfinance period, yfinance interval). Periods are kept
+# inside Yahoo's actual lookback limits per interval (1m: 7d max, 5m/15m/30m:
+# 60d max, 60m: 730d max) with a little headroom cut off, not right up
+# against the edge.
+INTERVAL_MAP = {
+    '1m':  {'period': '5d',   'interval': '1m'},
+    '5m':  {'period': '1mo',  'interval': '5m'},
+    '15m': {'period': '1mo',  'interval': '15m'},
+    '30m': {'period': '2mo',  'interval': '30m'},
+    '1H':  {'period': '6mo',  'interval': '60m'},
+    '4H':  {'period': '1y',   'interval': '60m'},   # resampled from 60m, yfinance has no native 4h
+    '1D':  {'period': '2y',   'interval': '1d'},
+    '1W':  {'period': '10y',  'interval': '1wk'},
+    '1M':  {'period': 'max',  'interval': '1mo'},
+}
+DEFAULT_INTERVAL = '1D'
+RESAMPLE_TO = {'4H': '4h'}
+INTRADAY_KEYS = {'1m', '5m', '15m', '30m', '1H', '4H'}
+
+
+def _fetch_asset_candles(symbol, interval_key=DEFAULT_INTERVAL):
+    """
+    OHLC candles for `symbol` at `interval_key`, oldest first, shaped for
+    lightweight-charts. Raises on failure -- caller catches.
+    """
+    import yfinance as yf
+
+    config = INTERVAL_MAP.get(interval_key, INTERVAL_MAP[DEFAULT_INTERVAL])
+    ticker = yf.Ticker(symbol)
+    hist = ticker.history(period=config['period'], interval=config['interval'])
+
+    if hist is None or hist.empty:
+        return []
+
+    resample_rule = RESAMPLE_TO.get(interval_key)
+    if resample_rule:
+        hist = hist.resample(resample_rule).agg({
+            'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last',
+        }).dropna(subset=['Open', 'High', 'Low', 'Close'])
+
+    intraday = interval_key in INTRADAY_KEYS
+
+    candles = []
+    for index, row in hist.iterrows():
+        if row[['Open', 'High', 'Low', 'Close']].isnull().any():
+            continue
+        candles.append({
+            'time': int(index.timestamp()) if intraday else index.strftime('%Y-%m-%d'),
+            'open': round(float(row['Open']), 4),
+            'high': round(float(row['High']), 4),
+            'low': round(float(row['Low']), 4),
+            'close': round(float(row['Close']), 4),
+        })
+
+    return candles
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def snowvault_asset_chart_data_v1(request):
+    """
+    OHLC candles for the Asset Explorer chart panel, spanning both the
+    original daily/weekly views and lower intraday timeframes (down to 1m).
+
+    Request:  POST { "symbol": "AAPL", "interval": "1H" }
+    Response: { success, symbol, interval, candles: [{time, open, high, low, close}, ...] }
+
+    Unique name: snowvault_asset_chart_data_v1
+    """
+    try:
+        body = json.loads(request.body or '{}')
+        symbol = str(body.get('symbol', '')).strip().upper()
+        interval_key = str(body.get('interval') or DEFAULT_INTERVAL).strip()
+
+        if not symbol:
+            return JsonResponse({'success': False, 'error': 'A "symbol" value is required.'}, status=400)
+        if interval_key not in INTERVAL_MAP:
+            interval_key = DEFAULT_INTERVAL
+
+        try:
+            candles = _fetch_asset_candles(symbol, interval_key)
+        except ImportError:
+            return JsonResponse({
+                'success': False,
+                'error': 'yfinance is not installed on the server (pip install yfinance).',
+            }, status=500)
+        except Exception as fetch_error:
+            print(f'[snowvault_asset_chart_data_v1] fetch failed for {symbol} @ {interval_key}: {fetch_error}')
+            return JsonResponse({
+                'success': False,
+                'error': f"Couldn't fetch chart data for {symbol}. Non-stock assets need yfinance-style "
+                         f"symbols (e.g. EURUSD=X, BTC-USD, ^GSPC, CL=F).",
+            }, status=502)
+
+        if not candles:
+            return JsonResponse({
+                'success': False,
+                'error': f'No chart data returned for {symbol} at {interval_key}.',
+            }, status=404)
+
+        return JsonResponse({'success': True, 'symbol': symbol, 'interval': interval_key, 'candles': candles})
+
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        print(f'[snowvault_asset_chart_data_v1] {e}\n{traceback.format_exc()}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ============================================================================
+# ADD TO urls.py
+# ----------------------------------------------------------------------------
+# from .views import (
+#     snow_global_pick_chart_data_v1,
+#     snowvault_asset_search_v1,
+#     snowvault_asset_sectors_v1,
+#     snowvault_asset_chart_data_v1,
+# )
+#
+# urlpatterns += [
+#     path('api/snow-global-stock-picks/chart-data/', snow_global_pick_chart_data_v1),
+#     path('api/snowvault/assets/search/', snowvault_asset_search_v1),
+#     path('api/snowvault/assets/sectors/', snowvault_asset_sectors_v1),
+#     path('api/snowvault/assets/chart-data/', snowvault_asset_chart_data_v1),
+# ]
+# ============================================================================
 
 def book_order(request):
     if request.method == "POST":
