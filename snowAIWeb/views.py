@@ -54571,7 +54571,7 @@ def snowvault_scanner_backtest_vault(request):
         'horizons':       horizons,
         'totalSnapshots': len(snapshot_rows),
     })
-        
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SNOWAI BACKEND ADDITIONS
@@ -54581,8 +54581,11 @@ def snowvault_scanner_backtest_vault(request):
 #
 #   1. Save + Fetch          -- snow_save_stock_picks_v1, snow_fetch_stock_picks_v1
 #   2. By-country + summary  -- get_stock_picks_by_country, get_all_countries_stock_summary
-#   3. Global-pick chart     -- snow_global_pick_chart_data_v1
-#   4. Asset Explorer        -- snowvault_asset_search_v1, snowvault_asset_sectors_v1,
+#   3. Chart data            -- snow_global_pick_chart_data_v1,
+#                                snow_global_picks_bulk_chart_data_v1 ("chart all visible"),
+#                                shared by section 4's chart endpoint too
+#   4. Asset Explorer        -- snowvault_asset_search_v1 (cross-referenced against
+#                                the Global Stock Picker), snowvault_asset_sectors_v1,
 #                                snowvault_asset_chart_data_v1
 #
 # Paste this whole file's contents into views.py (or import from here), then
@@ -54954,91 +54957,142 @@ def get_all_countries_stock_summary(request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. SNOW GLOBAL STOCK PICKS — Chart data for the LightweightCharts panel
+# 3. CHART DATA — shared by the global-pick chart panel and the Asset
+#    Explorer, now on one unified interval selector with pre/post-market
+#    session tagging.
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Powers the "Chart" button + timeframe pills on each stock card in the
-# country stock-picks modal. Given a symbol (exactly as saved on
-# SnowGlobalStockPick.symbol) and a timeframe, returns candles shaped for
-# lightweight-charts' candlestick series:
-#   - daily/weekly timeframes -> { time: 'YYYY-MM-DD', open, high, low, close }
-#   - intraday timeframes (1D/5D) -> { time: <unix seconds>, open, high, low, close }
+# One interval system instead of two: every chart in the component (country
+# stock-picks panel, Asset Explorer, "chart all visible") now shares the same
+# 1m/5m/15m/30m/1H/4H/1D/1W/1M picker and the same fetch implementation.
 #
-# ASSUMPTION FLAGGED: this uses yfinance as the data source since it handles
-# most international exchange suffixes (.T, .L, .DE, .HK, .AX, .SW, etc.)
-# for free with no API key. If you already have a price-data source wired
-# up elsewhere (Trend Reversal Scanner / Global Market Scan / PositionChart
-# all pull OHLC from *something*), swap the body of `_fetch_ohlc_candles_earth`
-# below for that instead and delete the yfinance dependency -- the response
-# shape is the only contract the frontend cares about.
+# Each intraday candle also carries a `session` tag ('pre' | 'regular' |
+# 'post' | 'closed') and pre/post-market data is now requested from yfinance
+# (prepost=True) so extended-hours trading actually shows up instead of
+# stopping dead at 9:30/16:00. Session boundaries assume standard U.S.
+# equity-market hours in whatever timezone yfinance attaches to the index
+# (exchange-local for the ticker) -- this is a real limitation for
+# non-U.S./24-hour assets (forex, crypto, most indices), which don't have
+# "sessions" in this sense; the tag just won't mean much for them and the
+# frontend treats anything that isn't 'regular' as "dim it."
+#
+# ASSUMPTION FLAGGED (unchanged from before): candle data comes from
+# yfinance. Swap `_fetch_ohlc_impl` for your own price-data source if you
+# have one -- the response shape is the only contract the frontend needs.
 #
 # Install: pip install yfinance
 # ─────────────────────────────────────────────────────────────────────────────
 
-# timeframe key -> (yfinance period, yfinance interval)
-# Keep the keys here in sync with CHART_TIMEFRAMES on the frontend.
-TIMEFRAME_MAP = {
-    '1D': {'period': '1d',  'interval': '5m'},
-    '5D': {'period': '5d',  'interval': '15m'},
-    '1M': {'period': '1mo', 'interval': '1d'},
-    '3M': {'period': '3mo', 'interval': '1d'},
-    '6M': {'period': '6mo', 'interval': '1d'},
-    '1Y': {'period': '1y',  'interval': '1d'},
-    '5Y': {'period': '5y',  'interval': '1wk'},
+import datetime as dt
+
+# interval key -> (yfinance period, yfinance interval). Periods are kept
+# inside Yahoo's actual lookback limits per interval (1m: 7d max, 5m/15m/30m:
+# 60d max, 60m: 730d max) with a little headroom cut off, not right up
+# against the edge.
+INTERVAL_MAP = {
+    '1m':  {'period': '5d',   'interval': '1m'},
+    '5m':  {'period': '1mo',  'interval': '5m'},
+    '15m': {'period': '1mo',  'interval': '15m'},
+    '30m': {'period': '2mo',  'interval': '30m'},
+    '1H':  {'period': '6mo',  'interval': '60m'},
+    '4H':  {'period': '1y',   'interval': '60m'},   # resampled from 60m, yfinance has no native 4h
+    '1D':  {'period': '2y',   'interval': '1d'},
+    '1W':  {'period': '10y',  'interval': '1wk'},
+    '1M':  {'period': 'max',  'interval': '1mo'},
 }
-DEFAULT_TIMEFRAME = '6M'
-
-# Anything at this interval or finer needs a unix-timestamp `time` value on
-# the frontend (lightweight-charts only accepts the 'YYYY-MM-DD' string form
-# for daily-or-coarser bars).
-INTRADAY_INTERVALS = {'1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h'}
+DEFAULT_INTERVAL = '1D'
+RESAMPLE_TO = {'4H': '4h'}
+INTRADAY_KEYS = {'1m', '5m', '15m', '30m', '1H', '4H'}
 
 
-def _fetch_ohlc_candles_earth(symbol, timeframe=DEFAULT_TIMEFRAME):
+def _classify_session(ts):
     """
-    Pulls OHLC candles for `symbol` at the given timeframe.
-    Returns a list of dicts shaped for lightweight-charts, oldest first.
-    Raises on any failure -- caller is responsible for catching.
+    Best-effort session tag for an intraday candle timestamp. Assumes
+    standard U.S. equity-market hours: 4:00-9:30 pre-market, 9:30-16:00
+    regular session, 16:00-20:00 post-market, else closed.
+    """
+    t = ts.time()
+    if t < dt.time(4, 0):
+        return 'closed'
+    if t < dt.time(9, 30):
+        return 'pre'
+    if t < dt.time(16, 0):
+        return 'regular'
+    if t < dt.time(20, 0):
+        return 'post'
+    return 'closed'
+
+
+def _fetch_ohlc_impl(symbol, interval_key=DEFAULT_INTERVAL):
+    """
+    Shared OHLC fetch used by every chart endpoint below. Returns candles
+    oldest-first, shaped for lightweight-charts, with a `session` tag on
+    intraday bars. Raises on failure -- callers catch.
     """
     import yfinance as yf
 
-    config = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP[DEFAULT_TIMEFRAME])
-    intraday = config['interval'] in INTRADAY_INTERVALS
+    config = INTERVAL_MAP.get(interval_key, INTERVAL_MAP[DEFAULT_INTERVAL])
+    intraday = interval_key in INTRADAY_KEYS
 
     ticker = yf.Ticker(symbol)
-    hist = ticker.history(period=config['period'], interval=config['interval'])
+    hist = ticker.history(
+        period=config['period'],
+        interval=config['interval'],
+        prepost=intraday,   # pulls pre/post-market bars on intraday intervals
+    )
 
     if hist is None or hist.empty:
         return []
 
+    resample_rule = RESAMPLE_TO.get(interval_key)
+    if resample_rule:
+        hist = hist.resample(resample_rule).agg({
+            'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last',
+        }).dropna(subset=['Open', 'High', 'Low', 'Close'])
+
     candles = []
     for index, row in hist.iterrows():
-        # yfinance sometimes returns rows with NaN OHLC (halts, holidays, etc.)
         if row[['Open', 'High', 'Low', 'Close']].isnull().any():
             continue
-        candles.append({
+        candle = {
             'time': int(index.timestamp()) if intraday else index.strftime('%Y-%m-%d'),
             'open': round(float(row['Open']), 4),
             'high': round(float(row['High']), 4),
             'low': round(float(row['Low']), 4),
             'close': round(float(row['Close']), 4),
-        })
+        }
+        if intraday:
+            candle['session'] = _classify_session(index)
+        candles.append(candle)
 
     return candles
+
+
+def _fetch_ohlc_candles_earth(symbol, timeframe=DEFAULT_INTERVAL):
+    """Used by snow_global_pick_chart_data_v1 -- kept as its own name/signature."""
+    return _fetch_ohlc_impl(symbol, timeframe)
+
+
+def _fetch_asset_candles(symbol, interval_key=DEFAULT_INTERVAL):
+    """Used by snowvault_asset_chart_data_v1 -- kept as its own name/signature."""
+    return _fetch_ohlc_impl(symbol, interval_key)
 
 
 @csrf_exempt
 @require_http_methods(['POST'])
 def snow_global_pick_chart_data_v1(request):
     """
-    OHLC candles for a single saved stock pick's symbol, at a given timeframe.
+    OHLC candles for a single saved stock pick's symbol, at a given
+    interval, now including pre/post-market bars and lower timeframes.
 
     Request:  POST {
         "symbol": "AAPL",
         "country": "United States of America",
-        "timeframe": "6M"   # one of TIMEFRAME_MAP keys, defaults to "6M"
+        "timeframe": "1D"   # one of INTERVAL_MAP keys, defaults to "1D"
     }
-    Response: { success, symbol, timeframe, candles: [{time, open, high, low, close}, ...] }
+    Response: { success, symbol, timeframe, candles: [
+        {time, open, high, low, close, session?}, ...
+    ] }
 
     `country` isn't required to fetch the candles (yfinance just needs the
     symbol/suffix), but it's accepted so you can later branch on it if you
@@ -55049,13 +55103,13 @@ def snow_global_pick_chart_data_v1(request):
     try:
         body = json.loads(request.body or '{}')
         symbol = str(body.get('symbol', '')).strip().upper()
-        timeframe = str(body.get('timeframe') or DEFAULT_TIMEFRAME).strip().upper()
+        timeframe = str(body.get('timeframe') or DEFAULT_INTERVAL).strip()
 
         if not symbol:
             return JsonResponse({'success': False, 'error': 'A "symbol" value is required.'}, status=400)
 
-        if timeframe not in TIMEFRAME_MAP:
-            timeframe = DEFAULT_TIMEFRAME
+        if timeframe not in INTERVAL_MAP:
+            timeframe = DEFAULT_INTERVAL
 
         try:
             candles = _fetch_ohlc_candles_earth(symbol, timeframe)
@@ -55086,29 +55140,72 @@ def snow_global_pick_chart_data_v1(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+@csrf_exempt
+@require_http_methods(['POST'])
+def snow_global_picks_bulk_chart_data_v1(request):
+    """
+    Bulk version of the endpoint above, for the "Chart all visible" button
+    in the country stock-picks modal -- fetches candles for several symbols
+    in one request instead of one round-trip per stock.
+
+    Request:  POST { "symbols": ["AAPL", "MSFT", ...], "interval": "1D" }
+    Response: { success, interval, results: {
+        "AAPL": { success, candles: [...] } | { success: false, error },
+        ...
+    } }
+
+    Capped at 30 symbols per call to keep this from turning into a
+    long-running request against yfinance.
+
+    Unique name: snow_global_picks_bulk_chart_data_v1
+    """
+    try:
+        body = json.loads(request.body or '{}')
+        symbols = body.get('symbols') or []
+        interval_key = str(body.get('interval') or DEFAULT_INTERVAL).strip()
+
+        if not isinstance(symbols, list) or not symbols:
+            return JsonResponse({'success': False, 'error': 'A non-empty "symbols" list is required.'}, status=400)
+        if interval_key not in INTERVAL_MAP:
+            interval_key = DEFAULT_INTERVAL
+
+        symbols = [str(s).strip().upper() for s in symbols if str(s).strip()][:30]
+
+        results = {}
+        for symbol in symbols:
+            try:
+                candles = _fetch_ohlc_impl(symbol, interval_key)
+                if candles:
+                    results[symbol] = {'success': True, 'candles': candles}
+                else:
+                    results[symbol] = {'success': False, 'error': 'No chart data available.'}
+            except Exception as fetch_error:
+                print(f'[snow_global_picks_bulk_chart_data_v1] {symbol}: {fetch_error}')
+                results[symbol] = {'success': False, 'error': "Couldn't fetch this symbol."}
+
+        return JsonResponse({'success': True, 'interval': interval_key, 'results': results})
+
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        print(f'[snow_global_picks_bulk_chart_data_v1] {e}\n{traceback.format_exc()}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. SNOWVAULT ASSET EXPLORER — cross-reference search + multi-timeframe chart
+# 4. SNOWVAULT ASSET EXPLORER — cross-referenced against the Global Stock
+#    Picker, organized by country/sector/last-saved
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Backs the search box + chart panel in the Trend Scanner's "Asset Explorer"
-# modal (AssetExplorerModal, defined inside snow_ai_earth.jsx). Three endpoints:
-#
-#   snowvault_asset_search_v1    -- cross-references SnowVaultTickerMeta +
-#                                    SnowVaultWatchlistAsset + the latest
-#                                    SnowVaultScannerHistory row by ticker,
-#                                    name, sector, and/or watchlist category
-#   snowvault_asset_sectors_v1   -- distinct sectors + category choices, for
-#                                    the filter dropdowns
-#   snowvault_asset_chart_data_v1 -- OHLC candles at a chosen interval,
-#                                    including intraday timeframes down to 1m
-#
-# ASSUMPTION FLAGGED (same as the chart-data view above): candle data comes
-# from yfinance, since there's no existing OHLC source in what's been shared
-# here. For non-stock categories, the saved `symbol` needs to already be in
-# yfinance's format -- forex like "EURUSD=X", crypto like "BTC-USD", indices
-# like "^GSPC", commodities futures like "CL=F". If SnowVaultWatchlistAsset
-# .symbol isn't stored that way today, either normalize on save or add a
-# translation step here.
+# "Cross-reference" here means: for every ticker known to the Trend Scanner
+# (SnowVaultTickerMeta / SnowVaultWatchlistAsset / SnowVaultScannerHistory),
+# check whether that *same* ticker was also independently picked by the
+# Country-Sector Drill AI (SnowGlobalStockPick). A ticker present in BOTH
+# systems -- flagged in the response as cross_referenced: true -- is a
+# convergent signal worth a second look: two independent processes landed
+# on the same name. The Global Stock Picker also supplies the `country`
+# used to organize results by country on the frontend (the Trend Scanner's
+# own models don't carry a country field).
 #
 # Reuses `_get_request_param` from section 2 above -- no need to redefine it.
 #
@@ -55135,17 +55232,25 @@ def _latest_history_for(ticker):
 @require_http_methods(['GET', 'POST'])
 def snowvault_asset_search_v1(request):
     """
-    Cross-references ticker metadata, watchlist entries, and each ticker's
-    latest scanner snapshot by ticker/name/sector/category, for the Asset
-    Explorer's search box. Blank `q` returns a browsable list instead of
-    an empty result.
+    Cross-references ticker metadata, watchlist entries, each ticker's
+    latest scanner snapshot, AND the Global Stock Picker (SnowGlobalStockPick)
+    by ticker/name/sector/category, for the Asset Explorer's search box.
+    Blank `q` returns a browsable list instead of an empty result.
 
-    Request:  POST/GET { q, sector, category }  (all optional)
+    Request:  POST/GET { q, sector, category, cross_only }
+        cross_only ("true"/"1") -- only return tickers present in BOTH the
+        Trend Scanner and the Global Stock Picker (the "opportunities" view).
+
     Response: { success, total, assets: [{
         ticker, name, sector, category, market_cap, curr_price,
         in_watchlist, watchlist_label,
-        latest: { score, signal, direction, ai_verdict, ai_opportunity_score,
-                   current_price, snapshot_date } | null
+        sources: ["trend_scanner", "global_picker"],   # which system(s) know this ticker
+        cross_referenced: bool,                         # true if in both
+        country, flag,                                  # from the global-picker match, if any
+        latest_scan: { score, signal, direction, ai_verdict, ai_opportunity_score,
+                        current_price, snapshot_date } | null,
+        global_pick: { country, flag, rec, thesis, date_saved } | null,
+        last_saved: "YYYY-MM-DD" | null,                # most recent relevant date, for sorting
     }] }
 
     Unique name: snowvault_asset_search_v1
@@ -55154,46 +55259,98 @@ def snowvault_asset_search_v1(request):
         q = str(_get_request_param(request, 'q', '') or '').strip()
         sector_filter = str(_get_request_param(request, 'sector', '') or '').strip()
         category_filter = str(_get_request_param(request, 'category', '') or '').strip()
+        cross_only = str(_get_request_param(request, 'cross_only', 'false') or '').lower() in ('1', 'true', 'yes')
 
         meta_qs = SnowVaultTickerMeta.objects.all()
         watch_qs = SnowVaultWatchlistAsset.objects.filter(is_active=True)
+        global_qs = SnowGlobalStockPick.objects.all()
 
         if q:
             meta_qs = meta_qs.filter(Q(ticker__icontains=q) | Q(name__icontains=q) | Q(sector__icontains=q))
             watch_qs = watch_qs.filter(Q(symbol__icontains=q) | Q(label__icontains=q))
+            global_qs = global_qs.filter(
+                Q(symbol__icontains=q) | Q(name__icontains=q) |
+                Q(country__icontains=q) | Q(sector__icontains=q)
+            )
         if sector_filter:
             meta_qs = meta_qs.filter(sector__iexact=sector_filter)
+            global_qs = global_qs.filter(sector__iexact=sector_filter)
         if category_filter:
             watch_qs = watch_qs.filter(category__iexact=category_filter)
 
-        meta_by_ticker = {m.ticker.upper(): m for m in meta_qs[:200]}
-        watch_by_ticker = {w.symbol.upper(): w for w in watch_qs[:200]}
+        meta_by_ticker = {m.ticker.upper(): m for m in meta_qs[:300]}
+        watch_by_ticker = {w.symbol.upper(): w for w in watch_qs[:300]}
 
-        if category_filter and not q:
+        # Most recent Global Stock Pick per ticker (a symbol can have many
+        # rows across countries/sectors/dates -- keep the latest one).
+        global_by_ticker = {}
+        for gp in global_qs.order_by('-created_at')[:1500]:
+            key = gp.symbol.upper()
+            if key not in global_by_ticker:
+                global_by_ticker[key] = gp
+
+        if category_filter and not q and not sector_filter:
             # Category only lives on the watchlist model -- lean on it alone
-            # so a category filter with no search text still means something.
+            # so a category filter with no other text still means something.
             tickers = set(watch_by_ticker.keys())
         else:
-            tickers = set(meta_by_ticker.keys()) | set(watch_by_ticker.keys())
+            tickers = set(meta_by_ticker.keys()) | set(watch_by_ticker.keys()) | set(global_by_ticker.keys())
             if category_filter:
                 tickers &= set(watch_by_ticker.keys())
             if sector_filter:
-                tickers &= set(meta_by_ticker.keys())
+                tickers &= (set(meta_by_ticker.keys()) | set(global_by_ticker.keys()))
 
         assets = []
         for ticker in tickers:
             meta = meta_by_ticker.get(ticker)
             watch = watch_by_ticker.get(ticker)
+            gp = global_by_ticker.get(ticker)
+
+            sources = []
+            if meta or watch:
+                sources.append('trend_scanner')
+            if gp:
+                sources.append('global_picker')
+
+            is_cross_referenced = len(sources) == 2
+            if cross_only and not is_cross_referenced:
+                continue
+            if not sources:
+                continue
+
+            latest_scan = _latest_history_for(ticker)
+
+            candidate_dates = []
+            if latest_scan and latest_scan.get('snapshot_date'):
+                candidate_dates.append(latest_scan['snapshot_date'])
+            if gp and gp.date_saved:
+                candidate_dates.append(gp.date_saved.isoformat())
+            if watch and watch.added_at:
+                candidate_dates.append(watch.added_at.date().isoformat())
+            last_saved = max(candidate_dates) if candidate_dates else None
+
             assets.append({
                 'ticker': ticker,
-                'name': (meta.name if meta and meta.name else (watch.label if watch else '')) or ticker,
-                'sector': meta.sector if meta else '',
+                'name': (meta.name if meta and meta.name else (watch.label if watch and watch.label else (gp.name if gp else ''))) or ticker,
+                'sector': (meta.sector if meta and meta.sector else (gp.sector if gp else '')),
                 'category': watch.category if watch else '',
                 'market_cap': meta.market_cap if meta else None,
                 'curr_price': meta.curr_price if meta else None,
                 'in_watchlist': watch is not None,
                 'watchlist_label': watch.label if watch else '',
-                'latest': _latest_history_for(ticker),
+                'sources': sources,
+                'cross_referenced': is_cross_referenced,
+                'country': gp.country if gp else None,
+                'flag': gp.flag if gp else None,
+                'latest_scan': latest_scan,
+                'global_pick': {
+                    'country': gp.country,
+                    'flag': gp.flag,
+                    'rec': gp.rec,
+                    'thesis': gp.thesis,
+                    'date_saved': gp.date_saved.isoformat() if gp.date_saved else None,
+                } if gp else None,
+                'last_saved': last_saved,
             })
 
         def sort_key(a):
@@ -55207,7 +55364,7 @@ def snowvault_asset_search_v1(request):
             return (2, a['ticker'])
 
         assets.sort(key=sort_key)
-        assets = assets[:50]
+        assets = assets[:80]
 
         return JsonResponse({'success': True, 'total': len(assets), 'assets': assets})
 
@@ -55220,81 +55377,26 @@ def snowvault_asset_search_v1(request):
 @require_http_methods(['GET'])
 def snowvault_asset_sectors_v1(request):
     """
-    Distinct sectors from SnowVaultTickerMeta + the watchlist's fixed
-    category choices, for the Asset Explorer's filter dropdowns.
+    Distinct sectors from SnowVaultTickerMeta AND SnowGlobalStockPick
+    (union, since cross-referenced results can carry a sector from either
+    side), plus the watchlist's fixed category choices, for the Asset
+    Explorer's filter dropdowns.
 
     Unique name: snowvault_asset_sectors_v1
     """
     try:
-        sectors = (
-            SnowVaultTickerMeta.objects
-            .exclude(sector='')
-            .values_list('sector', flat=True)
-            .distinct()
-            .order_by('sector')
+        vault_sectors = set(
+            SnowVaultTickerMeta.objects.exclude(sector='').values_list('sector', flat=True).distinct()
         )
+        global_sectors = set(
+            SnowGlobalStockPick.objects.exclude(sector='').values_list('sector', flat=True).distinct()
+        )
+        sectors = sorted(vault_sectors | global_sectors)
         categories = [choice[0] for choice in SnowVaultWatchlistAsset.CATEGORY_CHOICES]
-        return JsonResponse({'success': True, 'sectors': list(sectors), 'categories': categories})
+        return JsonResponse({'success': True, 'sectors': sectors, 'categories': categories})
     except Exception as e:
         print(f'[snowvault_asset_sectors_v1] {e}\n{traceback.format_exc()}')
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
-# interval key -> (yfinance period, yfinance interval). Periods are kept
-# inside Yahoo's actual lookback limits per interval (1m: 7d max, 5m/15m/30m:
-# 60d max, 60m: 730d max) with a little headroom cut off, not right up
-# against the edge.
-INTERVAL_MAP = {
-    '1m':  {'period': '5d',   'interval': '1m'},
-    '5m':  {'period': '1mo',  'interval': '5m'},
-    '15m': {'period': '1mo',  'interval': '15m'},
-    '30m': {'period': '2mo',  'interval': '30m'},
-    '1H':  {'period': '6mo',  'interval': '60m'},
-    '4H':  {'period': '1y',   'interval': '60m'},   # resampled from 60m, yfinance has no native 4h
-    '1D':  {'period': '2y',   'interval': '1d'},
-    '1W':  {'period': '10y',  'interval': '1wk'},
-    '1M':  {'period': 'max',  'interval': '1mo'},
-}
-DEFAULT_INTERVAL = '1D'
-RESAMPLE_TO = {'4H': '4h'}
-INTRADAY_KEYS = {'1m', '5m', '15m', '30m', '1H', '4H'}
-
-
-def _fetch_asset_candles(symbol, interval_key=DEFAULT_INTERVAL):
-    """
-    OHLC candles for `symbol` at `interval_key`, oldest first, shaped for
-    lightweight-charts. Raises on failure -- caller catches.
-    """
-    import yfinance as yf
-
-    config = INTERVAL_MAP.get(interval_key, INTERVAL_MAP[DEFAULT_INTERVAL])
-    ticker = yf.Ticker(symbol)
-    hist = ticker.history(period=config['period'], interval=config['interval'])
-
-    if hist is None or hist.empty:
-        return []
-
-    resample_rule = RESAMPLE_TO.get(interval_key)
-    if resample_rule:
-        hist = hist.resample(resample_rule).agg({
-            'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last',
-        }).dropna(subset=['Open', 'High', 'Low', 'Close'])
-
-    intraday = interval_key in INTRADAY_KEYS
-
-    candles = []
-    for index, row in hist.iterrows():
-        if row[['Open', 'High', 'Low', 'Close']].isnull().any():
-            continue
-        candles.append({
-            'time': int(index.timestamp()) if intraday else index.strftime('%Y-%m-%d'),
-            'open': round(float(row['Open']), 4),
-            'high': round(float(row['High']), 4),
-            'low': round(float(row['Low']), 4),
-            'close': round(float(row['Close']), 4),
-        })
-
-    return candles
 
 
 @csrf_exempt
@@ -55302,10 +55404,13 @@ def _fetch_asset_candles(symbol, interval_key=DEFAULT_INTERVAL):
 def snowvault_asset_chart_data_v1(request):
     """
     OHLC candles for the Asset Explorer chart panel, spanning both the
-    original daily/weekly views and lower intraday timeframes (down to 1m).
+    original daily/weekly views and lower intraday timeframes (down to 1m),
+    with pre/post-market bars included and session-tagged.
 
     Request:  POST { "symbol": "AAPL", "interval": "1H" }
-    Response: { success, symbol, interval, candles: [{time, open, high, low, close}, ...] }
+    Response: { success, symbol, interval, candles: [
+        {time, open, high, low, close, session?}, ...
+    ] }
 
     Unique name: snowvault_asset_chart_data_v1
     """
@@ -55358,6 +55463,7 @@ def snowvault_asset_chart_data_v1(request):
 #     get_stock_picks_by_country,
 #     get_all_countries_stock_summary,
 #     snow_global_pick_chart_data_v1,
+#     snow_global_picks_bulk_chart_data_v1,
 #     snowvault_asset_search_v1,
 #     snowvault_asset_sectors_v1,
 #     snowvault_asset_chart_data_v1,
@@ -55378,12 +55484,14 @@ def snowvault_asset_chart_data_v1(request):
 #         name='snow_stock_picks_countries_summary',
 #     ),
 #     path('api/snow-global-stock-picks/chart-data/', snow_global_pick_chart_data_v1),
+#     path('api/snow-global-stock-picks/bulk-chart-data/', snow_global_picks_bulk_chart_data_v1),
 #
 #     path('api/snowvault/assets/search/', snowvault_asset_search_v1),
 #     path('api/snowvault/assets/sectors/', snowvault_asset_sectors_v1),
 #     path('api/snowvault/assets/chart-data/', snowvault_asset_chart_data_v1),
 # ]
 # ============================================================================
+
 
 def book_order(request):
     if request.method == "POST":
