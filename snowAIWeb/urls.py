@@ -1141,21 +1141,22 @@ urlpatterns = [
     path('api/snowvault_scanner_snapshot_list/', views.snowvault_scanner_snapshot_list, name='snowvault_scanner_snapshot_list'),
     path('api/snowvault_scanner_backtest_vault/', views.snowvault_scanner_backtest_vault, name='snowvault_scanner_backtest_vault'),
 
-    path('api/snow_save_stock_picks_v1/',  views.snow_save_stock_picks_v1),
-    path('api/snow_fetch_stock_picks_v1/', views.snow_fetch_stock_picks_v1),
+    path('api/snow_save_stock_picks_v1/',  snow_save_stock_picks_v1),
+    path('api/snow_fetch_stock_picks_v1/', snow_fetch_stock_picks_v1),
 
     path(
         'api/snow-global-stock-picks/by-country/',
-        views.get_stock_picks_by_country,
+        get_stock_picks_by_country,
         name='snow_stock_picks_by_country',
     ),
     path(
         'api/snow-global-stock-picks/countries-summary/',
-        views.get_all_countries_stock_summary,
+        get_all_countries_stock_summary,
         name='snow_stock_picks_countries_summary',
     ),
-
     path('api/snow-global-stock-picks/chart-data/', snow_global_pick_chart_data_v1),
+    path('api/snow-global-stock-picks/bulk-chart-data/', snow_global_picks_bulk_chart_data_v1),
+
     path('api/snowvault/assets/search/', snowvault_asset_search_v1),
     path('api/snowvault/assets/sectors/', snowvault_asset_sectors_v1),
     path('api/snowvault/assets/chart-data/', snowvault_asset_chart_data_v1),
