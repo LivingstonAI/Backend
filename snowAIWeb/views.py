@@ -54587,6 +54587,8 @@ def snowvault_scanner_backtest_vault(request):
 #   4. Asset Explorer        -- snowvault_asset_search_v1 (cross-referenced against
 #                                the Global Stock Picker), snowvault_asset_sectors_v1,
 #                                snowvault_asset_chart_data_v1
+#   5. Trade positions        -- snow_trade_positions_by_asset_v1 (entry/SL/TP +
+#                                live P&L superimposed on a chart)
 #
 # Paste this whole file's contents into views.py (or import from here), then
 # wire up urls.py using the block at the very bottom.
@@ -54606,6 +54608,7 @@ from .models import (
     SnowVaultTickerMeta,
     SnowVaultWatchlistAsset,
     SnowVaultScannerHistory,
+    TradePosition,
 )
 
 
@@ -55454,6 +55457,97 @@ def snowvault_asset_chart_data_v1(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. TRADE POSITIONS — superimposed on a chart when you pull up an asset that
+#    has an open/tracked position
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Powers the entry/SL/TP price lines + live unrealized P&L readout on the
+# country-picks chart panel and the Asset Explorer chart. Matches TradePosition
+# rows against whatever symbol the chart is showing.
+#
+# Since TradePosition stores dollar values at SL/TP (not a position size),
+# the "dollars per 1.0 unit of price movement" is implied the same way the
+# standalone Trade Position tracker already computes it: from the SL (or TP)
+# distance and its dollar value. The frontend uses that figure against the
+# chart's own live last-close to show P&L that updates as you change
+# timeframe/refresh, rather than relying on the DB's `current_price` (which
+# is only as fresh as whatever separately polls it).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _dollar_per_unit(position):
+    """
+    Implied dollar value per 1.0 unit of price movement for a position,
+    derived from whichever of (SL price + SL dollars) or (TP price + TP
+    dollars) is available. Returns None if neither can be computed.
+    """
+    if position.sl_price is not None and position.sl_dollars is not None:
+        delta = abs(position.entry_price - position.sl_price)
+        if delta > 0:
+            return abs(position.sl_dollars) / delta
+    if position.tp_price is not None and position.tp_dollars is not None:
+        delta = abs(position.tp_price - position.entry_price)
+        if delta > 0:
+            return abs(position.tp_dollars) / delta
+    return None
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+def snow_trade_positions_by_asset_v1(request):
+    """
+    TradePosition rows for a given chart symbol, for superimposing entry/SL/TP
+    lines and live unrealized P&L. Matches case-insensitively first, then
+    falls back to a loose substring match on the "bare" symbol (stripping
+    yfinance-style suffixes) so a position logged as "EURUSD" or "BTC" still
+    surfaces for a chart showing "EURUSD=X" or "BTC-USD".
+
+    Request:  POST/GET { asset }
+    Response: { success, total, positions: [{
+        id, asset, direction, entry_price, sl_price, tp_price,
+        sl_dollars, tp_dollars, dollar_per_unit, current_price, notes,
+        created_at, updated_at
+    }] }
+
+    Unique name: snow_trade_positions_by_asset_v1
+    """
+    try:
+        requested = str(_get_request_param(request, 'asset', '') or '').strip()
+        if not requested:
+            return JsonResponse({'success': False, 'error': 'An "asset" value is required.'}, status=400)
+
+        queryset = TradePosition.objects.filter(asset__iexact=requested)
+        if not queryset.exists():
+            bare = requested.upper().split('=')[0].split('-')[0].strip()
+            queryset = TradePosition.objects.filter(
+                Q(asset__iexact=bare) | Q(asset__icontains=bare) | Q(asset__icontains=requested)
+            )
+
+        queryset = queryset.order_by('-created_at')[:10]
+
+        positions = [{
+            'id': p.id,
+            'asset': p.asset,
+            'direction': p.direction,
+            'entry_price': p.entry_price,
+            'sl_price': p.sl_price,
+            'tp_price': p.tp_price,
+            'sl_dollars': p.sl_dollars,
+            'tp_dollars': p.tp_dollars,
+            'dollar_per_unit': _dollar_per_unit(p),
+            'current_price': p.current_price,
+            'notes': p.notes,
+            'created_at': p.created_at.isoformat() if p.created_at else None,
+            'updated_at': p.updated_at.isoformat() if p.updated_at else None,
+        } for p in queryset]
+
+        return JsonResponse({'success': True, 'total': len(positions), 'positions': positions})
+
+    except Exception as e:
+        print(f'[snow_trade_positions_by_asset_v1] {e}\n{traceback.format_exc()}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
 # ============================================================================
 # ADD TO urls.py
 # ----------------------------------------------------------------------------
@@ -55467,6 +55561,7 @@ def snowvault_asset_chart_data_v1(request):
 #     snowvault_asset_search_v1,
 #     snowvault_asset_sectors_v1,
 #     snowvault_asset_chart_data_v1,
+#     snow_trade_positions_by_asset_v1,
 # )
 #
 # urlpatterns += [
@@ -55489,9 +55584,10 @@ def snowvault_asset_chart_data_v1(request):
 #     path('api/snowvault/assets/search/', snowvault_asset_search_v1),
 #     path('api/snowvault/assets/sectors/', snowvault_asset_sectors_v1),
 #     path('api/snowvault/assets/chart-data/', snowvault_asset_chart_data_v1),
+#
+#     path('api/snow-trade-positions/by-asset/', snow_trade_positions_by_asset_v1),
 # ]
 # ============================================================================
-
 
 def book_order(request):
     if request.method == "POST":

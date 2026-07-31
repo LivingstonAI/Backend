@@ -1141,6 +1141,8 @@ urlpatterns = [
     path('api/snowvault_scanner_snapshot_list/', views.snowvault_scanner_snapshot_list, name='snowvault_scanner_snapshot_list'),
     path('api/snowvault_scanner_backtest_vault/', views.snowvault_scanner_backtest_vault, name='snowvault_scanner_backtest_vault'),
 
+
+     
     path('api/snow_save_stock_picks_v1/',  snow_save_stock_picks_v1),
     path('api/snow_fetch_stock_picks_v1/', snow_fetch_stock_picks_v1),
 
@@ -1160,6 +1162,8 @@ urlpatterns = [
     path('api/snowvault/assets/search/', snowvault_asset_search_v1),
     path('api/snowvault/assets/sectors/', snowvault_asset_sectors_v1),
     path('api/snowvault/assets/chart-data/', snowvault_asset_chart_data_v1),
+
+    path('api/snow-trade-positions/by-asset/', snow_trade_positions_by_asset_v1),
 
 
      # create appproprate urls.py here
