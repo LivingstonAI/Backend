@@ -1140,8 +1140,6 @@ urlpatterns = [
     path('api/snowvault_scanner_snapshot_save/', views.snowvault_scanner_snapshot_save, name='snowvault_scanner_snapshot_save'),
     path('api/snowvault_scanner_snapshot_list/', views.snowvault_scanner_snapshot_list, name='snowvault_scanner_snapshot_list'),
     path('api/snowvault_scanner_backtest_vault/', views.snowvault_scanner_backtest_vault, name='snowvault_scanner_backtest_vault'),
-
-
      
     path('api/snow_save_stock_picks_v1/',  snow_save_stock_picks_v1),
     path('api/snow_fetch_stock_picks_v1/', snow_fetch_stock_picks_v1),
