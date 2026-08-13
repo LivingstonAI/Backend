@@ -1163,6 +1163,8 @@ urlpatterns = [
 
     path('api/snow-trade-positions/by-asset/', snow_trade_positions_by_asset_v1),
 
+    path('api/snowvault_global_picks_backtest_vault/', views.snowvault_global_picks_backtest_vault, name='snowvault_global_picks_backtest_vault'),
+
 
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
