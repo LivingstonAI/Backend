@@ -54445,9 +54445,15 @@ def snowvault_scanner_backtest_vault(request):
             fetch_start = (min_date - timedelta(days=3)).strftime('%Y-%m-%d')
             fetch_end   = (max_date + timedelta(days=int(max_horizon * 1.6) + 10)).strftime('%Y-%m-%d')
 
-            hist = yf.download(sym, start=fetch_start, end=fetch_end, auto_adjust=True, progress=False)
+                        hist = yf.download(sym, start=fetch_start, end=fetch_end, auto_adjust=True, progress=False)
             if hist is None or hist.empty:
                 return [{'row': r, 'error': 'No price data available'} for r in rows_for_ticker]
+
+            # yfinance sometimes returns MultiIndex columns even for a single
+            # ticker — collapse to the plain price-field level so hist['Close']
+            # returns a Series, not a one-column DataFrame.
+            if hasattr(hist.columns, 'nlevels') and hist.columns.nlevels > 1:
+                hist.columns = hist.columns.get_level_values(0)
 
             if hist.index.tz is not None:
                 hist.index = hist.index.tz_localize(None)
@@ -55709,9 +55715,15 @@ def snowvault_global_picks_backtest_vault(request):
             fetch_start = (min_date - timedelta(days=3)).strftime('%Y-%m-%d')
             fetch_end   = (max_date + timedelta(days=int(max_horizon * 1.6) + 10)).strftime('%Y-%m-%d')
 
-            hist = yf.download(sym, start=fetch_start, end=fetch_end, auto_adjust=True, progress=False)
+                        hist = yf.download(sym, start=fetch_start, end=fetch_end, auto_adjust=True, progress=False)
             if hist is None or hist.empty:
                 return [{'row': r, 'error': 'No price data available'} for r in rows_for_symbol]
+
+            # yfinance sometimes returns MultiIndex columns even for a single
+            # ticker — collapse to the plain price-field level so hist['Close']
+            # returns a Series, not a one-column DataFrame.
+            if hasattr(hist.columns, 'nlevels') and hist.columns.nlevels > 1:
+                hist.columns = hist.columns.get_level_values(0)
 
             if hist.index.tz is not None:
                 hist.index = hist.index.tz_localize(None)
