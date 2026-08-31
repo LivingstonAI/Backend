@@ -54412,6 +54412,8 @@ def snowvault_scanner_backtest_vault(request):
     qs = SnowVaultScannerHistory.objects.all()
     if ticker:
         qs = qs.filter(ticker=ticker)
+    if tickers:
+        qs = qs.filter(ticker__in=tickers)
     if start_date:
         qs = qs.filter(snapshot_date__gte=start_date)
     if end_date:
