@@ -54394,13 +54394,14 @@ def snowvault_scanner_backtest_vault(request):
     try:
         body       = json.loads(request.body)
         ticker     = (body.get('ticker') or '').strip().upper()
+        tickers    = [t.strip().upper() for t in body.get('tickers', []) if t.strip()][:200]
         start_date = body.get('startDate')
         end_date   = body.get('endDate')
         signal     = (body.get('signal') or '').strip()
         direction  = (body.get('direction') or '').strip().upper()
         ai_verdict = (body.get('aiVerdict') or '').strip()
         horizons   = body.get('horizons') or [1, 3, 5, 10, 20]
-        limit      = min(int(body.get('limit', 500)), 1500)
+        limit      = min(int(body.get('limit', 500)), 5000)
         horizons   = sorted({int(h) for h in horizons if isinstance(h, (int, float)) and 0 < h <= 60})
     except Exception:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
