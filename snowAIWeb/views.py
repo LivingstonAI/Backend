@@ -55558,6 +55558,161 @@ def snow_trade_positions_by_asset_v1(request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Trend Scanner Gate — trade-execution decision function
+# ─────────────────────────────────────────────────────────────────────────────
+AI_VERDICT_RANK = {
+    'AVOID': 0,
+    'CAUTION': 1,
+    'NEUTRAL': 2,
+    'OPPORTUNITY': 3,
+    'STRONG_OPPORTUNITY': 4,
+}
+
+
+def _snowvault_compute_ticker_combined_stability(ticker, horizons=(1, 3, 5, 10, 20)):
+    """
+    Computes the SAME combined stability score the frontend shows — pools
+    direction-adjusted win/loss across every (historical occurrence × horizon)
+    pair for this ticker. Returns None if it can't be computed at all (no
+    saved rows, price fetch failure). If rows exist but nothing has resolved
+    yet, returns a dict with resolvedCount=0 rather than None.
+    """
+    from datetime import timedelta
+
+    rows = list(SnowVaultScannerHistory.objects.filter(ticker=ticker).order_by('snapshot_date'))
+    if not rows:
+        return None
+
+    max_horizon = max(horizons)
+    min_date = min(r.snapshot_date for r in rows)
+    max_date = max(r.snapshot_date for r in rows)
+    fetch_start = (min_date - timedelta(days=3)).strftime('%Y-%m-%d')
+    fetch_end   = (max_date + timedelta(days=int(max_horizon * 1.6) + 10)).strftime('%Y-%m-%d')
+
+    try:
+        hist = yf.download(ticker, start=fetch_start, end=fetch_end, auto_adjust=True, progress=False)
+    except Exception as e:
+        print(f"[StabilityGate] {ticker} price fetch failed: {e}")
+        return None
+
+    if hist is None or hist.empty:
+        return None
+
+    # Same MultiIndex-column fix as the backtest endpoints — yfinance
+    # sometimes returns nested columns even for a single ticker.
+    if hasattr(hist.columns, 'nlevels') and hist.columns.nlevels > 1:
+        hist.columns = hist.columns.get_level_values(0)
+    if hist.index.tz is not None:
+        hist.index = hist.index.tz_localize(None)
+
+    dates  = [d.strftime('%Y-%m-%d') for d in hist.index]
+    closes = hist['Close'].values.astype(float)
+
+    wins, total = 0, 0
+    for r in rows:
+        snap_str  = r.snapshot_date.strftime('%Y-%m-%d')
+        entry_idx = next((i for i, d in enumerate(dates) if d >= snap_str), None)
+        if entry_idx is None:
+            continue
+        entry_price = float(closes[entry_idx])
+        if not entry_price:
+            continue
+        for h in horizons:
+            fidx = entry_idx + h
+            if fidx >= len(closes):
+                continue
+            fwd_price = float(closes[fidx])
+            pct = (fwd_price - entry_price) / entry_price * 100
+            dir_adj = -pct if r.direction == 'BEARISH' else pct
+            total += 1
+            if dir_adj > 0:
+                wins += 1
+
+    if total == 0:
+        return {'combinedWinRate': None, 'stabilityScore': None, 'occurrenceCount': len(rows), 'resolvedCount': 0}
+
+    combined_win_rate = round((wins / total) * 100, 1)
+    stability_score   = round(abs(combined_win_rate - 50) * 2, 1)
+
+    return {
+        'combinedWinRate': combined_win_rate,
+        'stabilityScore':  stability_score,
+        'occurrenceCount': len(rows),
+        'resolvedCount':   total,
+    }
+
+
+def trend_scanner(ticker, market_regime, ai_returns, min_stability=None):
+    """
+    Trade-execution gate. Reads the MOST RECENT SnowVaultScannerHistory row
+    for the ticker and checks it against the criteria below. FAILS CLOSED —
+    missing data, bad params, or an unresolved stability check always return
+    False, never raise. This exists to gate real trades, so ambiguity never
+    resolves to True.
+
+    Compulsory:
+      ticker         — the asset to check
+      market_regime  — 'BULLISH' or 'BEARISH'; must exactly match the most
+                        recent row's `direction`
+      ai_returns     — minimum acceptable AI verdict: 'AVOID', 'CAUTION',
+                        'NEUTRAL', 'OPPORTUNITY', or 'STRONG_OPPORTUNITY'.
+                        This is a MINIMUM, not an exact match — passing
+                        'OPPORTUNITY' also passes on 'STRONG_OPPORTUNITY'.
+
+    Optional:
+      min_stability  — 0-100. If given, computes the combined stability score
+                        fresh against real price history (network call,
+                        ~1-3s) and requires it to meet or exceed this value.
+                        If it can't be computed, the gate fails closed.
+    """
+    if not ticker:
+        print("[TrendScannerGate] no ticker provided — refusing to gate on nothing")
+        return False
+    ticker = ticker.strip().upper()
+
+    regime_norm = (market_regime or '').strip().upper()
+    if regime_norm not in ('BULLISH', 'BEARISH'):
+        print(f"[TrendScannerGate] {ticker}: invalid market_regime '{market_regime}' — must be BULLISH or BEARISH")
+        return False
+
+    ai_norm = (ai_returns or '').strip().upper().replace(' ', '_')
+    if ai_norm not in AI_VERDICT_RANK:
+        print(f"[TrendScannerGate] {ticker}: invalid ai_returns '{ai_returns}' — must be one of {list(AI_VERDICT_RANK.keys())}")
+        return False
+    required_rank = AI_VERDICT_RANK[ai_norm]
+
+    latest = (SnowVaultScannerHistory.objects
+              .filter(ticker=ticker)
+              .order_by('-snapshot_date', '-updated_at')
+              .first())
+    if latest is None:
+        print(f"[TrendScannerGate] {ticker}: no saved analysis found — gate closed")
+        return False
+
+    if latest.direction != regime_norm:
+        print(f"[TrendScannerGate] {ticker}: direction {latest.direction} != requested regime {regime_norm}")
+        return False
+
+    current_rank = AI_VERDICT_RANK.get((latest.ai_verdict or '').strip().upper(), -1)
+    if current_rank < required_rank:
+        print(f"[TrendScannerGate] {ticker}: ai_verdict '{latest.ai_verdict}' below required '{ai_norm}'")
+        return False
+
+    if min_stability is not None:
+        stability = _snowvault_compute_ticker_combined_stability(ticker)
+        if not stability or stability['resolvedCount'] == 0:
+            print(f"[TrendScannerGate] {ticker}: stability requested but couldn't be computed — gate closed")
+            return False
+        if stability['stabilityScore'] < min_stability:
+            print(f"[TrendScannerGate] {ticker}: stability {stability['stabilityScore']}% below required {min_stability}%")
+            return False
+
+    print(f"[TrendScannerGate] {ticker}: PASSED — regime={regime_norm}, ai>={ai_norm}"
+          + (f", stability>={min_stability}%" if min_stability is not None else ""))
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 6. STABILITY CHECKER — national + per-symbol stability scores
 # ─────────────────────────────────────────────────────────────────────────────
 #
@@ -55865,47 +56020,6 @@ def snow_stability_all_countries_v1(request):
     except Exception as e:
         print(f'[snow_stability_all_countries_v1] {e}\n{traceback.format_exc()}')
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-# ============================================================================
-# ADD TO urls.py
-# ----------------------------------------------------------------------------
-# from .views import (
-#     snow_save_stock_picks_v1,
-#     snow_fetch_stock_picks_v1,
-#     get_stock_picks_by_country,
-#     get_all_countries_stock_summary,
-#     snow_global_pick_chart_data_v1,
-#     snow_global_picks_bulk_chart_data_v1,
-#     snowvault_asset_search_v1,
-#     snowvault_asset_sectors_v1,
-#     snowvault_asset_chart_data_v1,
-#     snow_trade_positions_by_asset_v1,
-# )
-#
-# urlpatterns += [
-#     path('api/snow_save_stock_picks_v1/',  snow_save_stock_picks_v1),
-#     path('api/snow_fetch_stock_picks_v1/', snow_fetch_stock_picks_v1),
-#
-#     path(
-#         'api/snow-global-stock-picks/by-country/',
-#         get_stock_picks_by_country,
-#         name='snow_stock_picks_by_country',
-#     ),
-#     path(
-#         'api/snow-global-stock-picks/countries-summary/',
-#         get_all_countries_stock_summary,
-#         name='snow_stock_picks_countries_summary',
-#     ),
-#     path('api/snow-global-stock-picks/chart-data/', snow_global_pick_chart_data_v1),
-#     path('api/snow-global-stock-picks/bulk-chart-data/', snow_global_picks_bulk_chart_data_v1),
-#
-#     path('api/snowvault/assets/search/', snowvault_asset_search_v1),
-#     path('api/snowvault/assets/sectors/', snowvault_asset_sectors_v1),
-#     path('api/snowvault/assets/chart-data/', snowvault_asset_chart_data_v1),
-#
-#     path('api/snow-trade-positions/by-asset/', snow_trade_positions_by_asset_v1),
-# ]
-# ============================================================================
 
 
 def book_order(request):
