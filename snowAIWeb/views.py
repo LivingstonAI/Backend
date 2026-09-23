@@ -55557,6 +55557,315 @@ def snow_trade_positions_by_asset_v1(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. STABILITY CHECKER — national + per-symbol stability scores
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# "Stability" blends three signals per symbol:
+#   - price volatility   (annualized stdev of daily returns, from yfinance)
+#   - max drawdown        (largest peak-to-trough drop over the lookback)
+#   - AI rec consistency  (how often the saved `rec` has held steady across
+#                          snapshots for that symbol+country -- no external
+#                          call, pulled straight from SnowGlobalStockPick)
+#
+# Each becomes a 0-100 sub-score (100 = most stable), blended with the
+# weights in STABILITY_WEIGHTS. National score = simple average across a
+# country's distinct symbols -- swap in a conviction-weighted average in
+# the two views below if you want higher-conviction picks to count more.
+#
+# Price stability is cached PER SYMBOL (not per symbol+country -- same
+# ticker, same price history regardless of which country's drill it was
+# picked under), so a symbol saved under two countries only costs one
+# yfinance call. Uses Django's default cache, no new deps/migrations.
+# ─────────────────────────────────────────────────────────────────────────────
+
+STABILITY_CACHE_TTL = 60 * 60 * 6  # 6 hours
+
+STABILITY_WEIGHTS = {
+    'volatility': 0.40,
+    'drawdown': 0.35,
+    'rec_consistency': 0.25,
+}
+
+_STABILITY_CACHE_MISS = object()
+
+
+def _score_from_volatility(annualized_vol_pct):
+    """0-100, higher = more stable. ~15% annualized vol -> ~85, 60%+ -> near 0."""
+    if annualized_vol_pct is None:
+        return None
+    return round(max(0.0, min(100.0, 100.0 - annualized_vol_pct)), 1)
+
+
+def _score_from_drawdown(max_drawdown_pct):
+    """0-100, higher = more stable. max_drawdown_pct is positive (22.5 for a -22.5% drop)."""
+    if max_drawdown_pct is None:
+        return None
+    return round(max(0.0, min(100.0, 100.0 - max_drawdown_pct)), 1)
+
+
+def _compute_price_stability(symbol, period='1y'):
+    """
+    Daily closes -> annualized volatility (%) + max drawdown (%).
+    Returns None on bad ticker / too-new listing / not enough history --
+    callers treat that as "no price data" and fall back to rec-consistency.
+    """
+    import yfinance as yf
+
+    try:
+        hist = yf.Ticker(symbol).history(period=period, interval='1d')
+    except Exception as e:
+        print(f'[_compute_price_stability] fetch failed for {symbol}: {e}')
+        return None
+
+    if hist is None or hist.empty:
+        return None
+
+    closes = hist['Close'].dropna().tolist()
+    if len(closes) < 20:
+        return None
+
+    daily_returns = [
+        (closes[i] - closes[i - 1]) / closes[i - 1]
+        for i in range(1, len(closes)) if closes[i - 1]
+    ]
+    if len(daily_returns) < 10:
+        return None
+
+    volatility_pct = round(statistics.pstdev(daily_returns) * (252 ** 0.5) * 100, 2)
+
+    peak = closes[0]
+    max_dd = 0.0
+    for price in closes:
+        peak = max(peak, price)
+        if peak:
+            max_dd = max(max_dd, (peak - price) / peak * 100)
+
+    return {'volatility_pct': volatility_pct, 'max_drawdown_pct': round(max_dd, 2)}
+
+
+def _get_price_stability_cached(symbol, period='1y'):
+    """Cache wrapper -- caches the None case too, so a bad ticker isn't re-fetched every request."""
+    cache_key = f'snow_stability_price:{symbol}:{period}'
+    cached = cache.get(cache_key, _STABILITY_CACHE_MISS)
+    if cached is not _STABILITY_CACHE_MISS:
+        return cached
+    stats = _compute_price_stability(symbol, period)
+    cache.set(cache_key, stats, STABILITY_CACHE_TTL)
+    return stats
+
+
+def _rec_bucket(rec):
+    r = (rec or '').upper()
+    if 'SELL' in r or 'AVOID' in r or 'BEARISH' in r:
+        return 'BEARISH'
+    if 'BUY' in r:
+        return 'BULLISH'
+    return 'NEUTRAL'
+
+
+def _compute_rec_consistency(picks_for_symbol_country):
+    """
+    picks_for_symbol_country: SnowGlobalStockPick rows for ONE (symbol,
+    country) pair, ascending by date_saved. How often the rec's directional
+    bucket held from one snapshot to the next. None (not 0) with < 2
+    snapshots -- one data point says nothing, so it's excluded from the
+    blend rather than penalized.
+    """
+    if len(picks_for_symbol_country) < 2:
+        return {'score': None, 'snapshots': len(picks_for_symbol_country)}
+
+    buckets = [_rec_bucket(p.rec) for p in picks_for_symbol_country]
+    transitions = len(buckets) - 1
+    steady = sum(1 for i in range(1, len(buckets)) if buckets[i] == buckets[i - 1])
+    return {'score': round(steady / transitions * 100, 1), 'snapshots': len(picks_for_symbol_country)}
+
+
+def _blend_stability_score(volatility_score, drawdown_score, rec_consistency_score):
+    """Weighted average of whichever components are present -- weights re-normalize so a missing component isn't a None-as-zero penalty."""
+    parts = [
+        (volatility_score, STABILITY_WEIGHTS['volatility']),
+        (drawdown_score, STABILITY_WEIGHTS['drawdown']),
+        (rec_consistency_score, STABILITY_WEIGHTS['rec_consistency']),
+    ]
+    available = [(v, w) for v, w in parts if v is not None]
+    if not available:
+        return None
+    total_weight = sum(w for _, w in available)
+    return round(sum(v * w for v, w in available) / total_weight, 1)
+
+
+def _stability_label(score):
+    if score is None:
+        return 'Unrated'
+    if score >= 80:
+        return 'Very stable'
+    if score >= 65:
+        return 'Stable'
+    if score >= 50:
+        return 'Moderate'
+    if score >= 35:
+        return 'Volatile'
+    return 'Highly volatile'
+
+
+def _symbol_stability(symbol, country, picks_for_symbol_country):
+    """Full stability record for one (symbol, country) pair."""
+    price_stats = _get_price_stability_cached(symbol)
+    rec_stats = _compute_rec_consistency(picks_for_symbol_country)
+
+    vol_score = _score_from_volatility(price_stats['volatility_pct']) if price_stats else None
+    dd_score = _score_from_drawdown(price_stats['max_drawdown_pct']) if price_stats else None
+    rec_score = rec_stats['score']
+
+    blended = _blend_stability_score(vol_score, dd_score, rec_score)
+    latest = max(picks_for_symbol_country, key=lambda p: p.date_saved)
+
+    return {
+        'symbol': symbol,
+        'name': latest.name,
+        'sector': latest.sector,
+        'stability_score': blended,
+        'label': _stability_label(blended),
+        'volatility_pct': price_stats['volatility_pct'] if price_stats else None,
+        'max_drawdown_pct': price_stats['max_drawdown_pct'] if price_stats else None,
+        'rec_consistency_pct': rec_score,
+        'snapshots_saved': rec_stats['snapshots'],
+        'latest_rec': latest.rec,
+        'latest_conviction': latest.conviction,
+        'has_price_data': price_stats is not None,
+    }
+
+
+def _build_country_summary(country, national_score, symbol_results):
+    """Plain-language takeaway for the modal header."""
+    scored = [r for r in symbol_results if r['stability_score'] is not None]
+    if national_score is None or not scored:
+        return f"Not enough price history yet to score {country}'s saved picks."
+
+    label = _stability_label(national_score).lower()
+    most_stable = max(scored, key=lambda r: r['stability_score'])
+    least_stable = min(scored, key=lambda r: r['stability_score'])
+
+    parts = [f"{country}'s saved picks score {national_score}/100 -- {label} overall."]
+    parts.append(f"{most_stable['symbol']} is the steadiest pick ({most_stable['stability_score']}/100).")
+    if least_stable['symbol'] != most_stable['symbol']:
+        parts.append(f"{least_stable['symbol']} shows the most volatility ({least_stable['stability_score']}/100).")
+    return ' '.join(parts)
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+def snow_stability_by_country_v1(request):
+    """
+    Per-symbol + national stability score for one country.
+
+    Request:  POST/GET { country }
+    Response: { success, country, flag, national_stability_score, label,
+                summary, total_symbols, symbols: [...] } -- symbols sorted
+                most -> least stable, unrated ones last.
+
+    Unique name: snow_stability_by_country_v1
+    """
+    import concurrent.futures
+
+    try:
+        requested_country = str(_get_request_param(request, 'country', '') or '').strip()
+        if not requested_country:
+            return JsonResponse({'success': False, 'error': 'A "country" value is required.'}, status=400)
+
+        resolved_country = _resolve_country_name(requested_country)
+        picks = list(
+            SnowGlobalStockPick.objects
+            .filter(country__iexact=resolved_country)
+            .order_by('symbol', 'date_saved')
+        )
+        if not picks:
+            return JsonResponse({'success': False, 'error': f'No saved picks for {requested_country} yet.'}, status=404)
+
+        by_symbol = {}
+        for p in picks:
+            by_symbol.setdefault(p.symbol, []).append(p)
+
+        # Only the price leg hits the network -- warm it for every symbol in
+        # parallel, then the per-symbol blend below is all local/cheap.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+            list(ex.map(_get_price_stability_cached, by_symbol.keys()))
+
+        symbol_results = [_symbol_stability(symbol, resolved_country, rows) for symbol, rows in by_symbol.items()]
+        symbol_results.sort(key=lambda r: (r['stability_score'] is None, -(r['stability_score'] or 0)))
+
+        scored = [r['stability_score'] for r in symbol_results if r['stability_score'] is not None]
+        national_score = round(sum(scored) / len(scored), 1) if scored else None
+
+        return JsonResponse({
+            'success': True,
+            'country': resolved_country,
+            'flag': picks[0].flag,
+            'national_stability_score': national_score,
+            'label': _stability_label(national_score),
+            'summary': _build_country_summary(resolved_country, national_score, symbol_results),
+            'total_symbols': len(symbol_results),
+            'symbols': symbol_results,
+        })
+
+    except Exception as e:
+        print(f'[snow_stability_by_country_v1] {e}\n{traceback.format_exc()}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def snow_stability_all_countries_v1(request):
+    """
+    National stability leaderboard -- one row per country with saved picks,
+    ranked most -> least stable.
+
+    GET /api/snow-stability/all-countries/
+
+    Unique name: snow_stability_all_countries_v1
+    """
+    import concurrent.futures
+
+    try:
+        all_picks = list(SnowGlobalStockPick.objects.all().order_by('country', 'symbol', 'date_saved'))
+        if not all_picks:
+            return JsonResponse({'success': True, 'total': 0, 'countries': []})
+
+        # Warm the price cache ONCE across every distinct symbol in the whole
+        # DB (deduped across countries), instead of per-country -- a symbol
+        # saved under two countries only costs one yfinance call this way.
+        distinct_symbols = {p.symbol for p in all_picks}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            list(ex.map(_get_price_stability_cached, distinct_symbols))
+
+        by_country = {}
+        for p in all_picks:
+            by_country.setdefault(p.country, []).append(p)
+
+        results = []
+        for country, picks in by_country.items():
+            by_symbol = {}
+            for p in picks:
+                by_symbol.setdefault(p.symbol, []).append(p)
+            scores = [_symbol_stability(symbol, country, rows)['stability_score'] for symbol, rows in by_symbol.items()]
+            scored = [s for s in scores if s is not None]
+            national_score = round(sum(scored) / len(scored), 1) if scored else None
+            results.append({
+                'country': country,
+                'flag': picks[0].flag,
+                'national_stability_score': national_score,
+                'label': _stability_label(national_score),
+                'total_symbols': len(by_symbol),
+            })
+
+        results.sort(key=lambda r: (r['national_stability_score'] is None, -(r['national_stability_score'] or 0)))
+        return JsonResponse({'success': True, 'total': len(results), 'countries': results})
+
+    except Exception as e:
+        print(f'[snow_stability_all_countries_v1] {e}\n{traceback.format_exc()}')
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 # ============================================================================
 # ADD TO urls.py
 # ----------------------------------------------------------------------------
@@ -55860,6 +56169,14 @@ def snowvault_global_picks_backtest_vault(request):
         'horizons':           horizons,
         'totalPicks':         len(pick_rows),
     })
+
+import difflib
+import json
+import statistics   # <-- add
+import traceback
+
+from django.core.cache import cache   # <-- add
+from django.db.models import Q, Count, Max
 
 # Legodi Tech Registration and Login
 from rest_framework import generics
