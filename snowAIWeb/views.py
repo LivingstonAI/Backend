@@ -56633,7 +56633,7 @@ def _snowvault_run_global_picks_trend_scan_job():
             scan = scan_results.get(sym)
             if scan is None:
                 continue  # couldn't get data — leave it out rather than show a broken row
-                        if country not in countries:
+            if country not in countries:
                 countries[country] = {
                     'flag': pick.flag,
                     'tickers': [],
