@@ -55642,13 +55642,79 @@ def _snowvault_compute_ticker_combined_stability(ticker, horizons=(1, 3, 5, 10, 
     }
 
 
-def trend_scanner(ticker, market_regime, ai_returns, min_stability=None):
+def _snowvault_get_cached_ticker_stability(ticker, max_age_hours=12, force_refresh=False):
+    """
+    Wraps _snowvault_compute_ticker_combined_stability() with a DB cache so
+    trend_scanner()'s optional min_stability check doesn't trigger a fresh
+    yfinance download on every gate call — only when the cache is missing or
+    older than max_age_hours. Network/price-fetch failures are NEVER cached,
+    so a transient failure gets retried next call instead of sticking.
+    """
+    from datetime import timedelta as _td
+
+    if not force_refresh:
+        try:
+            cached = SnowVaultTickerStabilityCache.objects.filter(ticker=ticker).first()
+            if cached and (dj_timezone.now() - cached.computed_at) < _td(hours=max_age_hours):
+                return {
+                    'combinedWinRate': cached.combined_win_rate,
+                    'stabilityScore':  cached.stability_score,
+                    'occurrenceCount': cached.occurrence_count,
+                    'resolvedCount':   cached.resolved_count,
+                }
+        except Exception as e:
+            print(f"[StabilityCache] {ticker} cache read failed: {e}")
+
+    fresh = _snowvault_compute_ticker_combined_stability(ticker)
+    if fresh is None:
+        return None  # couldn't compute at all — don't cache a failure
+
+    try:
+        SnowVaultTickerStabilityCache.objects.update_or_create(
+            ticker=ticker,
+            defaults={
+                'combined_win_rate': fresh['combinedWinRate'],
+                'stability_score':   fresh['stabilityScore'],
+                'occurrence_count':  fresh['occurrenceCount'],
+                'resolved_count':    fresh['resolvedCount'],
+            },
+        )
+    except Exception as e:
+        print(f"[StabilityCache] {ticker} cache save failed: {e}")
+
+    return fresh
+
+
+def _snowvault_log_gate_decision(ticker, market_regime, ai_returns, min_stability, max_age_days,
+                                  result, reason, snapshot_date_used=None, direction_found='',
+                                  ai_verdict_found='', stability_score_found=None):
+    """Best-effort audit log write — never lets a logging failure break the gate itself."""
+    try:
+        SnowVaultTrendScannerGateLog.objects.create(
+            ticker=ticker,
+            market_regime=market_regime or '',
+            ai_returns_required=ai_returns or '',
+            min_stability=min_stability,
+            max_age_days=max_age_days,
+            result=result,
+            reason=reason,
+            snapshot_date_used=snapshot_date_used,
+            direction_found=direction_found or '',
+            ai_verdict_found=ai_verdict_found or '',
+            stability_score_found=stability_score_found,
+        )
+    except Exception as e:
+        print(f"[TrendScannerGateLog] write failed (non-fatal): {e}")
+
+
+def trend_scanner(ticker, market_regime, ai_returns, min_stability=None, max_age_days=None,
+                   stability_cache_hours=12):
     """
     Trade-execution gate. Reads the MOST RECENT SnowVaultScannerHistory row
     for the ticker and checks it against the criteria below. FAILS CLOSED —
-    missing data, bad params, or an unresolved stability check always return
-    False, never raise. This exists to gate real trades, so ambiguity never
-    resolves to True.
+    missing data, bad params, stale data, or an unresolved stability check
+    always return False, never raise. Every call is logged to
+    SnowVaultTrendScannerGateLog for auditability.
 
     Compulsory:
       ticker         — the asset to check
@@ -55656,28 +55722,36 @@ def trend_scanner(ticker, market_regime, ai_returns, min_stability=None):
                         recent row's `direction`
       ai_returns     — minimum acceptable AI verdict: 'AVOID', 'CAUTION',
                         'NEUTRAL', 'OPPORTUNITY', or 'STRONG_OPPORTUNITY'.
-                        This is a MINIMUM, not an exact match — passing
-                        'OPPORTUNITY' also passes on 'STRONG_OPPORTUNITY'.
+                        A MINIMUM, not an exact match.
 
     Optional:
-      min_stability  — 0-100. If given, computes the combined stability score
-                        fresh against real price history (network call,
-                        ~1-3s) and requires it to meet or exceed this value.
-                        If it can't be computed, the gate fails closed.
+      min_stability  — 0-100. Uses a cached value (see stability_cache_hours)
+                        so repeated calls don't hammer yfinance.
+      max_age_days   — most recent saved analysis must be no older than this
+                        many days, or the gate fails closed. None (default)
+                        = no staleness check, matching prior behaviour.
+      stability_cache_hours — how fresh the cached stability score must be
+                        before recomputing (default 12h).
     """
     if not ticker:
         print("[TrendScannerGate] no ticker provided — refusing to gate on nothing")
+        _snowvault_log_gate_decision('', market_regime, ai_returns, min_stability, max_age_days,
+                                      False, 'no ticker provided')
         return False
     ticker = ticker.strip().upper()
 
     regime_norm = (market_regime or '').strip().upper()
     if regime_norm not in ('BULLISH', 'BEARISH'):
-        print(f"[TrendScannerGate] {ticker}: invalid market_regime '{market_regime}' — must be BULLISH or BEARISH")
+        reason = f"invalid market_regime '{market_regime}'"
+        print(f"[TrendScannerGate] {ticker}: {reason}")
+        _snowvault_log_gate_decision(ticker, market_regime, ai_returns, min_stability, max_age_days, False, reason)
         return False
 
     ai_norm = (ai_returns or '').strip().upper().replace(' ', '_')
     if ai_norm not in AI_VERDICT_RANK:
-        print(f"[TrendScannerGate] {ticker}: invalid ai_returns '{ai_returns}' — must be one of {list(AI_VERDICT_RANK.keys())}")
+        reason = f"invalid ai_returns '{ai_returns}'"
+        print(f"[TrendScannerGate] {ticker}: {reason}")
+        _snowvault_log_gate_decision(ticker, market_regime, ai_returns, min_stability, max_age_days, False, reason)
         return False
     required_rank = AI_VERDICT_RANK[ai_norm]
 
@@ -55686,31 +55760,100 @@ def trend_scanner(ticker, market_regime, ai_returns, min_stability=None):
               .order_by('-snapshot_date', '-updated_at')
               .first())
     if latest is None:
-        print(f"[TrendScannerGate] {ticker}: no saved analysis found — gate closed")
+        reason = 'no saved analysis found'
+        print(f"[TrendScannerGate] {ticker}: {reason} — gate closed")
+        _snowvault_log_gate_decision(ticker, regime_norm, ai_norm, min_stability, max_age_days, False, reason)
         return False
 
+    if max_age_days is not None:
+        from datetime import date as _date
+        age_days = (_date.today() - latest.snapshot_date).days
+        if age_days > max_age_days:
+            reason = f"analysis is {age_days}d old, max {max_age_days}d"
+            print(f"[TrendScannerGate] {ticker}: {reason} — gate closed")
+            _snowvault_log_gate_decision(ticker, regime_norm, ai_norm, min_stability, max_age_days, False, reason,
+                                          snapshot_date_used=latest.snapshot_date, direction_found=latest.direction,
+                                          ai_verdict_found=latest.ai_verdict)
+            return False
+
     if latest.direction != regime_norm:
-        print(f"[TrendScannerGate] {ticker}: direction {latest.direction} != requested regime {regime_norm}")
+        reason = f"direction {latest.direction} != requested regime {regime_norm}"
+        print(f"[TrendScannerGate] {ticker}: {reason}")
+        _snowvault_log_gate_decision(ticker, regime_norm, ai_norm, min_stability, max_age_days, False, reason,
+                                      snapshot_date_used=latest.snapshot_date, direction_found=latest.direction,
+                                      ai_verdict_found=latest.ai_verdict)
         return False
 
     current_rank = AI_VERDICT_RANK.get((latest.ai_verdict or '').strip().upper(), -1)
     if current_rank < required_rank:
-        print(f"[TrendScannerGate] {ticker}: ai_verdict '{latest.ai_verdict}' below required '{ai_norm}'")
+        reason = f"ai_verdict '{latest.ai_verdict}' below required '{ai_norm}'"
+        print(f"[TrendScannerGate] {ticker}: {reason}")
+        _snowvault_log_gate_decision(ticker, regime_norm, ai_norm, min_stability, max_age_days, False, reason,
+                                      snapshot_date_used=latest.snapshot_date, direction_found=latest.direction,
+                                      ai_verdict_found=latest.ai_verdict)
         return False
 
+    stability_score_found = None
     if min_stability is not None:
-        stability = _snowvault_compute_ticker_combined_stability(ticker)
+        stability = _snowvault_get_cached_ticker_stability(ticker, max_age_hours=stability_cache_hours)
         if not stability or stability['resolvedCount'] == 0:
-            print(f"[TrendScannerGate] {ticker}: stability requested but couldn't be computed — gate closed")
+            reason = 'stability requested but could not be computed'
+            print(f"[TrendScannerGate] {ticker}: {reason} — gate closed")
+            _snowvault_log_gate_decision(ticker, regime_norm, ai_norm, min_stability, max_age_days, False, reason,
+                                          snapshot_date_used=latest.snapshot_date, direction_found=latest.direction,
+                                          ai_verdict_found=latest.ai_verdict)
             return False
-        if stability['stabilityScore'] < min_stability:
-            print(f"[TrendScannerGate] {ticker}: stability {stability['stabilityScore']}% below required {min_stability}%")
+        stability_score_found = stability['stabilityScore']
+        if stability_score_found < min_stability:
+            reason = f"stability {stability_score_found}% below required {min_stability}%"
+            print(f"[TrendScannerGate] {ticker}: {reason}")
+            _snowvault_log_gate_decision(ticker, regime_norm, ai_norm, min_stability, max_age_days, False, reason,
+                                          snapshot_date_used=latest.snapshot_date, direction_found=latest.direction,
+                                          ai_verdict_found=latest.ai_verdict, stability_score_found=stability_score_found)
             return False
 
+    reason = 'passed all checks'
     print(f"[TrendScannerGate] {ticker}: PASSED — regime={regime_norm}, ai>={ai_norm}"
-          + (f", stability>={min_stability}%" if min_stability is not None else ""))
+          + (f", stability>={min_stability}%" if min_stability is not None else "")
+          + (f", max_age={max_age_days}d" if max_age_days is not None else ""))
+    _snowvault_log_gate_decision(ticker, regime_norm, ai_norm, min_stability, max_age_days, True, reason,
+                                  snapshot_date_used=latest.snapshot_date, direction_found=latest.direction,
+                                  ai_verdict_found=latest.ai_verdict, stability_score_found=stability_score_found)
     return True
 
+@csrf_exempt
+def snowvault_trend_scanner_gate_log_vault(request):
+    """POST { "ticker": optional, "limit": 200 optional }"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body   = json.loads(request.body) if request.body else {}
+        ticker = (body.get('ticker') or '').strip().upper()
+        limit  = min(int(body.get('limit', 200)), 1000)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    qs = SnowVaultTrendScannerGateLog.objects.all()
+    if ticker:
+        qs = qs.filter(ticker=ticker)
+    qs = qs[:limit]
+
+    results = [{
+        'ticker':              row.ticker,
+        'marketRegime':        row.market_regime,
+        'aiReturnsRequired':   row.ai_returns_required,
+        'minStability':        row.min_stability,
+        'maxAgeDays':          row.max_age_days,
+        'result':              row.result,
+        'reason':              row.reason,
+        'snapshotDateUsed':    row.snapshot_date_used.isoformat() if row.snapshot_date_used else None,
+        'directionFound':      row.direction_found,
+        'aiVerdictFound':      row.ai_verdict_found,
+        'stabilityScoreFound': row.stability_score_found,
+        'createdAt':           row.created_at.isoformat(),
+    } for row in qs]
+
+    return JsonResponse({'results': results, 'count': len(results)})
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. STABILITY CHECKER — national + per-symbol stability scores
@@ -56072,9 +56215,10 @@ def snowvault_global_picks_backtest_vault(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
     try:
-        body           = json.loads(request.body)
-        symbol         = (body.get('symbol') or '').strip().upper()
-        country        = (body.get('country') or '').strip()
+        body       = json.loads(request.body)
+        symbol     = (body.get('symbol') or '').strip().upper()
+        symbols    = [s.strip().upper() for s in body.get('symbols', []) if s.strip()][:200]
+        country    = (body.get('country') or '').strip()
         sector         = (body.get('sector') or '').strip()
         rec_filter     = (body.get('rec') or '').strip()
         min_conviction = body.get('minConviction')
@@ -56082,7 +56226,7 @@ def snowvault_global_picks_backtest_vault(request):
         start_date     = body.get('startDate')
         end_date       = body.get('endDate')
         horizons       = body.get('horizons') or [1, 3, 5, 10, 20]
-        limit          = min(int(body.get('limit', 500)), 1500)
+        limit      = min(int(body.get('limit', 500)), 5000)
         horizons       = sorted({int(h) for h in horizons if isinstance(h, (int, float)) and 0 < h <= 60})
     except Exception:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
@@ -56092,7 +56236,9 @@ def snowvault_global_picks_backtest_vault(request):
 
     qs = SnowGlobalStockPick.objects.all()
     if symbol:
-        qs = qs.filter(symbol__iexact=symbol)
+        qs = qs.filter(symbol=symbol)
+    if symbols:
+        qs = qs.filter(symbol__in=symbols)
     if country:
         qs = qs.filter(country__iexact=country)
     if sector:
@@ -56641,11 +56787,15 @@ def _snowvault_run_global_picks_trend_scan_job():
                 }
             countries[country]['tickers'].append({
                 **scan,
-                'pickSector': pick.sector,
-                'pickRec':    pick.rec,
-                'conviction': pick.conviction,
-                'topPick':    pick.top_pick,
-                'dateSaved':  pick.date_saved.isoformat() if pick.date_saved else None,
+                'pickSector':    pick.sector,
+                'pickRec':       pick.rec,
+                'conviction':    pick.conviction,
+                'topPick':       pick.top_pick,
+                'dateSaved':     pick.date_saved.isoformat() if pick.date_saved else None,
+                'thesis':        pick.thesis,
+                'risk':          pick.risk,
+                'catalysts':     pick.catalysts,
+                'analystTarget': pick.analyst_target,
             })
 
         # Per-country summary stats.

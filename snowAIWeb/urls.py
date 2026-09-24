@@ -1170,6 +1170,8 @@ urlpatterns = [
 
     path('api/snowai_global_picks_trend_scan_vault/', snowai_global_picks_trend_scan_vault, name='snowai_global_picks_trend_scan_vault'),
 
+    path('api/snowvault_trend_scanner_gate_log_vault/', views.snowvault_trend_scanner_gate_log_vault, name='snowvault_trend_scanner_gate_log_vault'),
+
 
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),

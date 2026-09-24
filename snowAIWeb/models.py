@@ -3456,6 +3456,42 @@ class SnowVaultGlobalPicksScanCache(models.Model):
     class Meta:
         db_table = 'snowvault_global_picks_scan_cache'
 
+class SnowVaultTickerStabilityCache(models.Model):
+    """Caches the combined stability score per ticker so trend_scanner()'s
+    optional min_stability check doesn't hit yfinance on every single gate
+    call — only refreshes once the cache goes stale."""
+    ticker            = models.CharField(max_length=16, primary_key=True)
+    combined_win_rate = models.FloatField(null=True, blank=True)
+    stability_score   = models.FloatField(null=True, blank=True)
+    occurrence_count  = models.IntegerField(default=0)
+    resolved_count    = models.IntegerField(default=0)
+    computed_at       = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'snowvault_ticker_stability_cache'
+
+
+class SnowVaultTrendScannerGateLog(models.Model):
+    """Audit trail for every trend_scanner() gate decision — so 'why didn't
+    it buy AAPL on Tuesday' is answerable by querying a table, not by
+    scrolling logs."""
+    ticker                 = models.CharField(max_length=16, db_index=True)
+    market_regime          = models.CharField(max_length=16, blank=True, default='')
+    ai_returns_required    = models.CharField(max_length=32, blank=True, default='')
+    min_stability          = models.FloatField(null=True, blank=True)
+    max_age_days           = models.IntegerField(null=True, blank=True)
+    result                 = models.BooleanField()
+    reason                 = models.CharField(max_length=255, blank=True, default='')
+    snapshot_date_used     = models.DateField(null=True, blank=True)
+    direction_found        = models.CharField(max_length=16, blank=True, default='')
+    ai_verdict_found       = models.CharField(max_length=32, blank=True, default='')
+    stability_score_found  = models.FloatField(null=True, blank=True)
+    created_at             = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'snowvault_trend_scanner_gate_log'
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['ticker', '-created_at'])]
 
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
