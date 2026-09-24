@@ -56562,7 +56562,7 @@ def _snowvault_run_global_picks_trend_scan_job():
     cache_row.save(update_fields=['is_running', 'last_error', 'last_triggered_at'])
 
     try:
-        picks = list(SnowGlobalStockPick.objects.all().order_by('-created_at'))
+                picks = list(SnowGlobalStockPick.objects.all().order_by('-date_saved', '-created_at'))
         if not picks:
             cache_row.results_json    = '{}'
             cache_row.total_tickers   = 0
@@ -56572,10 +56572,18 @@ def _snowvault_run_global_picks_trend_scan_job():
             cache_row.save(update_fields=['results_json', 'total_tickers', 'total_countries', 'scanned_at', 'is_running'])
             return
 
-        # Most-recent pick per (symbol, country) — that row's metadata
-        # (rec, conviction, sector, topPick) rides alongside the scan result.
+        # Only each country's LATEST save-date counts — so a country reflects
+        # its most recent Country-Sector Drill session only, not every scan
+        # you've ever run for it piled on top of each other.
+        latest_date_by_country = {}
+        for p in picks:
+            if p.country not in latest_date_by_country or p.date_saved > latest_date_by_country[p.country]:
+                latest_date_by_country[p.country] = p.date_saved
+
         latest_pick_by_key = {}
         for p in picks:
+            if p.date_saved != latest_date_by_country.get(p.country):
+                continue  # stale — not this country's latest session, skip it
             key = (p.symbol.upper(), p.country)
             if key not in latest_pick_by_key:
                 latest_pick_by_key[key] = p
@@ -56625,8 +56633,12 @@ def _snowvault_run_global_picks_trend_scan_job():
             scan = scan_results.get(sym)
             if scan is None:
                 continue  # couldn't get data — leave it out rather than show a broken row
-            if country not in countries:
-                countries[country] = {'flag': pick.flag, 'tickers': []}
+                        if country not in countries:
+                countries[country] = {
+                    'flag': pick.flag,
+                    'tickers': [],
+                    'sessionDate': pick.date_saved.isoformat() if pick.date_saved else None,
+                }
             countries[country]['tickers'].append({
                 **scan,
                 'pickSector': pick.sector,
