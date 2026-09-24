@@ -3439,6 +3439,23 @@ class SnowGlobalStockPick(models.Model):
     def __str__(self):
         return f'{self.flag} {self.country} | {self.sector} | {self.symbol} | {self.rec} | {self.date_saved}'
 
+class SnowVaultGlobalPicksScanCache(models.Model):
+    """Singleton cache row for the Global Stock Picks trend scan — same
+    ADX/ROC/momentum algorithm as the main Trend Scanner, run against every
+    ticker saved via the Country-Sector Drill feature, grouped by country."""
+    id                = models.AutoField(primary_key=True)
+    results_json      = models.TextField(default='{}')
+    total_tickers     = models.IntegerField(default=0)
+    total_countries   = models.IntegerField(default=0)
+    scanned_at        = models.CharField(max_length=32, null=True, blank=True)
+    is_running        = models.BooleanField(default=False)
+    last_error        = models.TextField(null=True, blank=True)
+    last_triggered_at = models.DateTimeField(null=True, blank=True)
+    updated_at        = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'snowvault_global_picks_scan_cache'
+
 
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)

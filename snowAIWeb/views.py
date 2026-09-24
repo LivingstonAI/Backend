@@ -56292,6 +56292,429 @@ import traceback
 from django.core.cache import cache   # <-- add
 from django.db.models import Q, Count, Max
 
+def _snowvault_get_global_picks_scan_cache_row():
+    row, _ = SnowVaultGlobalPicksScanCache.objects.get_or_create(id=1)
+    return row
+
+
+def _snowvault_is_global_picks_lock_stale(cache_row):
+    if not cache_row.is_running:
+        return False
+    if not cache_row.last_triggered_at:
+        return True
+    from datetime import timedelta as _td
+    return (dj_timezone.now() - cache_row.last_triggered_at) > _td(minutes=SNOWVAULT_STALE_LOCK_MINUTES)
+
+def _snowvault_analyse_ticker_trend(sym):
+    """
+    Standalone copy of the Trend Scanner's per-ticker analysis (ADX, ROC,
+    acceleration, volume, breakout, score, signal). Kept as a SEPARATE
+    function from the one inside _snowvault_run_scanner_job's analyse_one()
+    on purpose — so changes here never risk the live Trend Scanner's
+    already-verified code path.
+    """
+    import time as _time
+
+    def sf(v):
+        try:
+            f = float(v)
+            return None if (f != f or f == float('inf') or f == float('-inf')) else f
+        except Exception:
+            return None
+
+    def clean(v):
+        if v is None:
+            return None
+        try:
+            if isinstance(v, (np.bool_,)):
+                return bool(v)
+            if isinstance(v, (np.integer,)):
+                return int(v)
+            if isinstance(v, (np.floating,)):
+                f = float(v)
+                return None if (f != f or f == float('inf') or f == float('-inf')) else f
+            if isinstance(v, float):
+                return None if (v != v or v == float('inf') or v == float('-inf')) else v
+        except Exception:
+            return None
+        return v
+
+    try:
+        market_cap, short_name, sector = _snowvault_get_ticker_meta(sym)
+
+        hist = None
+        for attempt in range(3):
+            try:
+                hist = yf.Ticker(sym).history(period='6mo', interval='1d', auto_adjust=True)
+                if hist is not None and not hist.empty:
+                    break
+                _time.sleep(2 ** attempt)
+            except Exception as e:
+                print(f"[GlobalPicksTrendScan] {sym} history error attempt {attempt+1}/3: {e}")
+                _time.sleep(2 ** attempt)
+
+        if hist is None or hist.empty or len(hist) < 40:
+            return None
+
+        hist = hist.dropna(subset=['Close', 'High', 'Low', 'Volume'])
+        if len(hist) < 40:
+            return None
+
+        closes  = hist['Close'].values.astype(float)
+        volumes = hist['Volume'].values.astype(float)
+        highs   = hist['High'].values.astype(float)
+        lows    = hist['Low'].values.astype(float)
+        n       = len(closes)
+
+        if not np.all(np.isfinite(closes)) or np.any(closes <= 0):
+            return None
+
+        curr_price = round(float(closes[-1]), 2)
+
+        def calc_adx(period=14):
+            try:
+                if n < period * 2:
+                    return None, None, None, None, None
+                tr_l, pdm_l, ndm_l = [], [], []
+                for i in range(1, n):
+                    tr  = max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1]))
+                    pdm = max(highs[i]-highs[i-1], 0) if (highs[i]-highs[i-1]) > (lows[i-1]-lows[i]) else 0
+                    ndm = max(lows[i-1]-lows[i],  0) if (lows[i-1]-lows[i])  > (highs[i]-highs[i-1]) else 0
+                    tr_l.append(tr); pdm_l.append(pdm); ndm_l.append(ndm)
+
+                def ws(data, p):
+                    r = [sum(data[:p])]
+                    for i in range(p, len(data)):
+                        r.append(r[-1] - r[-1]/p + data[i])
+                    return r
+
+                atr_s = ws(tr_l, period)
+                pdm_s = ws(pdm_l, period)
+                ndm_s = ws(ndm_l, period)
+
+                pdi_l, ndi_l, dx_l = [], [], []
+                for i in range(len(atr_s)):
+                    pdi = (pdm_s[i]/atr_s[i]*100) if atr_s[i] else 0
+                    ndi = (ndm_s[i]/atr_s[i]*100) if atr_s[i] else 0
+                    dx  = (abs(pdi-ndi)/(pdi+ndi)*100) if (pdi+ndi) else 0
+                    pdi_l.append(pdi); ndi_l.append(ndi); dx_l.append(dx)
+
+                if len(dx_l) < period:
+                    return None, None, None, None, None
+
+                adx_s = ws(dx_l, period)
+                return (
+                    round(adx_s[-1],  2),
+                    round(adx_s[-6],  2) if len(adx_s) >= 6  else None,
+                    round(adx_s[-11], 2) if len(adx_s) >= 11 else None,
+                    round(pdi_l[-1],  2),
+                    round(ndi_l[-1],  2),
+                )
+            except Exception as e:
+                print(f"[GlobalPicksTrendScan] {sym} ADX calc failed: {e}")
+                return None, None, None, None, None
+
+        adx_now, adx_5ago, adx_20ago, plus_di, minus_di = calc_adx()
+        if adx_now is None:
+            return None
+
+        def roc(period):
+            try:
+                if n <= period or closes[-period-1] == 0:
+                    return None
+                return round((closes[-1] - closes[-period-1]) / closes[-period-1] * 100, 2)
+            except Exception:
+                return None
+
+        roc5, roc10, roc20 = roc(5), roc(10), roc(20)
+
+        acceleration = None
+        try:
+            roc_vals = []
+            for i in range(10, n):
+                if closes[i-10] != 0:
+                    roc_vals.append((closes[i] - closes[i-10]) / closes[i-10] * 100)
+            if len(roc_vals) >= 10:
+                prev5 = sum(roc_vals[-10:-5]) / 5
+                last5 = sum(roc_vals[-5:])    / 5
+                acceleration = round(last5 - prev5, 3)
+        except Exception:
+            pass
+
+        vol_ratio = None
+        try:
+            if n >= 20 and np.all(np.isfinite(volumes[-20:])):
+                vol_sma20 = float(np.mean(volumes[-20:]))
+                vol_sma5  = float(np.mean(volumes[-5:]))
+                if vol_sma20 > 0:
+                    vol_ratio = round(vol_sma5 / vol_sma20, 2)
+        except Exception:
+            pass
+
+        high_52w = low_52w = pct_from_high = pct_from_low = None
+        breaking_out = False
+        try:
+            high_52w      = round(float(np.max(closes)), 2)
+            low_52w       = round(float(np.min(closes)), 2)
+            pct_from_high = round((closes[-1] - high_52w) / high_52w * 100, 2) if high_52w else None
+            pct_from_low  = round((closes[-1] - low_52w)  / low_52w  * 100, 2) if low_52w  else None
+            if n >= 20:
+                prior_high   = float(np.max(closes[-20:-5]))
+                recent_avg   = float(np.mean(closes[-5:]))
+                breaking_out = recent_avg > prior_high * 0.99
+        except Exception:
+            pass
+
+        was_ranging      = adx_20ago is not None and adx_20ago < 22
+        now_trending     = adx_now > 22
+        range_to_trend   = was_ranging and now_trending
+        adx_rising       = adx_5ago is not None and (adx_now - adx_5ago) > 3
+        roc_accelerating = acceleration is not None and acceleration > 1.0
+        vol_confirming   = vol_ratio is not None and vol_ratio >= 1.2
+
+        bullish = plus_di > minus_di and (roc20 or 0) > 0
+        bearish = minus_di > plus_di and (roc20 or 0) < 0
+
+        score = 0
+        if range_to_trend:
+            score += 35
+        elif adx_rising and adx_now > 18:
+            score += 20
+        score += min(20, max(0, (adx_now - 15) * 1.0))
+        if roc_accelerating:
+            score += min(15, acceleration * 3)
+        if vol_ratio is not None:
+            score += min(15, (vol_ratio - 1.0) * 15)
+        if breaking_out:
+            score += 10
+        score = round(min(100, max(0, score)), 1)
+
+        if range_to_trend and bullish:
+            signal = 'RANGE_BREAKOUT_BULL'
+        elif range_to_trend and bearish:
+            signal = 'RANGE_BREAKOUT_BEAR'
+        elif adx_rising and roc_accelerating and bullish:
+            signal = 'ACCELERATING_BULL'
+        elif adx_rising and roc_accelerating and bearish:
+            signal = 'ACCELERATING_BEAR'
+        elif breaking_out and bullish:
+            signal = 'BREAKOUT'
+        elif adx_rising:
+            signal = 'TREND_BUILDING'
+        else:
+            signal = 'WATCH'
+
+        return {
+            'ticker':          sym,
+            'name':            short_name,
+            'sector':          sector,
+            'marketCap':       clean(market_cap),
+            'currentPrice':    clean(curr_price),
+            'score':           clean(score),
+            'signal':          signal,
+            'direction':       'BULLISH' if bullish else 'BEARISH' if bearish else 'NEUTRAL',
+            'adxNow':          clean(adx_now),
+            'adx5Ago':         clean(adx_5ago),
+            'adx20Ago':        clean(adx_20ago),
+            'plusDI':          clean(plus_di),
+            'minusDI':         clean(minus_di),
+            'rangeToTrend':    clean(range_to_trend),
+            'adxRising':       clean(adx_rising),
+            'roc5':            clean(roc5),
+            'roc10':           clean(roc10),
+            'roc20':           clean(roc20),
+            'acceleration':    clean(acceleration),
+            'rocAccelerating': clean(roc_accelerating),
+            'volRatio':        clean(vol_ratio),
+            'volConfirming':   clean(vol_confirming),
+            'high52w':         clean(high_52w),
+            'low52w':          clean(low_52w),
+            'pctFromHigh':     clean(pct_from_high),
+            'pctFromLow':      clean(pct_from_low),
+            'breakingOut':     clean(breaking_out),
+        }
+
+    except Exception as e:
+        print(f"[GlobalPicksTrendScan] {sym} FAILED: {e}")
+        return None
+
+def _snowvault_run_global_picks_trend_scan_job():
+    """
+    Pulls every unique (symbol, country) pair from SnowGlobalStockPick,
+    scans each UNIQUE ticker once (even if it shows up under several
+    countries), then assembles a grouped-by-country payload with per-
+    country summary stats.
+    """
+    import concurrent.futures
+    import time
+    import random
+    from datetime import datetime
+
+    cache_row = _snowvault_get_global_picks_scan_cache_row()
+    if cache_row.is_running and not _snowvault_is_global_picks_lock_stale(cache_row):
+        print("[GlobalPicksTrendScan] already running, skipping this trigger")
+        return
+    if cache_row.is_running:
+        print("[GlobalPicksTrendScan] stale lock detected — clearing and proceeding")
+    cache_row.is_running        = True
+    cache_row.last_error        = None
+    cache_row.last_triggered_at = dj_timezone.now()
+    cache_row.save(update_fields=['is_running', 'last_error', 'last_triggered_at'])
+
+    try:
+        picks = list(SnowGlobalStockPick.objects.all().order_by('-created_at'))
+        if not picks:
+            cache_row.results_json    = '{}'
+            cache_row.total_tickers   = 0
+            cache_row.total_countries = 0
+            cache_row.scanned_at      = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cache_row.is_running      = False
+            cache_row.save(update_fields=['results_json', 'total_tickers', 'total_countries', 'scanned_at', 'is_running'])
+            return
+
+        # Most-recent pick per (symbol, country) — that row's metadata
+        # (rec, conviction, sector, topPick) rides alongside the scan result.
+        latest_pick_by_key = {}
+        for p in picks:
+            key = (p.symbol.upper(), p.country)
+            if key not in latest_pick_by_key:
+                latest_pick_by_key[key] = p
+
+        # Scan each unique ticker only ONCE, even if it appears under
+        # multiple countries — reuse that result under every country below.
+        unique_tickers = sorted({sym for sym, _country in latest_pick_by_key.keys()})
+
+        scan_results = {}
+        BATCH, WORKERS, DELAY, JITTER = 10, 4, 1.2, 0.4
+        consecutive_empties = 0
+        total_batches = (len(unique_tickers) + BATCH - 1) // BATCH
+
+        for i in range(0, len(unique_tickers), BATCH):
+            batch = unique_tickers[i:i+BATCH]
+            batch_num = i // BATCH + 1
+            print(f"[GlobalPicksTrendScan] batch {batch_num}/{total_batches} — {batch}")
+
+            batch_hits = 0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+                futures = {ex.submit(_snowvault_analyse_ticker_trend, sym): sym for sym in batch}
+                for fut in concurrent.futures.as_completed(futures, timeout=45):
+                    sym = futures[fut]
+                    try:
+                        res = fut.result()
+                        if res:
+                            scan_results[sym] = res
+                            batch_hits += 1
+                    except Exception as e:
+                        print(f"[GlobalPicksTrendScan] {sym} future error: {e}")
+
+            if batch_hits == 0:
+                consecutive_empties += 1
+                if consecutive_empties >= 2:
+                    cooldown = 12 + random.uniform(0, 4)
+                    print(f"[GlobalPicksTrendScan] {consecutive_empties} empty batches — cooling down {cooldown:.1f}s")
+                    time.sleep(cooldown)
+            else:
+                consecutive_empties = 0
+
+            if i + BATCH < len(unique_tickers):
+                time.sleep(DELAY + random.uniform(0, JITTER))
+
+        # Assemble grouped-by-country payload.
+        countries = {}
+        for (sym, country), pick in latest_pick_by_key.items():
+            scan = scan_results.get(sym)
+            if scan is None:
+                continue  # couldn't get data — leave it out rather than show a broken row
+            if country not in countries:
+                countries[country] = {'flag': pick.flag, 'tickers': []}
+            countries[country]['tickers'].append({
+                **scan,
+                'pickSector': pick.sector,
+                'pickRec':    pick.rec,
+                'conviction': pick.conviction,
+                'topPick':    pick.top_pick,
+                'dateSaved':  pick.date_saved.isoformat() if pick.date_saved else None,
+            })
+
+        # Per-country summary stats.
+        for country, data in countries.items():
+            tks = data['tickers']
+            bullish_count = sum(1 for t in tks if t['direction'] == 'BULLISH')
+            bearish_count = sum(1 for t in tks if t['direction'] == 'BEARISH')
+            neutral_count = len(tks) - bullish_count - bearish_count
+            scores = [t['score'] for t in tks if isinstance(t.get('score'), (int, float))]
+            data['tickers'].sort(key=lambda t: t.get('score') or 0, reverse=True)
+            data['summary'] = {
+                'total':    len(tks),
+                'bullish':  bullish_count,
+                'bearish':  bearish_count,
+                'neutral':  neutral_count,
+                'avgScore': round(sum(scores) / len(scores), 1) if scores else None,
+            }
+
+        cache_row.results_json    = json.dumps(countries)
+        cache_row.total_tickers   = len(scan_results)
+        cache_row.total_countries = len(countries)
+        cache_row.scanned_at      = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cache_row.is_running      = False
+        cache_row.save(update_fields=['results_json', 'total_tickers', 'total_countries', 'scanned_at', 'is_running'])
+
+        print(f"[GlobalPicksTrendScan] done — {len(scan_results)} tickers across {len(countries)} countries")
+
+    except Exception as e:
+        print(f"[GlobalPicksTrendScan] FATAL: {e}")
+        cache_row.last_error = str(e)
+        cache_row.is_running = False
+        cache_row.save(update_fields=['last_error', 'is_running'])
+
+@csrf_exempt
+def snowai_global_picks_trend_scan_vault(request):
+    """
+    POST { "forceRefresh": true/false, "resetLock": true/false }
+    Instant-read cache with an on-demand background trigger — same pattern
+    as the main Trend Scanner endpoint.
+    """
+    import threading as _threading
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body          = json.loads(request.body) if request.body else {}
+        force_refresh = bool(body.get('forceRefresh', False))
+        reset_lock    = bool(body.get('resetLock', False))
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    cache_row = _snowvault_get_global_picks_scan_cache_row()
+
+    if reset_lock and cache_row.is_running:
+        print("[GlobalPicksTrendScan] manual lock reset requested via API")
+        cache_row.is_running = False
+        cache_row.last_error = 'Manually reset — previous lock appeared stuck'
+        cache_row.save(update_fields=['is_running', 'last_error'])
+        cache_row.refresh_from_db()
+        force_refresh = True
+
+    lock_stale = _snowvault_is_global_picks_lock_stale(cache_row)
+
+    if force_refresh and (not cache_row.is_running or lock_stale):
+        t = _threading.Thread(target=_snowvault_run_global_picks_trend_scan_job, daemon=True)
+        t.start()
+        return JsonResponse({
+            'countries': {}, 'totalTickers': 0, 'totalCountries': 0,
+            'scannedAt': None, 'isRunning': True, 'lastError': None,
+        })
+
+    cache_row.refresh_from_db()
+    return JsonResponse({
+        'countries':      json.loads(cache_row.results_json or '{}'),
+        'totalTickers':   cache_row.total_tickers,
+        'totalCountries': cache_row.total_countries,
+        'scannedAt':      cache_row.scanned_at,
+        'isRunning':      cache_row.is_running and not lock_stale,
+        'lastError':      cache_row.last_error,
+    })
+
 # Legodi Tech Registration and Login
 from rest_framework import generics
 

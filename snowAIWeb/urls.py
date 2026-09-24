@@ -1168,6 +1168,8 @@ urlpatterns = [
     path('api/snow-stability/by-country/', snow_stability_by_country_v1, name='snow_stability_by_country'),
     path('api/snow-stability/all-countries/', snow_stability_all_countries_v1, name='snow_stability_all_countries'),
 
+    path('api/snowai_global_picks_trend_scan_vault/', snowai_global_picks_trend_scan_vault, name='snowai_global_picks_trend_scan_vault'),
+
 
      # create appproprate urls.py here
     # path('test-async-backtest', views.test_async_backtest, name='test-async-backtest'),
