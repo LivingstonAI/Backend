@@ -3493,6 +3493,95 @@ class SnowVaultTrendScannerGateLog(models.Model):
         ordering = ['-created_at']
         indexes = [models.Index(fields=['ticker', '-created_at'])]
 
+class SnowVaultPaperPosition(models.Model):
+    DIRECTION_CHOICES = [('long', 'Long'), ('short', 'Short')]
+    STATUS_CHOICES = [
+        ('OPEN', 'Open'),
+        ('CLOSED_TP', 'Closed — Take Profit'),
+        ('CLOSED_SL', 'Closed — Stop Loss'),
+        ('CLOSED_MANUAL', 'Closed — Manual'),
+    ]
+
+    asset   = models.CharField(max_length=30, db_index=True)
+    direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
+    quantity  = models.FloatField()
+    entry_price = models.FloatField()
+
+    tp_price   = models.FloatField(null=True, blank=True)
+    tp_percent = models.FloatField(null=True, blank=True)
+    tp_dollars = models.FloatField(null=True, blank=True)
+
+    sl_price   = models.FloatField(null=True, blank=True)
+    sl_percent = models.FloatField(null=True, blank=True)
+    sl_dollars = models.FloatField(null=True, blank=True)
+
+    current_price = models.FloatField(null=True, blank=True)
+
+    status       = models.CharField(max_length=20, choices=STATUS_CHOICES, default='OPEN', db_index=True)
+    closed_price = models.FloatField(null=True, blank=True)
+    closed_at    = models.DateTimeField(null=True, blank=True)
+    realized_pnl_dollars = models.FloatField(null=True, blank=True)
+    realized_pnl_percent = models.FloatField(null=True, blank=True)
+
+    notes  = models.TextField(blank=True, default='')
+    source = models.CharField(max_length=30, blank=True, default='manual')  # 'manual' | 'trend_scanner' | 'global_picks'
+
+    opened_at  = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'snowvault_paper_positions'
+        ordering = ['-opened_at']
+        indexes = [models.Index(fields=['asset', 'status'])]
+
+    def __str__(self):
+        return f'{self.asset} {self.direction} x{self.quantity} @ {self.entry_price} [{self.status}]'
+
+class SnowVaultPaperPosition(models.Model):
+    DIRECTION_CHOICES = [('long', 'Long'), ('short', 'Short')]
+    STATUS_CHOICES = [
+        ('OPEN', 'Open'),
+        ('CLOSED_TP', 'Closed — Take Profit'),
+        ('CLOSED_SL', 'Closed — Stop Loss'),
+        ('CLOSED_MANUAL', 'Closed — Manual'),
+    ]
+
+    asset   = models.CharField(max_length=30, db_index=True)
+    direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
+    quantity  = models.FloatField()
+    entry_price = models.FloatField()
+
+    tp_price   = models.FloatField(null=True, blank=True)
+    tp_percent = models.FloatField(null=True, blank=True)
+    tp_dollars = models.FloatField(null=True, blank=True)
+
+    sl_price   = models.FloatField(null=True, blank=True)
+    sl_percent = models.FloatField(null=True, blank=True)
+    sl_dollars = models.FloatField(null=True, blank=True)
+
+    current_price = models.FloatField(null=True, blank=True)
+
+    status       = models.CharField(max_length=20, choices=STATUS_CHOICES, default='OPEN', db_index=True)
+    closed_price = models.FloatField(null=True, blank=True)
+    closed_at    = models.DateTimeField(null=True, blank=True)
+    realized_pnl_dollars = models.FloatField(null=True, blank=True)
+    realized_pnl_percent = models.FloatField(null=True, blank=True)
+
+    notes  = models.TextField(blank=True, default='')
+    source = models.CharField(max_length=30, blank=True, default='manual')  # 'manual' | 'trend_scanner' | 'global_picks'
+
+    opened_at  = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'snowvault_paper_positions'
+        ordering = ['-opened_at']
+        indexes = [models.Index(fields=['asset', 'status'])]
+
+    def __str__(self):
+        return f'{self.asset} {self.direction} x{self.quantity} @ {self.entry_price} [{self.status}]'
+
+
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)

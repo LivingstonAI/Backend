@@ -56877,6 +56877,217 @@ def snowai_global_picks_trend_scan_vault(request):
         'lastError':      cache_row.last_error,
     })
 
+from .models import SnowVaultScannerHistory, SnowGlobalStockPick, SnowVaultGlobalPicksScanCache, SnowVaultTickerStabilityCache, SnowVaultTrendScannerGateLog, SnowVaultPaperPosition
+
+
+def _snowvault_resolve_tp_sl_leg(direction, entry_price, quantity, price, percent, dollars, is_tp):
+    """
+    Resolves whichever of price / percent / dollars was provided into all
+    three, so TP $200, TP 2%, and TP at a specific price ALWAYS mean the
+    same thing once quantity + entry_price are known. Priority when more
+    than one is given: price > percent > dollars.
+    """
+    is_long = direction == 'long'
+
+    def price_to_percent(p):
+        if is_tp:
+            return (p - entry_price) / entry_price * 100 if is_long else (entry_price - p) / entry_price * 100
+        return (entry_price - p) / entry_price * 100 if is_long else (p - entry_price) / entry_price * 100
+
+    def percent_to_price(pct):
+        if is_tp:
+            return entry_price * (1 + pct/100) if is_long else entry_price * (1 - pct/100)
+        return entry_price * (1 - pct/100) if is_long else entry_price * (1 + pct/100)
+
+    resolved_percent = None
+    if price not in (None, ''):
+        try:
+            resolved_percent = price_to_percent(float(price))
+        except Exception:
+            pass
+    if resolved_percent is None and percent not in (None, ''):
+        try:
+            resolved_percent = float(percent)
+        except Exception:
+            pass
+    if resolved_percent is None and dollars not in (None, ''):
+        try:
+            d = float(dollars)
+            if quantity and entry_price:
+                resolved_percent = d / (quantity * entry_price) * 100
+        except Exception:
+            pass
+
+    if resolved_percent is None:
+        return {'price': None, 'percent': None, 'dollars': None}
+
+    return {
+        'price':   round(percent_to_price(resolved_percent), 4),
+        'percent': round(resolved_percent, 4),
+        'dollars': round(quantity * entry_price * (resolved_percent / 100), 2),
+    }
+
+
+def _snowvault_serialize_position(p):
+    return {
+        'id': p.id, 'asset': p.asset, 'direction': p.direction,
+        'quantity': p.quantity, 'entry_price': p.entry_price,
+        'tp_price': p.tp_price, 'tp_percent': p.tp_percent, 'tp_dollars': p.tp_dollars,
+        'sl_price': p.sl_price, 'sl_percent': p.sl_percent, 'sl_dollars': p.sl_dollars,
+        'current_price': p.current_price, 'status': p.status,
+        'closed_price': p.closed_price,
+        'closed_at': p.closed_at.isoformat() if p.closed_at else None,
+        'realized_pnl_dollars': p.realized_pnl_dollars, 'realized_pnl_percent': p.realized_pnl_percent,
+        'notes': p.notes, 'source': p.source,
+        'opened_at': p.opened_at.isoformat(), 'updated_at': p.updated_at.isoformat(),
+    }
+
+
+@csrf_exempt
+def snowvault_positions_list_create_vault(request):
+    if request.method == 'GET':
+        asset  = (request.GET.get('asset') or '').strip().upper()
+        qs = SnowVaultPaperPosition.objects.all()
+        if asset:
+            qs = qs.filter(asset=asset)
+        if request.GET.get('includeClosed') != 'true':
+            qs = qs.filter(status='OPEN')
+        return JsonResponse({'positions': [_snowvault_serialize_position(p) for p in qs[:500]]})
+
+    if request.method == 'POST':
+        try:
+            body = json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        asset = (body.get('asset') or '').strip().upper()
+        direction = (body.get('direction') or '').strip().lower()
+        quantity, entry_price = body.get('quantity'), body.get('entryPrice')
+
+        if not asset or direction not in ('long', 'short') or not quantity or not entry_price:
+            return JsonResponse({'error': 'asset, direction (long/short), quantity, entryPrice are required'}, status=400)
+
+        try:
+            quantity, entry_price = float(quantity), float(entry_price)
+        except Exception:
+            return JsonResponse({'error': 'quantity and entryPrice must be numeric'}, status=400)
+
+        tp = _snowvault_resolve_tp_sl_leg(direction, entry_price, quantity, body.get('tpPrice'), body.get('tpPercent'), body.get('tpDollars'), True)
+        sl = _snowvault_resolve_tp_sl_leg(direction, entry_price, quantity, body.get('slPrice'), body.get('slPercent'), body.get('slDollars'), False)
+
+        pos = SnowVaultPaperPosition.objects.create(
+            asset=asset, direction=direction, quantity=quantity, entry_price=entry_price,
+            tp_price=tp['price'], tp_percent=tp['percent'], tp_dollars=tp['dollars'],
+            sl_price=sl['price'], sl_percent=sl['percent'], sl_dollars=sl['dollars'],
+            current_price=entry_price,
+            notes=body.get('notes', ''), source=body.get('source', 'manual'),
+        )
+        return JsonResponse({'position': _snowvault_serialize_position(pos)})
+
+    return JsonResponse({'error': 'GET or POST only'}, status=405)
+
+
+@csrf_exempt
+def snowvault_position_detail_vault(request, position_id):
+    try:
+        pos = SnowVaultPaperPosition.objects.get(id=position_id)
+    except SnowVaultPaperPosition.DoesNotExist:
+        return JsonResponse({'error': 'Position not found'}, status=404)
+
+    if request.method == 'PATCH':
+        if pos.status != 'OPEN':
+            return JsonResponse({'error': 'Cannot edit a closed position'}, status=400)
+        try:
+            body = json.loads(request.body)
+        except Exception:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        if any(k in body for k in ('tpPrice', 'tpPercent', 'tpDollars')):
+            tp = _snowvault_resolve_tp_sl_leg(pos.direction, pos.entry_price, pos.quantity, body.get('tpPrice'), body.get('tpPercent'), body.get('tpDollars'), True)
+            pos.tp_price, pos.tp_percent, pos.tp_dollars = tp['price'], tp['percent'], tp['dollars']
+        if any(k in body for k in ('slPrice', 'slPercent', 'slDollars')):
+            sl = _snowvault_resolve_tp_sl_leg(pos.direction, pos.entry_price, pos.quantity, body.get('slPrice'), body.get('slPercent'), body.get('slDollars'), False)
+            pos.sl_price, pos.sl_percent, pos.sl_dollars = sl['price'], sl['percent'], sl['dollars']
+        if 'notes' in body:
+            pos.notes = body.get('notes') or ''
+        pos.save()
+        return JsonResponse({'position': _snowvault_serialize_position(pos)})
+
+    if request.method == 'DELETE':
+        pos.delete()
+        return JsonResponse({'deleted': True})
+
+    return JsonResponse({'error': 'PATCH or DELETE only'}, status=405)
+
+
+@csrf_exempt
+def snowvault_position_price_update_vault(request, position_id):
+    """Already called by ChartInsightsTab on every chart refresh. Now also
+    auto-closes the position the instant price crosses TP or SL — real
+    paper-trading simulation, not just a display line."""
+    if request.method != 'PATCH':
+        return JsonResponse({'error': 'PATCH only'}, status=405)
+    try:
+        body = json.loads(request.body)
+        current_price = float(body.get('current_price'))
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON / current_price'}, status=400)
+
+    try:
+        pos = SnowVaultPaperPosition.objects.get(id=position_id)
+    except SnowVaultPaperPosition.DoesNotExist:
+        return JsonResponse({'error': 'Position not found'}, status=404)
+
+    if pos.status != 'OPEN':
+        return JsonResponse({'position': _snowvault_serialize_position(pos)})
+
+    pos.current_price = current_price
+    is_long = pos.direction == 'long'
+    triggered, fill_price = None, None
+
+    if pos.tp_price is not None and ((is_long and current_price >= pos.tp_price) or (not is_long and current_price <= pos.tp_price)):
+        triggered, fill_price = 'CLOSED_TP', pos.tp_price
+    elif pos.sl_price is not None and ((is_long and current_price <= pos.sl_price) or (not is_long and current_price >= pos.sl_price)):
+        triggered, fill_price = 'CLOSED_SL', pos.sl_price
+
+    if triggered:
+        pnl = (fill_price - pos.entry_price) * pos.quantity if is_long else (pos.entry_price - fill_price) * pos.quantity
+        pos.status, pos.closed_price, pos.closed_at = triggered, fill_price, dj_timezone.now()
+        pos.realized_pnl_dollars = round(pnl, 2)
+        pos.realized_pnl_percent = round(pnl / (pos.entry_price * pos.quantity) * 100, 2) if pos.entry_price and pos.quantity else None
+
+    pos.save()
+    return JsonResponse({'position': _snowvault_serialize_position(pos)})
+
+
+@csrf_exempt
+def snowvault_position_close_vault(request, position_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        pos = SnowVaultPaperPosition.objects.get(id=position_id)
+    except SnowVaultPaperPosition.DoesNotExist:
+        return JsonResponse({'error': 'Position not found'}, status=404)
+    if pos.status != 'OPEN':
+        return JsonResponse({'error': 'Position already closed'}, status=400)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except Exception:
+        body = {}
+    close_price = body.get('closePrice', pos.current_price)
+    if close_price is None:
+        return JsonResponse({'error': 'No price available to close at'}, status=400)
+    close_price = float(close_price)
+
+    is_long = pos.direction == 'long'
+    pnl = (close_price - pos.entry_price) * pos.quantity if is_long else (pos.entry_price - close_price) * pos.quantity
+    pos.status, pos.closed_price, pos.closed_at = 'CLOSED_MANUAL', close_price, dj_timezone.now()
+    pos.realized_pnl_dollars = round(pnl, 2)
+    pos.realized_pnl_percent = round(pnl / (pos.entry_price * pos.quantity) * 100, 2) if pos.entry_price and pos.quantity else None
+    pos.save()
+    return JsonResponse({'position': _snowvault_serialize_position(pos)})
+
 # Legodi Tech Registration and Login
 from rest_framework import generics
 
