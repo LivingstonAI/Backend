@@ -1176,6 +1176,7 @@ urlpatterns = [
     path('api/positions/<int:position_id>/', views.snowvault_position_detail_vault, name='snowvault_position_detail_vault'),
     path('api/positions/<int:position_id>/price/', views.snowvault_position_price_update_vault, name='snowvault_position_price_update_vault'),
     path('api/positions/<int:position_id>/close/', views.snowvault_position_close_vault, name='snowvault_position_close_vault'),
+    
 
 
      # create appproprate urls.py here
