@@ -32,7 +32,7 @@ import urllib.parse
 from backtesting import Backtest, Strategy
 from backtesting.lib import crossover, resample_apply
 import asyncio
-from backtesting.test import SMA
+# from backtesting.test import SMA
 import pandas as pd
 # import patch_pandas_ta
 import numpy as np
