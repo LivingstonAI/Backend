@@ -1172,11 +1172,11 @@ urlpatterns = [
 
     path('api/snowvault_trend_scanner_gate_log_vault/', views.snowvault_trend_scanner_gate_log_vault, name='snowvault_trend_scanner_gate_log_vault'),
 
-    path('api/positions/', views.snowvault_positions_list_create_vault, name='snowvault_positions_list_create_vault'),
-    path('api/positions/<int:position_id>/', views.snowvault_position_detail_vault, name='snowvault_position_detail_vault'),
-    path('api/positions/<int:position_id>/price/', views.snowvault_position_price_update_vault, name='snowvault_position_price_update_vault'),
-    path('api/positions/<int:position_id>/close/', views.snowvault_position_close_vault, name='snowvault_position_close_vault'),
-    
+    path('api/snowvault_positions/', views.snowvault_positions_list_create_vault, name='snowvault_positions_list_create_vault'),
+path('api/snowvault_positions/<int:position_id>/', views.snowvault_position_detail_vault, name='snowvault_position_detail_vault'),
+path('api/snowvault_positions/<int:position_id>/price/', views.snowvault_position_price_update_vault, name='snowvault_position_price_update_vault'),
+path('api/snowvault_positions/<int:position_id>/close/', views.snowvault_position_close_vault, name='snowvault_position_close_vault'),
+
 
 
      # create appproprate urls.py here
