@@ -43776,6 +43776,25 @@ SNOWAI_SECTOR_MAP_TICKERS = [
 # DB-backed cache helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+import functools
+from django.db import connections, transaction
+
+def _snowvault_fresh_db(fn):
+    """
+    For anything running OUTSIDE a web request (APScheduler jobs, your own
+    threading.Thread targets, ThreadPool workers that touch the ORM). Forces a
+    fresh DB connection on the way in and releases it on the way out, so a
+    connection Postgres closed while idle can never be reused.
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        connections.close_all()
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            connections.close_all()
+    return wrapper
+
 def _snowvault_get_cache_row():
     row, _ = SnowVaultScannerCache.objects.get_or_create(id=1)
     return row
@@ -43797,7 +43816,7 @@ def _snowvault_is_lock_stale(cache_row):
     from datetime import timedelta as _td
     return (dj_timezone.now() - cache_row.last_triggered_at) > _td(minutes=SNOWVAULT_STALE_LOCK_MINUTES)
 
-
+@_snowvault_fresh_db
 def _snowvault_get_ticker_meta(sym):
     """Returns (market_cap, short_name, sector) from the DB cache, refreshing
     if the row is missing or older than 24h."""
@@ -43848,6 +43867,7 @@ def _snowvault_get_ticker_meta(sym):
 # ─────────────────────────────────────────────────────────────────────────────
 # Background scan job
 # ─────────────────────────────────────────────────────────────────────────────
+@_snowvault_fresh_db
 def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_n=30):
     import concurrent.futures
     import time
@@ -44254,7 +44274,7 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
         cache_row.is_running = False
         cache_row.save(update_fields=['last_error', 'is_running'])
 
-
+@_snowvault_fresh_db
 def _snowvault_scheduled_scan_tick():
     """Called every 5 minutes. Only actually triggers a scan if enough time
     has passed for the current session — pre/post gets checked more often
@@ -44299,6 +44319,182 @@ try:
         SNOWVAULT_SCANNER_SCHEDULER.start()
 except Exception as e:
     print(f"[ScannerJob] scheduler init failed: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Paper positions — price refresh + TP/SL auto-close (NYC regular session only)
+# ─────────────────────────────────────────────────────────────────────────────
+def _snowvault_fetch_asset_snapshot(sym, prepost=False):
+    """NETWORK ONLY (no ORM) so it's safe inside worker threads. Returns the last
+    5 days of 1-minute bars plus the latest price (fast_info as a fallback)."""
+    bars, price = None, None
+    try:
+        hist = yf.Ticker(sym).history(period='5d', interval='1m', prepost=bool(prepost), auto_adjust=True)
+        if hist is not None and not hist.empty:
+            hist = hist.dropna(subset=['Close', 'High', 'Low'])
+            if not hist.empty:
+                bars  = hist
+                price = float(hist['Close'].iloc[-1])
+    except Exception as e:
+        print(f"[PositionsRefresh] {sym} minute bars failed: {e}")
+    if price is None or price <= 0:
+        price = None
+        try:
+            lp = getattr(yf.Ticker(sym).fast_info, 'last_price', None)
+            if lp and float(lp) > 0:
+                price = float(lp)
+        except Exception as e:
+            print(f"[PositionsRefresh] {sym} fast_info failed: {e}")
+    return {'bars': bars, 'price': price}
+
+
+def _snowvault_find_level_hit(pos, bars):
+    """
+    Scans 1-minute bars printed AFTER the position opened for the first TP/SL
+    touch, using each bar's High/Low — so a wick through your level counts even
+    if the close came back. If one bar spans both levels the stop is assumed to
+    have hit first (conservative). Fills at the level, not the overshoot.
+    Returns ('CLOSED_SL' | 'CLOSED_TP', fill_price) or None.
+    """
+    if bars is None or bars.empty or (pos.tp_price is None and pos.sl_price is None):
+        return None
+    try:
+        import pandas as pd
+        after = bars[bars.index >= pd.Timestamp(pos.opened_at)]
+    except Exception as e:
+        print(f"[PositionsRefresh] {pos.asset} bar time filter failed: {e}")
+        return None
+    if after.empty:
+        return None
+
+    is_long = pos.direction == 'long'
+    for _, bar in after.iterrows():
+        hi, lo = float(bar['High']), float(bar['Low'])
+        if is_long:
+            if pos.sl_price is not None and lo <= pos.sl_price: return ('CLOSED_SL', pos.sl_price)
+            if pos.tp_price is not None and hi >= pos.tp_price: return ('CLOSED_TP', pos.tp_price)
+        else:
+            if pos.sl_price is not None and hi >= pos.sl_price: return ('CLOSED_SL', pos.sl_price)
+            if pos.tp_price is not None and lo <= pos.tp_price: return ('CLOSED_TP', pos.tp_price)
+    return None
+
+
+def _snowvault_close_position_atomic(position_id, new_status, fill_price):
+    """Row-locks the position so two gunicorn workers (or a worker plus a chart
+    refresh) can't both close it. Returns (position, closed_now)."""
+    with transaction.atomic():
+        pos = SnowVaultPaperPosition.objects.select_for_update().get(id=position_id)
+        if pos.status != 'OPEN':
+            return pos, False
+        is_long = pos.direction == 'long'
+        pnl = (fill_price - pos.entry_price) * pos.quantity if is_long else (pos.entry_price - fill_price) * pos.quantity
+        pos.status, pos.closed_price, pos.closed_at = new_status, fill_price, dj_timezone.now()
+        pos.current_price = fill_price
+        pos.realized_pnl_dollars = round(pnl, 2)
+        pos.realized_pnl_percent = round(pnl / (pos.entry_price * pos.quantity) * 100, 2) if pos.entry_price and pos.quantity else None
+        pos.save()
+        return pos, True
+
+
+def _snowvault_refresh_open_positions(assets=None, include_extended=False):
+    """
+    Updates current_price on every OPEN position (optionally limited to `assets`).
+    During the NYC regular session it ALSO scans bars for TP/SL touches and
+    auto-closes. Outside regular hours prices still update (pre/post prices if
+    include_extended) but nothing is ever auto-closed. Returns the touched positions.
+    """
+    import concurrent.futures
+
+    session   = _snowvault_get_market_session()
+    can_close = session == 'regular'
+
+    qs = SnowVaultPaperPosition.objects.filter(status='OPEN')
+    if assets:
+        qs = qs.filter(asset__in=[a.upper() for a in assets])
+    open_positions = list(qs)
+    if not open_positions:
+        return []
+
+    by_asset = {}
+    for p in open_positions:
+        by_asset.setdefault(p.asset, []).append(p)
+
+    prepost   = bool(include_extended) and not can_close
+    snapshots = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {ex.submit(_snowvault_fetch_asset_snapshot, a, prepost): a for a in by_asset}
+        try:
+            for fut in concurrent.futures.as_completed(futures, timeout=45):
+                snapshots[futures[fut]] = fut.result()
+        except Exception as e:
+            print(f"[PositionsRefresh] snapshot fetch incomplete: {e}")
+
+    updated = []
+    for asset, plist in by_asset.items():
+        snap = snapshots.get(asset)
+        if not snap or snap['price'] is None:
+            continue
+        for p in plist:
+            if can_close:
+                hit = _snowvault_find_level_hit(p, snap['bars'])
+                if hit:
+                    closed_pos, _ = _snowvault_close_position_atomic(p.id, hit[0], hit[1])
+                    updated.append(closed_pos)
+                    continue
+            p.current_price = snap['price']
+            p.save(update_fields=['current_price', 'updated_at'])
+            updated.append(p)
+    return updated
+
+
+@_snowvault_fresh_db
+def _snowvault_positions_tp_sl_tick():
+    """Scheduler job (every 2 min). Does nothing unless the NYC regular session
+    is open AND there's at least one open position."""
+    if _snowvault_get_market_session() != 'regular':
+        return
+    if not SnowVaultPaperPosition.objects.filter(status='OPEN').exists():
+        return
+    closed = [p for p in _snowvault_refresh_open_positions() if p.status != 'OPEN']
+    if closed:
+        print("[PositionsTickSL] auto-closed: " + ', '.join(f"{p.asset} {p.status}" for p in closed))
+
+
+try:
+    if 'SNOWVAULT_SCANNER_SCHEDULER' in globals():
+        SNOWVAULT_SCANNER_SCHEDULER.add_job(
+            _snowvault_positions_tp_sl_tick, 'interval', minutes=2,
+            id='snowvault_positions_tp_sl_job', replace_existing=True,
+            max_instances=1, coalesce=True,
+        )
+except Exception as e:
+    print(f"[PositionsTickSL] scheduler job registration failed: {e}")
+
+
+@csrf_exempt
+def snowvault_positions_refresh_prices_vault(request):
+    """
+    POST { "assets": ["AAPL", ...] (optional — omit for ALL open positions),
+           "includeExtended": true/false }
+    Used by the chart refresh button, the Positions panel refresh, and both
+    auto-refreshers.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body             = json.loads(request.body) if request.body else {}
+        assets           = [str(a).strip().upper() for a in body.get('assets', []) if str(a).strip()][:100]
+        include_extended = bool(body.get('includeExtended', False))
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    updated = _snowvault_refresh_open_positions(assets=assets or None, include_extended=include_extended)
+    session = _snowvault_get_market_session()
+    return JsonResponse({
+        'positions':       [_snowvault_serialize_position(p) for p in updated],
+        'marketSession':   session,
+        'autoCloseActive': session == 'regular',
+    })
 
 
 @csrf_exempt
@@ -56451,6 +56647,8 @@ def _snowvault_is_global_picks_lock_stale(cache_row):
     from datetime import timedelta as _td
     return (dj_timezone.now() - cache_row.last_triggered_at) > _td(minutes=SNOWVAULT_STALE_LOCK_MINUTES)
 
+
+@_snowvault_fresh_db
 def _snowvault_analyse_ticker_trend(sym):
     """
     Standalone copy of the Trend Scanner's per-ticker analysis (ADX, ROC,
@@ -56684,6 +56882,8 @@ def _snowvault_analyse_ticker_trend(sym):
         print(f"[GlobalPicksTrendScan] {sym} FAILED: {e}")
         return None
 
+
+@_snowvault_fresh_db
 def _snowvault_run_global_picks_trend_scan_job():
     """
     Pulls every unique (symbol, country) pair from SnowGlobalStockPick,
@@ -57043,11 +57243,12 @@ def snowvault_position_price_update_vault(request, position_id):
 
     pos.current_price = current_price
     is_long = pos.direction == 'long'
-    triggered, fill_price = None, None
+        triggered, fill_price = None, None
+    market_open = _snowvault_get_market_session() == 'regular'
 
-    if pos.tp_price is not None and ((is_long and current_price >= pos.tp_price) or (not is_long and current_price <= pos.tp_price)):
+    if market_open and pos.tp_price is not None and ((is_long and current_price >= pos.tp_price) or (not is_long and current_price <= pos.tp_price)):
         triggered, fill_price = 'CLOSED_TP', pos.tp_price
-    elif pos.sl_price is not None and ((is_long and current_price <= pos.sl_price) or (not is_long and current_price >= pos.sl_price)):
+    elif market_open and pos.sl_price is not None and ((is_long and current_price <= pos.sl_price) or (not is_long and current_price >= pos.sl_price)):
         triggered, fill_price = 'CLOSED_SL', pos.sl_price
 
     if triggered:
