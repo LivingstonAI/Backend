@@ -57472,6 +57472,99 @@ def cleanup_global_stock_data(request):
             'error': str(e)
         }, status=500)
 
+@csrf_exempt
+def snowvault_global_picks_composite_backtest_vault(request):
+    """
+    POST — all filters optional, combined with AND:
+      { "minConviction": 7, "recMin": "BUY", "topPickOnly": true,
+        "sector": "Semiconductors", "country": "Japan", "startDate":...,
+        "endDate":..., "symbols": [...], "horizons": [1,3,5,10,20], "limit": 3000 }
+
+    Leave "country" blank to rank EVERY country at once — that's the main
+    "which nations tend to be most stable" view. Direction is inferred from
+    `rec` (SELL/AVOID = bearish, WATCH/HOLD = neutral, else bullish), same
+    convention as the existing Global Picks backtest endpoint.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body           = json.loads(request.body) if request.body else {}
+        min_conviction = body.get('minConviction')
+        rec_min        = _snowvault_normalise_rec(body.get('recMin')) if body.get('recMin') else ''
+        top_pick_only  = bool(body.get('topPickOnly', False))
+        sector         = (body.get('sector') or '').strip()
+        country        = (body.get('country') or '').strip()
+        start_date     = body.get('startDate')
+        end_date       = body.get('endDate')
+        symbols        = [s.strip().upper() for s in body.get('symbols', []) if s.strip()][:200]
+        horizons       = body.get('horizons') or [1, 3, 5, 10, 20]
+        limit          = min(int(body.get('limit', 3000)), 5000)
+        horizons       = sorted({int(h) for h in horizons if isinstance(h, (int, float)) and 0 < h <= 60})
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if not horizons:
+        return JsonResponse({'error': 'No valid horizons provided'}, status=400)
+
+    qs = SnowGlobalStockPick.objects.all()
+    if top_pick_only:
+        qs = qs.filter(top_pick=True)
+    if sector:
+        qs = qs.filter(sector__iexact=sector)
+    if country:
+        qs = qs.filter(country__iexact=country)
+    if start_date:
+        qs = qs.filter(date_saved__gte=start_date)
+    if end_date:
+        qs = qs.filter(date_saved__lte=end_date)
+    if symbols:
+        qs = qs.filter(symbol__in=symbols)
+    if min_conviction is not None:
+        qs = qs.filter(conviction__gte=min_conviction)
+    qs = qs.order_by('date_saved')[:limit]
+
+    rows = list(qs)
+
+    if rec_min:
+        required_rank = GLOBAL_PICKS_REC_RANK.get(rec_min)
+        if required_rank is None:
+            return JsonResponse({'error': f"invalid recMin '{body.get('recMin')}' — must be one of {list(GLOBAL_PICKS_REC_RANK.keys())}"}, status=400)
+        rows = [r for r in rows if GLOBAL_PICKS_REC_RANK.get(_snowvault_normalise_rec(r.rec), -1) >= required_rank]
+
+    if not rows:
+        return JsonResponse({'matchedCount': 0, 'aggregate': {}, 'byCountry': {}, 'rows': [], 'horizons': horizons})
+
+    row_specs = [{
+        'ticker': r.symbol, 'date': r.date_saved, 'direction': _snowvault_infer_gp_direction(r.rec),
+        'name': r.name, 'country': r.country, 'flag': r.flag, 'sector': r.sector,
+        'rec': r.rec, 'conviction': r.conviction, 'topPick': r.top_pick,
+    } for r in rows]
+
+    resolved   = _snowvault_compute_forward_returns_for_row_specs(row_specs, horizons)
+    aggregate  = _snowvault_aggregate_returns_by_group(resolved, horizons, lambda row: 'ALL')
+    by_country = _snowvault_aggregate_returns_by_group(resolved, horizons, lambda row: row.get('country') or 'Unknown')
+
+    country_flags = {r.country: r.flag for r in rows}
+    for country_name, group_data in by_country.items():
+        group_data['flag'] = country_flags.get(country_name, '🌍')
+    by_country_sorted = dict(sorted(
+        by_country.items(),
+        key=lambda kv: kv[1]['combined']['stabilityScore'] if kv[1]['combined']['stabilityScore'] is not None else -1,
+        reverse=True,
+    ))
+
+    return JsonResponse({
+        'matchedCount': len(rows),
+        'aggregate':    aggregate.get('ALL', {}),
+        'byCountry':    by_country_sorted,
+        'rows':         resolved,
+        'horizons':     horizons,
+        'filtersApplied': {
+            'minConviction': min_conviction, 'recMin': rec_min or None, 'topPickOnly': top_pick_only,
+            'sector': sector or None, 'country': country or None, 'startDate': start_date, 'endDate': end_date,
+        },
+    })
+
 # Legodi Tech Registration and Login
 from rest_framework import generics
 
