@@ -57088,6 +57088,100 @@ def snowvault_position_close_vault(request, position_id):
     pos.save()
     return JsonResponse({'position': _snowvault_serialize_position(pos)})
 
+
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from django.db.models import Max
+
+from .models import (
+    SnowGlobalStockPick,
+    SnowVaultGlobalPicksScanCache
+)
+
+
+@csrf_exempt
+def cleanup_global_stock_data(request):
+    """
+    Keeps only:
+    1. SnowGlobalStockPick rows from the latest date_saved
+    2. The newest SnowVaultGlobalPicksScanCache row
+
+    Deletes everything older.
+    """
+
+    try:
+        results = {}
+
+        # ==========================================
+        # STOCK PICKS
+        # ==========================================
+        latest_date = SnowGlobalStockPick.objects.aggregate(
+            latest=Max('date_saved')
+        )['latest']
+
+        picks_deleted = 0
+        picks_remaining = 0
+
+        if latest_date:
+            picks_deleted, _ = (
+                SnowGlobalStockPick.objects
+                .exclude(date_saved=latest_date)
+                .delete()
+            )
+
+            picks_remaining = (
+                SnowGlobalStockPick.objects
+                .filter(date_saved=latest_date)
+                .count()
+            )
+
+        results['stock_picks'] = {
+            'latest_date_kept': str(latest_date) if latest_date else None,
+            'deleted': picks_deleted,
+            'remaining': picks_remaining,
+        }
+
+        # ==========================================
+        # CACHE
+        # ==========================================
+        cache_deleted = 0
+        cache_remaining = 0
+
+        latest_cache = (
+            SnowVaultGlobalPicksScanCache.objects
+            .order_by('-updated_at')
+            .first()
+        )
+
+        if latest_cache:
+            cache_deleted, _ = (
+                SnowVaultGlobalPicksScanCache.objects
+                .exclude(pk=latest_cache.pk)
+                .delete()
+            )
+
+            cache_remaining = (
+                SnowVaultGlobalPicksScanCache.objects
+                .count()
+            )
+
+        results['cache'] = {
+            'kept_cache_id': latest_cache.pk if latest_cache else None,
+            'deleted': cache_deleted,
+            'remaining': cache_remaining,
+        }
+
+        return JsonResponse({
+            'success': True,
+            'results': results
+        })
+
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
 # Legodi Tech Registration and Login
 from rest_framework import generics
 
