@@ -57243,7 +57243,7 @@ def snowvault_position_price_update_vault(request, position_id):
 
     pos.current_price = current_price
     is_long = pos.direction == 'long'
-        triggered, fill_price = None, None
+    triggered, fill_price = None, None
     market_open = _snowvault_get_market_session() == 'regular'
 
     if market_open and pos.tp_price is not None and ((is_long and current_price >= pos.tp_price) or (not is_long and current_price <= pos.tp_price)):
