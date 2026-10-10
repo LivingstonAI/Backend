@@ -57565,6 +57565,148 @@ def snowvault_global_picks_composite_backtest_vault(request):
         },
     })
 
+def _snowvault_compute_forward_returns_for_row_specs(row_specs, horizons=(1, 3, 5, 10, 20)):
+    """
+    Generic forward-return computation used only by the composite endpoints.
+    row_specs: list of dicts with at least {'ticker', 'date' (date obj), 'direction'}.
+    Any extra keys are preserved on the output.
+    """
+    import concurrent.futures
+    from datetime import timedelta
+
+    by_ticker = {}
+    for spec in row_specs:
+        by_ticker.setdefault(spec['ticker'], []).append(spec)
+
+    max_horizon = max(horizons)
+
+    def fetch_one_ticker(sym, specs):
+        try:
+            min_date = min(s['date'] for s in specs)
+            max_date = max(s['date'] for s in specs)
+            fetch_start = (min_date - timedelta(days=3)).strftime('%Y-%m-%d')
+            fetch_end   = (max_date + timedelta(days=int(max_horizon * 1.6) + 10)).strftime('%Y-%m-%d')
+
+            hist = yf.download(sym, start=fetch_start, end=fetch_end, auto_adjust=True, progress=False)
+            if hist is None or hist.empty:
+                return [{**s, 'error': 'No price data available'} for s in specs]
+
+            if hasattr(hist.columns, 'nlevels') and hist.columns.nlevels > 1:
+                hist.columns = hist.columns.get_level_values(0)
+            if hist.index.tz is not None:
+                hist.index = hist.index.tz_localize(None)
+
+            dates  = [d.strftime('%Y-%m-%d') for d in hist.index]
+            closes = hist['Close'].values.astype(float)
+
+            out = []
+            for s in specs:
+                snap_str  = s['date'].strftime('%Y-%m-%d')
+                entry_idx = next((i for i, d in enumerate(dates) if d >= snap_str), None)
+                if entry_idx is None:
+                    out.append({**s, 'error': 'No trading day on/after date'})
+                    continue
+                entry_price = float(closes[entry_idx])
+                if not entry_price:
+                    out.append({**s, 'error': 'Zero entry price'})
+                    continue
+                raw_returns, dir_adj = {}, {}
+                for h in horizons:
+                    fidx = entry_idx + h
+                    if fidx < len(closes):
+                        fwd_price = float(closes[fidx])
+                        pct = round((fwd_price - entry_price) / entry_price * 100, 2)
+                        raw_returns[str(h)] = pct
+                        dir_adj[str(h)] = round(-pct, 2) if s.get('direction') == 'BEARISH' else pct
+                    else:
+                        raw_returns[str(h)] = None
+                        dir_adj[str(h)]     = None
+                out.append({**s, 'entryPrice': round(entry_price, 4), 'rawReturns': raw_returns, 'directionAdjustedReturns': dir_adj})
+            return out
+        except Exception as e:
+            print(f"[CompositeBacktest] {sym} failed: {e}")
+            return [{**s, 'error': str(e)} for s in specs]
+
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(fetch_one_ticker, sym, specs): sym for sym, specs in by_ticker.items()}
+        for fut in concurrent.futures.as_completed(futures, timeout=90):
+            sym = futures[fut]
+            try:
+                results.extend(fut.result())
+            except Exception as e:
+                print(f"[CompositeBacktest] {sym} future error: {e}")
+
+    return results
+
+
+def _snowvault_aggregate_returns_by_group(resolved_rows, horizons, group_key_fn):
+    """
+    Groups resolved rows by group_key_fn(row) -> label and computes per-horizon
+    count/avgReturn/winRate/stabilityScore, plus a COMBINED score pooled across
+    all horizons (same |winRate-50|*2 formula used everywhere else).
+    """
+    from collections import defaultdict
+
+    buckets = defaultdict(list)
+    for row in resolved_rows:
+        if row.get('error'):
+            continue
+        label = group_key_fn(row)
+        if label is None:
+            continue
+        buckets[label].append(row)
+
+    def summarise(rows_for_group):
+        by_horizon = {}
+        combined_wins, combined_total = 0, 0
+        for h in horizons:
+            wins, total, ret_sum = 0, 0, 0.0
+            for row in rows_for_group:
+                v = row.get('directionAdjustedReturns', {}).get(str(h))
+                if v is None:
+                    continue
+                total += 1
+                ret_sum += v
+                if v > 0:
+                    wins += 1
+                combined_total += 1
+                if v > 0:
+                    combined_wins += 1
+            if total == 0:
+                by_horizon[str(h)] = {'count': 0, 'avgReturn': None, 'winRate': None, 'stabilityScore': None}
+            else:
+                win_rate = round(wins / total * 100, 1)
+                by_horizon[str(h)] = {
+                    'count': total, 'avgReturn': round(ret_sum / total, 2),
+                    'winRate': win_rate, 'stabilityScore': round(abs(win_rate - 50) * 2, 1),
+                }
+        combined_win_rate  = round(combined_wins / combined_total * 100, 1) if combined_total else None
+        combined_stability = round(abs(combined_win_rate - 50) * 2, 1) if combined_win_rate is not None else None
+        return {
+            'tickerCount':     len(set(r['ticker'] for r in rows_for_group)),
+            'occurrenceCount': len(rows_for_group),
+            'byHorizon':       by_horizon,
+            'combined': {'winRate': combined_win_rate, 'stabilityScore': combined_stability, 'resolvedCount': combined_total},
+        }
+
+    return {label: summarise(rows) for label, rows in buckets.items()}
+
+
+# Used by the Global Picks composite endpoint — skip any of these you already have
+GLOBAL_PICKS_REC_RANK = {'HOLD': 0, 'WATCH': 1, 'BUY': 2, 'STRONG BUY': 3}
+
+def _snowvault_normalise_rec(rec):
+    return (rec or '').strip().upper().replace('_', ' ')
+
+def _snowvault_infer_gp_direction(rec):
+    r = _snowvault_normalise_rec(rec)
+    if 'SELL' in r or 'AVOID' in r or 'SHORT' in r:
+        return 'BEARISH'
+    if 'WATCH' in r or 'HOLD' in r:
+        return 'NEUTRAL'
+    return 'BULLISH'
+
 # Legodi Tech Registration and Login
 from rest_framework import generics
 
