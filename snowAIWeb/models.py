@@ -3582,6 +3582,33 @@ class SnowVaultPaperPosition(models.Model):
         return f'{self.asset} {self.direction} x{self.quantity} @ {self.entry_price} [{self.status}]'
 
 
+class SnowVaultInterestAsset(models.Model):
+    """Assets Tlotlo has flagged as interesting. They stay analysable even when the scanner no longer surfaces them."""
+    ticker          = models.CharField(max_length=30, unique=True, db_index=True)
+    name            = models.CharField(max_length=200, blank=True, default='')
+    sector          = models.CharField(max_length=100, blank=True, default='')
+    note            = models.TextField(blank=True, default='')
+    tags            = models.JSONField(default=list, blank=True)
+    source          = models.CharField(max_length=30, blank=True, default='manual')  # manual | trend_scanner | chart | global_picks
+
+    # What the scanner said at the moment it was added, so you can see what happened since
+    added_price     = models.FloatField(null=True, blank=True)
+    added_signal    = models.CharField(max_length=40, blank=True, default='')
+    added_direction = models.CharField(max_length=16, blank=True, default='')
+    added_score     = models.FloatField(null=True, blank=True)
+
+    # Latest on-demand analysis
+    last_analysis_json = models.TextField(blank=True, default='')
+    last_analysed_at   = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'snowvault_interest_assets'
+        ordering = ['-created_at']
+
+
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)

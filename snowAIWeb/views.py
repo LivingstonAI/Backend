@@ -57138,7 +57138,7 @@ def _snowvault_serialize_position(p):
         'closed_price': p.closed_price,
         'closed_at': p.closed_at.isoformat() if p.closed_at else None,
         'realized_pnl_dollars': p.realized_pnl_dollars, 'realized_pnl_percent': p.realized_pnl_percent,
-        'notes': p.notes, 'source': p.source,
+        'notes': p.notes, 'source': p.source, 'entry_context': p.entry_context or {}, 'tags': p.tags or [],
         'opened_at': p.opened_at.isoformat(), 'updated_at': p.updated_at.isoformat(),
     }
 
@@ -57175,12 +57175,16 @@ def snowvault_positions_list_create_vault(request):
         tp = _snowvault_resolve_tp_sl_leg(direction, entry_price, quantity, body.get('tpPrice'), body.get('tpPercent'), body.get('tpDollars'), True)
         sl = _snowvault_resolve_tp_sl_leg(direction, entry_price, quantity, body.get('slPrice'), body.get('slPercent'), body.get('slDollars'), False)
 
+        entry_context = _snowvault_clean_entry_context(body.get('entryContext'))
+        entry_context['marketSession'] = _snowvault_get_market_session()
+
         pos = SnowVaultPaperPosition.objects.create(
             asset=asset, direction=direction, quantity=quantity, entry_price=entry_price,
             tp_price=tp['price'], tp_percent=tp['percent'], tp_dollars=tp['dollars'],
             sl_price=sl['price'], sl_percent=sl['percent'], sl_dollars=sl['dollars'],
             current_price=entry_price,
             notes=body.get('notes', ''), source=body.get('source', 'manual'),
+            entry_context=entry_context, tags=_snowvault_clean_tags(body.get('tags')),
         )
         return JsonResponse({'position': _snowvault_serialize_position(pos)})
 
@@ -57987,6 +57991,295 @@ def snowvault_positions_autopsy_vault(request):
         rows.append(row)
 
     return JsonResponse({'rows': rows, 'summary': _snowvault_autopsy_summary(rows, horizons), 'window': window, 'horizons': horizons})
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Vault: assets of interest
+# ─────────────────────────────────────────────────────────────────────────────
+import re as _re
+
+def _snowvault_clean_ticker(raw):
+    t = str(raw or '').strip().upper()
+    return t if _re.fullmatch(r'[A-Z0-9.\-^=]{1,20}', t) else ''
+
+
+def _snowvault_clean_tags(raw):
+    if isinstance(raw, str):
+        raw = raw.split(',')
+    out = []
+    for t in (raw or []):
+        t = str(t).strip()[:30]
+        if t and t.lower() not in [x.lower() for x in out]:
+            out.append(t)
+    return out[:12]
+
+
+def _snowvault_serialize_interest(a):
+    analysis = None
+    if a.last_analysis_json:
+        try:
+            analysis = json.loads(a.last_analysis_json)
+        except Exception:
+            analysis = None
+    return {
+        'ticker': a.ticker, 'name': a.name, 'sector': a.sector, 'note': a.note, 'tags': a.tags or [], 'source': a.source,
+        'addedPrice': a.added_price, 'addedSignal': a.added_signal, 'addedDirection': a.added_direction, 'addedScore': a.added_score,
+        'analysis': analysis,
+        'lastAnalysedAt': a.last_analysed_at.isoformat() if a.last_analysed_at else None,
+        'createdAt': a.created_at.isoformat(), 'updatedAt': a.updated_at.isoformat(),
+    }
+
+
+def _snowvault_json_body(request):
+    try:
+        return json.loads(request.body) if request.body else {}
+    except Exception:
+        return None
+
+
+@csrf_exempt
+def snowvault_interest_list_vault(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    return JsonResponse({'assets': [_snowvault_serialize_interest(a) for a in SnowVaultInterestAsset.objects.all()[:500]]})
+
+
+@csrf_exempt
+def snowvault_interest_add_vault(request):
+    """POST { ticker, note?, tags?, source?, snapshot?: {name, sector, price, signal, direction, score} } — upsert by ticker."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    body = _snowvault_json_body(request)
+    if body is None:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    ticker = _snowvault_clean_ticker(body.get('ticker'))
+    if not ticker:
+        return JsonResponse({'error': 'A valid ticker is required'}, status=400)
+    snap = body.get('snapshot') if isinstance(body.get('snapshot'), dict) else {}
+
+    def num(v):
+        try:
+            return float(v) if v not in (None, '') else None
+        except Exception:
+            return None
+
+    obj, created = SnowVaultInterestAsset.objects.get_or_create(ticker=ticker, defaults={
+        'name': str(snap.get('name') or '')[:200], 'sector': str(snap.get('sector') or '')[:100],
+        'note': str(body.get('note') or '')[:2000], 'tags': _snowvault_clean_tags(body.get('tags')),
+        'source': str(body.get('source') or 'manual')[:30],
+        'added_price': num(snap.get('price')), 'added_signal': str(snap.get('signal') or '')[:40],
+        'added_direction': str(snap.get('direction') or '')[:16], 'added_score': num(snap.get('score')),
+    })
+    if not created:
+        if 'note' in body: obj.note = str(body.get('note') or '')[:2000]
+        if 'tags' in body: obj.tags = _snowvault_clean_tags(body.get('tags'))
+        obj.save()
+    return JsonResponse({'asset': _snowvault_serialize_interest(obj), 'created': created})
+
+
+@csrf_exempt
+def snowvault_interest_update_vault(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    body = _snowvault_json_body(request)
+    if body is None:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    obj = SnowVaultInterestAsset.objects.filter(ticker=_snowvault_clean_ticker(body.get('ticker'))).first()
+    if not obj:
+        return JsonResponse({'error': 'Not in the vault'}, status=404)
+    if 'note' in body: obj.note = str(body.get('note') or '')[:2000]
+    if 'tags' in body: obj.tags = _snowvault_clean_tags(body.get('tags'))
+    obj.save()
+    return JsonResponse({'asset': _snowvault_serialize_interest(obj)})
+
+
+@csrf_exempt
+def snowvault_interest_remove_vault(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    body = _snowvault_json_body(request)
+    if body is None:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    deleted, _ = SnowVaultInterestAsset.objects.filter(ticker=_snowvault_clean_ticker(body.get('ticker'))).delete()
+    return JsonResponse({'deleted': bool(deleted)})
+
+
+@csrf_exempt
+def snowvault_interest_analyse_vault(request):
+    """
+    POST { "tickers": [...] }  (max 10 per call — the UI sends them in chunks)
+    Runs the same trend analysis as the scanner, regardless of whether the scanner would flag them.
+    Workers only touch the network + their own DB connection; saving happens here in the request thread.
+    """
+    import concurrent.futures
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    body = _snowvault_json_body(request)
+    if body is None:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    tickers = [t for t in (_snowvault_clean_ticker(x) for x in (body.get('tickers') or [])) if t][:10]
+    if not tickers:
+        return JsonResponse({'assets': [], 'failed': []})
+
+    assets  = list(SnowVaultInterestAsset.objects.filter(ticker__in=tickers))
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {ex.submit(_snowvault_analyse_ticker_trend, a.ticker): a.ticker for a in assets}
+        try:
+            for fut in concurrent.futures.as_completed(futures, timeout=50):
+                try:
+                    results[futures[fut]] = fut.result()
+                except Exception as e:
+                    print(f"[VaultInterest] {futures[fut]} analysis failed: {e}")
+        except Exception as e:
+            print(f"[VaultInterest] analysis incomplete: {e}")
+
+    now, failed = dj_timezone.now(), []
+    for a in assets:
+        res = results.get(a.ticker)
+        if not res:
+            failed.append(a.ticker)
+            continue
+        a.last_analysis_json = json.dumps(res)
+        a.last_analysed_at   = now
+        if not a.name:   a.name   = str(res.get('name') or '')[:200]
+        if not a.sector: a.sector = str(res.get('sector') or '')[:100]
+        a.save(update_fields=['last_analysis_json', 'last_analysed_at', 'name', 'sector', 'updated_at'])
+    return JsonResponse({'assets': [_snowvault_serialize_interest(a) for a in assets], 'failed': failed})
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trade tagging: entry context + win rate by tag
+# ─────────────────────────────────────────────────────────────────────────────
+_ENTRY_CONTEXT_KEYS = ('signal', 'scanDirection', 'score', 'aiVerdict', 'aiVerdictDate', 'stability',
+                       'earningsBias', 'earningsVerdict', 'lens', 'extendedHours')
+TAG_FAMILY_ORDER   = ['Lens', 'Alignment', 'Signal', 'AI verdict', 'Score', 'Stability', 'Earnings AI', 'Session', 'Direction', 'Source', 'Custom']
+_SESSION_LABELS    = {'regular': 'Market hours', 'pre': 'Pre-market', 'post': 'After-hours', 'closed': 'Market closed'}
+
+
+def _snowvault_clean_entry_context(raw):
+    out = {}
+    if not isinstance(raw, dict):
+        return out
+    for k in _ENTRY_CONTEXT_KEYS:
+        v = raw.get(k)
+        if v is None or v == '':
+            continue
+        if isinstance(v, bool):
+            out[k] = v
+        elif isinstance(v, (int, float)):
+            out[k] = round(float(v), 2)
+        else:
+            out[k] = str(v)[:40]
+    return out
+
+
+def _snowvault_score_bucket(s):
+    try:
+        s = float(s)
+    except Exception:
+        return None
+    return 'Under 40' if s < 40 else '40-59' if s < 60 else '60-79' if s < 80 else '80+'
+
+
+def _snowvault_stability_bucket(s):
+    try:
+        s = float(s)
+    except Exception:
+        return None
+    return 'Low (under 30)' if s < 30 else 'Medium (30-59)' if s < 60 else 'High (60+)'
+
+
+def _snowvault_trade_tag_pairs(p):
+    """(family, tag) pairs for one trade. Derived from the stored context on the fly, so changing a
+    bucket never needs a migration. Direction and Source are known for every trade, old ones included."""
+    ctx = p.entry_context if isinstance(p.entry_context, dict) else {}
+    pretty = lambda v: str(v).replace('_', ' ').title()
+    out = []
+
+    def add(fam, val):
+        if val not in (None, ''):
+            out.append((fam, str(val)))
+
+    add('Direction', 'Long' if p.direction == 'long' else 'Short')
+    add('Source', pretty(p.source or 'manual'))
+    if ctx:
+        add('Lens', ctx.get('lens'))
+        sd = str(ctx.get('scanDirection') or '').upper()
+        if sd in ('BULLISH', 'BEARISH'):
+            with_signal = (sd == 'BULLISH') == (p.direction == 'long')
+            add('Alignment', 'With the scanner signal' if with_signal else 'Against the scanner signal')
+        if ctx.get('signal'):       add('Signal', pretty(ctx['signal']))
+        if ctx.get('aiVerdict'):    add('AI verdict', pretty(ctx['aiVerdict']))
+        add('Score', _snowvault_score_bucket(ctx.get('score')))
+        add('Stability', _snowvault_stability_bucket(ctx.get('stability')))
+        if ctx.get('earningsBias'): add('Earnings AI', pretty(ctx['earningsBias']))
+        add('Session', _SESSION_LABELS.get(ctx.get('marketSession')))
+    for t in (p.tags or []):
+        add('Custom', t)
+    return out
+
+
+def _snowvault_wilson(wins, n, z=1.96):
+    """95% range for a win rate. Wide when n is small, which is the point."""
+    import math
+    if not n:
+        return None, None
+    p = wins / n
+    d = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / d
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return round(max(0.0, centre - half) * 100, 1), round(min(1.0, centre + half) * 100, 1)
+
+
+@csrf_exempt
+def snowvault_positions_tag_stats_vault(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    closed = list(SnowVaultPaperPosition.objects.exclude(status='OPEN').filter(closed_price__isnull=False))
+    opened = list(SnowVaultPaperPosition.objects.filter(status='OPEN'))
+
+    open_counts = {}
+    for p in opened:
+        for k in _snowvault_trade_tag_pairs(p):
+            open_counts[k] = open_counts.get(k, 0) + 1
+
+    groups = {}
+    for p in closed:
+        pnl = float(p.realized_pnl_dollars or 0.0)
+        pct = p.realized_pnl_percent
+        for k in _snowvault_trade_tag_pairs(p):
+            g = groups.setdefault(k, {'n': 0, 'wins': 0, 'losses': 0, 'total': 0.0, 'pctSum': 0.0, 'pctN': 0, 'gw': 0.0, 'gl': 0.0})
+            g['n'] += 1
+            g['total'] += pnl
+            if pct is not None:
+                g['pctSum'] += float(pct); g['pctN'] += 1
+            if pnl > 0:   g['wins'] += 1;   g['gw'] += pnl
+            elif pnl < 0: g['losses'] += 1; g['gl'] += abs(pnl)
+
+    families = {}
+    for (fam, tag), g in groups.items():
+        lo, hi = _snowvault_wilson(g['wins'], g['n'])
+        families.setdefault(fam, []).append({
+            'tag': tag, 'n': g['n'], 'wins': g['wins'], 'losses': g['losses'], 'even': g['n'] - g['wins'] - g['losses'],
+            'winRate': round(g['wins'] / g['n'] * 100, 1), 'winRateLow': lo, 'winRateHigh': hi,
+            'avgPct': round(g['pctSum'] / g['pctN'], 2) if g['pctN'] else None,
+            'totalPnl': round(g['total'], 2), 'avgPnl': round(g['total'] / g['n'], 2),
+            'profitFactor': round(g['gw'] / g['gl'], 2) if g['gl'] > 0 else None,
+            'open': open_counts.get((fam, tag), 0),
+        })
+    ordered = [{'family': f, 'tags': sorted(families[f], key=lambda r: (-r['n'], r['tag']))} for f in TAG_FAMILY_ORDER if f in families]
+
+    wins   = sum(1 for p in closed if (p.realized_pnl_dollars or 0) > 0)
+    losses = sum(1 for p in closed if (p.realized_pnl_dollars or 0) < 0)
+    total  = sum((p.realized_pnl_dollars or 0) for p in closed)
+    lo, hi = _snowvault_wilson(wins, len(closed))
+    untagged = sum(1 for p in closed if not any(k in (p.entry_context or {}) for k in _ENTRY_CONTEXT_KEYS))
+    return JsonResponse({
+        'overall': {'closed': len(closed), 'open': len(opened), 'wins': wins, 'losses': losses,
+                    'winRate': round(wins / len(closed) * 100, 1) if closed else None, 'winRateLow': lo, 'winRateHigh': hi,
+                    'totalPnl': round(total, 2), 'untaggedClosed': untagged},
+        'families': ordered,
+    })
 
 # Legodi Tech Registration and Login
 from rest_framework import generics
