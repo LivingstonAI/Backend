@@ -57707,6 +57707,287 @@ def _snowvault_infer_gp_direction(rec):
         return 'NEUTRAL'
     return 'BULLISH'
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Stop-out autopsy — what did price do AFTER each closed paper trade?
+# ─────────────────────────────────────────────────────────────────────────────
+AUTOPSY_HORIZONS   = (1, 3, 5, 10, 20)
+AUTOPSY_STOP_MULTS = (1.5, 2.0, 3.0)
+
+
+def _snowvault_aware(dt):
+    from datetime import timezone
+    return dt if (dt is None or dt.tzinfo is not None) else dt.replace(tzinfo=timezone.utc)
+
+
+def _snowvault_df_to_bars(df):
+    """DataFrame -> list of {t (UTC start of bar), d (exchange-local date), hi, lo, cl}."""
+    from datetime import timezone
+    out = []
+    if df is None or df.empty:
+        return out
+    for ts, hi, lo, cl in zip(df.index, df['High'].values, df['Low'].values, df['Close'].values):
+        try:
+            if hi != hi or lo != lo or cl != cl:
+                continue
+            t = ts.to_pydatetime()
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            out.append({'t': t.astimezone(timezone.utc), 'd': ts.date(), 'hi': float(hi), 'lo': float(lo), 'cl': float(cl)})
+        except Exception:
+            continue
+    return out
+
+
+def _snowvault_fetch_autopsy_bars(sym, earliest_open):
+    """NETWORK ONLY (no ORM) — safe in worker threads. Daily bars always; hourly bars when the
+    trade is recent enough for Yahoo to still serve them (~2 years)."""
+    from datetime import datetime, timedelta, timezone
+    now   = datetime.now(timezone.utc)
+    start = (earliest_open - timedelta(days=6)).strftime('%Y-%m-%d')
+    end   = (now + timedelta(days=2)).strftime('%Y-%m-%d')
+    daily, hourly = [], []
+    try:
+        daily = _snowvault_df_to_bars(yf.Ticker(sym).history(start=start, end=end, interval='1d', auto_adjust=True))
+    except Exception as e:
+        print(f"[Autopsy] {sym} daily fetch failed: {e}")
+    if (now - earliest_open).days < 700:
+        try:
+            h_start = (earliest_open - timedelta(days=2)).strftime('%Y-%m-%d')
+            hourly = _snowvault_df_to_bars(yf.Ticker(sym).history(start=h_start, end=end, interval='1h', auto_adjust=True))
+        except Exception as e:
+            print(f"[Autopsy] {sym} hourly fetch failed: {e}")
+    return {'daily': daily, 'hourly': hourly}
+
+
+def _snowvault_autopsy_position(p, daily, hourly, window, horizons=AUTOPSY_HORIZONS, mults=AUTOPSY_STOP_MULTS):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    ny = ZoneInfo('America/New_York')
+
+    empty = {str(h): None for h in horizons}
+    if not daily and not hourly:
+        return {'verdict': 'NO_DATA', 'tpHitAfter': False, 'recoveredToEntry': False, 'reboundPct': None,
+                'keptFallingPct': None, 'peakVsEntryPct': None, 'heldVsEntry': dict(empty), 'vsExit': dict(empty),
+                'daysAvailable': 0, 'windowComplete': False, 'usedHourly': False, 'whatIf': None}
+
+    is_long   = p.direction == 'long'
+    entry     = p.entry_price
+    exitp     = p.closed_price
+    tp, sl    = p.tp_price, p.sl_price
+    opened_at = _snowvault_aware(p.opened_at)
+    closed_at = _snowvault_aware(p.closed_at)
+    adj       = (lambda pct: pct) if is_long else (lambda pct: -pct)   # direction-adjust a raw % move
+
+    use_hourly = bool(hourly) and hourly[0]['t'] <= opened_at
+    bars = hourly if use_hourly else daily
+
+    # Last COMPLETE daily bar (today's bar doesn't count while the market is still trading)
+    today_ny = datetime.now(ny).date()
+    last_ok  = len(daily) - 1
+    if daily and daily[-1]['d'] >= today_ny and _snowvault_get_market_session() in ('pre', 'regular'):
+        last_ok -= 1
+
+    close_day = closed_at.astimezone(ny).date()
+    d0 = next((i for i, b in enumerate(daily) if b['d'] >= close_day), len(daily))
+    days_available  = max(0, last_ok - d0)
+    window_complete = (d0 + window) <= last_ok
+    end_idx  = min(d0 + window, last_ok)
+    end_date = daily[end_idx]['d'] if (d0 <= end_idx < len(daily)) else close_day
+
+    # "If I'd held with no stop": finish N trading days after the close day, vs entry and vs exit
+    held_vs_entry, vs_exit = {}, {}
+    for h in horizons:
+        i = d0 + h
+        if i <= last_ok and entry and exitp:
+            cl = daily[i]['cl']
+            held_vs_entry[str(h)] = round(adj((cl - entry) / entry * 100), 2)
+            vs_exit[str(h)]       = round(adj((cl - exitp) / exitp * 100), 2)
+        else:
+            held_vs_entry[str(h)] = None
+            vs_exit[str(h)]       = None
+
+    # What price did AFTER the exit (bars that START after the close, so nothing pre-exit leaks in)
+    post = [b for b in bars if b['t'] >= closed_at and b['d'] <= end_date]
+    tp_hit = recovered = False
+    fav_ex = adv_ex = None
+    for b in post:
+        hi, lo = b['hi'], b['lo']
+        fav, adv = (hi, lo) if is_long else (lo, hi)
+        fav_ex = fav if fav_ex is None else (max(fav_ex, fav) if is_long else min(fav_ex, fav))
+        adv_ex = adv if adv_ex is None else (min(adv_ex, adv) if is_long else max(adv_ex, adv))
+        if tp is not None and ((is_long and hi >= tp) or (not is_long and lo <= tp)):
+            tp_hit = True
+        if (is_long and hi >= entry) or (not is_long and lo <= entry):
+            recovered = True
+
+    rebound = peak_vs_entry = kept_falling = None
+    if fav_ex is not None and exitp and entry:
+        rebound       = round(max(0.0, adj((fav_ex - exitp) / exitp * 100)), 2)    # best move in your favour after exit
+        peak_vs_entry = round(adj((fav_ex - entry) / entry * 100), 2)               # best it got vs your entry
+        kept_falling  = round(max(0.0, -adj((adv_ex - exitp) / exitp * 100)), 2)    # worst move against you after exit
+
+    status = p.status
+    if status == 'CLOSED_SL':
+        if tp_hit:               verdict = 'SHAKEN_OUT'
+        elif recovered:          verdict = 'RECOVERED'
+        elif window_complete:    verdict = 'STOP_JUSTIFIED'
+        else:                    verdict = 'PENDING'
+    elif status == 'CLOSED_TP':
+        ran = rebound is not None and rebound >= max(2.0, float(p.tp_percent or 0))
+        verdict = 'RAN_FURTHER' if ran else ('EXIT_WELL' if window_complete else 'PENDING')
+    else:
+        verdict = 'MANUAL'
+
+    # Stop-width what-if: replay the trade from its OPEN with the stop pushed further away
+    what_if = None
+    if status == 'CLOSED_SL' and sl is not None and entry:
+        run_bars = [b for b in bars if b['t'] >= opened_at and b['d'] <= end_date]
+        if run_bars:
+            sl_dist = abs(entry - sl)
+            what_if = {}
+            for m in mults:
+                new_sl = entry - m * sl_dist if is_long else entry + m * sl_dist
+                kind = fill = None
+                for b in run_bars:
+                    hit_sl = (b['lo'] <= new_sl) if is_long else (b['hi'] >= new_sl)
+                    hit_tp = tp is not None and ((b['hi'] >= tp) if is_long else (b['lo'] <= tp))
+                    if hit_sl: kind, fill = 'SL', new_sl; break      # a bar spanning both levels counts the stop first
+                    if hit_tp: kind, fill = 'TP', tp;     break
+                if kind is None:
+                    kind, fill = ('TIME' if window_complete else 'OPEN'), run_bars[-1]['cl']
+                pct = round(adj((fill - entry) / entry * 100), 2)
+                what_if[format(m, 'g')] = {'outcome': kind, 'pnlPct': pct, 'pnlDollars': round(pct / 100 * entry * p.quantity, 2)}
+
+    return {
+        'verdict': verdict, 'tpHitAfter': tp_hit, 'recoveredToEntry': recovered,
+        'reboundPct': rebound, 'keptFallingPct': kept_falling, 'peakVsEntryPct': peak_vs_entry,
+        'heldVsEntry': held_vs_entry, 'vsExit': vs_exit,
+        'daysAvailable': days_available, 'windowComplete': window_complete,
+        'usedHourly': use_hourly, 'whatIf': what_if,
+    }
+
+
+def _snowvault_autopsy_summary(rows, horizons):
+    sl  = [r for r in rows if r['status'] == 'CLOSED_SL']
+    tp  = [r for r in rows if r['status'] == 'CLOSED_TP']
+    pct = lambda n, d: round(n / d * 100, 1) if d else None
+
+    counts = {}
+    for r in sl:
+        counts[r['verdict']] = counts.get(r['verdict'], 0) + 1
+    decided = sum(counts.get(k, 0) for k in ('SHAKEN_OUT', 'RECOVERED', 'STOP_JUSTIFIED'))
+
+    def avg(key):
+        vs = [r[key] for r in sl if r.get(key) is not None]
+        return round(sum(vs) / len(vs), 2) if vs else None
+
+    by_h = {}
+    for h in horizons:
+        k    = str(h)
+        held = [r['heldVsEntry'][k] for r in sl if r['heldVsEntry'].get(k) is not None]
+        ex   = [r['vsExit'][k]      for r in sl if r['vsExit'].get(k)      is not None]
+        by_h[k] = {
+            'count': len(held),
+            'finishedAboveEntryPct': pct(sum(1 for v in held if v > 0), len(held)),
+            'avgVsEntry': round(sum(held) / len(held), 2) if held else None,
+            'avgVsExit':  round(sum(ex) / len(ex), 2) if ex else None,
+        }
+
+    sl_w = [r for r in sl if r.get('whatIf')]
+    tp_pnl = sum((r.get('realized_pnl_dollars') or 0) for r in tp)
+    actual_pnl = tp_pnl + sum((r.get('realized_pnl_dollars') or 0) for r in sl_w)
+    n_actual = len(tp) + len(sl_w)
+    actual = {'wins': len(tp), 'losses': len(sl_w), 'winRate': pct(len(tp), n_actual),
+              'totalPnl': round(actual_pnl, 2), 'avgPnl': round(actual_pnl / n_actual, 2) if n_actual else None}
+
+    what_if_rows = []
+    for m in AUTOPSY_STOP_MULTS:
+        mk = format(m, 'g')
+        wins, losses, still_open, pnl = len(tp), 0, 0, tp_pnl
+        for r in sl_w:
+            o = r['whatIf'][mk]
+            if o['outcome'] == 'OPEN':
+                still_open += 1
+                continue
+            pnl += o['pnlDollars']
+            if o['pnlPct'] > 0: wins += 1
+            else:               losses += 1
+        n = wins + losses
+        what_if_rows.append({'mult': mk, 'wins': wins, 'losses': losses, 'open': still_open,
+                             'winRate': pct(wins, n), 'totalPnl': round(pnl, 2), 'avgPnl': round(pnl / n, 2) if n else None})
+
+    return {
+        'slTotal': len(sl), 'tpTotal': len(tp), 'decided': decided, 'verdictCounts': counts,
+        'pending': counts.get('PENDING', 0),
+        'shakenOutPct': pct(counts.get('SHAKEN_OUT', 0), decided),
+        'recoveredOrBetterPct': pct(counts.get('SHAKEN_OUT', 0) + counts.get('RECOVERED', 0), decided),
+        'justifiedPct': pct(counts.get('STOP_JUSTIFIED', 0), decided),
+        'avgRebound': avg('reboundPct'), 'avgKeptFalling': avg('keptFallingPct'),
+        'byHorizon': by_h,
+        'whatIf': {'actual': actual, 'rows': what_if_rows, 'skipped': len(sl) - len(sl_w)},
+    }
+
+
+@csrf_exempt
+def snowvault_positions_autopsy_vault(request):
+    """
+    POST { "window": 10 (trading days after the close, 3-30), "includeManual": false,
+           "asset": optional, "limit": 300 }
+    """
+    import concurrent.futures
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body           = json.loads(request.body) if request.body else {}
+        window         = max(3, min(int(body.get('window', 10)), 30))
+        include_manual = bool(body.get('includeManual', False))
+        asset          = (body.get('asset') or '').strip().upper()
+        limit          = min(int(body.get('limit', 300)), 600)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    statuses = ['CLOSED_SL', 'CLOSED_TP'] + (['CLOSED_MANUAL'] if include_manual else [])
+    qs = SnowVaultPaperPosition.objects.filter(status__in=statuses, closed_at__isnull=False, closed_price__isnull=False)
+    if asset:
+        qs = qs.filter(asset=asset)
+    positions = list(qs.order_by('-closed_at')[:limit])
+
+    horizons = list(AUTOPSY_HORIZONS)
+    if not positions:
+        return JsonResponse({'rows': [], 'summary': _snowvault_autopsy_summary([], horizons), 'window': window, 'horizons': horizons})
+
+    by_asset = {}
+    for p in positions:
+        by_asset.setdefault(p.asset, []).append(p)
+
+    snapshots = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {
+            ex.submit(_snowvault_fetch_autopsy_bars, a, min(_snowvault_aware(p.opened_at) for p in plist)): a
+            for a, plist in by_asset.items()
+        }
+        try:
+            for fut in concurrent.futures.as_completed(futures, timeout=90):
+                try:
+                    snapshots[futures[fut]] = fut.result()
+                except Exception as e:
+                    print(f"[Autopsy] {futures[fut]} failed: {e}")
+        except Exception as e:
+            print(f"[Autopsy] fetch incomplete: {e}")
+
+    rows = []
+    for p in positions:
+        snap = snapshots.get(p.asset) or {'daily': [], 'hourly': []}
+        row = _snowvault_serialize_position(p)
+        try:
+            row.update(_snowvault_autopsy_position(p, snap['daily'], snap['hourly'], window))
+        except Exception as e:
+            print(f"[Autopsy] {p.asset} #{p.id} analysis failed: {e}")
+            row.update(_snowvault_autopsy_position(p, [], [], window))
+        rows.append(row)
+
+    return JsonResponse({'rows': rows, 'summary': _snowvault_autopsy_summary(rows, horizons), 'window': window, 'horizons': horizons})
+
 # Legodi Tech Registration and Login
 from rest_framework import generics
 

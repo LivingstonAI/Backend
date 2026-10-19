@@ -1187,6 +1187,8 @@ path('api/snowvault_positions_refresh_prices/', views.snowvault_positions_refres
 path('api/snowvault_scanner_composite_backtest_vault/', views.snowvault_scanner_composite_backtest_vault, name='snowvault_scanner_composite_backtest_vault'),
 path('api/snowvault_global_picks_composite_backtest_vault/', views.snowvault_global_picks_composite_backtest_vault, name='snowvault_global_picks_composite_backtest_vault'),
 
+path('api/snowvault_positions_autopsy/', views.snowvault_positions_autopsy_vault, name='snowvault_positions_autopsy_vault'),
+
 
 
      # create appproprate urls.py here
