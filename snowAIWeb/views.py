@@ -44098,6 +44098,9 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
                             break
                 except Exception as e:
                     print(f"[ScannerJob] {sym} earnings lookup error (non-fatal): {e}")
+                
+                # Pullback / bounce detection: needs ~70 bars, returns None when the stock doesn't qualify
+                retrace = _snowvault_compute_retracement(closes, highs, lows, volumes)
 
                 score = 0
                 if range_to_trend:
@@ -44115,7 +44118,8 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
                     score += 5
                 score = round(min(100, max(0, score)), 1)
 
-                if score < 20:
+                # Not a breakout candidate? It still survives if it's a qualifying pullback/bounce
+                if score < 20 and retrace is None:
                     return None
 
                 if range_to_trend and bullish:
@@ -44133,7 +44137,9 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
                 else:
                     signal = 'WATCH'
 
-                print(f"[ScannerJob] ✓ {sym} score:{score} signal:{signal} adx:{adx_now} roc20:{roc20}%")
+                print(f"[ScannerJob] ✓ {sym} score:{score} signal:{signal} adx:{adx_now} roc20:{roc20}% "
+                      f"setup:{(retrace['mode'] + ' -' + str(retrace['depthPct']) + '%') if retrace else '-'}")
+
 
                 return {
                     'ticker':            sym,
@@ -44167,6 +44173,8 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
                     'daysSinceEarnings': clean(days_since_earnings),
                     'earningsNearby':    clean(earnings_nearby),
                     'earningsBeat':      clean(earnings_beat),
+                    'retrace':           retrace,
+                    'inBreakoutList':    score >= 20,
                 }
 
             except Exception as e:
@@ -44228,45 +44236,73 @@ def _snowvault_run_scanner_job(tickers=None, min_market_cap=10_000_000_000, top_
                 print(f"[ScannerJob] sleeping {sleep_time:.1f}s before next batch...")
                 time.sleep(sleep_time)
 
-        results.sort(key=lambda x: x['score'], reverse=True)
-        results = results[:top_n]
+        # One pass, two lists. A stock can sit in either, or both:
+        #   breakout list: the original view (score >= 20), ranked by score
+        #   pullback list: deep retracements ONLY, ranked by pullback quality. The filter runs BEFORE the top_n cut,
+        #                  so you get the best top_n pullbacks, not the pullbacks that happened to be in a top_n of breakouts
+        breakout_results = [r for r in results if r.get('inBreakoutList')]
+        breakout_results.sort(key=lambda x: x['score'], reverse=True)
+        breakout_results = breakout_results[:top_n]
 
-        # ── Extended-hours overlay — final-cut tickers only ────────────────
+        pullback_results = []
+        for r in results:
+            rt = r.get('retrace')
+            if rt:
+                pr = dict(r)                      # a copy, so the breakout row keeps its own direction
+                pr['direction'] = rt['trend']     # the PRIOR trend = the side you'd trade (current ROC20 flips during a pullback)
+                pr['setup']     = rt['mode']      # PULLBACK | BOUNCE
+                pullback_results.append(pr)
+        pullback_results.sort(key=lambda x: (x['retrace']['quality'], x['score']), reverse=True)
+        pullback_results = pullback_results[:top_n]
+
+        # ── Extended-hours overlay — final-cut tickers only (one fetch per ticker, shared by both lists) ──
         current_session = _snowvault_get_market_session()
+        final_rows = breakout_results + pullback_results
         if current_session in ('pre', 'post'):
+            ext_by_ticker = {}
+            unique_syms = sorted({r['ticker'] for r in final_rows})
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
-                ext_futures = {ex.submit(_snowvault_fetch_extended_quote, r['ticker']): r for r in results}
-                for fut in concurrent.futures.as_completed(ext_futures, timeout=30):
-                    r = ext_futures[fut]
-                    try:
-                        ext = fut.result()
-                        if ext:
-                            r['marketSession']    = ext['marketSession']
-                            r['extendedPrice']     = ext['extendedPrice']
-                            r['extendedChangePct'] = ext['extendedChangePct']
-                            if ext['extendedChangePct'] is not None:
-                                r['extendedMoveConfirms'] = (
-                                    (r['direction'] == 'BULLISH' and ext['extendedChangePct'] > 0) or
-                                    (r['direction'] == 'BEARISH' and ext['extendedChangePct'] < 0)
-                                )
-                    except Exception as e:
-                        print(f"[ScannerJob] extended quote failed for {r['ticker']}: {e}")
+                ext_futures = {ex.submit(_snowvault_fetch_extended_quote, s): s for s in unique_syms}
+                try:
+                    for fut in concurrent.futures.as_completed(ext_futures, timeout=60):
+                        try:
+                            ext_by_ticker[ext_futures[fut]] = fut.result()
+                        except Exception as e:
+                            print(f"[ScannerJob] extended quote failed for {ext_futures[fut]}: {e}")
+                except concurrent.futures.TimeoutError:
+                    print("[ScannerJob] extended quotes timed out: saving without the missing ones")
+            for r in final_rows:
+                ext = ext_by_ticker.get(r['ticker'])
+                if not ext:
+                    continue
+                r['marketSession']     = ext['marketSession']
+                r['extendedPrice']     = ext['extendedPrice']
+                r['extendedChangePct'] = ext['extendedChangePct']
+                if ext['extendedChangePct'] is not None:
+                    r['extendedMoveConfirms'] = (
+                        (r['direction'] == 'BULLISH' and ext['extendedChangePct'] > 0) or
+                        (r['direction'] == 'BEARISH' and ext['extendedChangePct'] < 0)
+                    )
         else:
-            for r in results:
+            for r in final_rows:
                 r['marketSession'] = current_session
 
-        cache_row.results_json   = json.dumps(results)
-        cache_row.count          = len(results)
-        cache_row.total_scanned  = len(tickers)
-        cache_row.min_market_cap = min_market_cap
-        cache_row.scanned_at     = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        cache_row.is_running     = False
+        for r in final_rows:
+            r.pop('inBreakoutList', None)         # internal flag, not needed downstream
+
+        cache_row.results_json          = json.dumps(breakout_results)
+        cache_row.pullback_results_json = json.dumps(pullback_results)
+        cache_row.count                 = len(breakout_results)
+        cache_row.total_scanned         = len(tickers)
+        cache_row.min_market_cap        = min_market_cap
+        cache_row.scanned_at            = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cache_row.is_running            = False
         cache_row.save(update_fields=[
-            'results_json', 'count', 'total_scanned',
+            'results_json', 'pullback_results_json', 'count', 'total_scanned',
             'min_market_cap', 'scanned_at', 'is_running',
         ])
 
-        print(f"[ScannerJob] done — {len(results)} results from {len(tickers)} tickers")
+        print(f"[ScannerJob] done — {len(breakout_results)} breakout + {len(pullback_results)} pullback results from {len(tickers)} tickers")
 
     except Exception as e:
         print(f"[ScannerJob] FATAL: {e}")
@@ -44665,6 +44701,7 @@ def snowai_trend_reversal_scanner_vault(request):
         top_n          = body.get('topN', 20)
         force_refresh  = bool(body.get('forceRefresh', False))
         reset_lock     = bool(body.get('resetLock', False))
+        mode           = 'breakout' if str(body.get('mode', 'pullback')).lower() == 'breakout' else 'pullback'
     except Exception:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
@@ -44696,8 +44733,11 @@ def snowai_trend_reversal_scanner_vault(request):
 
     cache_row.refresh_from_db()
     return JsonResponse({
-        'results':       json.loads(cache_row.results_json or '[]'),
-        'count':         cache_row.count,
+        'results':       json.loads((cache_row.pullback_results_json if mode == 'pullback' else cache_row.results_json) or '[]'),
+        'count':         cache_row.count if mode == 'breakout' else len(json.loads(cache_row.pullback_results_json or '[]')),
+        'mode':          mode,
+        'breakoutCount': cache_row.count,
+        'pullbackCount': len(json.loads(cache_row.pullback_results_json or '[]')),
         'totalScanned':  cache_row.total_scanned,
         'minMarketCap':  cache_row.min_market_cap,
         'scannedAt':     cache_row.scanned_at,
@@ -58280,6 +58320,158 @@ def snowvault_positions_tag_stats_vault(request):
                     'totalPnl': round(total, 2), 'untaggedClosed': untagged},
         'families': ordered,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Retracement detection: a pullback in an uptrend, or a bounce in a downtrend
+# ─────────────────────────────────────────────────────────────────────────────
+SNOWVAULT_RETRACE_DEFAULTS = {
+    'swing_lookback': 60,   # bars searched for the swing extreme (high of the up-leg / low of the down-leg)
+    'leg_lookback':   45,   # bars before that extreme searched for where the leg started
+    'min_bars': 3,          # the extreme must be at least this old (not a 1-2 day wobble)
+    'max_bars': 40,         # ...and no older than this (older = a base, not a pullback)
+    'min_leg_pct': 12.0,    # the prior leg must be a real move
+    'min_leg_atr': 5.0,
+    'min_retrace': 0.382,   # gave back at least 38.2% of the leg
+    'max_retrace': 0.786,   # ...but no more than 78.6% (past that the leg has failed)
+    'min_depth_pct': 6.0,   # and at least this far off the extreme, in plain %
+    'min_depth_atr': 2.5,   # ...and at least this many ATRs
+    'min_slope_pct': 0.5,   # the 50-day average must still slope with the trend
+    'sma_tolerance': 0.07,  # price may sit at most 7% on the wrong side of the 50-day
+}
+
+
+def _snowvault_compute_retracement(closes, highs, lows, volumes=None, params=None, explain=False):
+    """
+    Returns a dict describing the retracement, or None if the stock doesn't qualify.
+    explain=True returns (result, reason) so you can see WHY a stock was rejected.
+    """
+    import numpy as np
+    P = dict(SNOWVAULT_RETRACE_DEFAULTS)
+    if params:
+        P.update(params)
+
+    def done(res, why=None):
+        return (res, why) if explain else res
+
+    try:
+        c = np.asarray(closes, dtype=float)
+        h = np.asarray(highs,  dtype=float)
+        l = np.asarray(lows,   dtype=float)
+        n = len(c)
+        if n < 70 or len(h) != n or len(l) != n:
+            return done(None, 'needs about 70 daily bars of history')
+        if not (np.all(np.isfinite(c)) and np.all(np.isfinite(h)) and np.all(np.isfinite(l))):
+            return done(None, 'bad price data')
+
+        prev = c[:-1]
+        tr   = np.maximum(h[1:] - l[1:], np.maximum(np.abs(h[1:] - prev), np.abs(l[1:] - prev)))
+        atr  = float(tr[-14:].mean())
+        if atr <= 0:
+            return done(None, 'no volatility')
+
+        last       = float(c[-1])
+        sma50      = float(c[-50:].mean())
+        sma50_prev = float(c[-65:-15].mean())          # the same 50-day average, 15 bars ago
+        slope      = (sma50 / sma50_prev - 1.0) * 100.0
+        win_start  = n - min(P['swing_lookback'], n)
+
+        d = np.diff(c)
+        up, dn = np.where(d > 0, d, 0.0), np.where(d < 0, -d, 0.0)
+        au, ad = float(up[:14].mean()), float(dn[:14].mean())
+        for u, w in zip(up[14:], dn[14:]):
+            au, ad = (au * 13 + u) / 14, (ad * 13 + w) / 14
+        rsi = 100.0 if ad == 0 else 100.0 - 100.0 / (1.0 + au / ad)
+
+        def evaluate(is_bull):
+            if is_bull:
+                i_ext  = win_start + int(np.argmax(h[win_start:]))
+                ext    = float(h[i_ext])
+                s      = max(0, i_ext - P['leg_lookback'])
+                i_base = s + int(np.argmin(l[s:i_ext + 1]))
+                base   = float(l[i_base])
+                leg, move = ext - base, ext - last
+            else:
+                i_ext  = win_start + int(np.argmin(l[win_start:]))
+                ext    = float(l[i_ext])
+                s      = max(0, i_ext - P['leg_lookback'])
+                i_base = s + int(np.argmax(h[s:i_ext + 1]))
+                base   = float(h[i_base])
+                leg, move = base - ext, last - ext
+
+            side = 'uptrend' if is_bull else 'downtrend'
+            bars_since = n - 1 - i_ext
+            if bars_since < P['min_bars']:
+                return None, f'{side}: the swing extreme is only {bars_since} bars old'
+            if bars_since > P['max_bars']:
+                return None, f'{side}: the swing extreme is {bars_since} bars old (a base, not a pullback)'
+            if leg <= 0 or base <= 0 or i_ext - i_base < 5:
+                return None, f'{side}: no clear leg into the extreme'
+            leg_pct, leg_atr = leg / base * 100.0, leg / atr
+            if leg_pct < P['min_leg_pct'] or leg_atr < P['min_leg_atr']:
+                return None, f'{side}: the prior leg is too small ({leg_pct:.1f}%, {leg_atr:.1f} ATR)'
+            retrace = move / leg
+            if retrace < P['min_retrace']:
+                return None, f'{side}: pullback too shallow ({retrace * 100:.0f}% of the leg)'
+            if retrace > P['max_retrace']:
+                return None, f'{side}: gave back {retrace * 100:.0f}% of the leg, so the leg has failed'
+            depth_pct, depth_atr = move / ext * 100.0, move / atr
+            if depth_pct < P['min_depth_pct'] or depth_atr < P['min_depth_atr']:
+                return None, f'{side}: not deep enough ({depth_pct:.1f}%, {depth_atr:.1f} ATR)'
+            if is_bull:
+                if slope < P['min_slope_pct'] or last < sma50 * (1 - P['sma_tolerance']):
+                    return None, 'uptrend: the 50-day average is not rising, or price is far below it'
+            else:
+                if slope > -P['min_slope_pct'] or last > sma50 * (1 + P['sma_tolerance']):
+                    return None, 'downtrend: the 50-day average is not falling, or price is far above it'
+
+            # Crude price-action check: no fresh lower low (pullback) / higher high (bounce) in the last 3 bars
+            stabilising = bool(l[-3:].min() >= l[-6:-3].min()) if is_bull else bool(h[-3:].max() <= h[-6:-3].max())
+
+            # Healthy pullbacks tend to happen on lighter volume than the move that preceded them
+            vol_ratio = None
+            if volumes is not None:
+                v = np.asarray(volumes, dtype=float)
+                if len(v) == n:
+                    leg_v, pb_v = v[i_base:i_ext + 1], v[i_ext + 1:]
+                    if len(leg_v) and len(pb_v) and leg_v.mean() > 0:
+                        vr = float(pb_v.mean() / leg_v.mean())
+                        vol_ratio = vr if np.isfinite(vr) else None
+
+            # Ranking score. The weights are judgment, not fitted: we validate them with a backtest later.
+            depth_c = float(np.interp(retrace, [0.382, 0.5, 0.618, 0.7, 0.786], [0.6, 0.9, 1.0, 0.8, 0.5]))
+            leg_c   = min(1.0, leg_atr / 12.0)
+            stab_c  = 1.0 if stabilising else 0.4
+            vol_c   = 0.6 if vol_ratio is None else (1.0 if vol_ratio <= 0.8 else 0.6 if vol_ratio <= 1.0 else 0.3)
+            quality = round(100.0 * (0.35 * depth_c + 0.25 * leg_c + 0.25 * stab_c + 0.15 * vol_c), 1)
+
+            return {
+                'mode':             'PULLBACK' if is_bull else 'BOUNCE',
+                'trend':            'BULLISH' if is_bull else 'BEARISH',   # the PRIOR trend, i.e. the side you'd trade with
+                'extreme':          round(ext, 4),                          # the swing high (pullback) or swing low (bounce)
+                'legStart':         round(base, 4),
+                'legPct':           round(leg_pct, 1),
+                'legAtr':           round(leg_atr, 1),
+                'retracePct':       round(retrace * 100.0, 1),              # share of the leg given back
+                'depthPct':         round(depth_pct, 1),                    # distance from the extreme
+                'depthAtr':         round(depth_atr, 1),
+                'barsSinceExtreme': int(bars_since),
+                'stabilising':      stabilising,
+                'volRatio':         round(vol_ratio, 2) if vol_ratio is not None else None,
+                'rsi14':            round(rsi, 1),
+                'sma50SlopePct':    round(slope, 2),
+                'quality':          quality,
+            }, None
+
+        res, why_up = evaluate(True)
+        if res is None:
+            res, why_down = evaluate(False)
+            if res is None:
+                return done(None, f'{why_up}; {why_down}')
+        return done(res, None)
+    except Exception as e:
+        return done(None, f'error: {e}')
+        
 
 # Legodi Tech Registration and Login
 from rest_framework import generics

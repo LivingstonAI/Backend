@@ -3340,6 +3340,7 @@ class SnowVaultScannerCache(models.Model):
     last_error      = models.TextField(null=True, blank=True)
     last_triggered_at = models.DateTimeField(null=True, blank=True)
     updated_at      = models.DateTimeField(auto_now=True)
+    pullback_results_json = models.TextField(default='[]')
 
     class Meta:
         db_table = 'snowvault_scanner_cache'
