@@ -3060,6 +3060,7 @@ class TradePosition(models.Model):
     notes       = models.TextField(blank=True, default='')
     created_at  = models.DateTimeField(auto_now_add=True)
     updated_at  = models.DateTimeField(auto_now=True)
+    source_paper_id = models.IntegerField(null=True, blank=True, db_index=True, help_text="SnowVaultPaperPosition this row mirrors")
 
     class Meta:
         ordering = ['-created_at']
@@ -3544,7 +3545,7 @@ class SnowVaultPaperPosition(models.Model):
 
 
 class SnowVaultInterestAsset(models.Model):
-    """Assets Tlotlo has flagged as interesting. They stay analysable even when the scanner no longer surfaces them."""
+    """Assets Tlotlo Motingwe has flagged as interesting. They stay analysable even when the scanner no longer surfaces them."""
     ticker          = models.CharField(max_length=30, unique=True, db_index=True)
     name            = models.CharField(max_length=200, blank=True, default='')
     sector          = models.CharField(max_length=100, blank=True, default='')
@@ -3570,6 +3571,59 @@ class SnowVaultInterestAsset(models.Model):
         ordering = ['-created_at']
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Every paper trade is mirrored into TradePosition
+# ─────────────────────────────────────────────────────────────────────────────
+from django.db import transaction
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+
+# TradePosition has no status column, so by default a trade leaves it once it closes (anything that draws
+# "open positions" from it won't show stale lines). Full history stays in the paper positions table.
+# Set True to keep closed trades in TradePosition too, tagged in the notes.
+TRADEPOSITION_KEEP_AFTER_CLOSE = False
+
+
+@receiver(post_save, sender=SnowVaultPaperPosition)
+def mirror_paper_position_to_trade_position(sender, instance, **kwargs):
+    """Never lets a mirroring problem break the paper trade itself."""
+    try:
+        is_open = instance.status == 'OPEN'
+        with transaction.atomic():   # savepoint: a failure here can't poison an outer transaction
+            if not is_open and not TRADEPOSITION_KEEP_AFTER_CLOSE:
+                TradePosition.objects.filter(source_paper_id=instance.id).delete()
+                return
+            tag = f"[paper #{instance.id} · {instance.quantity:g} sh"
+            if not is_open:
+                tag += f" · {instance.status.replace('CLOSED_', 'closed ').lower()}"
+            tag += "]"
+            TradePosition.objects.update_or_create(
+                source_paper_id=instance.id,
+                defaults={
+                    'asset':         instance.asset[:20],
+                    'direction':     instance.direction,
+                    'entry_price':   instance.entry_price,
+                    'sl_price':      instance.sl_price,
+                    'tp_price':      instance.tp_price,
+                    'sl_dollars':    instance.sl_dollars,
+                    'tp_dollars':    instance.tp_dollars,
+                    'current_price': instance.current_price if is_open else instance.closed_price,
+                    'notes':         f"{tag} {instance.notes or ''}".strip(),
+                },
+            )
+    except Exception as e:
+        print(f"[TradePositionMirror] paper #{getattr(instance, 'id', '?')} mirror failed (non-fatal): {e}")
+
+
+@receiver(post_delete, sender=SnowVaultPaperPosition)
+def remove_mirrored_trade_position(sender, instance, **kwargs):
+    try:
+        with transaction.atomic():
+            TradePosition.objects.filter(source_paper_id=instance.id).delete()
+    except Exception as e:
+        print(f"[TradePositionMirror] delete mirror for paper #{getattr(instance, 'id', '?')} failed (non-fatal): {e}")
+
+
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
@@ -3584,3 +3638,4 @@ class BookOrder(models.Model):
     email = models.EmailField()
     phone_number = models.CharField(max_length=20)
     number_of_units = models.IntegerField()
+
