@@ -58474,7 +58474,122 @@ def _snowvault_compute_retracement(closes, highs, lows, volumes=None, params=Non
         return done(res, None)
     except Exception as e:
         return done(None, f'error: {e}')
-        
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Normalised view: replay every paper trade with the SAME bracket and the SAME size
+# ─────────────────────────────────────────────────────────────────────────────
+def _snowvault_normalise_position(p, snap, account, tp_pct, sl_pct):
+    """
+    Replays one trade from its entry with TP/SL placed tp_pct / sl_pct away from the entry price, sized so the
+    position is worth exactly `account` dollars (so a 2% price move = 2% of the account).
+    Same conventions as the live engine: a bar spanning both levels counts the stop first, and fills happen at
+    the level itself. Returns {'fields': {...}, 'note': str} to overlay on the trade, or {'error': str}.
+    """
+    if not snap or (not snap.get('daily') and not snap.get('hourly')):
+        return {'error': 'no price data'}
+    entry = p.entry_price
+    if not entry or entry <= 0:
+        return {'error': 'bad entry price'}
+
+    is_long   = p.direction == 'long'
+    sgn       = 1 if is_long else -1
+    opened_at = _snowvault_aware(p.opened_at)
+    hourly, daily = snap.get('hourly') or [], snap.get('daily') or []
+    bars = hourly if (hourly and hourly[0]['t'] <= opened_at) else daily
+
+    qty      = account / entry
+    tp_price = entry * (1 + sgn * tp_pct / 100.0)
+    sl_price = entry * (1 - sgn * sl_pct / 100.0)
+
+    run = [b for b in bars if b['t'] >= opened_at]
+    outcome = fill = hit_at = None
+    for b in run:
+        if is_long:
+            if b['lo'] <= sl_price:   outcome, fill = 'CLOSED_SL', sl_price
+            elif b['hi'] >= tp_price: outcome, fill = 'CLOSED_TP', tp_price
+        else:
+            if b['hi'] >= sl_price:   outcome, fill = 'CLOSED_SL', sl_price
+            elif b['lo'] <= tp_price: outcome, fill = 'CLOSED_TP', tp_price
+        if outcome:
+            hit_at = b['t']
+            break
+
+    fields = {
+        'quantity':   round(qty, 6),
+        'tp_price':   round(tp_price, 4), 'sl_price': round(sl_price, 4),
+        'tp_percent': tp_pct,             'sl_percent': sl_pct,
+        'tp_dollars': round(account * tp_pct / 100.0, 2), 'sl_dollars': round(account * sl_pct / 100.0, 2),
+    }
+    if outcome:
+        pnl = (fill - entry) * qty * sgn
+        fields.update({
+            'status': outcome, 'closed_price': round(fill, 4), 'closed_at': hit_at.isoformat(),
+            'current_price': round(fill, 4), 'realized_pnl_dollars': round(pnl, 2),
+            'realized_pnl_percent': round(pnl / account * 100.0, 2),
+        })
+        note = ('Reached the take-profit' if outcome == 'CLOSED_TP' else 'Hit the stop') + ' of the standard bracket'
+    else:
+        last = run[-1]['cl'] if run else (p.current_price or entry)
+        fields.update({
+            'status': 'OPEN', 'closed_price': None, 'closed_at': None, 'current_price': round(last, 4),
+            'realized_pnl_dollars': None, 'realized_pnl_percent': None,
+        })
+        note = 'Neither level reached yet'
+    return {'fields': fields, 'note': note}
+
+
+@csrf_exempt
+def snowvault_positions_normalise_vault(request):
+    """
+    POST { "account": 10000, "tpPct": 2, "slPct": 1 }
+    Replays EVERY paper trade with the same bracket and size. Nothing is saved; the frontend overlays the result
+    and can drop it again instantly.
+    """
+    import concurrent.futures
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body    = json.loads(request.body) if request.body else {}
+        account = float(body.get('account', 10000))
+        tp_pct  = float(body.get('tpPct', 2))
+        sl_pct  = float(body.get('slPct', 1))
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON or numbers'}, status=400)
+    if not (account > 0 and 0 < tp_pct <= 100 and 0 < sl_pct < 100):
+        return JsonResponse({'error': 'Account must be above 0, and TP% / SL% must be between 0 and 100'}, status=400)
+
+    params    = {'account': account, 'tpPct': tp_pct, 'slPct': sl_pct}
+    positions = list(SnowVaultPaperPosition.objects.order_by('-opened_at')[:600])
+    if not positions:
+        return JsonResponse({'results': {}, 'params': params})
+
+    by_asset = {}
+    for p in positions:
+        by_asset.setdefault(p.asset, []).append(p)
+
+    snapshots = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:   # network only; no ORM in the workers
+        futures = {
+            ex.submit(_snowvault_fetch_autopsy_bars, a, min(_snowvault_aware(p.opened_at) for p in plist)): a
+            for a, plist in by_asset.items()
+        }
+        try:
+            for fut in concurrent.futures.as_completed(futures, timeout=90):
+                try:
+                    snapshots[futures[fut]] = fut.result()
+                except Exception as e:
+                    print(f"[Normalise] {futures[fut]} failed: {e}")
+        except Exception as e:
+            print(f"[Normalise] fetch incomplete: {e}")
+
+    results = {}
+    for p in positions:
+        try:
+            results[str(p.id)] = _snowvault_normalise_position(p, snapshots.get(p.asset), account, tp_pct, sl_pct)
+        except Exception as e:
+            print(f"[Normalise] {p.asset} #{p.id} failed: {e}")
+            results[str(p.id)] = {'error': str(e)}
+    return JsonResponse({'results': results, 'params': params})        
 
 # Legodi Tech Registration and Login
 from rest_framework import generics
