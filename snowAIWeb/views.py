@@ -58057,20 +58057,48 @@ def _snowvault_clean_tags(raw):
 
 
 def _snowvault_serialize_interest(a):
-    analysis = None
-    if a.last_analysis_json:
+    def load(raw, default):
         try:
-            analysis = json.loads(a.last_analysis_json)
+            return json.loads(raw) if raw else default
         except Exception:
-            analysis = None
+            return default
     return {
         'ticker': a.ticker, 'name': a.name, 'sector': a.sector, 'note': a.note, 'tags': a.tags or [], 'source': a.source,
         'addedPrice': a.added_price, 'addedSignal': a.added_signal, 'addedDirection': a.added_direction, 'addedScore': a.added_score,
-        'analysis': analysis,
+        'analysis': load(a.last_analysis_json, None),
+        'aiRuns': load(a.ai_runs_json, []),
+        'aiSynthesis': load(a.ai_synthesis_json, None),
         'lastAnalysedAt': a.last_analysed_at.isoformat() if a.last_analysed_at else None,
         'createdAt': a.created_at.isoformat(), 'updatedAt': a.updated_at.isoformat(),
     }
 
+
+@csrf_exempt
+def snowvault_interest_ai_save_vault(request):
+    """POST { "items": { "NVDA": { "aiRuns": [...], "aiSynthesis": {...} | null }, ... } }
+    Replaces the stored AI results for those tickers (only the keys you send are touched)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    body = _snowvault_json_body(request)
+    if body is None or not isinstance(body.get('items'), dict):
+        return JsonResponse({'error': 'Expected { items: { TICKER: { aiRuns, aiSynthesis } } }'}, status=400)
+    saved = []
+    for raw_t, payload in list(body['items'].items())[:100]:
+        t = _snowvault_clean_ticker(raw_t)
+        obj = SnowVaultInterestAsset.objects.filter(ticker=t).first() if t else None
+        if not obj or not isinstance(payload, dict):
+            continue
+        if 'aiRuns' in payload:
+            runs = payload.get('aiRuns')
+            runs = [r for r in runs if isinstance(r, dict)][-12:] if isinstance(runs, list) else []
+            obj.ai_runs_json = json.dumps(runs) if runs else ''
+        if 'aiSynthesis' in payload:
+            syn = payload.get('aiSynthesis')
+            obj.ai_synthesis_json = json.dumps(syn) if isinstance(syn, dict) else ''
+        obj.save(update_fields=['ai_runs_json', 'ai_synthesis_json', 'updated_at'])
+        saved.append(obj)
+    return JsonResponse({'assets': [_snowvault_serialize_interest(a) for a in saved]})
+    
 
 def _snowvault_json_body(request):
     try:
@@ -58602,7 +58630,9 @@ def snowvault_positions_normalise_vault(request):
         except Exception as e:
             print(f"[Normalise] {p.asset} #{p.id} failed: {e}")
             results[str(p.id)] = {'error': str(e)}
-    return JsonResponse({'results': results, 'params': params})        
+    return JsonResponse({'results': results, 'params': params})    
+
+    
 
 # Legodi Tech Registration and Login
 from rest_framework import generics

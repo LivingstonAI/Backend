@@ -3566,6 +3566,9 @@ class SnowVaultInterestAsset(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    ai_runs_json      = models.TextField(blank=True, default='')   # JSON array: one entry per AI run
+    ai_synthesis_json = models.TextField(blank=True, default='')   # JSON object, or ''
+
     class Meta:
         db_table = 'snowvault_interest_assets'
         ordering = ['-created_at']
