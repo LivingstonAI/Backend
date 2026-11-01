@@ -1198,6 +1198,7 @@ path('api/snowvault_interest_analyse/', views.snowvault_interest_analyse_vault, 
 path('api/snowvault_positions_tag_stats/', views.snowvault_positions_tag_stats_vault, name='snowvault_positions_tag_stats_vault'),
 path('api/snowvault_positions_normalise/', views.snowvault_positions_normalise_vault, name='snowvault_positions_normalise_vault'),
 path('api/snowvault_interest_ai_save/', views.snowvault_interest_ai_save_vault, name='snowvault_interest_ai_save_vault'),
+path('api/snowvault_accounts_sync/', views.snowvault_accounts_sync_vault, name='snowvault_accounts_sync_vault'),
 
 
 

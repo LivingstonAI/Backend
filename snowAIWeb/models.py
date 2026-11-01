@@ -92,6 +92,7 @@ class AccountTrades(models.Model):
     emotional_bias = models.TextField(blank=True, null=True)  # Notes on emotional state (optional)
     reflection = models.TextField(blank=True, null=True)  # Reflective notes (optional)
     date_entered = models.DateTimeField(blank=True, null=True)  # New field for the date trade was entered
+    source_paper_id = models.IntegerField(null=True, blank=True, db_index=True, help_text="SnowVaultPaperPosition this row came from")
 
     def __str__(self):
         return f"{self.account.account_name} - {self.asset} ({self.order_type})"

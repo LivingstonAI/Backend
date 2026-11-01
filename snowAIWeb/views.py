@@ -58632,6 +58632,158 @@ def snowvault_positions_normalise_vault(request):
             results[str(p.id)] = {'error': str(e)}
     return JsonResponse({'results': results, 'params': params})    
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Update Database: save closed paper trades into the Account / AccountTrades tables
+# ─────────────────────────────────────────────────────────────────────────────
+SNOWVAULT_ACCOUNT_PREFIX = 'SnowVault Paper'
+_SNOWVAULT_SOURCE_LABELS = {'trend_scanner': 'Trend Scanner', 'global_picks': 'Global Picks', 'manual': 'Manual', 'chart': 'Chart', 'vault': 'Vault'}
+
+
+def _snowvault_asset_class(sym):
+    s = (sym or '').upper()
+    if s.endswith('=X'):                          return 'Forex'
+    if s.endswith('-USD') or s.endswith('-USDT'): return 'Crypto'
+    if s.endswith('=F'):                          return 'Futures'
+    if s.startswith('^'):                         return 'Indices'
+    return 'Equities'
+
+
+def _snowvault_account_name(sym):
+    return f"{SNOWVAULT_ACCOUNT_PREFIX} - {sym}"[:100]
+
+
+def _snowvault_trade_weekday(dt):
+    from zoneinfo import ZoneInfo
+    return dt.astimezone(ZoneInfo('America/New_York')).strftime('%A')
+
+
+def _snowvault_trade_session(dt):
+    """London / NY / Asian by UTC hour, the same labels as the rest of your accounts."""
+    from datetime import timezone
+    u = dt.astimezone(timezone.utc)
+    h = u.hour + u.minute / 60.0
+    if 13 <= h < 21: return 'NY'
+    if 7 <= h < 13:  return 'London'
+    return 'Asian'
+
+
+def _snowvault_trade_strategy(p, mode):
+    src  = _SNOWVAULT_SOURCE_LABELS.get((p.source or 'manual').lower()) or (p.source or 'Manual').replace('_', ' ').title()
+    ctx  = p.entry_context if isinstance(p.entry_context, dict) else {}
+    lens = ctx.get('lens')
+    label = f"SnowVault: {src}" + (f" ({lens})" if mode == 'source_lens' and lens else '')
+    return label[:100]
+
+
+def _snowvault_trade_reflection(p):
+    ctx = p.entry_context if isinstance(p.entry_context, dict) else {}
+    pretty = lambda v: str(v).replace('_', ' ')
+    how = {'CLOSED_TP': 'closed at take-profit', 'CLOSED_SL': 'closed at stop-loss', 'CLOSED_MANUAL': 'closed manually'}.get(p.status, 'closed')
+    parts = [f"SnowVault paper trade #{p.id}: {how}", f"{p.quantity:g} sh {p.entry_price:g} -> {p.closed_price:g}"]
+    setup = [f"{label}: {pretty(ctx[key])}" for label, key in
+             (('lens', 'lens'), ('signal', 'signal'), ('score', 'score'), ('AI verdict', 'aiVerdict'), ('earnings AI', 'earningsBias'))
+             if ctx.get(key) not in (None, '')]
+    if setup:
+        parts.append('Setup at entry: ' + ', '.join(setup))
+    if p.notes:
+        parts.append(f"Notes: {p.notes}")
+    return ' | '.join(parts)
+
+
+@csrf_exempt
+def snowvault_accounts_sync_vault(request):
+    """
+    POST { "dryRun": true|false, "initialCapital": 10000, "strategyMode": "source_lens" | "source" }
+    Saves every CLOSED paper trade into Account / AccountTrades, one account per asset
+    ("SnowVault Paper - NVDA"). Safe to run again and again: trades already saved are skipped,
+    and existing accounts keep their initial capital.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+    try:
+        body    = json.loads(request.body) if request.body else {}
+        dry_run = bool(body.get('dryRun', True))
+        capital = float(body.get('initialCapital', 10000))
+        mode    = 'source' if body.get('strategyMode') == 'source' else 'source_lens'
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON or numbers'}, status=400)
+    if not capital > 0:
+        return JsonResponse({'error': 'Starting capital must be above 0'}, status=400)
+
+    closed = [p for p in (SnowVaultPaperPosition.objects.exclude(status='OPEN')
+                          .filter(closed_price__isnull=False, closed_at__isnull=False, realized_pnl_dollars__isnull=False)
+                          .order_by('opened_at')) if p.asset]
+    empty_totals = {'assets': 0, 'newAccounts': 0, 'newTrades': 0, 'alreadySaved': 0, 'newPnl': 0}
+    if not closed:
+        return JsonResponse({'dryRun': dry_run, 'saved': False, 'totals': empty_totals, 'accounts': []})
+
+    already = set(AccountTrades.objects.filter(source_paper_id__in=[p.id for p in closed]).values_list('source_paper_id', flat=True))
+    assets  = sorted({p.asset for p in closed})
+    names   = {a: _snowvault_account_name(a) for a in assets}
+    accounts = {acc.account_name: acc for acc in Account.objects.filter(account_name__in=list(names.values()))}
+
+    sector_of = {}
+    def absorb(rows):
+        for t, s in rows:
+            if t and s and t not in sector_of:
+                sector_of[t] = s
+    absorb(SnowVaultScannerHistory.objects.filter(ticker__in=assets).exclude(sector='').order_by('-snapshot_date').values_list('ticker', 'sector'))
+    absorb(SnowVaultInterestAsset.objects.filter(ticker__in=assets).exclude(sector='').values_list('ticker', 'sector'))
+    absorb(SnowGlobalStockPick.objects.filter(symbol__in=assets).exclude(sector='').order_by('-created_at').values_list('symbol', 'sector'))
+
+    summary = {}
+    for p in closed:
+        s = summary.setdefault(p.asset, {
+            'name': names[p.asset], 'asset': p.asset, 'mainAssets': _snowvault_asset_class(p.asset),
+            'isNew': names[p.asset] not in accounts, 'newTrades': 0, 'alreadySaved': 0, 'newPnl': 0.0,
+        })
+        if p.id in already:
+            s['alreadySaved'] += 1
+        else:
+            s['newTrades'] += 1
+            s['newPnl'] += float(p.realized_pnl_dollars)
+
+    if not dry_run:
+        with transaction.atomic():
+            for s in summary.values():
+                if s['newTrades'] > 0 and s['name'] not in accounts:
+                    accounts[s['name']] = Account.objects.create(
+                        account_name=s['name'], main_assets=s['mainAssets'], initial_capital=capital,
+                    )
+            rows = []
+            for p in closed:
+                if p.id in already:
+                    continue
+                opened, closed_at = _snowvault_aware(p.opened_at), _snowvault_aware(p.closed_at)
+                pnl = float(p.realized_pnl_dollars)
+                rows.append(AccountTrades(
+                    account=accounts[names[p.asset]], asset=p.asset[:100],
+                    order_type='Buy' if p.direction == 'long' else 'Sell',
+                    strategy=_snowvault_trade_strategy(p, mode),
+                    sector=(sector_of.get(p.asset) or 'Unknown')[:100],
+                    day_of_week_entered=_snowvault_trade_weekday(opened), day_of_week_closed=_snowvault_trade_weekday(closed_at),
+                    trading_session_entered=_snowvault_trade_session(opened), trading_session_closed=_snowvault_trade_session(closed_at),
+                    outcome='Profit' if pnl > 0 else 'Loss',   # a trade closed at exactly break-even is saved as Loss with amount 0
+                    amount=round(pnl, 2), reflection=_snowvault_trade_reflection(p),
+                    date_entered=opened, source_paper_id=p.id,
+                ))
+            AccountTrades.objects.bulk_create(rows, batch_size=200)
+
+    out = sorted(summary.values(), key=lambda s: (-s['newTrades'], s['asset']))
+    for s in out:
+        s['newPnl'] = round(s['newPnl'], 2)
+    return JsonResponse({
+        'dryRun': dry_run, 'saved': not dry_run,
+        'totals': {
+            'assets': len(out),
+            'newAccounts': sum(1 for s in out if s['isNew'] and s['newTrades'] > 0),
+            'newTrades': sum(s['newTrades'] for s in out),
+            'alreadySaved': sum(s['alreadySaved'] for s in out),
+            'newPnl': round(sum(s['newPnl'] for s in out), 2),
+        },
+        'accounts': out,
+    })
     
 
 # Legodi Tech Registration and Login
