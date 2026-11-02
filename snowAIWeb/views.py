@@ -58758,10 +58758,12 @@ def snowvault_accounts_sync_vault(request):
            "normalise": false, "tpPct": 2, "slPct": 1, "setCapital": false }
 
     Saves every CLOSED paper trade into Account / AccountTrades, one account per asset ("SnowVault Paper - NVDA").
-    Trades already saved are kept in line with the chosen setting (real P&L, or normalised to the standard
-    bracket), and any earlier "Profit" label becomes "Win". Safe to run again and again.
+    Saved entries are kept in line with the chosen setting (real P&L, or normalised to the standard bracket):
+    outcome is Win / Loss, losses are always negative, and every entry gets a sector from SECTOR_MAPPINGS.
+    Safe to run again and again.
     """
     from datetime import datetime
+    from django.db.models import F
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
     try:
@@ -58785,17 +58787,32 @@ def snowvault_accounts_sync_vault(request):
                           .order_by('opened_at')) if p.asset]
     ids = [p.id for p in closed]
 
-    profit_rows = AccountTrades.objects.filter(source_paper_id__isnull=False, outcome='Profit')
-    profit_labelled = profit_rows.count()
-    orphan_q = profit_rows.exclude(source_paper_id__in=ids)   # saved from paper trades that no longer exist
+    # Entries saved earlier with the old "Profit" label (and ones whose paper trade no longer exists)
+    profit_labelled = AccountTrades.objects.filter(source_paper_id__isnull=False, outcome='Profit').count()
+    orphan_q = AccountTrades.objects.filter(source_paper_id__isnull=False, outcome='Profit').exclude(source_paper_id__in=ids)
     orphan_n = orphan_q.count()
+
+    def relabel_orphans():
+        orphan_q.filter(amount__gt=0).update(outcome='Win')      # follow the sign of the amount
+        orphan_q.filter(amount__lte=0).update(outcome='Loss')
+
+    known_sectors = set(SECTOR_MAPPINGS.values())
+    def sector_needs_update(current, new):
+        """Fill blanks / Unknown / names outside your structure. A valid sector you chose yourself is never overwritten."""
+        if new == 'Unknown':
+            return False
+        cur = (current or '').strip()
+        if cur in ('', 'Unknown'):
+            return True
+        return cur not in known_sectors and cur != new
 
     base_totals = {'assets': 0, 'newAccounts': 0, 'newTrades': 0, 'alreadySaved': 0, 'willUpdate': 0, 'skipped': 0,
                    'capitalChanges': 0, 'orphanRelabel': orphan_n, 'profitLabelled': profit_labelled,
+                   'sectorFixes': 0, 'signFixes': 0, 'unknownSectors': 0,
                    'newPnl': 0, 'pnlNow': 0, 'pnlAfter': 0}
     if not closed:
         if not dry_run and orphan_n:
-            orphan_q.update(outcome='Win')
+            relabel_orphans()
         return JsonResponse({'dryRun': dry_run, 'saved': not dry_run, 'totals': base_totals, 'accounts': []})
 
     existing = {r.source_paper_id: r for r in AccountTrades.objects.filter(source_paper_id__in=ids)}
@@ -58803,14 +58820,18 @@ def snowvault_accounts_sync_vault(request):
     names    = {a: _snowvault_account_name(a) for a in assets}
     accounts = {acc.account_name: acc for acc in Account.objects.filter(account_name__in=list(names.values()))}
 
-    sector_of = {}
+    # Sector for each asset: your SECTOR_MAPPINGS first, then sectors seen elsewhere in the app
+    fallbacks = {}
     def absorb(rows):
         for t, s in rows:
-            if t and s and t not in sector_of:
-                sector_of[t] = s
+            if t and s:
+                lst = fallbacks.setdefault(t, [])
+                if s not in lst:
+                    lst.append(s)
     absorb(SnowVaultScannerHistory.objects.filter(ticker__in=assets).exclude(sector='').order_by('-snapshot_date').values_list('ticker', 'sector'))
     absorb(SnowVaultInterestAsset.objects.filter(ticker__in=assets).exclude(sector='').values_list('ticker', 'sector'))
     absorb(SnowGlobalStockPick.objects.filter(symbol__in=assets).exclude(sector='').order_by('-created_at').values_list('symbol', 'sector'))
+    sector_for = {a: _snowvault_classify_sector(a, fallbacks.get(a, [])) for a in assets}
 
     norm = _snowvault_normalised_results_for(closed, capital, tp_pct, sl_pct) if normalise else {}
 
@@ -58830,25 +58851,32 @@ def snowvault_accounts_sync_vault(request):
         return {'amount': round(float(p.realized_pnl_dollars), 2), 'closed_at': _snowvault_aware(p.closed_at),
                 'reflection': _snowvault_trade_reflection(p)}
 
-    summary, plan_new, plan_update = {}, [], []
+    summary, plan_new, plan_update, plan_sector_only = {}, [], [], []
     for p in closed:
         acc = accounts.get(names[p.asset])
+        sec = sector_for[p.asset]
         s = summary.setdefault(p.asset, {
-            'name': names[p.asset], 'asset': p.asset, 'mainAssets': _snowvault_asset_class(p.asset),
+            'name': names[p.asset], 'asset': p.asset, 'mainAssets': _snowvault_asset_class(p.asset), 'sector': sec,
             'isNew': acc is None, 'capitalNow': acc.initial_capital if acc else None, 'capitalChange': False,
-            'newTrades': 0, 'alreadySaved': 0, 'willUpdate': 0, 'skipped': 0, 'newPnl': 0.0, 'pnlNow': 0.0, 'pnlAfter': 0.0,
+            'newTrades': 0, 'alreadySaved': 0, 'willUpdate': 0, 'sectorFixes': 0, 'skipped': 0,
+            'newPnl': 0.0, 'pnlNow': 0.0, 'pnlAfter': 0.0,
         })
         row = existing.get(p.id)
         if row is not None:
             s['alreadySaved'] += 1
             s['pnlNow'] += float(row.amount)
         d = want(p)
-        if d is None:                      # no price data to normalise this one: it is left exactly as it is
+        if d is None:                      # no price data to normalise this one: its values stay exactly as they are
             s['skipped'] += 1
             if row is not None:
                 s['pnlAfter'] += float(row.amount)
+                if sector_needs_update(row.sector, sec):
+                    s['sectorFixes'] += 1
+                    plan_sector_only.append((row, sec))
             continue
-        d['outcome']     = 'Win' if d['amount'] > 0 else 'Loss'   # a trade closed at exactly break-even is saved as Loss with amount 0
+        amt = d['amount']
+        d['amount']      = 0.0 if abs(amt) < 0.005 else amt      # a loss keeps its minus sign; break-even is a plain 0 (never -0)
+        d['outcome']     = 'Win' if amt > 0 else 'Loss'           # break-even is saved as Loss with amount 0
         d['day_closed']  = _snowvault_trade_weekday(d['closed_at'])
         d['sess_closed'] = _snowvault_trade_session(d['closed_at'])
         s['pnlAfter'] += d['amount']
@@ -58856,10 +58884,14 @@ def snowvault_accounts_sync_vault(request):
             s['newTrades'] += 1
             s['newPnl']    += d['amount']
             plan_new.append((p, d))
-        elif (abs(float(row.amount) - d['amount']) > 0.004 or row.outcome != d['outcome']
-              or row.day_of_week_closed != d['day_closed'] or row.trading_session_closed != d['sess_closed']):
-            s['willUpdate'] += 1
-            plan_update.append((row, p, d))
+        else:
+            val_change = (abs(float(row.amount) - d['amount']) > 0.004 or row.outcome != d['outcome']
+                          or row.day_of_week_closed != d['day_closed'] or row.trading_session_closed != d['sess_closed'])
+            sec_change = sector_needs_update(row.sector, sec)
+            if val_change: s['willUpdate'] += 1
+            if sec_change: s['sectorFixes'] += 1
+            if val_change or sec_change:
+                plan_update.append((row, p, d, val_change, sec_change))
 
     cap_changes = []
     if normalise and set_capital:
@@ -58868,6 +58900,11 @@ def snowvault_accounts_sync_vault(request):
             if acc is not None and abs(float(acc.initial_capital) - capital) > 0.004:
                 s['capitalChange'] = True
                 cap_changes.append(acc)
+
+    # Saved losses that somehow hold a positive amount (and aren't already being corrected above)
+    update_ids = [u[0].id for u in plan_update]
+    sign_q = AccountTrades.objects.filter(source_paper_id__isnull=False, outcome='Loss', amount__gt=0).exclude(id__in=update_ids)
+    sign_n = sign_q.count()
 
     if not dry_run:
         with transaction.atomic():
@@ -58883,7 +58920,7 @@ def snowvault_accounts_sync_vault(request):
                     account=accounts[names[p.asset]], asset=p.asset[:100],
                     order_type='Buy' if p.direction == 'long' else 'Sell',
                     strategy=_snowvault_trade_strategy(p, mode),
-                    sector=(sector_of.get(p.asset) or 'Unknown')[:100],
+                    sector=sector_for[p.asset][:100],
                     day_of_week_entered=_snowvault_trade_weekday(_snowvault_aware(p.opened_at)), day_of_week_closed=d['day_closed'],
                     trading_session_entered=_snowvault_trade_session(_snowvault_aware(p.opened_at)), trading_session_closed=d['sess_closed'],
                     outcome=d['outcome'], amount=d['amount'], reflection=d['reflection'],
@@ -58892,19 +58929,29 @@ def snowvault_accounts_sync_vault(request):
             ], batch_size=200)
 
             changed = []
-            for row, p, d in plan_update:
-                row.amount, row.outcome = d['amount'], d['outcome']
-                row.day_of_week_closed, row.trading_session_closed = d['day_closed'], d['sess_closed']
-                # Only text SnowVault wrote itself is refreshed. Anything you have written yourself is left alone.
-                if (row.reflection or '').startswith(f"SnowVault paper trade #{p.id}"):
-                    row.reflection = d['reflection']
+            for row, p, d, val_change, sec_change in plan_update:
+                if val_change:
+                    row.amount, row.outcome = d['amount'], d['outcome']
+                    row.day_of_week_closed, row.trading_session_closed = d['day_closed'], d['sess_closed']
+                    # Only text SnowVault wrote itself is refreshed. Anything you have written yourself is left alone.
+                    if (row.reflection or '').startswith(f"SnowVault paper trade #{p.id}"):
+                        row.reflection = d['reflection']
+                if sec_change:
+                    row.sector = sector_for[p.asset][:100]
+                changed.append(row)
+            for row, sec in plan_sector_only:
+                row.sector = sec[:100]
                 changed.append(row)
             if changed:
-                AccountTrades.objects.bulk_update(changed, ['amount', 'outcome', 'day_of_week_closed', 'trading_session_closed', 'reflection'], batch_size=200)
-            if orphan_n:
-                orphan_q.update(outcome='Win')
+                AccountTrades.objects.bulk_update(
+                    changed, ['amount', 'outcome', 'day_of_week_closed', 'trading_session_closed', 'reflection', 'sector'], batch_size=200)
 
-    out = sorted(summary.values(), key=lambda s: (-(s['newTrades'] + s['willUpdate']), s['asset']))
+            if sign_n:
+                sign_q.update(amount=-F('amount'))
+            if orphan_n:
+                relabel_orphans()
+
+    out = sorted(summary.values(), key=lambda s: (-(s['newTrades'] + s['willUpdate'] + s['sectorFixes']), s['asset']))
     for s in out:
         for k in ('pnlNow', 'pnlAfter', 'newPnl'):
             s[k] = round(s[k], 2)
@@ -58916,6 +58963,9 @@ def snowvault_accounts_sync_vault(request):
             'newTrades': sum(s['newTrades'] for s in out),
             'alreadySaved': sum(s['alreadySaved'] for s in out),
             'willUpdate': sum(s['willUpdate'] for s in out),
+            'sectorFixes': sum(s['sectorFixes'] for s in out) + sum(1 for s in out if s['isNew'] and s['newTrades'] > 0 and False),
+            'signFixes': sign_n,
+            'unknownSectors': sum(1 for s in out if s['sector'] == 'Unknown'),
             'skipped': sum(s['skipped'] for s in out),
             'capitalChanges': len(cap_changes),
             'orphanRelabel': orphan_n, 'profitLabelled': profit_labelled,
@@ -58926,7 +58976,41 @@ def snowvault_accounts_sync_vault(request):
         'accounts': out,
     })
 
-    
+# ─────────────────────────────────────────────────────────────────────────────
+# Sector classifier (uses your SECTOR_MAPPINGS structure)
+# ─────────────────────────────────────────────────────────────────────────────
+_SNOWVAULT_SECTOR_ALIASES = {
+    'FINANCIAL SERVICES': 'Financial', 'FINANCIALS': 'Financial',
+    'COMMUNICATION SERVICES': 'Communication', 'COMMUNICATIONS': 'Communication',
+    'BASIC MATERIALS': 'Materials',
+    'CONSUMER STAPLES': 'Consumer Defensive', 'CONSUMER DISCRETIONARY': 'Consumer Cyclical',
+    'INFORMATION TECHNOLOGY': 'Technology', 'HEALTH CARE': 'Healthcare',
+}
+
+
+def _snowvault_canonical_sector(raw):
+    """Maps a sector name onto your SECTOR_MAPPINGS structure (e.g. 'Financial Services' -> 'Financial'). None if it doesn't fit."""
+    if not raw:
+        return None
+    known = {v.upper(): v for v in set(SECTOR_MAPPINGS.values())}
+    key = str(raw).strip().upper()
+    if key in known:
+        return known[key]
+    alias = _SNOWVAULT_SECTOR_ALIASES.get(key)
+    return alias if alias in known.values() else None
+
+
+def _snowvault_classify_sector(sym, fallbacks=()):
+    """Your SECTOR_MAPPINGS first; otherwise a sector seen elsewhere in the app (renamed to your structure); otherwise 'Unknown'."""
+    s = (sym or '').upper().strip()
+    for cand in (s, s.replace('.', '-')):
+        if cand in SECTOR_MAPPINGS:
+            return SECTOR_MAPPINGS[cand]
+    for fb in fallbacks:
+        c = _snowvault_canonical_sector(fb)
+        if c:
+            return c
+    return 'Unknown'
 
 # Legodi Tech Registration and Login
 from rest_framework import generics
