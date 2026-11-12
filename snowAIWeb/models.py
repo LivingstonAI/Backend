@@ -3628,6 +3628,83 @@ def remove_mirrored_trade_position(sender, instance, **kwargs):
         print(f"[TradePositionMirror] delete mirror for paper #{getattr(instance, 'id', '?')} failed (non-fatal): {e}")
 
 
+import datetime as _dt          # aliased so it can never shadow `from datetime import datetime` elsewhere
+from django.db import models
+ 
+ 
+class SnowCountryRiskReport(models.Model):
+    """
+    One row = one AI's strategic risk/sentiment report for a country x sector on a day
+    (kind='ai'), OR the consensus built from those reports (kind='consensus').
+    Saving the same (country, sector, kind, ai_name, day) again updates the row, no duplicates.
+    """
+    KIND_CHOICES = [('ai', 'Individual AI report'), ('consensus', 'Consensus')]
+ 
+    # identity
+    country  = models.CharField(max_length=100)
+    flag     = models.CharField(max_length=10, blank=True, default='')
+    sector   = models.CharField(max_length=100)
+    kind     = models.CharField(max_length=12, choices=KIND_CHOICES, default='ai')
+    ai_name  = models.CharField(max_length=40, blank=True, default='')    # 'Perplexity', 'Claude'... / judge name / 'Quant'
+    batch_id = models.CharField(max_length=40, blank=True, default='', db_index=True)   # rows saved together
+ 
+    # headline numbers, flattened out of the JSON so they can be queried and backtested
+    overall_risk       = models.FloatField(null=True, blank=True)    # 1-10, 10 = critical
+    risk_level         = models.CharField(max_length=20, blank=True, default='')
+    sentiment_score    = models.FloatField(null=True, blank=True)    # -100..+100
+    sentiment_label    = models.CharField(max_length=30, blank=True, default='')
+    sentiment_momentum = models.CharField(max_length=20, blank=True, default='')
+    bias               = models.CharField(max_length=12, blank=True, default='')
+    confidence         = models.IntegerField(null=True, blank=True)
+    agreement_pct      = models.FloatField(null=True, blank=True)    # consensus rows: how much the AIs agreed
+    risk_dimensions    = models.JSONField(default=dict, blank=True)  # {policy: {score, trend, rationale}, ...}
+    horizon            = models.CharField(max_length=40, blank=True, default='')
+ 
+    # narrative / structured content
+    tldr            = models.TextField(blank=True, default='')
+    summary         = models.TextField(blank=True, default='')
+    scenarios       = models.JSONField(default=list, blank=True)
+    top_risks       = models.JSONField(default=list, blank=True)
+    opportunities   = models.JSONField(default=list, blank=True)
+    early_warnings  = models.JSONField(default=list, blank=True)
+    key_events      = models.JSONField(default=list, blank=True)
+    consensus_meta  = models.JSONField(default=dict, blank=True)     # judge notes: disagreements, single-source claims...
+    quant_consensus = models.JSONField(default=dict, blank=True)     # client-computed mean / spread / agreement
+    source_list     = models.JSONField(default=list, blank=True)
+    article_count   = models.IntegerField(null=True, blank=True)
+    payload         = models.JSONField(default=dict, blank=True)     # the full normalised report, nothing lost
+ 
+    # market context at save time, so forward returns can be measured later
+    proxy_symbol        = models.CharField(max_length=30, blank=True, default='')
+    proxy_price_at_save = models.FloatField(null=True, blank=True)
+    proxy_ret_at_save   = models.FloatField(null=True, blank=True)   # % return over the window the lens was showing
+    regime_at_save      = models.CharField(max_length=30, blank=True, default='')
+    tf_context          = models.CharField(max_length=20, blank=True, default='')
+ 
+    date_saved = models.DateField(default=_dt.date.today)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        app_label = 'snowAIWeb'          # <- same app_label you used for SnowGlobalStockPick
+        db_table  = 'snow_country_risk_reports'
+        ordering  = ['-date_saved', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['country', 'sector', 'kind', 'ai_name', 'date_saved'],
+                name='snow_cr_one_per_day',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['sector', 'kind', '-date_saved'], name='snow_cr_sector_kind_date'),
+            models.Index(fields=['country', 'sector', '-date_saved'], name='snow_cr_country_sector_date'),
+        ]
+ 
+    def __str__(self):
+        return f'{self.country} | {self.sector} | {self.kind}:{self.ai_name} | risk {self.overall_risk} | {self.date_saved}'
+ 
+
+
 class ContactUs(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
